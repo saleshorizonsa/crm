@@ -20,6 +20,7 @@ import {
 import SupervisorSalesTargetAssignment from "../../../components/SupervisorSalesTargetAssignment";
 import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
+import HotLeadsWidget from "./HotLeadsWidget";
 import MetricInsightModal from "./MetricInsightModal";
 import { supabase } from "../../../lib/supabase";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
@@ -2244,6 +2245,9 @@ const EnhancedSupervisorDashboard = ({
               <TeamPerformance data={teamData} />
             </div>
           </div>
+
+          {/* Hot Leads */}
+          <HotLeadsWidget companyId={company?.id} />
 
           {/* Activity Feed */}
           <div className="bg-white rounded-lg shadow">

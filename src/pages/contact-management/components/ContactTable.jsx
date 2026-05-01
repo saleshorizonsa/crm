@@ -1,7 +1,10 @@
 import React, { useState, useMemo } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
+import LeadScoreBadge from "../../../components/ui/LeadScoreBadge";
 import { Edit2Icon } from "lucide-react";
+
+const NUMERIC_KEYS = new Set(["lead_score"]);
 
 const ContactTable = ({
   contacts,
@@ -9,11 +12,20 @@ const ContactTable = ({
   onSelectRows,
   onEdit,
   isLoading,
+  sort, // "hottest" | "coldest" | "" — set from ContactFilters
 }) => {
   const [hoveredRow, setHoveredRow] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
 
   const sortedContacts = useMemo(() => {
+    // External sort (hottest/coldest) overrides column sort
+    if (sort === "hottest") {
+      return [...contacts].sort((a, b) => (b.lead_score ?? 0) - (a.lead_score ?? 0));
+    }
+    if (sort === "coldest") {
+      return [...contacts].sort((a, b) => (a.lead_score ?? 0) - (b.lead_score ?? 0));
+    }
+
     if (!sortConfig?.key) return contacts;
 
     return [...contacts].sort((a, b) => {
@@ -25,18 +37,21 @@ const ContactTable = ({
         bValue = `${b.first_name} ${b.last_name}`;
       }
 
+      // Numeric sort for score columns
+      if (NUMERIC_KEYS.has(sortConfig.key)) {
+        aValue = aValue ?? 0;
+        bValue = bValue ?? 0;
+        return sortConfig.direction === "asc" ? aValue - bValue : bValue - aValue;
+      }
+
       if (!aValue) return 1;
       if (!bValue) return -1;
 
-      if (aValue < bValue) {
-        return sortConfig.direction === "asc" ? -1 : 1;
-      }
-      if (aValue > bValue) {
-        return sortConfig.direction === "asc" ? 1 : -1;
-      }
+      if (aValue < bValue) return sortConfig.direction === "asc" ? -1 : 1;
+      if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1;
       return 0;
     });
-  }, [contacts, sortConfig]);
+  }, [contacts, sortConfig, sort]);
 
   const getStatusColor = (status) => {
     return status === "active"
@@ -170,6 +185,17 @@ const ContactTable = ({
                   {getSortIcon("status")}
                 </div>
               </th>
+              <th
+                className="text-left px-4 py-3 cursor-pointer hover:bg-muted/70 transition-enterprise"
+                onClick={() => handleSort("lead_score")}
+              >
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Lead Score
+                  </span>
+                  {getSortIcon("lead_score")}
+                </div>
+              </th>
               <th className="text-right px-4 py-3">
                 <span className="text-sm font-medium text-muted-foreground">
                   Actions
@@ -245,6 +271,12 @@ const ContactTable = ({
                   >
                     {contact.status || "active"}
                   </span>
+                </td>
+                <td className="px-4 py-3">
+                  <LeadScoreBadge
+                    score={contact.lead_score}
+                    grade={contact.lead_grade}
+                  />
                 </td>
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   <div

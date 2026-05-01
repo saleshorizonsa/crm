@@ -22,6 +22,7 @@ const ContactFilters = ({ filters, onFilterChange }) => {
     if (filters?.status) count++;
     if (filters?.tags && filters?.tags?.length > 0) count++;
     if (filters?.owner) count++;
+    if (filters?.sort) count++;
     return count;
   };
 
@@ -31,7 +32,12 @@ const ContactFilters = ({ filters, onFilterChange }) => {
       status: "",
       tags: [],
       owner: "",
+      sort: "",
     });
+  };
+
+  const handleSortToggle = (value) => {
+    onFilterChange({ ...filters, sort: filters?.sort === value ? "" : value });
   };
 
   const activeFilterCount = getActiveFilterCount();
@@ -153,6 +159,26 @@ const ContactFilters = ({ filters, onFilterChange }) => {
         >
           <Icon name="XCircle" size={14} className="mr-1" />
           Inactive
+        </Button>
+
+        <div className="w-px bg-border self-stretch mx-1" />
+
+        <Button
+          variant={filters?.sort === "hottest" ? "default" : "outline"}
+          size="sm"
+          onClick={() => handleSortToggle("hottest")}
+        >
+          <Icon name="TrendingUp" size={14} className="mr-1" />
+          Hottest first
+        </Button>
+
+        <Button
+          variant={filters?.sort === "coldest" ? "default" : "outline"}
+          size="sm"
+          onClick={() => handleSortToggle("coldest")}
+        >
+          <Icon name="TrendingDown" size={14} className="mr-1" />
+          Coldest first
         </Button>
       </div>
     </div>

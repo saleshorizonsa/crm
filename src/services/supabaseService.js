@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { calculateLeadScore } from "../utils/leadScoring";
 
 // ========================================
 // AUTH SERVICES
@@ -782,6 +783,10 @@ export const dealService = {
         }
       }
 
+      if (data?.contact_id) {
+        contactService._refreshScoreForContact(data.contact_id).catch(() => {});
+      }
+
       return { data, error: null };
     } catch (error) {
       return { data: null, error };
@@ -1158,6 +1163,9 @@ export const contactService = {
         `,
         )
         ?.single();
+      if (!error && data) {
+        this._refreshScoreForContact(contactId).catch(() => {});
+      }
       return { data, error };
     } catch (error) {
       return { data: null, error };
@@ -1460,6 +1468,99 @@ export const contactService = {
       return { data: filteredData, error: null };
     } catch (error) {
       return { data: [], error };
+    }
+  },
+
+  // Update lead_score, lead_grade, score_updated_at for a single contact
+  async updateLeadScore(contactId, { score, grade }) {
+    try {
+      const { data, error } = await supabase
+        .from("contacts")
+        .update({
+          lead_score: score,
+          lead_grade: grade,
+          score_updated_at: new Date().toISOString(),
+        })
+        .eq("id", contactId)
+        .select("id, lead_score, lead_grade, score_updated_at")
+        .single();
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  // Fetch deals + activities for one contact, score it, persist the result.
+  // Called fire-and-forget from mutation methods — never surfaces errors to callers.
+  async _refreshScoreForContact(contactId) {
+    const [{ data: contact }, { data: deals }, { data: activities }] =
+      await Promise.all([
+        supabase.from("contacts").select("*").eq("id", contactId).single(),
+        supabase.from("deals").select("*").eq("contact_id", contactId),
+        supabase.from("activities").select("*").eq("contact_id", contactId),
+      ]);
+    if (!contact) return;
+    const { score, grade } = calculateLeadScore(
+      contact,
+      deals || [],
+      activities || [],
+    );
+    await this.updateLeadScore(contactId, { score, grade });
+  },
+
+  // Recalculate and persist lead scores for every contact belonging to a company.
+  // Fetches deals and activities in two bulk queries to avoid N+1.
+  async recalculateAllScores(companyId) {
+    try {
+      const { data: contacts, error: contactsError } = await supabase
+        .from("contacts")
+        .select("*, owner:users!owner_id(company_id)");
+      if (contactsError) return { data: null, error: contactsError };
+
+      const companyContacts = (contacts || []).filter(
+        (c) => c.owner?.company_id === companyId,
+      );
+      if (companyContacts.length === 0) return { data: { updated: 0, failed: 0 }, error: null };
+
+      const contactIds = companyContacts.map((c) => c.id);
+
+      const [{ data: allDeals }, { data: allActivities }] = await Promise.all([
+        supabase.from("deals").select("*").in("contact_id", contactIds),
+        supabase.from("activities").select("*").in("contact_id", contactIds),
+      ]);
+
+      const dealsByContact = (allDeals || []).reduce((acc, d) => {
+        if (d.contact_id) {
+          (acc[d.contact_id] ??= []).push(d);
+        }
+        return acc;
+      }, {});
+
+      const activitiesByContact = (allActivities || []).reduce((acc, a) => {
+        if (a.contact_id) {
+          (acc[a.contact_id] ??= []).push(a);
+        }
+        return acc;
+      }, {});
+
+      const results = await Promise.all(
+        companyContacts.map((contact) => {
+          const { score, grade } = calculateLeadScore(
+            contact,
+            dealsByContact[contact.id] || [],
+            activitiesByContact[contact.id] || [],
+          );
+          return this.updateLeadScore(contact.id, { score, grade });
+        }),
+      );
+
+      const failed = results.filter((r) => r.error).length;
+      return {
+        data: { updated: results.length - failed, failed },
+        error: failed ? results.find((r) => r.error).error : null,
+      };
+    } catch (error) {
+      return { data: null, error };
     }
   },
 };
@@ -2166,6 +2267,9 @@ export const activityService = {
         `,
         )
         ?.single();
+      if (!error && data?.contact_id) {
+        contactService._refreshScoreForContact(data.contact_id).catch(() => {});
+      }
       return { data, error };
     } catch (error) {
       return { data: null, error };

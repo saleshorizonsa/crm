@@ -25,6 +25,7 @@ const ContactManagement = () => {
     status: "",
     tags: [],
     owner: "",
+    sort: "",
   });
   const loadingRef = React.useRef(false);
 
@@ -241,6 +242,7 @@ const ContactManagement = () => {
               onSelectRows={setSelectedRows}
               onEdit={handleEditContact}
               isLoading={isLoading}
+              sort={filters.sort}
             />
           </div>
           <div className="lg:hidden">

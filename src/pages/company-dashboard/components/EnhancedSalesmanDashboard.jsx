@@ -18,6 +18,7 @@ import {
 import ExecutiveMetrics from "./ExecutiveMetrics";
 import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
+import HotLeadsWidget from "./HotLeadsWidget";
 import {
   LineChart,
   Line,
@@ -1651,6 +1652,9 @@ const EnhancedSalesmanDashboard = () => {
               </div>
             )}
           </div>
+
+          {/* Hot Leads */}
+          <HotLeadsWidget companyId={company?.id} />
 
           {/* Activity Feed */}
           <div className="bg-white rounded-lg shadow">
