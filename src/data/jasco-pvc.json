@@ -1,0 +1,146 @@
+[
+  {
+    "Material": "CSCPVCFITS80",
+    "Maintenance status": "KVEDALBGQC",
+    "Material description": "CPVC FITTINGS COMPUND SCHDULE 80",
+    "Material Group": "SFPVC",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCPVCGRYS80",
+    "Maintenance status": "KDEALBVQGCS",
+    "Material description": "CPVC COMPOUND GRAY FOR SCHEDULE 80",
+    "Material Group": "SFPVC",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR075063",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W 0.75X063 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR075079",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W 0.75X080 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR075099",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W 0.75X099 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR080063",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W 0.80X063 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR080079",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W 0.80X079 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR095063",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W 0.95X063 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR095069",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W 0.95X069 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR095079",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W 0.95X079 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR095093",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W 0.95X093 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR095099",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W 0.95X099 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR095119",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W 0.95X119 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR115062",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W    1.15X062 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR115078",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W    1.15X078 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR115098",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W    1.15X098 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR115118",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W    1.15X118 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  },
+  {
+    "Material": "CSCR145061",
+    "Maintenance status": "KDEALBVQGC",
+    "Material description": "CR COIL SLITED T X W    1.45X061 MM",
+    "Material Group": "JSLIT",
+    "Base Unit of Measure": "TO",
+    "Company Code": 3000
+  }
+]

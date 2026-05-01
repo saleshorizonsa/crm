@@ -1,0 +1,6 @@
+Deals changed `expected_close_date`
+d6ba9356-6fa6-4904-9a87-5e62e0fec5f4
+b95a6808-ac5c-4729-a2e7-055b4daed23f
+d9b83168-db8e-4f67-bf63-6c49ecf2865a
+b1c6e48d-ff28-4553-b8e0-fcd81e26acd9
+07c4037e-dfda-421b-9b86-f72fde0235ca
