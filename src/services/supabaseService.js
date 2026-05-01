@@ -4502,3 +4502,57 @@ export const notificationService = {
     }
   },
 };
+
+export const leadService = {
+  async getLeads() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { data: [], error: null };
+
+    const { data, error } = await supabase
+      .from("contacts")
+      .select("*")
+      .eq("owner_id", user.id)
+      .not("lead_status", "is", null)
+      .order("lead_score", { ascending: false });
+
+    return { data: data || [], error };
+  },
+
+  async createLead(leadData) {
+    const { data, error } = await supabase
+      .from("contacts")
+      .insert({ ...leadData, lead_status: leadData.lead_status || "new" })
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  async updateLead(contactId, updates) {
+    const { data, error } = await supabase
+      .from("contacts")
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq("id", contactId)
+      .select()
+      .single();
+
+    if (!error && data) {
+      contactService._refreshScoreForContact(contactId).catch(() => {});
+    }
+
+    return { data, error };
+  },
+
+  async updateLeadStatus(contactId, status) {
+    const updates = { lead_status: status };
+    if (status === "converted") updates.status = "active";
+    return this.updateLead(contactId, updates);
+  },
+
+  async deleteLead(contactId) {
+    const { error } = await supabase
+      .from("contacts")
+      .delete()
+      .eq("id", contactId);
+    return { error };
+  },
+};

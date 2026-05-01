@@ -20,6 +20,7 @@ import ResetPassword from "./pages/reset-password";
 import AcceptInvitation from "./pages/accept-invitation";
 import SalesPipeline from "./pages/sales-pipeline";
 import ContactManagement from "./pages/contact-management";
+import LeadManagement from "./pages/lead-management";
 import TaskManagement from "./pages/task-management";
 import UserManagement from "./pages/user-management";
 import Settings from "./pages/settings";
@@ -64,6 +65,14 @@ const Routes = () => {
                   element={
                     <ProtectedRoute>
                       <SalesPipeline />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/lead-management"
+                  element={
+                    <ProtectedRoute>
+                      <LeadManagement />
                     </ProtectedRoute>
                   }
                 />

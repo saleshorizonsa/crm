@@ -67,6 +67,7 @@ const Header = ({
       icon: "LayoutDashboard",
     },
     { label: t("nav.pipeline"), path: "/sales-pipeline", icon: "TrendingUp" },
+    { label: "Leads", path: "/lead-management", icon: "UserPlus" },
     { label: t("nav.clients"), path: "/contact-management", icon: "Users" },
     { label: t("nav.tasks"), path: "/task-management", icon: "ListTodo" },
   ];
