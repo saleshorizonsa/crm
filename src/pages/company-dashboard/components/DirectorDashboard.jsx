@@ -30,6 +30,7 @@ import CompanyPerformanceGrid from "./CompanyPerformanceGrid";
 import ActionableDashboard from "./ActionableDashboard";
 import MetricInsightModal from "./MetricInsightModal";
 import PerformanceBarChart from "./PerformanceBarChart";
+import SalesForecast from "./SalesForecast";
 
 // Employee-specific dashboards - use Enhanced versions for full features
 import EnhancedManagerDashboard from "./EnhancedManagerDashboard";
@@ -1653,6 +1654,13 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           <TeamPerformance data={teamData} />
         </div>
       </div>
+
+      {/* Sales Forecast */}
+      <SalesForecast
+        companyId={selectedCompany?.id}
+        userId={user?.id}
+        role={userProfile?.role}
+      />
 
       <div className="bg-white rounded-lg shadow">
         <ActivityFeed

@@ -24,6 +24,7 @@ import EmployeeSelector from "../../../components/ui/EmployeeSelector";
 import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
 import MetricInsightModal from "./MetricInsightModal";
+import SalesForecast from "./SalesForecast";
 import { supabase } from "../../../lib/supabase";
 import { Edit2 } from "lucide-react";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
@@ -2118,6 +2119,13 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   <TeamPerformance data={teamData} />
                 </div>
               </div>
+
+              {/* Sales Forecast */}
+              <SalesForecast
+                companyId={company?.id}
+                userId={effectiveUser?.id}
+                role={effectiveUserProfile?.role}
+              />
 
               {/* Activity Feed */}
               <div className="bg-white rounded-lg shadow">
