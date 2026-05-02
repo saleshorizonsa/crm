@@ -4556,3 +4556,94 @@ export const leadService = {
     return { error };
   },
 };
+
+export const forecastService = {
+  /**
+   * getForecastData({ companyId, userId, role, periodStart, periodEnd })
+   *
+   * Role scoping:
+   *   salesman   → own deals only          (owner_id = userId)
+   *   supervisor → own + direct reports    (owner_id IN [userId, ...reportIds])
+   *   manager / director / admin / head → all company deals (no owner filter)
+   *
+   * Deals returned: non-lost deals whose expected_close_date falls within
+   * [periodStart, periodEnd], PLUS open (non-won) deals with no close date
+   * so unscheduled pipeline is never silently dropped.
+   *
+   * Target returned: the single active sales_target assigned to userId
+   * whose period overlaps [periodStart, periodEnd], or null when none exists.
+   *
+   * @returns {{ deals: Array, target: Object|null, error: Error|null }}
+   */
+  async getForecastData({ companyId, userId, role, periodStart, periodEnd }) {
+    try {
+      // ── 1. Resolve owner scope ─────────────────────────────────────────
+      let ownerIds = null; // null → no owner filter (manager+ sees all company deals)
+
+      if (role === "salesman") {
+        ownerIds = [userId];
+      } else if (role === "supervisor") {
+        const { data: reports, error: reportsError } = await supabase
+          .from("users")
+          .select("id")
+          .eq("supervisor_id", userId)
+          .eq("is_active", true);
+
+        if (reportsError) throw reportsError;
+
+        ownerIds = [userId, ...(reports || []).map((u) => u.id)];
+      }
+      // manager, director, admin, head → ownerIds stays null
+
+      // ── 2. Build deals query ───────────────────────────────────────────
+      let dealsQuery = supabase
+        .from("deals")
+        .select(
+          `id, title, stage, amount, expected_close_date, owner_id, company_id,
+           contact:contacts!contact_id(id, first_name, last_name, company_name),
+           owner:users!owner_id(id, full_name)`,
+        )
+        .neq("stage", "lost")
+        // Deals closing within the period, OR open deals with no date yet
+        .or(
+          `and(expected_close_date.gte.${periodStart},expected_close_date.lte.${periodEnd}),` +
+            `and(stage.neq.won,expected_close_date.is.null)`,
+        );
+
+      if (companyId) dealsQuery = dealsQuery.eq("company_id", companyId);
+      if (ownerIds)  dealsQuery = dealsQuery.in("owner_id", ownerIds);
+
+      const { data: deals, error: dealsError } = await dealsQuery;
+      if (dealsError) throw dealsError;
+
+      // ── 3. Fetch active sales target overlapping this period ───────────
+      // Overlap condition: target.period_start <= periodEnd
+      //               AND target.period_end   >= periodStart
+      let targetQuery = supabase
+        .from("sales_targets")
+        .select(
+          "id, target_amount, currency, period_start, period_end, period_type, target_type, status",
+        )
+        .eq("assigned_to", userId)
+        .eq("status", "active")
+        .lte("period_start", periodEnd)
+        .gte("period_end", periodStart)
+        .order("period_start", { ascending: false })
+        .limit(1);
+
+      if (companyId) targetQuery = targetQuery.eq("company_id", companyId);
+
+      const { data: targets, error: targetError } = await targetQuery;
+      if (targetError) throw targetError;
+
+      return {
+        deals:  deals        || [],
+        target: targets?.[0] ?? null,
+        error:  null,
+      };
+    } catch (error) {
+      console.error("Error in getForecastData:", error);
+      return { deals: [], target: null, error };
+    }
+  },
+};
