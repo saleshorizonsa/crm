@@ -22,7 +22,7 @@ import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import FunnelChart from "./FunnelChart";
 
-const PipelineAnalytics = ({ deals }) => {
+const PipelineAnalytics = ({ deals, onStageFilter }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [collapseToggle, setCollapseToggle] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
@@ -403,7 +403,13 @@ const PipelineAnalytics = ({ deals }) => {
               <p className="text-xs text-muted-foreground mb-4">
                 Switch between visualization styles using the buttons below
               </p>
-              <FunnelChart funnelData={funnelData} showSwitcher />
+              <FunnelChart funnelData={funnelData} showSwitcher onStageClick={onStageFilter} />
+              {onStageFilter && (
+                <p className="text-xs text-muted-foreground text-center mt-3 flex items-center justify-center gap-1">
+                  <Icon name="MousePointerClick" size={11} />
+                  Click any stage to jump to that view in the pipeline above
+                </p>
+              )}
             </div>
 
             {/* Funnel Metrics */}

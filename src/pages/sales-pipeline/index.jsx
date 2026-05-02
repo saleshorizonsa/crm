@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Header from "../../components/ui/Header";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
 import PipelineFilters from "./components/PipelineFilters";
@@ -9,6 +9,7 @@ import DealsList from "./components/DealsList";
 import Button from "../../components/ui/Button";
 import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
+import { useLocation } from "react-router-dom";
 import {
   dealService,
   contactService,
@@ -21,6 +22,24 @@ import { resolveDateRange } from "../../components/ui/DateRangePicker";
 
 const SalesPipeline = () => {
   const { company, userProfile, user } = useAuth();
+  const location = useLocation();
+  const pipelineTopRef = useRef(null);
+
+  // Read ?stage= from URL so dashboard charts can deep-link here
+  const getInitialFilters = () => {
+    const params = new URLSearchParams(location.search);
+    return {
+      search: "",
+      owner_id: "",
+      stage: params.get("stage") || "",
+      minValue: "",
+      maxValue: "",
+      dateRange: "",
+      customDateRange: { from: "", to: "" },
+      showOverdue: false,
+    };
+  };
+
   const [isLoading, setIsLoading] = useState(true);
   const [deals, setDeals] = useState([]);
   const [filteredDeals, setFilteredDeals] = useState([]);
@@ -29,16 +48,8 @@ const SalesPipeline = () => {
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [showDealModal, setShowDealModal] = useState(false);
   const [viewMode, setViewMode] = useState("pipeline");
-  const [filters, setFilters] = useState({
-    search: "",
-    owner_id: "",
-    stage: "",
-    minValue: "",
-    maxValue: "",
-    dateRange: "",
-    customDateRange: { from: "", to: "" },
-    showOverdue: false,
-  });
+  const [initialFilters] = useState(getInitialFilters);
+  const [filters, setFilters] = useState(getInitialFilters);
 
   // Add cache timestamp to track data freshness
   const [lastFetchTime, setLastFetchTime] = useState(null);
@@ -441,13 +452,14 @@ const SalesPipeline = () => {
 
         <div className="space-y-6">
           {/* Filters and Analytics */}
-          <div className="w-full">
+          <div className="w-full" ref={pipelineTopRef}>
             <PipelineFilters
               totalDeals={deals.length}
               filteredDeals={filteredDeals.length}
               filters={filters}
               onFiltersChange={setFilters}
               onExport={handleExportToCSV}
+              initialFilters={initialFilters}
             />
           </div>
 
@@ -488,7 +500,14 @@ const SalesPipeline = () => {
           )}
         </div>
         <div className="mt-20">
-          <PipelineAnalytics deals={filteredDeals} />
+          <PipelineAnalytics
+            deals={filteredDeals}
+            onStageFilter={(stageId) => {
+              const newFilters = { ...filters, stage: stageId };
+              setFilters(newFilters);
+              pipelineTopRef.current?.scrollIntoView({ behavior: "smooth" });
+            }}
+          />
         </div>
       </main>
 

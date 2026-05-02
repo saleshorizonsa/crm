@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import {
   BarChart,
@@ -21,6 +22,7 @@ const ManagerPipelineChart = ({
   subordinates,
 }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
+  const navigate = useNavigate();
 
   // Pipeline stage distribution - matching Director Dashboard
   const getPipelineData = () => {
@@ -44,6 +46,7 @@ const ManagerPipelineChart = ({
     return stages.map((stage, index) => {
       const stageDeals = deals?.filter((deal) => deal.stage === stage) || [];
       return {
+        stageKey: stage,
         stage: stage.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()),
         count: stageDeals.length,
         value: stageDeals.reduce(
@@ -96,7 +99,12 @@ const ManagerPipelineChart = ({
           />
           <YAxis tickFormatter={(value) => formatCurrency(value)} />
           <Tooltip content={<CustomTooltip />} />
-          <Bar dataKey="value" name="Pipeline Value">
+          <Bar
+            dataKey="value"
+            name="Pipeline Value"
+            onClick={(data) => navigate(`/sales-pipeline?stage=${data.stageKey}`)}
+            style={{ cursor: "pointer" }}
+          >
             {pipelineData.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={entry.color} />
             ))}

@@ -1,8 +1,13 @@
 import React, { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+
+// Map supervisor chart stage keys → DB stage keys
+const toDbStage = (key) => ({ qualified: "contact_made", proposal: "proposal_sent" }[key] ?? key);
 
 const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
+  const navigate = useNavigate();
 
   // Helper to convert deal amount to user's preferred currency
   const getConvertedAmount = (deal) => {
@@ -115,7 +120,12 @@ const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
               : 0;
 
           return (
-            <div key={stage.key} className="relative">
+            <div
+              key={stage.key}
+              className="relative cursor-pointer hover:bg-gray-50 rounded-lg transition-colors -mx-2 px-2 group"
+              onClick={() => navigate(`/sales-pipeline?stage=${toDbStage(stage.key)}`)}
+              title={`View ${stage.name} deals`}
+            >
               <div className="flex items-center justify-between text-sm mb-2">
                 <div className="flex items-center space-x-2">
                   <div className={`w-3 h-3 rounded ${stage.color}`}></div>

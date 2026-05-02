@@ -13,20 +13,23 @@ const PipelineFilters = ({
   totalDeals,
   filteredDeals,
   onExport,
+  initialFilters,
 }) => {
   const { company, userProfile } = useAuth();
   const { getCurrencySymbol } = useCurrency();
   const [members, setMembers] = useState([]);
-  const [localFilters, setLocalFilters] = useState({
-    search: "",
-    owner_id: "",
-    stage: "",
-    minValue: "",
-    maxValue: "",
-    dateRange: "",
-    customDateRange: { from: "", to: "" },
-    showOverdue: false,
-  });
+  const [localFilters, setLocalFilters] = useState(
+    initialFilters || {
+      search: "",
+      owner_id: "",
+      stage: "",
+      minValue: "",
+      maxValue: "",
+      dateRange: "",
+      customDateRange: { from: "", to: "" },
+      showOverdue: false,
+    },
+  );
 
   // Check if current user is a salesman (should not see member filter)
   const isSalesman =

@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
@@ -6,6 +7,7 @@ import { useLanguage } from "../../../i18n";
 const PipelineChart = ({ pipelineData = [], selectedCompany }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
   const { t } = useLanguage();
+  const navigate = useNavigate();
 
   // Ensure pipelineData is always an array
   const data = pipelineData || [];
@@ -72,7 +74,12 @@ const PipelineChart = ({ pipelineData = [], selectedCompany }) => {
             totalValue > 0 ? (stage.totalValue / totalValue) * 100 : 0;
 
           return (
-            <div key={stage.stage} className="relative">
+            <div
+              key={stage.stage}
+              className="relative cursor-pointer rounded-lg hover:bg-muted/40 transition-colors -mx-2 px-2 py-1 group"
+              onClick={() => navigate(`/sales-pipeline?stage=${stage.stage}`)}
+              title={`View ${config.label} deals in pipeline`}
+            >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-2">
                   <div className={`w-3 h-3 rounded-full ${config.color}`}></div>
@@ -112,8 +119,12 @@ const PipelineChart = ({ pipelineData = [], selectedCompany }) => {
         })}
       </div>
 
+      <p className="mt-3 text-xs text-muted-foreground text-center opacity-60">
+        Click any stage to open the pipeline filtered to that stage
+      </p>
+
       {/* Pipeline velocity indicators */}
-      <div className="mt-6 pt-4 border-t border-gray-200">
+      <div className="mt-4 pt-4 border-t border-gray-200">
         <div className="grid grid-cols-3 gap-4">
           <div className="text-center">
             <div className="text-xs text-gray-500">

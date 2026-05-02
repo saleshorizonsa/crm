@@ -38,7 +38,7 @@ const FunnelTooltip = ({ active, payload, formatCurrency }) => {
 
 // ── Classic chart ──────────────────────────────────────────────────────────
 
-const ClassicFunnel = ({ data, formatCurrency }) => {
+const ClassicFunnel = ({ data, formatCurrency, onStageClick }) => {
   const maxCount = Math.max(...data.map((s) => s.count), 1);
   return (
     <div className="space-y-2 py-2">
@@ -64,8 +64,10 @@ const ClassicFunnel = ({ data, formatCurrency }) => {
               </span>
               <div className="flex-1 flex items-center">
                 <div
-                  className="h-10 rounded-lg flex items-center justify-between px-3 transition-all duration-500"
+                  className="h-10 rounded-lg flex items-center justify-between px-3 transition-all duration-500 cursor-pointer hover:opacity-80 hover:scale-[1.01]"
                   style={{ width: `${widthPct}%`, minWidth: 120, backgroundColor: stage.fill }}
+                  onClick={() => onStageClick?.(stage.stage)}
+                  title={`Filter to ${stage.stage}`}
                 >
                   <span className="text-white text-xs font-bold">{stage.count}</span>
                   <span className="text-white text-xs font-semibold opacity-90 hidden sm:block">
@@ -83,7 +85,7 @@ const ClassicFunnel = ({ data, formatCurrency }) => {
 
 // ── Pyramid chart (SVG trapezoids) ─────────────────────────────────────────
 
-const PyramidFunnel = ({ data, formatCurrency }) => {
+const PyramidFunnel = ({ data, formatCurrency, onStageClick }) => {
   const W = 600;
   const rowH = 68;
   const totalH = data.length * rowH;
@@ -107,12 +109,17 @@ const PyramidFunnel = ({ data, formatCurrency }) => {
           const midX = W / 2;
           const midY = y + rowH / 2;
           return (
-            <g key={stage.stage}>
-              <polygon points={points} fill={stage.fill} opacity="0.9" className="drop-shadow-sm" />
-              <text x={midX} y={midY - 7} textAnchor="middle" fill="white" fontSize="12" fontWeight="700">
+            <g
+              key={stage.stage}
+              className="cursor-pointer"
+              onClick={() => onStageClick?.(stage.stage)}
+              style={{ cursor: "pointer" }}
+            >
+              <polygon points={points} fill={stage.fill} opacity="0.9" className="drop-shadow-sm hover:opacity-75 transition-opacity" />
+              <text x={midX} y={midY - 7} textAnchor="middle" fill="white" fontSize="12" fontWeight="700" pointerEvents="none">
                 {stage.stage}
               </text>
-              <text x={midX} y={midY + 9} textAnchor="middle" fill="white" fontSize="11" opacity="0.9">
+              <text x={midX} y={midY + 9} textAnchor="middle" fill="white" fontSize="11" opacity="0.9" pointerEvents="none">
                 {stage.count} deals · {formatCurrency(stage.value)}
               </text>
             </g>
@@ -125,7 +132,7 @@ const PyramidFunnel = ({ data, formatCurrency }) => {
 
 // ── Wave chart (SVG bezier curves) ────────────────────────────────────────
 
-const WaveFunnel = ({ data, formatCurrency }) => {
+const WaveFunnel = ({ data, formatCurrency, onStageClick }) => {
   const W = 600;
   const rowH = 72;
   const totalH = data.length * rowH;
@@ -157,8 +164,12 @@ const WaveFunnel = ({ data, formatCurrency }) => {
           const midX = W / 2;
           const midTextY = midY;
           return (
-            <g key={stage.stage}>
-              <path d={d} fill={stage.fill} opacity="0.88" />
+            <g
+              key={stage.stage}
+              style={{ cursor: "pointer" }}
+              onClick={() => onStageClick?.(stage.stage)}
+            >
+              <path d={d} fill={stage.fill} opacity="0.88" className="hover:opacity-70 transition-opacity" />
               {/* Separator line */}
               {i < data.length - 1 && (
                 <line
@@ -183,8 +194,8 @@ const WaveFunnel = ({ data, formatCurrency }) => {
 
 // ── Donut chart (Recharts) ──────────────────────────────────────────────────
 
-const DonutFunnel = ({ data, formatCurrency }) => {
-  const donutData = data.map((s) => ({ name: s.stage, value: s.count, fill: s.fill, rawValue: s.value }));
+const DonutFunnel = ({ data, formatCurrency, onStageClick }) => {
+  const donutData = data.map((s) => ({ name: s.stage, value: s.count, fill: s.fill, rawValue: s.value, stageKey: s.stage }));
   const totalCount = data.reduce((s, d) => s + d.count, 0);
   const totalValue = data.reduce((s, d) => s + d.value, 0);
 
@@ -215,9 +226,11 @@ const DonutFunnel = ({ data, formatCurrency }) => {
               dataKey="value"
               startAngle={90}
               endAngle={-270}
+              onClick={(entry) => onStageClick?.(entry.stageKey)}
+              style={{ cursor: onStageClick ? "pointer" : "default" }}
             >
               {donutData.map((entry, i) => (
-                <Cell key={i} fill={entry.fill} />
+                <Cell key={i} fill={entry.fill} className="hover:opacity-75 transition-opacity" />
               ))}
             </Pie>
             <Tooltip content={<DonutTooltip formatCurrency={formatCurrency} />} />
@@ -247,14 +260,15 @@ const DonutFunnel = ({ data, formatCurrency }) => {
 
 // ── Radial chart (Recharts) ────────────────────────────────────────────────
 
-const RadialFunnel = ({ data, formatCurrency }) => {
+const RadialFunnel = ({ data, formatCurrency, onStageClick }) => {
   const maxVal = Math.max(...data.map((s) => s.value), 1);
   const radialData = [...data].reverse().map((s, i) => ({
-    name:  s.stage,
-    value: Math.round((s.value / maxVal) * 100),
-    fill:  s.fill,
-    count: s.count,
+    name:     s.stage,
+    value:    Math.round((s.value / maxVal) * 100),
+    fill:     s.fill,
+    count:    s.count,
     rawValue: s.value,
+    stageKey: s.stage,
   }));
 
   const RadialTooltip = ({ active, payload }) => {
@@ -288,6 +302,8 @@ const RadialFunnel = ({ data, formatCurrency }) => {
               dataKey="value"
               cornerRadius={6}
               label={false}
+              onClick={(entry) => onStageClick?.(entry.stageKey)}
+              style={{ cursor: onStageClick ? "pointer" : "default" }}
             >
               {radialData.map((entry, i) => (
                 <Cell key={i} fill={entry.fill} />
@@ -314,7 +330,7 @@ const RadialFunnel = ({ data, formatCurrency }) => {
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-const FunnelChart = ({ funnelData = [], showSwitcher = true, defaultType = "classic" }) => {
+const FunnelChart = ({ funnelData = [], showSwitcher = true, defaultType = "classic", onStageClick }) => {
   const [chartType, setChartType] = useState(defaultType);
   const { formatCurrency } = useCurrency();
 
@@ -331,11 +347,11 @@ const FunnelChart = ({ funnelData = [], showSwitcher = true, defaultType = "clas
       );
     }
     switch (chartType) {
-      case "pyramid": return <PyramidFunnel data={data} formatCurrency={formatCurrency} />;
-      case "wave":    return <WaveFunnel    data={data} formatCurrency={formatCurrency} />;
-      case "donut":   return <DonutFunnel   data={data} formatCurrency={formatCurrency} />;
-      case "radial":  return <RadialFunnel  data={data} formatCurrency={formatCurrency} />;
-      default:        return <ClassicFunnel data={data} formatCurrency={formatCurrency} />;
+      case "pyramid": return <PyramidFunnel data={data} formatCurrency={formatCurrency} onStageClick={onStageClick} />;
+      case "wave":    return <WaveFunnel    data={data} formatCurrency={formatCurrency} onStageClick={onStageClick} />;
+      case "donut":   return <DonutFunnel   data={data} formatCurrency={formatCurrency} onStageClick={onStageClick} />;
+      case "radial":  return <RadialFunnel  data={data} formatCurrency={formatCurrency} onStageClick={onStageClick} />;
+      default:        return <ClassicFunnel data={data} formatCurrency={formatCurrency} onStageClick={onStageClick} />;
     }
   };
 
