@@ -138,6 +138,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
   const funnelData = [
     {
       stage: "Lead",
+      stageKey: "lead",
       count: deals?.filter((d) => d?.stage === "lead")?.length || 0,
       value:
         deals
@@ -147,6 +148,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
     },
     {
       stage: "Qualified",
+      stageKey: "contact_made",
       count: deals?.filter((d) => d?.stage === "contact_made")?.length || 0,
       value:
         deals
@@ -156,6 +158,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
     },
     {
       stage: "Proposal",
+      stageKey: "proposal_sent",
       count: deals?.filter((d) => d?.stage === "proposal_sent")?.length || 0,
       value:
         deals
@@ -165,6 +168,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
     },
     {
       stage: "Negotiation",
+      stageKey: "negotiation",
       count: deals?.filter((d) => d?.stage === "negotiation")?.length || 0,
       value:
         deals
@@ -174,6 +178,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
     },
     {
       stage: "Won",
+      stageKey: "won",
       count: deals?.filter((d) => d?.stage === "won")?.length || 0,
       value:
         deals

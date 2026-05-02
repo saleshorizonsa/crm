@@ -66,7 +66,7 @@ const ClassicFunnel = ({ data, formatCurrency, onStageClick }) => {
                 <div
                   className="h-10 rounded-lg flex items-center justify-between px-3 transition-all duration-500 cursor-pointer hover:opacity-80 hover:scale-[1.01]"
                   style={{ width: `${widthPct}%`, minWidth: 120, backgroundColor: stage.fill }}
-                  onClick={() => onStageClick?.(stage.stage)}
+                  onClick={() => onStageClick?.(stage.stageKey ?? stage.stage)}
                   title={`Filter to ${stage.stage}`}
                 >
                   <span className="text-white text-xs font-bold">{stage.count}</span>
@@ -112,7 +112,7 @@ const PyramidFunnel = ({ data, formatCurrency, onStageClick }) => {
             <g
               key={stage.stage}
               className="cursor-pointer"
-              onClick={() => onStageClick?.(stage.stage)}
+              onClick={() => onStageClick?.(stage.stageKey ?? stage.stage)}
               style={{ cursor: "pointer" }}
             >
               <polygon points={points} fill={stage.fill} opacity="0.9" className="drop-shadow-sm hover:opacity-75 transition-opacity" />
@@ -167,7 +167,7 @@ const WaveFunnel = ({ data, formatCurrency, onStageClick }) => {
             <g
               key={stage.stage}
               style={{ cursor: "pointer" }}
-              onClick={() => onStageClick?.(stage.stage)}
+              onClick={() => onStageClick?.(stage.stageKey ?? stage.stage)}
             >
               <path d={d} fill={stage.fill} opacity="0.88" className="hover:opacity-70 transition-opacity" />
               {/* Separator line */}
@@ -195,7 +195,7 @@ const WaveFunnel = ({ data, formatCurrency, onStageClick }) => {
 // ── Donut chart (Recharts) ──────────────────────────────────────────────────
 
 const DonutFunnel = ({ data, formatCurrency, onStageClick }) => {
-  const donutData = data.map((s) => ({ name: s.stage, value: s.count, fill: s.fill, rawValue: s.value, stageKey: s.stage }));
+  const donutData = data.map((s) => ({ name: s.stage, value: s.count, fill: s.fill, rawValue: s.value, stageKey: s.stageKey ?? s.stage }));
   const totalCount = data.reduce((s, d) => s + d.count, 0);
   const totalValue = data.reduce((s, d) => s + d.value, 0);
 
@@ -268,7 +268,7 @@ const RadialFunnel = ({ data, formatCurrency, onStageClick }) => {
     fill:     s.fill,
     count:    s.count,
     rawValue: s.value,
-    stageKey: s.stage,
+    stageKey: s.stageKey ?? s.stage,
   }));
 
   const RadialTooltip = ({ active, payload }) => {
