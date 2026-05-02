@@ -28,6 +28,7 @@ import AccountSettings from "./pages/AccountSettings";
 import AdminDashboard from "./pages/admin-dashboard";
 import Notifications from "./pages/notifications";
 import ForecastPage from "./pages/forecast";
+import ReportsPage from "./pages/reports";
 
 const Routes = () => {
   return (
@@ -138,6 +139,14 @@ const Routes = () => {
                   element={
                     <ProtectedRoute>
                       <ForecastPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/reports"
+                  element={
+                    <ProtectedRoute>
+                      <ReportsPage />
                     </ProtectedRoute>
                   }
                 />

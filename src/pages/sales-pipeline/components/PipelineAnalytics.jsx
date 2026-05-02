@@ -20,6 +20,7 @@ import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
+import FunnelChart from "./FunnelChart";
 
 const PipelineAnalytics = ({ deals }) => {
   const [activeTab, setActiveTab] = useState("overview");
@@ -394,62 +395,19 @@ const PipelineAnalytics = ({ deals }) => {
 
         {activeTab === "funnel" && (
           <div className="space-y-6">
+            {/* Multi-type funnel chart */}
             <div>
-              <h4 className="text-sm font-semibold text-card-foreground mb-3">
-                Sales Funnel - Deal Progression
+              <h4 className="text-sm font-semibold text-card-foreground mb-1">
+                Sales Funnel — Deal Progression
               </h4>
-              <div className="space-y-3">
-                {funnelData.map((stage, idx) => {
-                  const maxCount = Math.max(...funnelData.map((s) => s.count));
-                  const widthPercent =
-                    maxCount > 0 ? (stage.count / maxCount) * 100 : 0;
-                  const conversionRate =
-                    idx > 0
-                      ? funnelData[idx - 1].count > 0
-                        ? (
-                            (stage.count / funnelData[idx - 1].count) *
-                            100
-                          ).toFixed(1)
-                        : 0
-                      : 100;
-
-                  return (
-                    <div key={idx} className="flex items-center gap-4">
-                      <div className="w-32 text-sm font-medium text-card-foreground">
-                        {stage.stage}
-                      </div>
-                      <div className="flex-1">
-                        <div className="relative">
-                          <div
-                            className="h-12 rounded-lg flex items-center justify-between px-4 transition-all"
-                            style={{
-                              backgroundColor: stage.fill,
-                              width: `${widthPercent}%`,
-                              minWidth: "200px",
-                            }}
-                          >
-                            <span className="text-white font-bold">
-                              {stage.count} deals
-                            </span>
-                            <span className="text-white font-semibold">
-                              {formatCurrency(stage.value, preferredCurrency)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="w-20 text-right">
-                        <span className="text-sm font-medium text-muted-foreground">
-                          {conversionRate}%
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                Switch between visualization styles using the buttons below
+              </p>
+              <FunnelChart funnelData={funnelData} showSwitcher />
             </div>
 
             {/* Funnel Metrics */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-4 pt-2 border-t border-border">
               <div className="bg-muted/30 rounded-lg p-3">
                 <div className="flex items-center space-x-2 mb-1">
                   <Icon name="Users" size={16} className="text-primary" />
@@ -469,20 +427,16 @@ const PipelineAnalytics = ({ deals }) => {
                 <div className="flex items-center space-x-2 mb-1">
                   <Icon name="Target" size={16} className="text-success" />
                   <span className="text-xs text-muted-foreground">
-                    Conversion Rate
+                    Lead → Won
                   </span>
                 </div>
                 <p className="text-lg font-bold text-success">
                   {funnelData[0]?.count > 0
-                    ? (
-                        (funnelData[4]?.count / funnelData[0]?.count) *
-                        100
-                      ).toFixed(1)
-                    : 0}
-                  %
+                    ? ((funnelData[4]?.count / funnelData[0]?.count) * 100).toFixed(1)
+                    : 0}%
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Lead to Won
+                  Conversion rate
                 </p>
               </div>
 
@@ -496,8 +450,7 @@ const PipelineAnalytics = ({ deals }) => {
                 <p className="text-lg font-bold text-warning">
                   {getTotalDeals() > 0
                     ? ((getWonDeals() / getTotalDeals()) * 100).toFixed(1)
-                    : 0}
-                  %
+                    : 0}%
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">Overall</p>
               </div>
