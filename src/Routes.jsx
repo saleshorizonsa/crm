@@ -27,6 +27,7 @@ import Settings from "./pages/settings";
 import AccountSettings from "./pages/AccountSettings";
 import AdminDashboard from "./pages/admin-dashboard";
 import Notifications from "./pages/notifications";
+import ForecastPage from "./pages/forecast";
 
 const Routes = () => {
   return (
@@ -129,6 +130,14 @@ const Routes = () => {
                   element={
                     <ProtectedRoute>
                       <Notifications />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/forecast"
+                  element={
+                    <ProtectedRoute>
+                      <ForecastPage />
                     </ProtectedRoute>
                   }
                 />
