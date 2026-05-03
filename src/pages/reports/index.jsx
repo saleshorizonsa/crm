@@ -5,17 +5,13 @@ import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
 import DateRangePicker, { resolveDateRange } from "../../components/ui/DateRangePicker";
 import { useAuth } from "../../contexts/AuthContext";
 import { reportService } from "../../services/supabaseService";
-import ReportKPIBar          from "./components/ReportKPIBar";
-import RevenueOverTime        from "./components/RevenueOverTime";
-import WinLossChart           from "./components/WinLossChart";
-import LeadSourcesChart       from "./components/LeadSourcesChart";
-import DealVelocityChart      from "./components/DealVelocityChart";
-import TeamPerformanceTable   from "./components/TeamPerformanceTable";
-import TopDealsTable          from "./components/TopDealsTable";
-import ExecutiveSummary       from "./components/ExecutiveSummary";
-import ConversionFunnelChart  from "./components/ConversionFunnelChart";
-import SalesVelocityCard      from "./components/SalesVelocityCard";
-import DealAgingChart         from "./components/DealAgingChart";
+import ReportKPIBar        from "./components/ReportKPIBar";
+import RevenueOverTime     from "./components/RevenueOverTime";
+import WinLossChart        from "./components/WinLossChart";
+import LeadSourcesChart    from "./components/LeadSourcesChart";
+import DealVelocityChart   from "./components/DealVelocityChart";
+import TeamPerformanceTable from "./components/TeamPerformanceTable";
+import TopDealsTable       from "./components/TopDealsTable";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -30,16 +26,15 @@ const toYMD = (d) => {
 
 const Skeleton = () => (
   <div className="animate-pulse space-y-6">
-    <div className="h-28 bg-muted rounded-lg" />
-    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-      {[...Array(8)].map((_, i) => <div key={i} className="h-24 bg-muted rounded-lg" />)}
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+      {[...Array(6)].map((_, i) => <div key={i} className="h-24 bg-muted rounded-lg" />)}
     </div>
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 h-64 bg-muted rounded-lg" />
       <div className="h-64 bg-muted rounded-lg" />
     </div>
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {[...Array(4)].map((_, i) => <div key={i} className="h-64 bg-muted rounded-lg" />)}
+      {[...Array(2)].map((_, i) => <div key={i} className="h-64 bg-muted rounded-lg" />)}
     </div>
     <div className="h-64 bg-muted rounded-lg" />
     <div className="h-56 bg-muted rounded-lg" />
@@ -221,43 +216,31 @@ const ReportsPage = () => {
         {!isLoading && !fetchError && (period.startDate || period.special === "all") && (
           <div ref={contentRef} className="space-y-6">
 
-            {/* 1 — Executive Summary */}
-            {rawData.deals.length > 0 && (
-              <ExecutiveSummary deals={rawData.deals} prevDeals={rawData.prevDeals} role={role} />
-            )}
+            {/* KPI Summary */}
+            <ReportKPIBar deals={rawData.deals} prevDeals={rawData.prevDeals} role={role} />
 
-            {/* 2 — KPI Bar (8 metrics) */}
-            <ReportKPIBar deals={rawData.deals} prevDeals={rawData.prevDeals} contacts={rawData.contacts} role={role} />
-
-            {/* 3 — Revenue Over Time + Win/Loss */}
+            {/* Row 1: Revenue over time + Win/Loss */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2"><RevenueOverTime deals={rawData.deals} /></div>
-              <div><WinLossChart deals={rawData.deals} /></div>
-            </div>
-
-            {/* 4 — Conversion Funnel + Deal Aging */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <ConversionFunnelChart deals={rawData.deals} />
-              <DealAgingChart deals={rawData.deals} />
-            </div>
-
-            {/* 5 — Sales Velocity + Lead Sources */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <SalesVelocityCard deals={rawData.deals} prevDeals={rawData.prevDeals} />
               <div className="lg:col-span-2">
-                <LeadSourcesChart contacts={rawData.contacts} deals={rawData.deals} />
+                <RevenueOverTime deals={rawData.deals} />
+              </div>
+              <div>
+                <WinLossChart deals={rawData.deals} />
               </div>
             </div>
 
-            {/* 6 — Deal Velocity + Pipeline Health */}
-            <DealVelocityChart deals={rawData.deals} />
+            {/* Row 2: Deal Velocity + Lead Sources */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <DealVelocityChart deals={rawData.deals} />
+              <LeadSourcesChart contacts={rawData.contacts} deals={rawData.deals} />
+            </div>
 
-            {/* 7 — Team Performance (supervisor+) */}
+            {/* Row 3: Team Performance (supervisor+ only) */}
             {showTeam && rawData.teamMembers.length > 0 && (
               <TeamPerformanceTable deals={rawData.deals} teamMembers={rawData.teamMembers} />
             )}
 
-            {/* 8 — Top Deals Table */}
+            {/* Row 4: Top Deals Table */}
             <TopDealsTable deals={rawData.deals} limit={25} />
 
             {/* Empty state */}

@@ -32,9 +32,8 @@ const Card = ({ label, value, subtitle, icon, iconBg, iconColor, valColor, prevV
   );
 };
 
-const ReportKPIBar = ({ deals = [], prevDeals = [], contacts = [], role }) => {
+const ReportKPIBar = ({ deals = [], prevDeals = [], role }) => {
   const { formatCurrency } = useCurrency();
-  const today = new Date();
 
   const won      = deals.filter((d) => d.stage === "won");
   const lost     = deals.filter((d) => d.stage === "lost");
@@ -43,8 +42,7 @@ const ReportKPIBar = ({ deals = [], prevDeals = [], contacts = [], role }) => {
   const winRate  = closed > 0 ? Math.round((won.length / closed) * 100) : 0;
   const revenue  = won.reduce((s, d) => s + (d.amount || 0), 0);
   const pipeline = open.reduce((s, d) => s + (d.amount || 0), 0);
-  const avgDeal  = won.length > 0 ? revenue / won.length : 0;
-  const overdue  = open.filter((d) => d.expected_close_date && new Date(d.expected_close_date) < today).length;
+  const avgDeal  = deals.length > 0 ? revenue / Math.max(won.length, 1) : 0;
 
   const pWon     = prevDeals.filter((d) => d.stage === "won");
   const pRevenue = pWon.reduce((s, d) => s + (d.amount || 0), 0);
@@ -52,15 +50,13 @@ const ReportKPIBar = ({ deals = [], prevDeals = [], contacts = [], role }) => {
   const pWinRate = pClosed > 0 ? Math.round((pWon.length / pClosed) * 100) : 0;
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
       <Card label="Revenue" value={formatCurrency(revenue)} subtitle="Won deals" icon="DollarSign" iconBg="bg-emerald-100" iconColor="text-emerald-600" valColor="text-emerald-700" prevValue={pRevenue} />
       <Card label="Won Deals" value={won.length} subtitle="Closed won" icon="CheckCircle" iconBg="bg-blue-100" iconColor="text-blue-600" valColor="text-blue-700" prevValue={pWon.length} />
       <Card label="Win Rate" value={`${winRate}%`} subtitle="Won / Closed" icon="Target" iconBg="bg-violet-100" iconColor="text-violet-600" valColor="text-violet-700" prevValue={pWinRate} />
       <Card label="Pipeline" value={formatCurrency(pipeline)} subtitle="Open deals" icon="TrendingUp" iconBg="bg-amber-100" iconColor="text-amber-600" valColor="text-amber-700" />
       <Card label="Total Deals" value={deals.length} subtitle="All stages" icon="BarChart2" iconBg="bg-slate-100" iconColor="text-slate-600" valColor="text-slate-700" prevValue={prevDeals.length} />
       <Card label="Avg Deal" value={formatCurrency(avgDeal)} subtitle="Per won deal" icon="Award" iconBg="bg-rose-100" iconColor="text-rose-600" valColor="text-rose-700" />
-      <Card label="New Contacts" value={contacts.length} subtitle="This period" icon="Users" iconBg="bg-cyan-100" iconColor="text-cyan-600" valColor="text-cyan-700" />
-      <Card label="Overdue" value={overdue} subtitle="Past close date" icon="AlertTriangle" iconBg="bg-red-100" iconColor="text-red-600" valColor={overdue > 0 ? "text-red-600" : "text-slate-700"} />
     </div>
   );
 };
