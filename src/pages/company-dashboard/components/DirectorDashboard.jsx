@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import MetricsCard from "./MetricsCard";
 import SalesChart from "./SalesChart";
 import ActivityFeed from "./ActivityFeed";
@@ -61,6 +62,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const { user, userProfile } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { t } = useLanguage();
+  const navigate = useNavigate();
 
   // Helper to convert deal amount to user's preferred currency
   const getConvertedAmount = (deal) => {
@@ -1586,8 +1588,22 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   };
 
   const handleActionClick = (action) => {
-    console.log("Action clicked:", action);
-    // Handle action navigation based on type
+    switch (action.type) {
+      case "review_deal":
+        navigate("/sales-pipeline?stage=negotiation");
+        break;
+      case "performance_review":
+        navigate("/sales-pipeline");
+        break;
+      case "urgent_follow_up":
+        navigate("/task-management");
+        break;
+      case "approve_target":
+      case "budget_review":
+      case "team_meeting":
+      default:
+        navigate("/sales-pipeline");
+    }
   };
 
   const handleCompanySelect = (company) => {

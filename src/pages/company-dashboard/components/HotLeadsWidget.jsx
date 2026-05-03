@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import LeadScoreBadge from "../../../components/ui/LeadScoreBadge";
 import Icon from "../../../components/AppIcon";
@@ -6,6 +7,7 @@ import Icon from "../../../components/AppIcon";
 const HotLeadsWidget = ({ companyId }) => {
   const [leads, setLeads] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!companyId) return;
@@ -44,7 +46,13 @@ const HotLeadsWidget = ({ companyId }) => {
           <Icon name="TrendingUp" size={18} className="text-red-500" />
           Hot Leads
         </h3>
-        <span className="text-xs text-gray-500">Top 5 by score</span>
+        <button
+          onClick={() => navigate("/sales-pipeline?stage=lead")}
+          className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+        >
+          View Pipeline
+          <Icon name="ArrowRight" size={12} />
+        </button>
       </div>
 
       {isLoading ? (
@@ -59,7 +67,11 @@ const HotLeadsWidget = ({ companyId }) => {
       ) : (
         <ul className="space-y-3">
           {leads.map((lead) => (
-            <li key={lead.id} className="flex items-center justify-between gap-3">
+            <li
+              key={lead.id}
+              onClick={() => navigate("/sales-pipeline?stage=lead")}
+              className="flex items-center justify-between gap-3 cursor-pointer rounded-lg hover:bg-gray-50 -mx-2 px-2 py-1 transition-colors"
+            >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 text-xs font-semibold text-primary">
                   {lead.first_name?.[0]}{lead.last_name?.[0]}
