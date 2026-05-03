@@ -24,6 +24,7 @@ import HotLeadsWidget from "./HotLeadsWidget";
 import SalesForecast from "./SalesForecast";
 import MetricInsightModal from "./MetricInsightModal";
 import { supabase } from "../../../lib/supabase";
+import DraggableDashboard from "../../../components/DraggableDashboard";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
 import {
   BarChart,
@@ -1416,6 +1417,250 @@ const EnhancedSupervisorDashboard = ({
     );
   }
 
+  const WIDGETS = {
+    revenue: {
+      title: "Key Metrics",
+      component: (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <MetricsCard
+              title="Total Revenue"
+              value={formatCurrency(executiveMetrics?.totalRevenue || 0)}
+              change="+12.5%"
+              trend="up"
+              icon="💰"
+              onClick={() => handleMetricClick("totalRevenue")}
+            />
+            <MetricsCard
+              title="Active Deals"
+              value={`${metrics?.totalDeals || 0}`}
+              change="+8.2%"
+              trend="up"
+              icon="🤝"
+              onClick={() => handleMetricClick("activePipeline")}
+            />
+            <MetricsCard
+              title="Contacts"
+              value={`${metrics?.totalContacts || 0}`}
+              change="+5.4%"
+              trend="up"
+              icon="👥"
+            />
+            <MetricsCard
+              title="Tasks"
+              value={`${metrics?.totalTasks || 0}`}
+              change="-2.1%"
+              trend="down"
+              icon="📋"
+            />
+          </div>
+          {executiveMetrics && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-4">
+              <MetricsCard
+                title="Pipeline Value"
+                value={formatCurrency(executiveMetrics.activePipeline)}
+                icon="TrendingUp"
+                trend={8}
+                iconColor="text-blue-600"
+                iconBgColor="bg-blue-100"
+                onClick={() => handleMetricClick("activePipeline")}
+              />
+              <MetricsCard
+                title="Win Rate"
+                value={`${executiveMetrics.winRate.toFixed(1)}%`}
+                icon="Target"
+                trend={5}
+                iconColor="text-purple-600"
+                iconBgColor="bg-purple-100"
+                onClick={() => handleMetricClick("winRate")}
+              />
+              <MetricsCard
+                title="Won Deals"
+                value={`${executiveMetrics.wonDeals}`}
+                subtitle={`of ${executiveMetrics.totalDeals} total`}
+                icon="Briefcase"
+                iconColor="text-green-600"
+                iconBgColor="bg-green-100"
+                onClick={() => handleMetricClick("dealsClosed")}
+              />
+              <MetricsCard
+                title="Team Members"
+                value={`${subordinates.length + 1}`}
+                subtitle="including you"
+                icon="Users"
+                iconColor="text-orange-600"
+                iconBgColor="bg-orange-100"
+                onClick={() => handleMetricClick("teamPerformance")}
+              />
+            </div>
+          )}
+        </>
+      ),
+    },
+    target: {
+      title: "Performance Trend",
+      component: (
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Performance Trend
+            </h3>
+            <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
+              <button
+                onClick={() => setTrendPeriod("month")}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  trendPeriod === "month"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-800"
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                onClick={() => setTrendPeriod("quarter")}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  trendPeriod === "quarter"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-800"
+                }`}
+              >
+                Quarterly
+              </button>
+              <button
+                onClick={() => setTrendPeriod("year")}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  trendPeriod === "year"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-800"
+                }`}
+              >
+                Yearly
+              </button>
+            </div>
+          </div>
+          {performanceTrendData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={performanceTrendData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="period" />
+                <YAxis
+                  tickFormatter={(value) => {
+                    if (value >= 1000000)
+                      return `${(value / 1000000).toFixed(1)}M`;
+                    if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
+                    return value;
+                  }}
+                />
+                <Tooltip
+                  formatter={(value, name) => [
+                    name === "revenue" ? formatCurrency(value) : value,
+                    name === "revenue" ? "Revenue" : "Deals",
+                  ]}
+                />
+                <Bar
+                  dataKey="revenue"
+                  fill="#3B82F6"
+                  name="revenue"
+                  radius={[4, 4, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-64 text-gray-500">
+              <div className="text-center">
+                <Icon
+                  name="BarChart2"
+                  size={48}
+                  className="mx-auto mb-2 text-gray-300"
+                />
+                <p>No performance data available</p>
+              </div>
+            </div>
+          )}
+          {performanceTrendData.length > 0 && (
+            <div className="mt-4 grid grid-cols-2 gap-4 pt-4 border-t">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {formatCurrency(
+                    performanceTrendData.reduce(
+                      (sum, d) => sum + d.revenue,
+                      0,
+                    ),
+                  )}
+                </div>
+                <div className="text-sm text-gray-500">Total Revenue</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {performanceTrendData.reduce((sum, d) => sum + d.deals, 0)}
+                </div>
+                <div className="text-sm text-gray-500">Deals Closed</div>
+              </div>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    pipeline: {
+      title: "Sales Performance",
+      component: (
+        <div className="bg-white rounded-lg shadow p-6 h-full">
+          <SalesChart
+            data={salesData}
+            pipelineData={pipelineData}
+            title="Sales Performance"
+            showTypeSelector={true}
+          />
+        </div>
+      ),
+    },
+    hotleads: {
+      title: "Hot Leads",
+      component: <HotLeadsWidget companyId={company?.id} />,
+    },
+    tasks: {
+      title: "Recent Activity",
+      component: (
+        <div className="bg-white rounded-lg shadow">
+          <ActivityFeed
+            activities={filteredActivities}
+            title="Recent Activity"
+            companyId={company?.id}
+            users={subordinates}
+            currentUserId={userProfile?.id}
+          />
+        </div>
+      ),
+    },
+    forecast: {
+      title: "Sales Forecast",
+      component: (
+        <SalesForecast
+          companyId={company?.id}
+          userId={user?.id}
+          role={userProfile?.role}
+        />
+      ),
+    },
+    leaderboard: {
+      title: "Team Performance",
+      component: (
+        <div className="bg-white rounded-lg shadow p-6 h-full">
+          <TeamPerformance data={teamData} />
+        </div>
+      ),
+    },
+    teamperf: {
+      title: "Pipeline",
+      component: (
+        <PipelineChart
+          pipelineData={pipelineData}
+          selectedCompany={company}
+        />
+      ),
+    },
+  };
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -1556,8 +1801,8 @@ const EnhancedSupervisorDashboard = ({
 
       {/* Overview Tab */}
       {activeView === "overview" && (
-        <div className="space-y-8">
-          {/* Enhanced Sales Targets Card */}
+        <div className="space-y-6">
+          {/* Enhanced Sales Targets Card - pinned above the draggable grid */}
           {targetsWithRecalculatedProgress.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between mb-6">
@@ -2054,219 +2299,8 @@ const EnhancedSupervisorDashboard = ({
             </div>
           )}
 
-          {/* Metrics Cards - First Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <MetricsCard
-              title="Total Revenue"
-              value={formatCurrency(executiveMetrics?.totalRevenue || 0)}
-              change="+12.5%"
-              trend="up"
-              icon="💰"
-              onClick={() => handleMetricClick("totalRevenue")}
-            />
-            <MetricsCard
-              title="Active Deals"
-              value={`${metrics?.totalDeals || 0}`}
-              change="+8.2%"
-              trend="up"
-              icon="🤝"
-              onClick={() => handleMetricClick("activePipeline")}
-            />
-            <MetricsCard
-              title="Contacts"
-              value={`${metrics?.totalContacts || 0}`}
-              change="+5.4%"
-              trend="up"
-              icon="👥"
-            />
-            <MetricsCard
-              title="Tasks"
-              value={`${metrics?.totalTasks || 0}`}
-              change="-2.1%"
-              trend="down"
-              icon="📋"
-            />
-          </div>
-
-          {/* Metrics Cards - Second Row */}
-          {executiveMetrics && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <MetricsCard
-                title="Pipeline Value"
-                value={formatCurrency(executiveMetrics.activePipeline)}
-                icon="TrendingUp"
-                trend={8}
-                iconColor="text-blue-600"
-                iconBgColor="bg-blue-100"
-                onClick={() => handleMetricClick("activePipeline")}
-              />
-              <MetricsCard
-                title="Win Rate"
-                value={`${executiveMetrics.winRate.toFixed(1)}%`}
-                icon="Target"
-                trend={5}
-                iconColor="text-purple-600"
-                iconBgColor="bg-purple-100"
-                onClick={() => handleMetricClick("winRate")}
-              />
-              <MetricsCard
-                title="Won Deals"
-                value={`${executiveMetrics.wonDeals}`}
-                subtitle={`of ${executiveMetrics.totalDeals} total`}
-                icon="Briefcase"
-                iconColor="text-green-600"
-                iconBgColor="bg-green-100"
-                onClick={() => handleMetricClick("dealsClosed")}
-              />
-              <MetricsCard
-                title="Team Members"
-                value={`${subordinates.length + 1}`}
-                subtitle="including you"
-                icon="Users"
-                iconColor="text-orange-600"
-                iconBgColor="bg-orange-100"
-                onClick={() => handleMetricClick("teamPerformance")}
-              />
-            </div>
-          )}
-
-          {/* Performance Trend Card */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Performance Trend
-              </h3>
-              {/* Trend Period Toggle */}
-              <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
-                <button
-                  onClick={() => setTrendPeriod("month")}
-                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                    trendPeriod === "month"
-                      ? "bg-white text-blue-600 shadow-sm"
-                      : "text-gray-600 hover:text-gray-800"
-                  }`}
-                >
-                  Monthly
-                </button>
-                <button
-                  onClick={() => setTrendPeriod("quarter")}
-                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                    trendPeriod === "quarter"
-                      ? "bg-white text-blue-600 shadow-sm"
-                      : "text-gray-600 hover:text-gray-800"
-                  }`}
-                >
-                  Quarterly
-                </button>
-                <button
-                  onClick={() => setTrendPeriod("year")}
-                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                    trendPeriod === "year"
-                      ? "bg-white text-blue-600 shadow-sm"
-                      : "text-gray-600 hover:text-gray-800"
-                  }`}
-                >
-                  Yearly
-                </button>
-              </div>
-            </div>
-            {performanceTrendData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={performanceTrendData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="period" />
-                  <YAxis
-                    tickFormatter={(value) => {
-                      if (value >= 1000000)
-                        return `${(value / 1000000).toFixed(1)}M`;
-                      if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
-                      return value;
-                    }}
-                  />
-                  <Tooltip
-                    formatter={(value, name) => [
-                      name === "revenue" ? formatCurrency(value) : value,
-                      name === "revenue" ? "Revenue" : "Deals",
-                    ]}
-                  />
-                  <Bar
-                    dataKey="revenue"
-                    fill="#3B82F6"
-                    name="revenue"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-64 text-gray-500">
-                <div className="text-center">
-                  <Icon
-                    name="BarChart2"
-                    size={48}
-                    className="mx-auto mb-2 text-gray-300"
-                  />
-                  <p>No performance data available</p>
-                </div>
-              </div>
-            )}
-            {performanceTrendData.length > 0 && (
-              <div className="mt-4 grid grid-cols-2 gap-4 pt-4 border-t">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {formatCurrency(
-                      performanceTrendData.reduce(
-                        (sum, d) => sum + d.revenue,
-                        0,
-                      ),
-                    )}
-                  </div>
-                  <div className="text-sm text-gray-500">Total Revenue</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">
-                    {performanceTrendData.reduce((sum, d) => sum + d.deals, 0)}
-                  </div>
-                  <div className="text-sm text-gray-500">Deals Closed</div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
-            <div className="bg-white rounded-lg shadow p-6 h-full">
-              <SalesChart
-                data={salesData}
-                pipelineData={pipelineData}
-                title="Sales Performance"
-                showTypeSelector={true}
-              />
-            </div>
-            <div className="bg-white rounded-lg shadow p-6 h-full">
-              <TeamPerformance data={teamData} />
-            </div>
-          </div>
-
-          {/* Hot Leads + Forecast */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <HotLeadsWidget companyId={company?.id} />
-            <SalesForecast
-              companyId={company?.id}
-              userId={user?.id}
-              role={userProfile?.role}
-            />
-          </div>
-
-          {/* Activity Feed */}
-          <div className="bg-white rounded-lg shadow">
-            <ActivityFeed
-              activities={filteredActivities}
-              title="Recent Activity"
-              companyId={company?.id}
-              users={subordinates}
-              currentUserId={userProfile?.id}
-            />
-          </div>
+          {/* Draggable grid */}
+          <DraggableDashboard widgets={WIDGETS} role={userProfile?.role} />
         </div>
       )}
 

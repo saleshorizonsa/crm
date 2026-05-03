@@ -25,6 +25,8 @@ import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
 import MetricInsightModal from "./MetricInsightModal";
 import SalesForecast from "./SalesForecast";
+import HotLeadsWidget from "./HotLeadsWidget";
+import DraggableDashboard from "../../../components/DraggableDashboard";
 import { supabase } from "../../../lib/supabase";
 import { Edit2 } from "lucide-react";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
@@ -1351,6 +1353,254 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     );
   }
 
+  const WIDGETS = {
+    revenue: {
+      title: "Key Metrics",
+      component: (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <MetricsCard
+              title="Total Revenue"
+              value={formatCurrency(executiveMetrics?.totalRevenue || 0)}
+              change="+12.5%"
+              trend="up"
+              icon="💰"
+              onClick={() => handleMetricClick("totalRevenue")}
+            />
+            <MetricsCard
+              title="Active Deals"
+              value={`${metrics?.totalDeals || 0}`}
+              change="+8.2%"
+              trend="up"
+              icon="🤝"
+              onClick={() => handleMetricClick("activePipeline")}
+            />
+            <MetricsCard
+              title="Contacts"
+              value={`${metrics?.totalContacts || 0}`}
+              change="+5.4%"
+              trend="up"
+              icon="👥"
+            />
+            <MetricsCard
+              title="Tasks"
+              value={`${metrics?.totalTasks || 0}`}
+              change="-2.1%"
+              trend="down"
+              icon="📋"
+            />
+          </div>
+          {executiveMetrics && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-4">
+              <MetricsCard
+                title="Pipeline Value"
+                value={formatCurrency(executiveMetrics.activePipeline)}
+                icon="TrendingUp"
+                trend={8}
+                iconColor="text-blue-600"
+                iconBgColor="bg-blue-100"
+                onClick={() => handleMetricClick("activePipeline")}
+              />
+              <MetricsCard
+                title="Win Rate"
+                value={`${executiveMetrics.winRate.toFixed(1)}%`}
+                icon="Target"
+                trend={5}
+                iconColor="text-purple-600"
+                iconBgColor="bg-purple-100"
+                onClick={() => handleMetricClick("winRate")}
+              />
+              <MetricsCard
+                title="Won Deals"
+                value={`${executiveMetrics.wonDeals}`}
+                subtitle={`of ${executiveMetrics.totalDeals} total`}
+                icon="Briefcase"
+                iconColor="text-green-600"
+                iconBgColor="bg-green-100"
+                onClick={() => handleMetricClick("dealsClosed")}
+              />
+              <MetricsCard
+                title="Team Members"
+                value={`${allSubordinates.length + 1}`}
+                subtitle="including you"
+                icon="Users"
+                iconColor="text-orange-600"
+                iconBgColor="bg-orange-100"
+                onClick={() => handleMetricClick("teamPerformance")}
+              />
+            </div>
+          )}
+        </>
+      ),
+    },
+    target: {
+      title: "Performance Trend",
+      component: (
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Performance Trend
+            </h3>
+            <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
+              <button
+                onClick={() => setTrendPeriod("month")}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  trendPeriod === "month"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-800"
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                onClick={() => setTrendPeriod("quarter")}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  trendPeriod === "quarter"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-800"
+                }`}
+              >
+                Quarterly
+              </button>
+              <button
+                onClick={() => setTrendPeriod("year")}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  trendPeriod === "year"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-800"
+                }`}
+              >
+                Yearly
+              </button>
+            </div>
+          </div>
+          {performanceTrendData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={performanceTrendData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="period" />
+                <YAxis
+                  tickFormatter={(value) => {
+                    if (value >= 1000000)
+                      return `${(value / 1000000).toFixed(1)}M`;
+                    if (value >= 1000)
+                      return `${(value / 1000).toFixed(0)}K`;
+                    return value;
+                  }}
+                />
+                <Tooltip
+                  formatter={(value, name) => [
+                    name === "revenue" ? formatCurrency(value) : value,
+                    name === "revenue" ? "Revenue" : "Deals",
+                  ]}
+                />
+                <Bar
+                  dataKey="revenue"
+                  fill="#3B82F6"
+                  name="revenue"
+                  radius={[4, 4, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-64 text-gray-500">
+              <div className="text-center">
+                <Icon
+                  name="BarChart2"
+                  size={48}
+                  className="mx-auto mb-2 text-gray-300"
+                />
+                <p>No performance data available</p>
+              </div>
+            </div>
+          )}
+          {performanceTrendData.length > 0 && (
+            <div className="mt-4 grid grid-cols-2 gap-4 pt-4 border-t">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {formatCurrency(
+                    performanceTrendData.reduce(
+                      (sum, d) => sum + d.revenue,
+                      0,
+                    ),
+                  )}
+                </div>
+                <div className="text-sm text-gray-500">Total Revenue</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {performanceTrendData.reduce(
+                    (sum, d) => sum + d.deals,
+                    0,
+                  )}
+                </div>
+                <div className="text-sm text-gray-500">Deals Closed</div>
+              </div>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    pipeline: {
+      title: "Sales Performance",
+      component: (
+        <div className="bg-white rounded-lg shadow p-6 h-full">
+          <SalesChart
+            data={salesData}
+            pipelineData={pipelineData}
+            title="Sales Performance"
+            showTypeSelector={true}
+          />
+        </div>
+      ),
+    },
+    hotleads: {
+      title: "Hot Leads",
+      component: <HotLeadsWidget companyId={company?.id} />,
+    },
+    tasks: {
+      title: "Recent Activity",
+      component: (
+        <div className="bg-white rounded-lg shadow">
+          <ActivityFeed
+            activities={filteredActivities}
+            title="Recent Activity"
+            companyId={company?.id}
+            users={allSubordinates}
+            currentUserId={user?.id}
+          />
+        </div>
+      ),
+    },
+    forecast: {
+      title: "Sales Forecast",
+      component: (
+        <SalesForecast
+          companyId={company?.id}
+          userId={effectiveUser?.id}
+          role={effectiveUserProfile?.role}
+        />
+      ),
+    },
+    leaderboard: {
+      title: "Team Performance",
+      component: (
+        <div className="bg-white rounded-lg shadow p-6 h-full">
+          <TeamPerformance data={teamData} />
+        </div>
+      ),
+    },
+    teamperf: {
+      title: "Pipeline",
+      component: (
+        <PipelineChart
+          pipelineData={pipelineData}
+          selectedCompany={company}
+        />
+      ),
+    },
+  };
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -1541,8 +1791,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
           {/* Overview Tab */}
           {activeView === "overview" && (
-            <div className="space-y-8">
-              {/* Enhanced Sales Target Card (if assigned) - Show if manager has any targets OR if there's a filter selected */}
+            <div className="space-y-6">
+              {/* Enhanced Sales Targets Card - pinned above the draggable grid */}
               {(myTargets.length > 0 ||
                 selectedMonth ||
                 selectedQuarter ||
@@ -1568,9 +1818,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       View Details
                     </Button>
                   </div>
-
-                  {/* Summary Stats */}
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                     <div className="p-3 bg-blue-50 rounded-lg">
                       <p className="text-xs text-blue-600 font-medium">
                         Total Target
@@ -1659,484 +1907,11 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       </p>
                     </div>
                   </div>
-
-                  {/* Target Cards with Progress - Only show if not synthetic */}
-                  {!targetsWithRecalculatedProgress[0]?.is_synthetic && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                      {targetsWithRecalculatedProgress.map((target) => {
-                        const progressAmount =
-                          target.calculated_progress ||
-                          target.progress_amount ||
-                          0;
-                        const progress =
-                          (parseFloat(progressAmount) /
-                            parseFloat(target.target_amount || 1)) *
-                          100;
-                        return (
-                          <div
-                            key={target.id}
-                            className="border border-gray-200 rounded-lg p-4"
-                          >
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm font-medium text-gray-900 capitalize">
-                                {target.period_type} Target
-                              </span>
-                              <span
-                                className={`text-xs px-2 py-1 rounded-full ${
-                                  progress >= 100
-                                    ? "bg-green-100 text-green-800"
-                                    : progress >= 70
-                                      ? "bg-blue-100 text-blue-800"
-                                      : progress >= 40
-                                        ? "bg-amber-100 text-amber-800"
-                                        : "bg-red-100 text-red-800"
-                                }`}
-                              >
-                                {Math.round(progress)}%
-                              </span>
-                            </div>
-                            <div className="flex items-baseline gap-2 mb-2">
-                              <span className="text-2xl font-bold text-gray-900">
-                                {formatCurrency(progressAmount)}
-                              </span>
-                              <span className="text-sm text-gray-500">
-                                / {formatCurrency(target.target_amount)}
-                              </span>
-                            </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
-                              <div
-                                className={`h-2 rounded-full ${
-                                  progress >= 100
-                                    ? "bg-green-500"
-                                    : progress >= 70
-                                      ? "bg-blue-500"
-                                      : progress >= 40
-                                        ? "bg-amber-500"
-                                        : "bg-red-500"
-                                }`}
-                                style={{ width: `${Math.min(progress, 100)}%` }}
-                              />
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {new Date(
-                                target.period_start,
-                              ).toLocaleDateString()}{" "}
-                              -{" "}
-                              {new Date(target.period_end).toLocaleDateString()}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Message when showing period with no targets */}
-                  {targetsWithRecalculatedProgress[0]?.is_synthetic && (
-                    <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-sm text-blue-800">
-                        <Icon name="Info" size={16} className="inline mr-2" />
-                        No targets assigned for this period, showing revenue
-                        only.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Team Breakdown Toggle */}
-                  {allSubordinates.length > 0 && (
-                    <div className="border-t border-gray-200 pt-4">
-                      <button
-                        onClick={() => setShowTeamBreakdown(!showTeamBreakdown)}
-                        className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Icon
-                            name="Users"
-                            size={18}
-                            className="text-blue-600"
-                          />
-                          <span className="text-sm font-medium text-gray-900">
-                            Team Achievement Breakdown
-                          </span>
-                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                            {allSubordinates.length} members
-                          </span>
-                        </div>
-                        <Icon
-                          name={showTeamBreakdown ? "ChevronUp" : "ChevronDown"}
-                          size={18}
-                          className="text-gray-500"
-                        />
-                      </button>
-
-                      {showTeamBreakdown && (
-                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {allSubordinates.map((member) => {
-                            const memberTargets =
-                              filteredAssignedTargets.filter(
-                                (t) => t.assigned_to === member.id,
-                              );
-                            const totalTarget = memberTargets.reduce(
-                              (sum, t) =>
-                                sum + (parseFloat(t.target_amount) || 0),
-                              0,
-                            );
-                            const memberPerformance = teamData.find(
-                              (t) => t.id === member.id,
-                            );
-                            const achieved = memberPerformance?.wonAmount || 0;
-                            const memberProgress =
-                              totalTarget > 0
-                                ? (achieved / totalTarget) * 100
-                                : 0;
-
-                            return (
-                              <div
-                                key={member.id}
-                                className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-sm font-medium">
-                                    {member.full_name?.charAt(0) || "U"}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-gray-900 truncate">
-                                      {member.full_name || member.email}
-                                    </p>
-                                    <p className="text-xs text-gray-500 capitalize">
-                                      {member.role}
-                                    </p>
-                                  </div>
-                                </div>
-                                <div className="text-right ml-2">
-                                  <p className="text-sm font-bold text-gray-900">
-                                    {formatCurrency(achieved)}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    {totalTarget > 0
-                                      ? `of ${formatCurrency(
-                                          totalTarget,
-                                        )} (${memberProgress.toFixed(0)}%)`
-                                      : "No target"}
-                                  </p>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Client Achievement Breakdown Toggle */}
-                  {clientTargetsData.length > 0 && (
-                    <div className="border-t border-gray-200 pt-4 mt-4">
-                      <button
-                        onClick={() =>
-                          setShowClientBreakdown(!showClientBreakdown)
-                        }
-                        className="w-full flex items-center justify-between p-3 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Icon
-                            name="Building2"
-                            size={18}
-                            className="text-purple-600"
-                          />
-                          <span className="text-sm font-medium text-gray-900">
-                            Client Achievement Breakdown
-                          </span>
-                          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                            {clientTargetsData.length} clients
-                          </span>
-                        </div>
-                        <Icon
-                          name={
-                            showClientBreakdown ? "ChevronUp" : "ChevronDown"
-                          }
-                          size={18}
-                          className="text-gray-500"
-                        />
-                      </button>
-
-                      {showClientBreakdown && (
-                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {clientTargetsData.map((clientTarget) => {
-                            const firstName =
-                              clientTarget.contact?.first_name || "";
-                            const lastName =
-                              clientTarget.contact?.last_name || "";
-                            const clientName =
-                              `${firstName} ${lastName}`.trim() ||
-                              "Unknown Client";
-                            const companyName =
-                              clientTarget.contact?.company_name || "";
-                            const achieved = clientTarget.achieved || 0;
-                            const target =
-                              parseFloat(clientTarget.target_amount) || 0;
-                            const progress = clientTarget.progress || 0;
-
-                            return (
-                              <div
-                                key={clientTarget.id}
-                                className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 text-sm font-medium">
-                                    {firstName.charAt(0).toUpperCase() || "C"}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <p
-                                      className="text-sm font-medium text-gray-900 truncate"
-                                      title={clientName}
-                                    >
-                                      {clientName}
-                                    </p>
-                                    {companyName && (
-                                      <p
-                                        className="text-xs text-gray-500 truncate"
-                                        title={companyName}
-                                      >
-                                        {companyName}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="text-right ml-2">
-                                  <p className="text-sm font-bold text-gray-900">
-                                    {formatCurrency(achieved)}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    {target > 0
-                                      ? `of ${formatCurrency(
-                                          target,
-                                        )} (${progress.toFixed(0)}%)`
-                                      : "No target"}
-                                  </p>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
               )}
 
-              {/* Metrics Cards - First Row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <MetricsCard
-                  title="Total Revenue"
-                  value={formatCurrency(executiveMetrics?.totalRevenue || 0)}
-                  change="+12.5%"
-                  trend="up"
-                  icon="💰"
-                  onClick={() => handleMetricClick("totalRevenue")}
-                />
-                <MetricsCard
-                  title="Active Deals"
-                  value={`${metrics?.totalDeals || 0}`}
-                  change="+8.2%"
-                  trend="up"
-                  icon="🤝"
-                  onClick={() => handleMetricClick("activePipeline")}
-                />
-                <MetricsCard
-                  title="Contacts"
-                  value={`${metrics?.totalContacts || 0}`}
-                  change="+5.4%"
-                  trend="up"
-                  icon="👥"
-                />
-                <MetricsCard
-                  title="Tasks"
-                  value={`${metrics?.totalTasks || 0}`}
-                  change="-2.1%"
-                  trend="down"
-                  icon="📋"
-                />
-              </div>
-
-              {/* Metrics Cards - Second Row */}
-              {executiveMetrics && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <MetricsCard
-                    title="Pipeline Value"
-                    value={formatCurrency(executiveMetrics.activePipeline)}
-                    icon="TrendingUp"
-                    trend={8}
-                    iconColor="text-blue-600"
-                    iconBgColor="bg-blue-100"
-                    onClick={() => handleMetricClick("activePipeline")}
-                  />
-                  <MetricsCard
-                    title="Win Rate"
-                    value={`${executiveMetrics.winRate.toFixed(1)}%`}
-                    icon="Target"
-                    trend={5}
-                    iconColor="text-purple-600"
-                    iconBgColor="bg-purple-100"
-                    onClick={() => handleMetricClick("winRate")}
-                  />
-                  <MetricsCard
-                    title="Won Deals"
-                    value={`${executiveMetrics.wonDeals}`}
-                    subtitle={`of ${executiveMetrics.totalDeals} total`}
-                    icon="Briefcase"
-                    iconColor="text-green-600"
-                    iconBgColor="bg-green-100"
-                    onClick={() => handleMetricClick("dealsClosed")}
-                  />
-                  <MetricsCard
-                    title="Team Members"
-                    value={`${subordinates.length + 1}`}
-                    subtitle="including you"
-                    icon="Users"
-                    iconColor="text-orange-600"
-                    iconBgColor="bg-orange-100"
-                    onClick={() => handleMetricClick("teamPerformance")}
-                  />
-                </div>
-              )}
-
-              {/* Performance Trend Card */}
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Performance Trend
-                  </h3>
-                  {/* Trend Period Toggle */}
-                  <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
-                    <button
-                      onClick={() => setTrendPeriod("month")}
-                      className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                        trendPeriod === "month"
-                          ? "bg-white text-blue-600 shadow-sm"
-                          : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      Monthly
-                    </button>
-                    <button
-                      onClick={() => setTrendPeriod("quarter")}
-                      className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                        trendPeriod === "quarter"
-                          ? "bg-white text-blue-600 shadow-sm"
-                          : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      Quarterly
-                    </button>
-                    <button
-                      onClick={() => setTrendPeriod("year")}
-                      className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                        trendPeriod === "year"
-                          ? "bg-white text-blue-600 shadow-sm"
-                          : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      Yearly
-                    </button>
-                  </div>
-                </div>
-                {performanceTrendData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={performanceTrendData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="period" />
-                      <YAxis
-                        tickFormatter={(value) => {
-                          if (value >= 1000000)
-                            return `${(value / 1000000).toFixed(1)}M`;
-                          if (value >= 1000)
-                            return `${(value / 1000).toFixed(0)}K`;
-                          return value;
-                        }}
-                      />
-                      <Tooltip
-                        formatter={(value, name) => [
-                          name === "revenue" ? formatCurrency(value) : value,
-                          name === "revenue" ? "Revenue" : "Deals",
-                        ]}
-                      />
-                      <Bar
-                        dataKey="revenue"
-                        fill="#3B82F6"
-                        name="revenue"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-64 text-gray-500">
-                    <div className="text-center">
-                      <Icon
-                        name="BarChart2"
-                        size={48}
-                        className="mx-auto mb-2 text-gray-300"
-                      />
-                      <p>No performance data available</p>
-                    </div>
-                  </div>
-                )}
-                {performanceTrendData.length > 0 && (
-                  <div className="mt-4 grid grid-cols-2 gap-4 pt-4 border-t">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-blue-600">
-                        {formatCurrency(
-                          performanceTrendData.reduce(
-                            (sum, d) => sum + d.revenue,
-                            0,
-                          ),
-                        )}
-                      </div>
-                      <div className="text-sm text-gray-500">Total Revenue</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-green-600">
-                        {performanceTrendData.reduce(
-                          (sum, d) => sum + d.deals,
-                          0,
-                        )}
-                      </div>
-                      <div className="text-sm text-gray-500">Deals Closed</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
-                <div className="bg-white rounded-lg shadow p-6 h-full">
-                  <SalesChart
-                    data={salesData}
-                    pipelineData={pipelineData}
-                    title="Sales Performance"
-                    showTypeSelector={true}
-                  />
-                </div>
-                <div className="bg-white rounded-lg shadow p-6 h-full">
-                  <TeamPerformance data={teamData} />
-                </div>
-              </div>
-
-              {/* Sales Forecast */}
-              <SalesForecast
-                companyId={company?.id}
-                userId={effectiveUser?.id}
-                role={effectiveUserProfile?.role}
-              />
-
-              {/* Activity Feed */}
-              <div className="bg-white rounded-lg shadow">
-                <ActivityFeed
-                  activities={filteredActivities}
-                  title="Recent Activity"
-                  companyId={company?.id}
-                  users={allSubordinates}
-                  currentUserId={user?.id}
-                />
-              </div>
+              {/* Draggable grid */}
+              <DraggableDashboard widgets={WIDGETS} role={userProfile?.role} />
             </div>
           )}
 

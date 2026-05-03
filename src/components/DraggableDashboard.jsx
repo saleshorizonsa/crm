@@ -14,51 +14,31 @@ const MARGIN = [16, 16];
 
 // ── Widget card ────────────────────────────────────────────────────────────────
 
-const WidgetCard = ({ title, editMode, onHide, children }) => (
-  <div
-    className={[
-      "h-full flex flex-col bg-card border border-border rounded-lg shadow-sm overflow-hidden transition-shadow",
-      editMode && "ring-2 ring-primary/20 shadow-md",
-    ]
-      .filter(Boolean)
-      .join(" ")}
-  >
-    {/* Header */}
-    <div
-      className={[
-        "flex items-center justify-between px-4 py-2.5 border-b border-border flex-shrink-0 select-none",
-        editMode ? "bg-muted/40" : "bg-card",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      {editMode ? (
-        /* Drag handle — only the grip + title area triggers drag */
+const WidgetCard = ({ title, editMode, onHide, children }) => {
+  if (!editMode) {
+    return <div className="h-full overflow-auto">{children}</div>;
+  }
+  return (
+    <div className="h-full flex flex-col ring-2 ring-primary/30 rounded-lg overflow-hidden">
+      {/* Edit-mode drag handle bar */}
+      <div className="flex items-center justify-between px-3 py-1.5 bg-muted/70 border-b border-border flex-shrink-0 select-none">
         <div className="drag-handle flex items-center gap-2 cursor-grab active:cursor-grabbing flex-1 min-w-0 pr-2">
-          <Icon name="GripVertical" size={15} className="text-muted-foreground flex-shrink-0" />
-          <span className="text-sm font-semibold text-card-foreground truncate">{title}</span>
+          <Icon name="GripVertical" size={14} className="text-muted-foreground flex-shrink-0" />
+          <span className="text-xs font-medium text-muted-foreground truncate">{title}</span>
         </div>
-      ) : (
-        <span className="text-sm font-semibold text-card-foreground truncate">{title}</span>
-      )}
-
-      {editMode && (
         <button
-          /* stop mousedown so the grid doesn't start a drag on the X */
           onMouseDown={(e) => e.stopPropagation()}
           onClick={onHide}
-          className="flex-shrink-0 p-1 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+          className="flex-shrink-0 p-0.5 rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
           title={`Hide "${title}"`}
         >
-          <Icon name="X" size={14} />
+          <Icon name="X" size={12} />
         </button>
-      )}
+      </div>
+      <div className="flex-1 overflow-auto min-h-0">{children}</div>
     </div>
-
-    {/* Body */}
-    <div className="flex-1 overflow-auto min-h-0">{children}</div>
-  </div>
-);
+  );
+};
 
 // ── Restore chip ───────────────────────────────────────────────────────────────
 
