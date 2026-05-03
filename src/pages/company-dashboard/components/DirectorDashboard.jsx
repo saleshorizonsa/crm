@@ -44,8 +44,6 @@ import ProductMaster from "../../../pages/admin-dashboard/components/ProductMast
 import SalesTarget from "../../../pages/admin-dashboard/components/SalesTarget";
 import { Edit2Icon } from "lucide-react";
 import { capitalize } from "utils/helper";
-import HotLeadsWidget from "./HotLeadsWidget";
-import DraggableDashboard from "../../../components/DraggableDashboard";
 import {
   LineChart,
   Line,
@@ -1614,101 +1612,53 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     }
   };
 
-  const renderOverview = () => {
-    const WIDGETS = {
-      revenue: {
-        title: "Executive Metrics",
-        component: executiveMetrics ? (
-          <ExecutiveMetrics
-            metrics={executiveMetrics}
-            selectedCompany={selectedCompany}
-            timePeriod={timePeriod}
-            onMetricClick={handleMetricClick}
-          />
-        ) : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Loading metrics…</div>,
-      },
-      target: {
-        title: "Revenue vs Target",
-        component: (
-          <PerformanceBarChart
-            dealsData={filteredDeals}
-            targetsData={filteredAssignedTargets}
-            timePeriod={timePeriod}
-            year={new Date().getFullYear()}
-            isLoading={isLoading}
-          />
-        ),
-      },
-      teamperf: {
-        title: "Company Performance",
-        component: (
-          <CompanyPerformanceGrid
-            companies={companiesWithMetrics}
-            onCompanySelect={handleCompanySelect}
-            selectedCompany={selectedCompany}
-            selectedMonth={selectedMonth}
-            selectedQuarter={selectedQuarter}
-            selectedYear={selectedYear}
-            timePeriod={timePeriod}
-          />
-        ),
-      },
-      pipeline: {
-        title: "Pipeline",
-        component: (
-          <PipelineChart
-            pipelineData={pipelineData}
-            selectedCompany={selectedCompany}
-          />
-        ),
-      },
-      hotleads: {
-        title: "Action Items",
-        component: (
-          <ActionableDashboard
-            actionItems={actionItems}
-            onActionClick={handleActionClick}
-          />
-        ),
-      },
-      leaderboard: {
-        title: "Team Performance",
-        component: (
-          <div className="bg-white rounded-lg shadow p-6 h-full">
-            <TeamPerformance data={teamData} />
-          </div>
-        ),
-      },
-      forecast: {
-        title: "Sales Forecast",
-        component: (
-          <SalesForecast
-            companyId={selectedCompany?.id}
-            userId={user?.id}
-            role={userProfile?.role}
-          />
-        ),
-      },
-      tasks: {
-        title: "Activities",
-        component: (
-          <div className="bg-white rounded-lg shadow">
-            <ActivityFeed
-              activities={filteredActivities}
-              title="Activities"
-              companyId={selectedCompany?.id}
-              users={allEmployees}
-            />
-          </div>
-        ),
-      },
-    };
+  const renderOverview = () => (
+    <div className="space-y-8">
+      {/* Executive Metrics */}
+      {executiveMetrics && (
+        <ExecutiveMetrics
+          metrics={executiveMetrics}
+          selectedCompany={selectedCompany}
+          timePeriod={timePeriod}
+          onMetricClick={handleMetricClick}
+        />
+      )}
 
-    return (
-      <div className="space-y-6">
-        <DraggableDashboard widgets={WIDGETS} role={userProfile?.role} />
-        {/* Sales Chart — static section below the draggable grid */}
-        <div className="bg-white rounded-lg shadow p-6">
+      {/* Performance Bar Chart - Revenue vs Target by Time Period */}
+      <PerformanceBarChart
+        dealsData={filteredDeals}
+        targetsData={filteredAssignedTargets}
+        timePeriod={timePeriod}
+        year={new Date().getFullYear()}
+        isLoading={isLoading}
+      />
+
+      {/* Company Performance Grid */}
+      <CompanyPerformanceGrid
+        companies={companiesWithMetrics}
+        onCompanySelect={handleCompanySelect}
+        selectedCompany={selectedCompany}
+        selectedMonth={selectedMonth}
+        selectedQuarter={selectedQuarter}
+        selectedYear={selectedYear}
+        timePeriod={timePeriod}
+      />
+
+      {/* Pipeline and Action Items */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <PipelineChart
+          pipelineData={pipelineData}
+          selectedCompany={selectedCompany}
+        />
+        <ActionableDashboard
+          actionItems={actionItems}
+          onActionClick={handleActionClick}
+        />
+      </div>
+
+      {/* Legacy Components */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+        <div className="bg-white rounded-lg shadow p-6 h-full">
           <SalesChart
             data={salesData}
             pipelineData={pipelineData}
@@ -1716,9 +1666,28 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             showTypeSelector={true}
           />
         </div>
+        <div className="bg-white rounded-lg shadow p-6 h-full">
+          <TeamPerformance data={teamData} />
+        </div>
       </div>
-    );
-  };
+
+      {/* Sales Forecast */}
+      <SalesForecast
+        companyId={selectedCompany?.id}
+        userId={user?.id}
+        role={userProfile?.role}
+      />
+
+      <div className="bg-white rounded-lg shadow">
+        <ActivityFeed
+          activities={filteredActivities}
+          title="Activities"
+          companyId={selectedCompany?.id}
+          users={allEmployees}
+        />
+      </div>
+    </div>
+  );
 
   const renderLegacyOverview = () => (
     <>

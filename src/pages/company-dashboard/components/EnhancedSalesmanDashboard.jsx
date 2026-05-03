@@ -33,7 +33,6 @@ import {
   Cell,
 } from "recharts";
 import { useNavigate } from "react-router-dom";
-import DraggableDashboard from "../../../components/DraggableDashboard";
 
 const EnhancedSalesmanDashboard = () => {
   const { user, userProfile, company } = useAuth();
@@ -1017,406 +1016,6 @@ const EnhancedSalesmanDashboard = () => {
     );
   }
 
-  const WIDGETS = {
-    revenue: {
-      title: "Revenue Overview",
-      component: (
-        <>
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Revenue Overview
-              </h3>
-              {targetMetrics?.hasActiveTarget && (
-                <span
-                  className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    targetMetrics.isOnTrack
-                      ? "bg-green-100 text-green-700"
-                      : "bg-red-100 text-red-700"
-                  }`}
-                >
-                  {targetMetrics.isOnTrack ? "On Track" : "Behind Target"}
-                </span>
-              )}
-            </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <div className="text-3xl font-bold text-green-600">
-                  {formatCurrency(
-                    targetMetrics?.progressAmount ||
-                      executiveMetrics?.totalRevenue ||
-                      0,
-                  )}
-                </div>
-                <div className="text-sm text-gray-600 mt-1">Total Revenue</div>
-              </div>
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <div className="text-3xl font-bold text-blue-600">
-                  {targetMetrics?.hasActiveTarget
-                    ? formatCurrency(targetMetrics.targetAmount)
-                    : "—"}
-                </div>
-                <div className="text-sm text-gray-600 mt-1">
-                  Target Assigned
-                </div>
-              </div>
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
-                <div className="text-3xl font-bold text-purple-600">
-                  {targetMetrics?.hasActiveTarget
-                    ? `${targetMetrics.progressPercent.toFixed(1)}%`
-                    : "—"}
-                </div>
-                <div className="text-sm text-gray-600 mt-1">Progress</div>
-                {targetMetrics?.hasActiveTarget && (
-                  <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
-                    <div
-                      className={`h-2 rounded-full ${
-                        targetMetrics.isOnTrack ? "bg-green-500" : "bg-red-500"
-                      }`}
-                      style={{
-                        width: `${Math.min(
-                          targetMetrics.progressPercent,
-                          100,
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="text-center p-4 bg-red-500 rounded-lg">
-                <div className="text-3xl font-bold text-white">
-                  {targetMetrics?.hasActiveTarget
-                    ? formatCurrency(
-                        Math.max(
-                          0,
-                          targetMetrics.targetAmount -
-                            (targetMetrics.progressAmount || 0),
-                        ),
-                      )
-                    : "—"}
-                </div>
-                <div className="text-sm text-white mt-1">Remaining Revenue</div>
-              </div>
-            </div>
-            {!targetMetrics?.hasActiveTarget && (
-              <div className="mt-4 pt-4 border-t text-center text-gray-500">
-                <Icon name="Info" size={20} className="inline mr-2" />
-                No active target assigned for this period
-              </div>
-            )}
-          </div>
-          {executiveMetrics && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
-                <div className="p-3 bg-blue-100 rounded-lg">
-                  <Icon name="TrendingUp" size={24} className="text-blue-600" />
-                </div>
-                <div>
-                  <div className="text-lg font-bold text-gray-900">
-                    {formatCurrency(executiveMetrics.activePipeline)}
-                  </div>
-                  <div className="text-sm text-gray-500">Active Pipeline</div>
-                </div>
-              </div>
-              <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
-                <div className="p-3 bg-purple-100 rounded-lg">
-                  <Icon name="Target" size={24} className="text-purple-600" />
-                </div>
-                <div>
-                  <div className="text-lg font-bold text-gray-900">
-                    {executiveMetrics.winRate.toFixed(1)}%
-                  </div>
-                  <div className="text-sm text-gray-500">Win Rate</div>
-                </div>
-              </div>
-              <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
-                <div className="p-3 bg-green-100 rounded-lg">
-                  <Icon
-                    name="CheckCircle"
-                    size={24}
-                    className="text-green-600"
-                  />
-                </div>
-                <div>
-                  <div className="text-lg font-bold text-gray-900">
-                    {executiveMetrics.wonDeals}
-                  </div>
-                  <div className="text-sm text-gray-500">Deals Won</div>
-                </div>
-              </div>
-              <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
-                <div className="p-3 bg-orange-100 rounded-lg">
-                  <Icon
-                    name="Briefcase"
-                    size={24}
-                    className="text-orange-600"
-                  />
-                </div>
-                <div>
-                  <div className="text-lg font-bold text-gray-900">
-                    {executiveMetrics.totalDeals}
-                  </div>
-                  <div className="text-sm text-gray-500">Total Deals</div>
-                </div>
-              </div>
-            </div>
-          )}
-        </>
-      ),
-    },
-    target: {
-      title: "Performance Trend",
-      component: (
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">
-              Performance Trend
-            </h3>
-            <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
-              <button
-                onClick={() => setTrendPeriod("month")}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  trendPeriod === "month"
-                    ? "bg-white text-blue-600 shadow-sm"
-                    : "text-gray-600 hover:text-gray-800"
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                onClick={() => setTrendPeriod("quarter")}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  trendPeriod === "quarter"
-                    ? "bg-white text-blue-600 shadow-sm"
-                    : "text-gray-600 hover:text-gray-800"
-                }`}
-              >
-                Quarterly
-              </button>
-              <button
-                onClick={() => setTrendPeriod("year")}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  trendPeriod === "year"
-                    ? "bg-white text-blue-600 shadow-sm"
-                    : "text-gray-600 hover:text-gray-800"
-                }`}
-              >
-                Yearly
-              </button>
-            </div>
-          </div>
-          {performanceTrendData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={performanceTrendData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="period" />
-                <YAxis
-                  tickFormatter={(value) => {
-                    if (value >= 1000000)
-                      return `${(value / 1000000).toFixed(1)}M`;
-                    if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
-                    return value;
-                  }}
-                />
-                <Tooltip
-                  formatter={(value, name) => [
-                    name === "revenue" ? formatCurrency(value) : value,
-                    name === "revenue" ? "Revenue" : "Deals",
-                  ]}
-                />
-                <Bar
-                  dataKey="revenue"
-                  fill="#3B82F6"
-                  name="revenue"
-                  radius={[4, 4, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex items-center justify-center h-64 text-gray-500">
-              <div className="text-center">
-                <Icon
-                  name="BarChart2"
-                  size={48}
-                  className="mx-auto mb-2 text-gray-300"
-                />
-                <p>No performance data available</p>
-              </div>
-            </div>
-          )}
-          {performanceTrendData.length > 0 && (
-            <div className="mt-4 grid grid-cols-2 gap-4 pt-4 border-t">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">
-                  {formatCurrency(
-                    performanceTrendData.reduce(
-                      (sum, d) => sum + d.revenue,
-                      0,
-                    ),
-                  )}
-                </div>
-                <div className="text-sm text-gray-500">Total Revenue</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  {performanceTrendData.reduce((sum, d) => sum + d.deals, 0)}
-                </div>
-                <div className="text-sm text-gray-500">Deals Closed</div>
-              </div>
-            </div>
-          )}
-        </div>
-      ),
-    },
-    pipeline: {
-      title: "Sales Performance",
-      component: (
-        <div className="bg-white rounded-lg shadow p-6">
-          <SalesChart
-            data={salesData}
-            pipelineData={pipelineData}
-            title="My Sales Performance"
-            showTypeSelector={true}
-          />
-        </div>
-      ),
-    },
-    hotleads: {
-      title: "Hot Leads",
-      component: <HotLeadsWidget companyId={company?.id} />,
-    },
-    tasks: {
-      title: "Upcoming Tasks",
-      component: (
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">
-              Upcoming Tasks
-            </h3>
-            <button
-              onClick={() => navigate("/task-management")}
-              className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
-            >
-              View All
-              <Icon name="ArrowRight" size={16} />
-            </button>
-          </div>
-          <div className="grid grid-cols-4 gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
-            <div className="text-center">
-              <div className="text-lg font-bold text-gray-900">
-                {taskMetrics.total}
-              </div>
-              <div className="text-xs text-gray-500">Total</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-yellow-600">
-                {taskMetrics.pending}
-              </div>
-              <div className="text-xs text-gray-500">Pending</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-blue-600">
-                {taskMetrics.inProgress}
-              </div>
-              <div className="text-xs text-gray-500">In Progress</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-green-600">
-                {taskMetrics.completed}
-              </div>
-              <div className="text-xs text-gray-500">Completed</div>
-            </div>
-          </div>
-          {filteredPendingTasks.length > 0 ? (
-            <div className="space-y-3">
-              {filteredPendingTasks.map((task) => {
-                const isOverdue =
-                  task.due_date && new Date(task.due_date) < new Date();
-                const isDueSoon =
-                  task.due_date &&
-                  !isOverdue &&
-                  new Date(task.due_date) <=
-                    new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
-                return (
-                  <div
-                    key={task.id}
-                    onClick={() =>
-                      navigate(`/task-management?taskId=${task.id}`)
-                    }
-                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div
-                        className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                          task.priority === "high"
-                            ? "bg-red-500"
-                            : task.priority === "medium"
-                              ? "bg-yellow-500"
-                              : "bg-green-500"
-                        }`}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-gray-900 truncate">
-                          {task.title}
-                        </p>
-                        <p className="text-sm text-gray-500 truncate">
-                          {task.status === "in_progress"
-                            ? "In Progress"
-                            : "Pending"}
-                          {task.due_date &&
-                            ` • Due ${new Date(
-                              task.due_date,
-                            ).toLocaleDateString()}`}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {isOverdue && (
-                        <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full">
-                          Overdue
-                        </span>
-                      )}
-                      {isDueSoon && !isOverdue && (
-                        <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full">
-                          Due Soon
-                        </span>
-                      )}
-                      <Icon
-                        name="ChevronRight"
-                        size={16}
-                        className="text-gray-400"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <Icon
-                name="CheckCircle"
-                size={40}
-                className="mx-auto mb-2 text-green-400"
-              />
-              <p>No pending tasks</p>
-              <p className="text-sm">You're all caught up!</p>
-            </div>
-          )}
-        </div>
-      ),
-    },
-    forecast: {
-      title: "Sales Forecast",
-      component: (
-        <SalesForecast
-          companyId={company?.id}
-          userId={user?.id}
-          role={userProfile?.role}
-        />
-      ),
-    },
-  };
-
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -1556,8 +1155,391 @@ const EnhancedSalesmanDashboard = () => {
 
       {/* Overview Tab */}
       {activeView === "overview" && (
-        <div className="space-y-6">
-          <DraggableDashboard widgets={WIDGETS} role={userProfile?.role} />
+        <div className="space-y-8">
+          {/* Revenue & Target Card */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Revenue Overview
+              </h3>
+              {targetMetrics?.hasActiveTarget && (
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    targetMetrics.isOnTrack
+                      ? "bg-green-100 text-green-700"
+                      : "bg-red-100 text-red-700"
+                  }`}
+                >
+                  {targetMetrics.isOnTrack ? "On Track" : "Behind Target"}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Total Revenue */}
+              <div className="text-center p-4 bg-green-50 rounded-lg">
+                <div className="text-3xl font-bold text-green-600">
+                  {formatCurrency(
+                    targetMetrics?.progressAmount ||
+                      executiveMetrics?.totalRevenue ||
+                      0,
+                  )}
+                </div>
+                <div className="text-sm text-gray-600 mt-1">Total Revenue</div>
+              </div>
+
+              {/* Target Assigned */}
+              <div className="text-center p-4 bg-blue-50 rounded-lg">
+                <div className="text-3xl font-bold text-blue-600">
+                  {targetMetrics?.hasActiveTarget
+                    ? formatCurrency(targetMetrics.targetAmount)
+                    : "—"}
+                </div>
+                <div className="text-sm text-gray-600 mt-1">
+                  Target Assigned
+                </div>
+              </div>
+
+              {/* Progress */}
+              <div className="text-center p-4 bg-purple-50 rounded-lg">
+                <div className="text-3xl font-bold text-purple-600">
+                  {targetMetrics?.hasActiveTarget
+                    ? `${targetMetrics.progressPercent.toFixed(1)}%`
+                    : "—"}
+                </div>
+                <div className="text-sm text-gray-600 mt-1">Progress</div>
+                {targetMetrics?.hasActiveTarget && (
+                  <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                    <div
+                      className={`h-2 rounded-full ${
+                        targetMetrics.isOnTrack ? "bg-green-500" : "bg-red-500"
+                      }`}
+                      style={{
+                        width: `${Math.min(
+                          targetMetrics.progressPercent,
+                          100,
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Remaining Revenue */}
+              <div className="text-center p-4 bg-red-500 rounded-lg">
+                <div className="text-3xl font-bold text-white">
+                  {targetMetrics?.hasActiveTarget
+                    ? formatCurrency(
+                        Math.max(
+                          0,
+                          targetMetrics.targetAmount -
+                            (targetMetrics.progressAmount || 0),
+                        ),
+                      )
+                    : "—"}
+                </div>
+                <div className="text-sm text-white mt-1">Remaining Revenue</div>
+              </div>
+            </div>
+
+            {!targetMetrics?.hasActiveTarget && (
+              <div className="mt-4 pt-4 border-t text-center text-gray-500">
+                <Icon name="Info" size={20} className="inline mr-2" />
+                No active target assigned for this period
+              </div>
+            )}
+          </div>
+
+          {/* Quick Stats Row */}
+          {executiveMetrics && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
+                <div className="p-3 bg-blue-100 rounded-lg">
+                  <Icon name="TrendingUp" size={24} className="text-blue-600" />
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-gray-900">
+                    {formatCurrency(executiveMetrics.activePipeline)}
+                  </div>
+                  <div className="text-sm text-gray-500">Active Pipeline</div>
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
+                <div className="p-3 bg-purple-100 rounded-lg">
+                  <Icon name="Target" size={24} className="text-purple-600" />
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-gray-900">
+                    {executiveMetrics.winRate.toFixed(1)}%
+                  </div>
+                  <div className="text-sm text-gray-500">Win Rate</div>
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
+                <div className="p-3 bg-green-100 rounded-lg">
+                  <Icon
+                    name="CheckCircle"
+                    size={24}
+                    className="text-green-600"
+                  />
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-gray-900">
+                    {executiveMetrics.wonDeals}
+                  </div>
+                  <div className="text-sm text-gray-500">Deals Won</div>
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
+                <div className="p-3 bg-orange-100 rounded-lg">
+                  <Icon
+                    name="Briefcase"
+                    size={24}
+                    className="text-orange-600"
+                  />
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-gray-900">
+                    {executiveMetrics.totalDeals}
+                  </div>
+                  <div className="text-sm text-gray-500">Total Deals</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Performance Trend Card */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Performance Trend
+              </h3>
+              {/* Trend Period Toggle */}
+              <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
+                <button
+                  onClick={() => setTrendPeriod("month")}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    trendPeriod === "month"
+                      ? "bg-white text-blue-600 shadow-sm"
+                      : "text-gray-600 hover:text-gray-800"
+                  }`}
+                >
+                  Monthly
+                </button>
+                <button
+                  onClick={() => setTrendPeriod("quarter")}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    trendPeriod === "quarter"
+                      ? "bg-white text-blue-600 shadow-sm"
+                      : "text-gray-600 hover:text-gray-800"
+                  }`}
+                >
+                  Quarterly
+                </button>
+                <button
+                  onClick={() => setTrendPeriod("year")}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    trendPeriod === "year"
+                      ? "bg-white text-blue-600 shadow-sm"
+                      : "text-gray-600 hover:text-gray-800"
+                  }`}
+                >
+                  Yearly
+                </button>
+              </div>
+            </div>
+            {performanceTrendData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={performanceTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="period" />
+                  <YAxis
+                    tickFormatter={(value) => {
+                      if (value >= 1000000)
+                        return `${(value / 1000000).toFixed(1)}M`;
+                      if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
+                      return value;
+                    }}
+                  />
+                  <Tooltip
+                    formatter={(value, name) => [
+                      name === "revenue" ? formatCurrency(value) : value,
+                      name === "revenue" ? "Revenue" : "Deals",
+                    ]}
+                  />
+                  <Bar
+                    dataKey="revenue"
+                    fill="#3B82F6"
+                    name="revenue"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-64 text-gray-500">
+                <div className="text-center">
+                  <Icon
+                    name="BarChart2"
+                    size={48}
+                    className="mx-auto mb-2 text-gray-300"
+                  />
+                  <p>No performance data available</p>
+                </div>
+              </div>
+            )}
+            {performanceTrendData.length > 0 && (
+              <div className="mt-4 grid grid-cols-2 gap-4 pt-4 border-t">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">
+                    {formatCurrency(
+                      performanceTrendData.reduce(
+                        (sum, d) => sum + d.revenue,
+                        0,
+                      ),
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-500">Total Revenue</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">
+                    {performanceTrendData.reduce((sum, d) => sum + d.deals, 0)}
+                  </div>
+                  <div className="text-sm text-gray-500">Deals Closed</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Sales Chart */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <SalesChart
+              data={salesData}
+              pipelineData={pipelineData}
+              title="My Sales Performance"
+              showTypeSelector={true}
+            />
+          </div>
+
+          {/* Upcoming Tasks Card */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Upcoming Tasks
+              </h3>
+              <button
+                onClick={() => navigate("/task-management")}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+              >
+                View All
+                <Icon name="ArrowRight" size={16} />
+              </button>
+            </div>
+
+            {/* Task Metrics Summary */}
+            <div className="grid grid-cols-4 gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+              <div className="text-center">
+                <div className="text-lg font-bold text-gray-900">
+                  {taskMetrics.total}
+                </div>
+                <div className="text-xs text-gray-500">Total</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-yellow-600">
+                  {taskMetrics.pending}
+                </div>
+                <div className="text-xs text-gray-500">Pending</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-blue-600">
+                  {taskMetrics.inProgress}
+                </div>
+                <div className="text-xs text-gray-500">In Progress</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-green-600">
+                  {taskMetrics.completed}
+                </div>
+                <div className="text-xs text-gray-500">Completed</div>
+              </div>
+            </div>
+
+            {filteredPendingTasks.length > 0 ? (
+              <div className="space-y-3">
+                {filteredPendingTasks.map((task) => {
+                  const isOverdue =
+                    task.due_date && new Date(task.due_date) < new Date();
+                  const isDueSoon =
+                    task.due_date &&
+                    !isOverdue &&
+                    new Date(task.due_date) <=
+                      new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+
+                  return (
+                    <div
+                      key={task.id}
+                      onClick={() =>
+                        navigate(`/task-management?taskId=${task.id}`)
+                      }
+                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div
+                          className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                            task.priority === "high"
+                              ? "bg-red-500"
+                              : task.priority === "medium"
+                                ? "bg-yellow-500"
+                                : "bg-green-500"
+                          }`}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-gray-900 truncate">
+                            {task.title}
+                          </p>
+                          <p className="text-sm text-gray-500 truncate">
+                            {task.status === "in_progress"
+                              ? "In Progress"
+                              : "Pending"}
+                            {task.due_date &&
+                              ` • Due ${new Date(
+                                task.due_date,
+                              ).toLocaleDateString()}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {isOverdue && (
+                          <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full">
+                            Overdue
+                          </span>
+                        )}
+                        {isDueSoon && !isOverdue && (
+                          <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full">
+                            Due Soon
+                          </span>
+                        )}
+                        <Icon
+                          name="ChevronRight"
+                          size={16}
+                          className="text-gray-400"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Icon
+                  name="CheckCircle"
+                  size={40}
+                  className="mx-auto mb-2 text-green-400"
+                />
+                <p>No pending tasks</p>
+                <p className="text-sm">You're all caught up!</p>
+              </div>
+            )}
+          </div>
 
           {/* Top Clients Card */}
           <div className="bg-white rounded-lg shadow p-6">
@@ -1569,8 +1551,10 @@ const EnhancedSalesmanDashboard = () => {
                 {clientInsights.length} clients
               </div>
             </div>
+
             {clientInsights.length > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Revenue by Client Bar Chart */}
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
@@ -1612,14 +1596,24 @@ const EnhancedSalesmanDashboard = () => {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+
+                {/* Client Stats Table */}
                 <div className="border rounded-lg overflow-hidden max-h-80 overflow-y-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 sticky top-0">
                       <tr>
-                        <th className="text-left p-3 font-medium text-gray-600">#</th>
-                        <th className="text-left p-3 font-medium text-gray-600">Client</th>
-                        <th className="text-right p-3 font-medium text-gray-600">Revenue</th>
-                        <th className="text-right p-3 font-medium text-gray-600">Deals</th>
+                        <th className="text-left p-3 font-medium text-gray-600">
+                          #
+                        </th>
+                        <th className="text-left p-3 font-medium text-gray-600">
+                          Client
+                        </th>
+                        <th className="text-right p-3 font-medium text-gray-600">
+                          Revenue
+                        </th>
+                        <th className="text-right p-3 font-medium text-gray-600">
+                          Deals
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1658,6 +1652,16 @@ const EnhancedSalesmanDashboard = () => {
                 <p className="text-sm">Close some deals to see insights</p>
               </div>
             )}
+          </div>
+
+          {/* Hot Leads + Forecast */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <HotLeadsWidget companyId={company?.id} />
+            <SalesForecast
+              companyId={company?.id}
+              userId={user?.id}
+              role={userProfile?.role}
+            />
           </div>
 
           {/* Activity Feed */}
