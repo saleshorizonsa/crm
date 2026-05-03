@@ -13,10 +13,10 @@ import {
 // ── Y-axis / tooltip value formatter ─────────────────────────────────────────
 
 const formatK = (value) => {
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000)     return `$${Math.round(value / 1_000)}K`;
-  if (value > 0)          return `$${value}`;
-  return "$0";
+  if (value >= 1_000_000) return `SAR ${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000)     return `SAR ${Math.round(value / 1_000)}K`;
+  if (value > 0)          return `SAR ${value}`;
+  return "SAR 0";
 };
 
 // ── Line definitions ──────────────────────────────────────────────────────────
