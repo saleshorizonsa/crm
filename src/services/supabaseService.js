@@ -4687,9 +4687,9 @@ export const reportService = {
            owner_id, company_id,
            contact:contacts!contact_id(id, first_name, last_name, company_name, lead_source),
            owner:users!owner_id(id, full_name)`,
-        )
-        .gte("created_at", `${periodStart}T00:00:00`)
-        .lte("created_at", `${periodEnd}T23:59:59`);
+        );
+      if (periodStart) dealsQ = dealsQ.gte("created_at", `${periodStart}T00:00:00`);
+      if (periodEnd)   dealsQ = dealsQ.lte("created_at", `${periodEnd}T23:59:59`);
 
       if (companyId) dealsQ = dealsQ.eq("company_id", companyId);
       if (ownerIds)  dealsQ = dealsQ.in("owner_id", ownerIds);
@@ -4698,28 +4698,32 @@ export const reportService = {
       if (dealsError) throw dealsError;
 
       // ── Previous period deals (same length, shifted back) ────────────────
-      const start = new Date(periodStart);
-      const end   = new Date(periodEnd);
-      const days  = Math.round((end - start) / 86400000) + 1;
-      const prevEnd   = new Date(start); prevEnd.setDate(prevEnd.getDate() - 1);
-      const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - days + 1);
-      const fmt = (d) => d.toISOString().split("T")[0];
+      let prevDeals = [];
+      if (periodStart && periodEnd) {
+        const start = new Date(periodStart);
+        const end   = new Date(periodEnd);
+        const days  = Math.round((end - start) / 86400000) + 1;
+        const prevEnd   = new Date(start); prevEnd.setDate(prevEnd.getDate() - 1);
+        const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - days + 1);
+        const fmt = (d) => d.toISOString().split("T")[0];
 
-      let prevQ = supabase
-        .from("deals")
-        .select("id, stage, amount, owner_id")
-        .gte("created_at", `${fmt(prevStart)}T00:00:00`)
-        .lte("created_at", `${fmt(prevEnd)}T23:59:59`);
-      if (companyId) prevQ = prevQ.eq("company_id", companyId);
-      if (ownerIds)  prevQ = prevQ.in("owner_id", ownerIds);
-      const { data: prevDeals } = await prevQ;
+        let prevQ = supabase
+          .from("deals")
+          .select("id, stage, amount, owner_id")
+          .gte("created_at", `${fmt(prevStart)}T00:00:00`)
+          .lte("created_at", `${fmt(prevEnd)}T23:59:59`);
+        if (companyId) prevQ = prevQ.eq("company_id", companyId);
+        if (ownerIds)  prevQ = prevQ.in("owner_id", ownerIds);
+        const { data: pd } = await prevQ;
+        prevDeals = pd || [];
+      }
 
       // ── Contacts for lead source analysis ────────────────────────────────
       let contactsQ = supabase
         .from("contacts")
-        .select("id, lead_source, created_at, owner_id")
-        .gte("created_at", `${periodStart}T00:00:00`)
-        .lte("created_at", `${periodEnd}T23:59:59`);
+        .select("id, lead_source, created_at, owner_id");
+      if (periodStart) contactsQ = contactsQ.gte("created_at", `${periodStart}T00:00:00`);
+      if (periodEnd)   contactsQ = contactsQ.lte("created_at", `${periodEnd}T23:59:59`);
       if (companyId) contactsQ = contactsQ.eq("company_id", companyId);
       if (ownerIds)  contactsQ = contactsQ.in("owner_id", ownerIds);
       const { data: contacts } = await contactsQ;
