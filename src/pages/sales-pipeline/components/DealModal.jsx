@@ -384,26 +384,6 @@ const DealModal = ({
     if (!formData.title?.trim()) {
       newErrors.title = "Deal title is required";
     }
-    if (dealType === "product") {
-      // Product mode: client + at least one product are required
-      if (!formData.contact_id) {
-        newErrors.contact_id = "Client is required for product-based deals";
-      }
-      const productsToCheck = deal?.id ? dealProducts : selectedProducts;
-      if (productsToCheck.length === 0) {
-        newErrors.products = "Please add at least one product";
-      }
-    } else {
-      // Value mode: client and value are mutually required
-      const hasAmount = parseFloat(formData.amount) > 0;
-      const hasContact = !!formData.contact_id;
-      if (hasAmount && !hasContact) {
-        newErrors.contact_id = "Please select a client when entering a deal value";
-      }
-      if (hasContact && !hasAmount) {
-        newErrors.amount = "Please enter a deal value when a client is selected";
-      }
-    }
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
@@ -651,17 +631,7 @@ const DealModal = ({
             {/* Contact */}
             <div>
               <Select
-                label={
-                  <span>
-                    Client
-                    {dealType === "product" && (
-                      <span className="text-destructive ml-0.5">*</span>
-                    )}
-                    {dealType === "value" && formData?.contact_id && (
-                      <span className="ml-1 text-xs text-muted-foreground font-normal">(required with value)</span>
-                    )}
-                  </span>
-                }
+                label="Client"
                 options={[
                   { value: "", label: "Select a client..." },
                   ...contactOptions,
@@ -684,29 +654,14 @@ const DealModal = ({
             {dealType === "value" ? (
               <div>
                 <Input
-                  label={
-                    <span>
-                      Deal Value ({preferredCurrency})
-                      {parseFloat(formData?.amount) > 0 && (
-                        <span className="ml-1 text-xs text-muted-foreground font-normal">(required with client)</span>
-                      )}
-                    </span>
-                  }
+                  label={`Deal Value (${preferredCurrency})`}
                   type="number"
                   placeholder="0"
                   value={formData?.amount}
-                  onChange={(e) => {
-                    handleInputChange("amount", parseFloat(e?.target?.value) || 0);
-                    if (errors.amount) setErrors((prev) => ({ ...prev, amount: "" }));
-                  }}
-                  required
+                  onChange={(e) =>
+                    handleInputChange("amount", parseFloat(e?.target?.value) || 0)
+                  }
                 />
-                {errors.amount && (
-                  <p className="mt-1 text-xs text-destructive flex items-center gap-1">
-                    <Icon name="AlertCircle" size={12} />
-                    {errors.amount}
-                  </p>
-                )}
               </div>
             ) : (
               <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 flex items-center justify-between">
@@ -764,20 +719,11 @@ const DealModal = ({
 
             {/* Products Section */}
             <div className="border border-border rounded-lg overflow-hidden">
-              <div className="bg-muted/30 px-4 py-3 border-b border-border flex items-center justify-between">
+              <div className="bg-muted/30 px-4 py-3 border-b border-border">
                 <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
                   <Icon name="Package" size={16} />
                   Deal Products
-                  {dealType === "product" && (
-                    <span className="text-xs font-medium text-destructive">(required)</span>
-                  )}
                 </h3>
-                {errors.products && (
-                  <p className="text-xs text-destructive flex items-center gap-1">
-                    <Icon name="AlertCircle" size={12} />
-                    {errors.products}
-                  </p>
-                )}
               </div>
 
               <div className="p-4 space-y-4">
