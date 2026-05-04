@@ -1686,37 +1686,61 @@ const EnhancedSalesmanDashboard = () => {
               Pipeline Summary
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
+              <div
+                className="text-center p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+                onClick={() => navigate("/sales-pipeline", { state: { activeStage: "lead" } })}
+                title="View Lead deals in pipeline"
+              >
                 <div className="text-2xl font-bold text-gray-600">
                   {pipelineSummary.lead || 0}
                 </div>
                 <div className="text-sm text-gray-500">Leads</div>
               </div>
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
+              <div
+                className="text-center p-4 bg-blue-50 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors"
+                onClick={() => navigate("/sales-pipeline", { state: { activeStage: "contact_made" } })}
+                title="View Contacted deals in pipeline"
+              >
                 <div className="text-2xl font-bold text-blue-600">
                   {pipelineSummary.contact_made || 0}
                 </div>
                 <div className="text-sm text-gray-500">Contacted</div>
               </div>
-              <div className="text-center p-4 bg-yellow-50 rounded-lg">
+              <div
+                className="text-center p-4 bg-yellow-50 rounded-lg cursor-pointer hover:bg-yellow-100 transition-colors"
+                onClick={() => navigate("/sales-pipeline", { state: { activeStage: "proposal_sent" } })}
+                title="View Proposal deals in pipeline"
+              >
                 <div className="text-2xl font-bold text-yellow-600">
                   {pipelineSummary.proposal_sent || 0}
                 </div>
                 <div className="text-sm text-gray-500">Proposal</div>
               </div>
-              <div className="text-center p-4 bg-orange-50 rounded-lg">
+              <div
+                className="text-center p-4 bg-orange-50 rounded-lg cursor-pointer hover:bg-orange-100 transition-colors"
+                onClick={() => navigate("/sales-pipeline", { state: { activeStage: "negotiation" } })}
+                title="View Negotiation deals in pipeline"
+              >
                 <div className="text-2xl font-bold text-orange-600">
                   {pipelineSummary.negotiation || 0}
                 </div>
                 <div className="text-sm text-gray-500">Negotiation</div>
               </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
+              <div
+                className="text-center p-4 bg-green-50 rounded-lg cursor-pointer hover:bg-green-100 transition-colors"
+                onClick={() => navigate("/sales-pipeline", { state: { activeStage: "won" } })}
+                title="View Won deals in pipeline"
+              >
                 <div className="text-2xl font-bold text-green-600">
                   {pipelineSummary.won || 0}
                 </div>
                 <div className="text-sm text-gray-500">Won</div>
               </div>
-              <div className="text-center p-4 bg-red-50 rounded-lg">
+              <div
+                className="text-center p-4 bg-red-50 rounded-lg cursor-pointer hover:bg-red-100 transition-colors"
+                onClick={() => navigate("/sales-pipeline", { state: { activeStage: "lost" } })}
+                title="View Lost deals in pipeline"
+              >
                 <div className="text-2xl font-bold text-red-600">
                   {pipelineSummary.lost || 0}
                 </div>
@@ -1779,7 +1803,7 @@ const EnhancedSalesmanDashboard = () => {
                         key={deal.id}
                         className="border-t hover:bg-gray-50 cursor-pointer"
                         onClick={() =>
-                          navigate(`/sales-pipeline?dealId=${deal.id}`)
+                          navigate("/sales-pipeline", { state: { activeStage: deal.stage } })
                         }
                       >
                         <td className="p-3">

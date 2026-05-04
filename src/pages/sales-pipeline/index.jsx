@@ -25,12 +25,6 @@ const SalesPipeline = () => {
   const location = useLocation();
   const pipelineTopRef = useRef(null);
 
-  // Read active stage from navigation state (dashboard click) OR ?stage= URL param
-  const stageFromLocation = (loc) => {
-    const params = new URLSearchParams(loc.search);
-    return loc.state?.activeStage || params.get("stage") || "";
-  };
-
   const buildFilters = (stage = "") => ({
     search: "",
     owner_id: "",
@@ -42,6 +36,17 @@ const SalesPipeline = () => {
     showOverdue: false,
   });
 
+  // Read active stage + active filter from navigation state (dashboard click) OR ?stage= URL param.
+  const filtersFromLocation = (loc) => {
+    const params = new URLSearchParams(loc.search);
+    const activeStage = loc.state?.activeStage || params.get("stage") || "";
+    const activeFilter = loc.state?.activeFilter;
+    return {
+      ...buildFilters(activeStage),
+      ...(activeFilter === "showOverdue" ? { showOverdue: true } : {}),
+    };
+  };
+
   const [isLoading, setIsLoading] = useState(true);
   const [deals, setDeals] = useState([]);
   const [filteredDeals, setFilteredDeals] = useState([]);
@@ -51,14 +56,21 @@ const SalesPipeline = () => {
   const [showDealModal, setShowDealModal] = useState(false);
   const [viewMode, setViewMode] = useState("pipeline");
   const [trackedKey, setTrackedKey] = useState(location.key);
-  const [filters, setFilters] = useState(() => buildFilters(stageFromLocation(location)));
+  const [filters, setFilters] = useState(() => filtersFromLocation(location));
 
   // Synchronously reset filters when location.key changes (new navigation from dashboard).
   // This runs during render so PipelineFilters always gets the right initialFilters on mount.
   if (trackedKey !== location.key) {
     setTrackedKey(location.key);
-    setFilters(buildFilters(stageFromLocation(location)));
+    setFilters(filtersFromLocation(location));
   }
+
+  // Clear navigation state after applying it so the back button does not re-apply the stage filter.
+  useEffect(() => {
+    if (location.state?.activeStage || location.state?.activeFilter) {
+      window.history.replaceState({}, document.title);
+    }
+  }, []);
 
   // Add cache timestamp to track data freshness
   const [lastFetchTime, setLastFetchTime] = useState(null);
