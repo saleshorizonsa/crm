@@ -20,6 +20,21 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
     is_active: true,
   });
   const [loading, setLoading] = useState(false);
+  const [existingGroups, setExistingGroups] = useState([]);
+  const [addingNewGroup, setAddingNewGroup] = useState(false);
+  const [newGroupInput, setNewGroupInput] = useState("");
+
+  // Load existing material groups on mount
+  useEffect(() => {
+    const loadGroups = async () => {
+      const { data } = await adminService.getAllProducts();
+      if (data) {
+        const groups = [...new Set(data.map((p) => p.material_group).filter(Boolean))].sort();
+        setExistingGroups(groups);
+      }
+    };
+    loadGroups();
+  }, []);
 
   useEffect(() => {
     if (product) {
@@ -35,6 +50,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
         maintenance_status: product.maintenance_status || "Active",
         is_active: product.is_active ?? true,
       });
+      // If editing and the product's group isn't in the list yet, it's valid — keep it
     }
   }, [product]);
 
@@ -63,9 +79,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
         : await adminService.createProduct(payload);
 
       if (error) {
-        alert(
-          `Failed to ${product ? "update" : "create"} product: ` + error.message
-        );
+        alert(`Failed to ${product ? "update" : "create"} product: ` + error.message);
       } else {
         alert(`Product ${product ? "updated" : "created"} successfully!`);
         onSuccess();
@@ -78,11 +92,38 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
   };
 
   const handleChange = (field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
+
+  const handleGroupSelect = (value) => {
+    if (value === "__new__") {
+      setAddingNewGroup(true);
+      setNewGroupInput("");
+      handleChange("material_group", "");
+    } else {
+      setAddingNewGroup(false);
+      handleChange("material_group", value);
+    }
+  };
+
+  const handleNewGroupConfirm = () => {
+    const trimmed = newGroupInput.trim();
+    if (!trimmed) return;
+    handleChange("material_group", trimmed);
+    if (!existingGroups.includes(trimmed)) {
+      setExistingGroups((prev) => [...prev, trimmed].sort());
+    }
+    setAddingNewGroup(false);
+  };
+
+  // The value shown in the select: if addingNewGroup we highlight __new__, else the current group
+  const selectValue = addingNewGroup
+    ? "__new__"
+    : existingGroups.includes(formData.material_group)
+    ? formData.material_group
+    : formData.material_group
+    ? "__new__" // editing a product whose group isn't in list yet — treat as custom
+    : "";
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -95,10 +136,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
               {product ? "Edit Product" : "Add New Product"}
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="text-muted-foreground hover:text-foreground"
-          >
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <Icon name="X" size={20} />
           </button>
         </div>
@@ -121,9 +159,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
 
           {/* Description */}
           <div>
-            <label className="block text-sm font-medium mb-1">
-              Description
-            </label>
+            <label className="block text-sm font-medium mb-1">Description</label>
             <textarea
               className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               rows={3}
@@ -135,27 +171,68 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
 
           {/* Material Group and Base UOM */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Material Group — select from existing or add new */}
             <div>
-              <label className="block text-sm font-medium mb-1">
-                Material Group
-              </label>
-              <Input
-                type="text"
-                placeholder="e.g., Raw Materials"
-                value={formData.material_group}
-                onChange={(e) => handleChange("material_group", e.target.value)}
-              />
+              <label className="block text-sm font-medium mb-1">Material Group</label>
+              <select
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+                value={selectValue}
+                onChange={(e) => handleGroupSelect(e.target.value)}
+              >
+                <option value="">— Select a group —</option>
+                {existingGroups.map((g) => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+                <option value="__new__">+ Add new group…</option>
+              </select>
+
+              {/* Inline input for new group name */}
+              {addingNewGroup && (
+                <div className="mt-2 flex gap-2">
+                  <Input
+                    type="text"
+                    placeholder="New group name"
+                    value={newGroupInput}
+                    onChange={(e) => setNewGroupInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); handleNewGroupConfirm(); }
+                      if (e.key === "Escape") { setAddingNewGroup(false); }
+                    }}
+                    autoFocus
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleNewGroupConfirm}
+                    disabled={!newGroupInput.trim()}
+                  >
+                    Add
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setAddingNewGroup(false)}
+                  >
+                    <Icon name="X" size={14} />
+                  </Button>
+                </div>
+              )}
+
+              {/* Show selected value when it's a custom one not in the list */}
+              {!addingNewGroup && formData.material_group && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Selected: <span className="font-medium text-foreground">{formData.material_group}</span>
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">
-                Base Unit of Measure
-              </label>
+              <label className="block text-sm font-medium mb-1">Base Unit of Measure</label>
               <Select
                 value={formData.base_unit_of_measure}
-                onChange={(e) =>
-                  handleChange("base_unit_of_measure", e.target.value)
-                }
+                onChange={(e) => handleChange("base_unit_of_measure", e.target.value)}
               >
                 <option value="EA">Each (EA)</option>
                 <option value="PC">Piece (PC)</option>
@@ -215,7 +292,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
             </div>
           </div>
 
-          {/* Unit Price (legacy default) and Maintenance Status */}
+          {/* Default Unit Price and Maintenance Status */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">
@@ -232,14 +309,10 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">
-                Maintenance Status
-              </label>
+              <label className="block text-sm font-medium mb-1">Maintenance Status</label>
               <Select
                 value={formData.maintenance_status}
-                onChange={(e) =>
-                  handleChange("maintenance_status", e.target.value)
-                }
+                onChange={(e) => handleChange("maintenance_status", e.target.value)}
               >
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
@@ -256,10 +329,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
               checked={formData.is_active}
               onCheckedChange={(checked) => handleChange("is_active", checked)}
             />
-            <label
-              htmlFor="is_active"
-              className="text-sm font-medium cursor-pointer"
-            >
+            <label htmlFor="is_active" className="text-sm font-medium cursor-pointer">
               Product is active and available for selection
             </label>
           </div>
