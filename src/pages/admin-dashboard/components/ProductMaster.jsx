@@ -288,7 +288,7 @@ const ProductMaster = () => {
                           onClick={() => handleEdit(product)}
                           title="Edit Product"
                         >
-                          <Icon name="Edit" size={16} />
+                          <Icon name="Pencil" size={16} className="text-amber-500" />
                         </Button>
                         <Button
                           variant="ghost"
