@@ -26,5 +26,6 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['@dhiwise/component-tagger'],
+    include: ['@react-pdf/renderer'],
   },
 });

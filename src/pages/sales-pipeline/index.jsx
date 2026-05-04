@@ -16,6 +16,7 @@ import {
   userService,
   activityService,
 } from "../../services/supabaseService";
+import { exportToExcel } from "../../utils/exportUtils";
 import { now } from "d3";
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { resolveDateRange } from "../../components/ui/DateRangePicker";
@@ -282,6 +283,32 @@ const SalesPipeline = () => {
     document.body.removeChild(link);
   };
 
+  const handleExportToExcel = () => {
+    if (!filteredDeals || filteredDeals.length === 0) return;
+    const rows = filteredDeals.map((d) => ({
+      Deal:             d.title || "",
+      Contact:          d.contact ? `${d.contact.first_name || ""} ${d.contact.last_name || ""}`.trim() : "",
+      Company:          d.contact?.company_name || "",
+      Stage:            d.stage || "",
+      Amount:           d.amount || 0,
+      Currency:         d.currency || "USD",
+      Owner:            d.owner?.full_name || d.owner?.email || "",
+      "Expected Close": d.expected_close_date || "",
+      "Created At":     d.created_at ? new Date(d.created_at).toLocaleDateString() : "",
+    }));
+    exportToExcel([{ name: "Pipeline", data: rows }], `pipeline-deals-${formatLocalDateYMD(new Date())}`);
+  };
+
+  const handleExportToPdf = async () => {
+    if (!filteredDeals || filteredDeals.length === 0) return;
+    try {
+      const { downloadReportPdf } = await import("../../components/reports/ReportPDF");
+      await downloadReportPdf("pipeline", filteredDeals, { from: null, to: null }, company?.name || "");
+    } catch (err) {
+      console.error("PDF export failed:", err);
+    }
+  };
+
   const handleCreateDeal = () => {
     setSelectedDeal(null);
     setShowDealModal(true);
@@ -440,7 +467,7 @@ const SalesPipeline = () => {
             </h1>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className="flex items-center bg-gray-100 rounded-lg p-1">
               <Button
                 variant={viewMode === "pipeline" ? "default" : "ghost"}
@@ -460,6 +487,24 @@ const SalesPipeline = () => {
                 Table
               </Button>
             </div>
+            <button
+              onClick={handleExportToExcel}
+              disabled={filteredDeals.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-40"
+              title="Export to Excel"
+            >
+              <Icon name="FileSpreadsheet" size={13} className="text-emerald-600" />
+              Excel
+            </button>
+            <button
+              onClick={handleExportToPdf}
+              disabled={filteredDeals.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-40"
+              title="Export to PDF"
+            >
+              <Icon name="FileDown" size={13} className="text-red-500" />
+              PDF
+            </button>
             <Button
               variant="primary"
               onClick={handleCreateDeal}
