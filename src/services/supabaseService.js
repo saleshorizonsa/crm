@@ -3011,7 +3011,9 @@ export const salesTargetService = {
         );
       }
 
-      // Guard against unique constraint: one target per (assigned_to, period_start, period_end, company_id)
+      // Guard against duplicate: one target per (assigned_to, period_start, period_end, company_id, target_type)
+      // A salesman can have separate By Value, By Clients, and By Product targets for the same period
+      const resolvedTargetType = targetData.targetType || targetData.target_type || "total_value";
       const { data: existingTarget } = await supabase
         .from("sales_targets")
         .select("id")
@@ -3019,14 +3021,19 @@ export const salesTargetService = {
         .eq("period_start", targetData.periodStart)
         .eq("period_end", targetData.periodEnd)
         .eq("company_id", targetData.companyId)
+        .eq("target_type", resolvedTargetType)
         .maybeSingle();
 
       if (existingTarget) {
+        const typeLabel =
+          resolvedTargetType === "total_value" ? "By Value"
+          : resolvedTargetType === "by_clients" ? "By Clients"
+          : resolvedTargetType === "by_products" ? "By Product"
+          : resolvedTargetType;
         return {
           data: null,
           error: {
-            message:
-              "This team member already has a target for the selected period. Please edit the existing target instead.",
+            message: `A "${typeLabel}" target already exists for this team member in the selected period. Please edit the existing target instead.`,
           },
         };
       }
