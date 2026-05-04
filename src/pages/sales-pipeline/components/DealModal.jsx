@@ -11,6 +11,7 @@ import {
   dealProductService,
   dealService,
   uomService,
+  salesTargetService,
 } from "../../../services/supabaseService";
 
 const DealModal = ({
@@ -23,7 +24,7 @@ const DealModal = ({
   users = [],
 }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
-  const { user } = useAuth();
+  const { user, userProfile, company } = useAuth();
   const [formData, setFormData] = useState({
     title: deal?.title || "",
     description: deal?.description || "",
@@ -36,6 +37,7 @@ const DealModal = ({
 
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [errors, setErrors] = useState({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteReferences, setDeleteReferences] = useState(null);
   const [dealProducts, setDealProducts] = useState([]);
@@ -76,6 +78,7 @@ const DealModal = ({
       // Reset delete state
       setShowDeleteConfirm(false);
       setDeleteReferences(null);
+      setErrors({});
       console.log("🔄 Modal opened with deal:", deal);
       setFormData({
         title: deal?.title || "",
@@ -365,56 +368,94 @@ const DealModal = ({
 
   const handleSave = async (e) => {
     e.preventDefault();
+
+    // Validate: client and value are mutually required
+    const newErrors = {};
+    if (!formData.title?.trim()) {
+      newErrors.title = "Deal title is required";
+    }
+    const hasAmount = parseFloat(formData.amount) > 0;
+    const hasContact = !!formData.contact_id;
+    if (hasAmount && !hasContact) {
+      newErrors.contact_id = "Please select a client when entering a deal value";
+    }
+    if (hasContact && !hasAmount) {
+      newErrors.amount = "Please enter a deal value when a client is selected";
+    }
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+    setErrors({});
     setIsSaving(true);
 
     try {
-      // Prepare the data with all required fields
       const dealData = {
         ...formData,
-        // Include deal id if editing existing deal
         ...(deal?.id && { id: deal.id }),
-        // Ensure numeric fields are properly typed
         amount: parseFloat(formData.amount) || 0,
-        // Automatically set owner to current user
         owner_id: user?.id,
-        // Use global currency from context
         currency: preferredCurrency,
-        // Remove empty strings for optional UUID fields
         contact_id: formData.contact_id || null,
       };
 
-      // Save the deal
       const savedDeal = await onSave(dealData);
 
       console.log("Saved deal:", savedDeal);
 
-      // If there are products to add (for new deals only), add them
+      // Add products for new deals
       if (!deal?.id && selectedProducts.length > 0 && savedDeal?.id) {
-        console.log("📦 Adding products to new deal:", {
-          dealId: savedDeal.id,
-          productCount: selectedProducts.length,
-          products: selectedProducts,
-        });
-
         for (const product of selectedProducts) {
-          console.log("➕ Adding product:", product);
           const result = await dealProductService.addProductToDeal(
             savedDeal.id,
             product.productId,
-            product.uom_value || product.quantity || 0, // quantity = uom_value for correct line_total calculation
-            product.sqm || null, // sqm
-            product.ton || null, // ton
-            product.unit_price || null, // unitPrice
-            null, // notes
-            product.uom_type || null, // uomType
-            product.uom_value || null, // uomValue
+            product.uom_value || product.quantity || 0,
+            product.sqm || null,
+            product.ton || null,
+            product.unit_price || null,
+            null,
+            product.uom_type || null,
+            product.uom_value || null,
           );
-          console.log("✅ Product add result:", result);
-
           if (result.error) {
-            console.error("❌ Failed to add product:", result.error);
+            console.error("Failed to add product:", result.error);
             throw result.error;
           }
+        }
+      }
+
+      // Update sales target progress when deal stage becomes "won"
+      const isNewWin = dealData.stage === "won" && (!deal || deal.stage !== "won");
+      if (isNewWin && savedDeal) {
+        try {
+          const targetUserId = savedDeal.owner_id || user?.id;
+          const companyId = savedDeal.company_id || company?.id;
+          const { data: targets } = await salesTargetService.getMyTargets(companyId, targetUserId);
+          const closeDate = savedDeal.expected_close_date
+            ? new Date(savedDeal.expected_close_date)
+            : new Date();
+          const activeTargets = (targets || []).filter((t) => {
+            if (t.status !== "active") return false;
+            const start = new Date(t.period_start);
+            const end = new Date(t.period_end);
+            return closeDate >= start && closeDate <= end;
+          });
+          for (const target of activeTargets) {
+            const newProgress = parseFloat(target.progress_amount || 0) + parseFloat(savedDeal.amount || 0);
+            await salesTargetService.updateTarget(target.id, {
+              targetAmount: target.target_amount,
+              currency: target.currency,
+              periodStart: target.period_start,
+              periodEnd: target.period_end,
+              targetType: target.target_type,
+              status: target.status,
+              progressAmount: newProgress,
+              notes: target.notes,
+            });
+            console.log(`Sales target ${target.id}: progress updated to ${newProgress}`);
+          }
+        } catch (targetErr) {
+          console.error("Failed to update sales target (non-fatal):", targetErr);
         }
       }
 
@@ -422,7 +463,6 @@ const DealModal = ({
     } catch (error) {
       console.error("Error saving deal:", error);
       alert("Failed to save deal: " + error.message);
-      // Let the error bubble up to be handled by the parent component
     } finally {
       setIsSaving(false);
     }
@@ -529,37 +569,82 @@ const DealModal = ({
         <div className="p-6 overflow-y-auto max-h-[70vh]">
           <div className="space-y-6">
             {/* Title */}
-            <Input
-              label="Deal Title"
-              type="text"
-              placeholder="Enter deal title"
-              value={formData?.title}
-              onChange={(e) => handleInputChange("title", e?.target?.value)}
-              required
-            />
+            <div>
+              <Input
+                label="Deal Title"
+                type="text"
+                placeholder="Enter deal title"
+                value={formData?.title}
+                onChange={(e) => {
+                  handleInputChange("title", e?.target?.value);
+                  if (errors.title) setErrors((prev) => ({ ...prev, title: "" }));
+                }}
+                required
+              />
+              {errors.title && (
+                <p className="mt-1 text-xs text-destructive flex items-center gap-1">
+                  <Icon name="AlertCircle" size={12} />
+                  {errors.title}
+                </p>
+              )}
+            </div>
 
             {/* Contact */}
-            <Select
-              label="Contact"
-              options={[
-                { value: "", label: "Select a contact" },
-                ...contactOptions,
-              ]}
-              value={formData?.contact_id || ""}
-              onChange={(value) => handleInputChange("contact_id", value)}
-            />
+            <div>
+              <Select
+                label={
+                  <span>
+                    Client
+                    {formData?.contact_id && (
+                      <span className="ml-1 text-xs text-muted-foreground font-normal">(required with value)</span>
+                    )}
+                  </span>
+                }
+                options={[
+                  { value: "", label: "Select a client..." },
+                  ...contactOptions,
+                ]}
+                value={formData?.contact_id || ""}
+                onChange={(value) => {
+                  handleInputChange("contact_id", value);
+                  if (errors.contact_id) setErrors((prev) => ({ ...prev, contact_id: "" }));
+                }}
+              />
+              {errors.contact_id && (
+                <p className="mt-1 text-xs text-destructive flex items-center gap-1">
+                  <Icon name="AlertCircle" size={12} />
+                  {errors.contact_id}
+                </p>
+              )}
+            </div>
 
             {/* Amount */}
-            <Input
-              label={`Deal Amount (${preferredCurrency})`}
-              type="number"
-              placeholder="0"
-              value={formData?.amount}
-              onChange={(e) =>
-                handleInputChange("amount", parseFloat(e?.target?.value) || 0)
-              }
-              required
-            />
+            <div>
+              <Input
+                label={
+                  <span>
+                    Deal Value ({preferredCurrency})
+                    {parseFloat(formData?.amount) > 0 && (
+                      <span className="ml-1 text-xs text-muted-foreground font-normal">(required with client)</span>
+                    )}
+                  </span>
+                }
+                type="number"
+                placeholder="0"
+                value={formData?.amount}
+                onChange={(e) => {
+                  handleInputChange("amount", parseFloat(e?.target?.value) || 0);
+                  if (errors.amount) setErrors((prev) => ({ ...prev, amount: "" }));
+                }}
+                required
+              />
+              {errors.amount && (
+                <p className="mt-1 text-xs text-destructive flex items-center gap-1">
+                  <Icon name="AlertCircle" size={12} />
+                  {errors.amount}
+                </p>
+              )}
+            </div>
 
             {/* Stage, Priority, Close Date */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
