@@ -1672,11 +1672,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       </div>
 
       {/* Sales Forecast */}
-      <SalesForecast
-        companyId={selectedCompany?.id}
-        userId={user?.id}
-        role={userProfile?.role}
-      />
+      <SalesForecast />
 
       <div className="bg-white rounded-lg shadow">
         <ActivityFeed

@@ -2250,11 +2250,7 @@ const EnhancedSupervisorDashboard = ({
           {/* Hot Leads + Forecast */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <HotLeadsWidget companyId={company?.id} />
-            <SalesForecast
-              companyId={company?.id}
-              userId={user?.id}
-              role={userProfile?.role}
-            />
+            <SalesForecast />
           </div>
 
           {/* Activity Feed */}

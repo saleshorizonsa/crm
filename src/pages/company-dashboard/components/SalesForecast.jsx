@@ -6,6 +6,7 @@ import DateRangePicker, {
 import { forecastService } from "../../../services/supabaseService";
 import { buildForecast } from "../../../utils/forecastEngine";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { useAuth } from "../../../contexts/AuthContext";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -71,8 +72,16 @@ const Skeleton = () => (
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const SalesForecast = ({ companyId, userId, role }) => {
+// Accepts optional `deals` / `isLoading` props for legacy callers that
+// pass deal data directly. When the user context is available the component
+// always self-fetches from Supabase and uses that data preferentially.
+const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
   const { formatCurrency } = useCurrency();
+  const { user, company, userProfile } = useAuth();
+
+  const userId    = user?.id;
+  const companyId = company?.id;
+  const role      = userProfile?.role;
 
   const [preset, setPreset]           = useState("this-month");
   const [customRange, setCustomRange] = useState({ from: "", to: "" });
@@ -123,13 +132,15 @@ const SalesForecast = ({ companyId, userId, role }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, userId, role, period.startDate?.getTime(), period.endDate?.getTime()]);
 
-  const forecast = useMemo(
-    () => buildForecast(rawData.deals, rawData.target?.target_amount ?? 0),
-    [rawData],
-  );
+  // Prefer live-fetched deals; fall back to any deals passed as a prop.
+  const forecast = useMemo(() => {
+    const dealsToUse = rawData.deals.length > 0 ? rawData.deals : (dealsProp || []);
+    return buildForecast(dealsToUse, rawData.target?.target_amount ?? 0);
+  }, [rawData, dealsProp]);
 
   const hasTarget    = rawData.target !== null;
   const targetAmount = rawData.target?.target_amount ?? 0;
+  const showLoading  = isLoading || (isLoadingProp && rawData.deals.length === 0);
 
   const attainmentColor =
     forecast.attainment >= 75 ? "bg-emerald-500" :
@@ -178,7 +189,7 @@ const SalesForecast = ({ companyId, userId, role }) => {
       </div>
 
       {/* No period selected */}
-      {!period.startDate && !isLoading && (
+      {!period.startDate && !showLoading && (
         <div className="flex flex-col items-center justify-center py-10 text-center">
           <Icon name="Calendar" size={32} className="text-muted-foreground mb-2" />
           <p className="text-sm text-muted-foreground">
@@ -188,10 +199,10 @@ const SalesForecast = ({ companyId, userId, role }) => {
       )}
 
       {/* Loading */}
-      {isLoading && <Skeleton />}
+      {showLoading && <Skeleton />}
 
       {/* Error */}
-      {fetchError && !isLoading && (
+      {fetchError && !showLoading && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
           <Icon name="AlertCircle" size={16} className="flex-shrink-0" />
           <span>Failed to load forecast data. Try refreshing.</span>
@@ -199,7 +210,7 @@ const SalesForecast = ({ companyId, userId, role }) => {
       )}
 
       {/* Main content */}
-      {!isLoading && !fetchError && period.startDate && (
+      {!showLoading && !fetchError && period.startDate && (
         <div className="space-y-4">
           {/* Target attainment bar */}
           {hasTarget ? (

@@ -2121,11 +2121,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               </div>
 
               {/* Sales Forecast */}
-              <SalesForecast
-                companyId={company?.id}
-                userId={effectiveUser?.id}
-                role={effectiveUserProfile?.role}
-              />
+              <SalesForecast />
 
               {/* Activity Feed */}
               <div className="bg-white rounded-lg shadow">
