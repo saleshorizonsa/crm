@@ -3011,6 +3011,26 @@ export const salesTargetService = {
         );
       }
 
+      // Guard against unique constraint: one target per (assigned_to, period_start, period_end, company_id)
+      const { data: existingTarget } = await supabase
+        .from("sales_targets")
+        .select("id")
+        .eq("assigned_to", targetData.assignedTo)
+        .eq("period_start", targetData.periodStart)
+        .eq("period_end", targetData.periodEnd)
+        .eq("company_id", targetData.companyId)
+        .maybeSingle();
+
+      if (existingTarget) {
+        return {
+          data: null,
+          error: {
+            message:
+              "This team member already has a target for the selected period. Please edit the existing target instead.",
+          },
+        };
+      }
+
       const insertData = {
         assigned_by: user.id, // Always use the authenticated user ID
         assigned_to: targetData.assignedTo,
