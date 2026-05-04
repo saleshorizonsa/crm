@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
 import { useAuth } from "contexts/AuthContext";
+import { contactService } from "services/supabaseService";
 import UserManagement from "./components/UserManagement";
 import ProductMaster from "./components/ProductMaster";
 import SalesTarget from "./components/SalesTarget";
@@ -10,7 +11,23 @@ import UomSettings from "./components/UomSettings";
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState("users");
-  const { signOut, userProfile } = useAuth();
+  const { signOut, userProfile, company } = useAuth();
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const [recalcMsg, setRecalcMsg] = useState(null);
+
+  const handleRecalculate = async () => {
+    if (!company?.id) return;
+    setIsRecalculating(true);
+    setRecalcMsg(null);
+    const { data, error } = await contactService.recalculateAllScores(company.id);
+    setIsRecalculating(false);
+    if (error) {
+      setRecalcMsg({ ok: false, text: "Recalculation failed." });
+    } else {
+      setRecalcMsg({ ok: true, text: `${data.updated} contact${data.updated !== 1 ? "s" : ""} updated.` });
+    }
+    setTimeout(() => setRecalcMsg(null), 4000);
+  };
 
   const tabs = [
     { id: "users", label: "User Management", icon: "Users" },
@@ -39,6 +56,24 @@ const AdminDashboard = () => {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              {recalcMsg && (
+                <span className={`text-xs font-medium ${recalcMsg.ok ? "text-emerald-600" : "text-destructive"}`}>
+                  {recalcMsg.text}
+                </span>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRecalculate}
+                disabled={isRecalculating}
+                className="gap-2"
+                title="Recalculate lead scores for all contacts"
+              >
+                {isRecalculating
+                  ? <Icon name="Loader2" size={14} className="animate-spin" />
+                  : <Icon name="RefreshCw" size={14} />}
+                {isRecalculating ? "Recalculating…" : "Recalc Scores"}
+              </Button>
               <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-lg">
                 <Icon name="Shield" className="text-primary" size={20} />
                 <span className="text-sm font-medium">

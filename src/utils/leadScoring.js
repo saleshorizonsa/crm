@@ -1,3 +1,12 @@
+export const STAGE_WEIGHTS = {
+  lead:          0.10,
+  contact_made:  0.25,
+  proposal_sent: 0.50,
+  negotiation:   0.75,
+  won:           1.00,
+  lost:          0.00,
+};
+
 // Maximum achievable raw score (all positive signals, no decay):
 //   Profile:    email(10) + phone(8) + company_name(8) + active(5)  = 31
 //   Engagement: open_deal(20) + deal_stage(15) + activity(12) + task(7) = 54

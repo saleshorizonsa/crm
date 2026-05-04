@@ -13,7 +13,7 @@ ALTER TABLE contacts
 
 ALTER TABLE contacts
   ADD CONSTRAINT contacts_lead_grade_check
-    CHECK (lead_grade IN ('hot', 'warm', 'cold'));
+    CHECK (lead_grade IN ('hot', 'warm', 'cool', 'cold'));
 
 -- Index for owner-scoped grade filtering (contacts scope to company via owner_id)
 CREATE INDEX IF NOT EXISTS idx_contacts_owner_lead_grade
