@@ -3154,7 +3154,14 @@ export const salesTargetService = {
           company:companies(id, name)
         `,
         )
-        .single();
+        .maybeSingle();
+
+      if (!error && !data) {
+        return {
+          data: null,
+          error: { message: "Target not found or you do not have permission to update it." },
+        };
+      }
 
       return { data, error };
     } catch (error) {
@@ -3166,14 +3173,12 @@ export const salesTargetService = {
   // Delete a sales target
   async deleteTarget(targetId) {
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("sales_targets")
         .delete()
-        .eq("id", targetId)
-        .select()
-        .single();
+        .eq("id", targetId);
 
-      return { data, error };
+      return { data: null, error };
     } catch (error) {
       console.error("Error deleting target:", error);
       return { data: null, error };
