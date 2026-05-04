@@ -23,6 +23,7 @@ import ActionableDashboard from "./ActionableDashboard";
 import HotLeadsWidget from "./HotLeadsWidget";
 import SalesForecast from "./SalesForecast";
 import MetricInsightModal from "./MetricInsightModal";
+import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
 import {
@@ -44,6 +45,7 @@ const EnhancedSupervisorDashboard = ({
 }) => {
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
+  const { dateRange } = useDateRange();
 
   // If viewing as another user (director view), use that user's data
   const effectiveUser = viewAsUser || { id: user?.id };
@@ -129,7 +131,7 @@ const EnhancedSupervisorDashboard = ({
     if (company?.id && effectiveUserProfile?.id) {
       loadSupervisorData();
     }
-  }, [company?.id, effectiveUserProfile?.id]);
+  }, [company?.id, effectiveUserProfile?.id, dateRange.from, dateRange.to]);
 
   // Generate filter options for month, quarter, and year
   const monthOptions = useMemo(() => {
@@ -801,7 +803,7 @@ const EnhancedSupervisorDashboard = ({
         ),
         activityService.getUserActivities(company.id, effectiveUser.id, 20),
         userService.getCompanyUsers(company.id),
-        dealService.getDeals(company.id, { viewAll: true }, effectiveUser.id),
+        dealService.getDeals(company.id, { viewAll: true, dateFrom: dateRange.from, dateTo: dateRange.to }, effectiveUser.id),
         contactService.getContacts(company.id, {}, effectiveUser.id),
         taskService.getMyTasks(effectiveUser.id, company.id, {
           userOnly: false,

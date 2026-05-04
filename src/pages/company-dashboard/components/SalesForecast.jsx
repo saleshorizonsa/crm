@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Icon from "../../../components/AppIcon";
-import DateRangePicker, {
-  resolveDateRange,
-} from "../../../components/ui/DateRangePicker";
 import { forecastService } from "../../../services/supabaseService";
 import { buildForecast } from "../../../utils/forecastEngine";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
+import { useDateRange } from "../../../contexts/DateRangeContext";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -78,27 +76,19 @@ const Skeleton = () => (
 const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
   const { formatCurrency } = useCurrency();
   const { user, company, userProfile } = useAuth();
+  const { dateRange } = useDateRange();
 
   const userId    = user?.id;
   const companyId = company?.id;
   const role      = userProfile?.role;
 
-  const [preset, setPreset]           = useState("this-month");
-  const [customRange, setCustomRange] = useState({ from: "", to: "" });
   const [rawData, setRawData]         = useState({ deals: [], target: null });
   const [isLoading, setIsLoading]     = useState(false);
   const [fetchError, setFetchError]   = useState(null);
 
-  // Resolve the date range every time preset or customRange changes
-  const period = useMemo(
-    () => resolveDateRange(preset, customRange),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [preset, customRange.from, customRange.to],
-  );
-
-  // Fetch whenever identity or period changes
+  // Fetch whenever identity or global date range changes
   useEffect(() => {
-    if (!userId || !period.startDate || !period.endDate) return;
+    if (!userId || !dateRange.from || !dateRange.to) return;
 
     let cancelled = false;
 
@@ -110,8 +100,8 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
         companyId,
         userId,
         role,
-        periodStart: toYMD(period.startDate),
-        periodEnd:   toYMD(period.endDate),
+        periodStart: dateRange.from,
+        periodEnd:   dateRange.to,
       });
 
       if (cancelled) return;
@@ -128,9 +118,8 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
     return () => {
       cancelled = true;
     };
-    // getTime() gives stable primitives for Date deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId, userId, role, period.startDate?.getTime(), period.endDate?.getTime()]);
+  }, [companyId, userId, role, dateRange.from, dateRange.to]);
 
   // Prefer live-fetched deals; fall back to any deals passed as a prop.
   const forecast = useMemo(() => {
@@ -155,48 +144,24 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
   const openCount = rawData.deals.filter((d) => d.stage !== "won").length;
   const wonCount  = rawData.deals.filter((d) => d.stage === "won").length;
 
-  const handleRangeChange = (value, custom) => {
-    setPreset(value);
-    setCustomRange(custom ?? { from: "", to: "" });
-  };
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="bg-card border border-border rounded-lg p-6 enterprise-shadow">
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 mb-5">
-        <div className="min-w-0">
-          <h3 className="text-lg font-semibold text-card-foreground">
-            Sales Forecast
-          </h3>
-          {hasTarget && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Target&nbsp;
-              <span className="font-medium text-card-foreground">
-                {formatCurrency(targetAmount)}
-              </span>
-            </p>
-          )}
-        </div>
-        <DateRangePicker
-          value={preset}
-          customRange={customRange}
-          onChange={handleRangeChange}
-          className="w-44 flex-shrink-0"
-          placeholder="Period"
-        />
-      </div>
-
-      {/* No period selected */}
-      {!period.startDate && !showLoading && (
-        <div className="flex flex-col items-center justify-center py-10 text-center">
-          <Icon name="Calendar" size={32} className="text-muted-foreground mb-2" />
-          <p className="text-sm text-muted-foreground">
-            Select a date range to view the forecast
+      <div className="mb-5">
+        <h3 className="text-lg font-semibold text-card-foreground">
+          Sales Forecast
+        </h3>
+        {hasTarget && (
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Target&nbsp;
+            <span className="font-medium text-card-foreground">
+              {formatCurrency(targetAmount)}
+            </span>
           </p>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Loading */}
       {showLoading && <Skeleton />}
@@ -210,7 +175,7 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
       )}
 
       {/* Main content */}
-      {!showLoading && !fetchError && period.startDate && (
+      {!showLoading && !fetchError && (dateRange.from || dateRange.isAllTime) && (
         <div className="space-y-4">
           {/* Target attainment bar */}
           {hasTarget ? (

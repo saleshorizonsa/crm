@@ -32,6 +32,7 @@ import ActionableDashboard from "./ActionableDashboard";
 import MetricInsightModal from "./MetricInsightModal";
 import PerformanceBarChart from "./PerformanceBarChart";
 import SalesForecast from "./SalesForecast";
+import { useDateRange } from "../../../contexts/DateRangeContext";
 
 // Employee-specific dashboards - use Enhanced versions for full features
 import EnhancedManagerDashboard from "./EnhancedManagerDashboard";
@@ -59,6 +60,7 @@ import {
 const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const { user, userProfile } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
+  const { dateRange } = useDateRange();
   const { t } = useLanguage();
   const navigate = useNavigate();
 
@@ -133,7 +135,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       loadActionItems();
       loadAllEmployees();
     }
-  }, [selectedCompany]);
+  }, [selectedCompany, dateRange.from, dateRange.to]);
 
   // Reload metrics when selected employee changes
   useEffect(() => {
@@ -879,7 +881,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           ? activityService.getUserActivities(companyId, targetUserId, 20)
           : activityService.getActivities(companyId, 20),
         userService.getCompanyUsers(companyId),
-        dealService.getDeals(companyId, { viewAll }, targetUserId),
+        dealService.getDeals(companyId, { viewAll, dateFrom: dateRange.from, dateTo: dateRange.to }, targetUserId),
         contactService.getContacts(companyId, {}, targetUserId),
         taskService.getMyTasks(targetUserId || user.id, companyId, {
           userOnly: !viewAll,

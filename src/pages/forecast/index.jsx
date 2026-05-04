@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from "react";
 import Icon from "../../components/AppIcon";
 import Header from "../../components/ui/Header";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
-import DateRangePicker, { resolveDateRange } from "../../components/ui/DateRangePicker";
 import { useAuth } from "../../contexts/AuthContext";
+import { useDateRange } from "../../contexts/DateRangeContext";
 import { forecastService } from "../../services/supabaseService";
 import { buildForecast } from "../../utils/forecastEngine";
 import { generateInsights, generatePrediction } from "../../utils/forecastInsights";
@@ -13,15 +13,6 @@ import AIPredictionCard   from "./components/AIPredictionCard";
 import StageBreakdown     from "./components/StageBreakdown";
 import ForecastDealTable  from "./components/ForecastDealTable";
 import ProjectionChart    from "../company-dashboard/components/forecast/ProjectionChart";
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-const toYMD = (d) => {
-  const y  = d.getFullYear();
-  const m  = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
-};
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
@@ -49,20 +40,14 @@ const PageSkeleton = () => (
 const ForecastPage = () => {
   const { user, userProfile, company } = useAuth();
 
-  const [preset, setPreset]           = useState("this-quarter");
-  const [customRange, setCustomRange] = useState({ from: "", to: "" });
-  const [rawData, setRawData]         = useState({ deals: [], target: null });
+  const { dateRange } = useDateRange();
+  const [rawData, setRawData] = useState({ deals: [], target: null });
   const [isLoading, setIsLoading]     = useState(false);
   const [fetchError, setFetchError]   = useState(null);
 
-  const period = useMemo(
-    () => resolveDateRange(preset, customRange),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [preset, customRange.from, customRange.to],
-  );
-
   useEffect(() => {
-    if (!user?.id || !period.startDate || !period.endDate) return;
+    if (!user?.id) return;
+    if (!dateRange.isAllTime && !dateRange.from) return;
 
     let cancelled = false;
 
@@ -74,8 +59,8 @@ const ForecastPage = () => {
         companyId:   company?.id,
         userId:      user.id,
         role:        userProfile?.role,
-        periodStart: toYMD(period.startDate),
-        periodEnd:   toYMD(period.endDate),
+        periodStart: dateRange.from || null,
+        periodEnd:   dateRange.to   || null,
       });
 
       if (cancelled) return;
@@ -91,18 +76,13 @@ const ForecastPage = () => {
     load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [company?.id, user?.id, userProfile?.role, period.startDate?.getTime(), period.endDate?.getTime()]);
+  }, [company?.id, user?.id, userProfile?.role, dateRange.from, dateRange.to, dateRange.isAllTime]);
 
   const forecast   = useMemo(() => buildForecast(rawData.deals, rawData.target?.target_amount ?? 0), [rawData]);
   const insights   = useMemo(() => generateInsights(forecast, rawData.deals, rawData.target?.target_amount ?? 0), [forecast, rawData]);
   const prediction = useMemo(() => generatePrediction(forecast, rawData.deals, rawData.target?.target_amount ?? 0), [forecast, rawData]);
 
   const targetAmount = rawData.target?.target_amount ?? 0;
-
-  const handleRangeChange = (value, custom) => {
-    setPreset(value);
-    setCustomRange(custom ?? { from: "", to: "" });
-  };
 
   const breadcrumbs = [
     { label: "Dashboard", path: "/company-dashboard" },
@@ -135,19 +115,12 @@ const ForecastPage = () => {
                 </div>
               )}
 
-              <DateRangePicker
-                value={preset}
-                customRange={customRange}
-                onChange={handleRangeChange}
-                className="w-52"
-                placeholder="Select period"
-              />
             </div>
           </div>
         </div>
 
         {/* No period */}
-        {!period.startDate && !isLoading && (
+        {!dateRange.from && !dateRange.isAllTime && !isLoading && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Icon name="Calendar" size={48} className="text-muted-foreground mb-3" />
             <p className="text-lg font-medium text-card-foreground mb-1">Select a period</p>
@@ -174,7 +147,7 @@ const ForecastPage = () => {
         )}
 
         {/* Main content */}
-        {!isLoading && !fetchError && period.startDate && (
+        {!isLoading && !fetchError && (dateRange.from || dateRange.isAllTime) && (
           <div className="space-y-6">
             {/* KPI Bar */}
             <ForecastKPIBar forecast={forecast} targetAmount={targetAmount} />

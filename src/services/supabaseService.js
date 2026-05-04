@@ -675,6 +675,18 @@ export const dealService = {
         query = query.ilike("title", `%${filters.search}%`);
       }
 
+      // Date range filter: won deals use closed_at, all others use created_at.
+      // Only applied when at least one date boundary is supplied.
+      const df = filters.dateFrom;
+      const dt = filters.dateTo;
+      if (df || dt) {
+        const wonCond = ["stage.eq.won", df && `closed_at.gte.${df}`, dt && `closed_at.lte.${dt}`]
+          .filter(Boolean).join(",");
+        const otherCond = ["stage.neq.won", df && `created_at.gte.${df}`, dt && `created_at.lte.${dt}`]
+          .filter(Boolean).join(",");
+        query = query.or(`and(${wonCond}),and(${otherCond})`);
+      }
+
       const { data, error } = await query;
 
       if (error) throw error;

@@ -11,6 +11,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { HomeRedirect } from "./components/HomeRedirect";
 import { AuthProvider } from "./contexts/AuthContext";
 import { CurrencyProvider } from "./contexts/CurrencyContext";
+import { DateRangeProvider } from "./contexts/DateRangeContext";
 import { LanguageProvider } from "./i18n";
 import NotFound from "./pages/NotFound";
 import CompanyDashboard from "./pages/company-dashboard";
@@ -37,6 +38,7 @@ const Routes = () => {
         <LanguageProvider>
           <AuthProvider>
             <CurrencyProvider>
+              <DateRangeProvider>
               <ScrollToTop />
               <RouterRoutes>
                 {/* Public routes */}
@@ -152,6 +154,7 @@ const Routes = () => {
                 />
                 <Route path="*" element={<NotFound />} />
               </RouterRoutes>
+              </DateRangeProvider>
             </CurrencyProvider>
           </AuthProvider>
         </LanguageProvider>

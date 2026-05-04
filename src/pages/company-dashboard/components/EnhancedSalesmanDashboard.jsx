@@ -33,10 +33,12 @@ import {
   Cell,
 } from "recharts";
 import { useNavigate } from "react-router-dom";
+import { useDateRange } from "../../../contexts/DateRangeContext";
 
 const EnhancedSalesmanDashboard = () => {
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
+  const { dateRange } = useDateRange();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -670,7 +672,7 @@ const EnhancedSalesmanDashboard = () => {
     if (company?.id && userProfile?.id) {
       loadSalesmanData();
     }
-  }, [company, userProfile]); // Remove timePeriod - trend card uses useMemo
+  }, [company, userProfile, dateRange.from, dateRange.to]);
 
   // Recalculate executive metrics when filtered data changes
   useEffect(() => {
@@ -734,7 +736,7 @@ const EnhancedSalesmanDashboard = () => {
         companyService.getCompanyMetrics(company.id, user.id, false),
         companyService.getSalesData(company.id, "monthly", user.id, false),
         activityService.getUserActivities(company.id, user.id, 20),
-        dealService.getDeals(company.id, { viewAll: false }, user.id),
+        dealService.getDeals(company.id, { viewAll: false, dateFrom: dateRange.from, dateTo: dateRange.to }, user.id),
       ]);
 
       const [metricsResult, salesResult, activitiesResult, dealsResult] =

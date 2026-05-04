@@ -25,6 +25,7 @@ import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
 import MetricInsightModal from "./MetricInsightModal";
 import SalesForecast from "./SalesForecast";
+import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
 import { Edit2 } from "lucide-react";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
@@ -44,6 +45,7 @@ import {
 const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
+  const { dateRange } = useDateRange();
 
   // If viewing as another user (director view), use that user's data
   const effectiveUser = viewAsUser || { id: user?.id };
@@ -123,7 +125,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     if (company?.id && userProfile?.id) {
       loadManagerData();
     }
-  }, [company?.id, userProfile?.id]);
+  }, [company?.id, userProfile?.id, dateRange.from, dateRange.to]);
 
   // Generate filter options for month, quarter, and year
   const monthOptions = useMemo(() => {
@@ -677,7 +679,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         ),
         activityService.getUserActivities(company.id, effectiveUser.id, 20),
         userService.getCompanyUsers(company.id),
-        dealService.getDeals(company.id, { viewAll: true }, effectiveUser.id),
+        dealService.getDeals(company.id, { viewAll: true, dateFrom: dateRange.from, dateTo: dateRange.to }, effectiveUser.id),
         contactService.getContacts(company.id, {}, effectiveUser.id),
         taskService.getMyTasks(effectiveUser.id, company.id, {
           userOnly: false,

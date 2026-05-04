@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import Icon from "../../components/AppIcon";
 import Header from "../../components/ui/Header";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
-import DateRangePicker, { resolveDateRange } from "../../components/ui/DateRangePicker";
+import { resolveDateRange } from "../../components/ui/DateRangePicker";
 import { useAuth } from "../../contexts/AuthContext";
+import { useDateRange } from "../../contexts/DateRangeContext";
 import { reportService } from "../../services/supabaseService";
 import ReportKPIBar        from "./components/ReportKPIBar";
 import RevenueOverTime     from "./components/RevenueOverTime";
@@ -57,9 +58,8 @@ const ROLE_SCOPE = {
 const ReportsPage = () => {
   const { user, userProfile, company } = useAuth();
 
-  const [preset, setPreset]           = useState("this-quarter");
-  const [customRange, setCustomRange] = useState({ from: "", to: "" });
-  const [rawData, setRawData]         = useState({ deals: [], prevDeals: [], contacts: [], teamMembers: [] });
+  const { dateRange, preset, customRange } = useDateRange();
+  const [rawData, setRawData]             = useState({ deals: [], prevDeals: [], contacts: [], teamMembers: [] });
   const [isLoading, setIsLoading]     = useState(false);
   const [fetchError, setFetchError]   = useState(null);
   const [exporting, setExporting]     = useState(null);
@@ -74,8 +74,7 @@ const ReportsPage = () => {
 
   useEffect(() => {
     if (!user?.id) return;
-    const isAllTime = period.special === "all";
-    if (!isAllTime && (!period.startDate || !period.endDate)) return;
+    if (!dateRange.isAllTime && !dateRange.from) return;
     let cancelled = false;
 
     const load = async () => {
@@ -85,8 +84,8 @@ const ReportsPage = () => {
         companyId:   company?.id,
         userId:      user.id,
         role:        userProfile?.role,
-        periodStart: isAllTime ? null : toYMD(period.startDate),
-        periodEnd:   isAllTime ? null : toYMD(period.endDate),
+        periodStart: dateRange.from || null,
+        periodEnd:   dateRange.to   || null,
       });
       if (cancelled) return;
       if (result.error) setFetchError(result.error);
@@ -97,12 +96,7 @@ const ReportsPage = () => {
     load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [company?.id, user?.id, userProfile?.role, period.startDate?.getTime(), period.endDate?.getTime(), period.special]);
-
-  const handleRangeChange = (value, custom) => {
-    setPreset(value);
-    setCustomRange(custom ?? { from: "", to: "" });
-  };
+  }, [company?.id, user?.id, userProfile?.role, dateRange.from, dateRange.to, dateRange.isAllTime]);
 
   const handleExportXLSX = useCallback(async () => {
     setExporting("xlsx");
@@ -156,14 +150,7 @@ const ReportsPage = () => {
                 <Icon name="Users" size={11} />
                 {scopeInfo.label}
               </span>
-              <DateRangePicker
-                value={preset}
-                customRange={customRange}
-                onChange={handleRangeChange}
-                className="w-52"
-                placeholder="Select period"
-              />
-              {!isLoading && !fetchError && (period.startDate || period.special === "all") && rawData.deals.length > 0 && (
+              {!isLoading && !fetchError && (dateRange.from || dateRange.isAllTime) && rawData.deals.length > 0 && (
                 <>
                   <button
                     onClick={handleExportXLSX}
@@ -188,7 +175,7 @@ const ReportsPage = () => {
         </div>
 
         {/* No period */}
-        {!period.startDate && !period.special && !isLoading && (
+        {!dateRange.from && !dateRange.isAllTime && !isLoading && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Icon name="Calendar" size={48} className="text-muted-foreground mb-3" />
             <p className="text-lg font-medium text-card-foreground mb-1">Select a period</p>
@@ -213,7 +200,7 @@ const ReportsPage = () => {
         )}
 
         {/* Main content — captured for PDF export */}
-        {!isLoading && !fetchError && (period.startDate || period.special === "all") && (
+        {!isLoading && !fetchError && (dateRange.from || dateRange.isAllTime) && (
           <div ref={contentRef} className="space-y-6">
 
             {/* KPI Summary */}

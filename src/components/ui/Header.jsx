@@ -2,11 +2,13 @@ import React, { useState, useRef, useEffect } from "react";
 import Icon from "../AppIcon";
 import Button from "./Button";
 import CompanySelector from "./CompanySelector";
+import DateRangePicker from "./DateRangePicker";
 import { useAuth } from "contexts/AuthContext";
 import { companyService, notificationService } from "services/supabaseService";
 import { capitalize } from "utils/helper";
 import { useLanguage } from "../../i18n";
 import { useNavigate } from "react-router-dom";
+import { useDateRange } from "contexts/DateRangeContext";
 
 const Header = ({
   isCollapsed = false,
@@ -17,6 +19,7 @@ const Header = ({
   const { user, userProfile, company, signOut, changeCompany } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const { preset, customRange, setRange } = useDateRange();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState(
@@ -262,6 +265,17 @@ const Header = ({
           </nav>
 
           <div className="flex-1" />
+
+          {/* Global Date Range Picker */}
+          <div className="hidden md:block mr-4">
+            <DateRangePicker
+              value={preset}
+              customRange={customRange}
+              onChange={setRange}
+              className="w-44"
+              placeholder="Period"
+            />
+          </div>
 
           {/* Company Selector - Directors and Admins can switch companies */}
           {(userProfile?.role === "director" || userProfile?.role === "admin") && (
