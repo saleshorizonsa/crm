@@ -3134,7 +3134,7 @@ export const salesTargetService = {
   // Update an existing sales target
   async updateTarget(targetId, updateData) {
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("sales_targets")
         .update({
           target_amount: updateData.targetAmount,
@@ -3146,24 +3146,13 @@ export const salesTargetService = {
           progress_amount: updateData.progressAmount,
           notes: updateData.notes,
         })
-        .eq("id", targetId)
-        .select(
-          `
-          *,
-          assignee:assigned_to(id, email, full_name, role),
-          company:companies(id, name)
-        `,
-        )
-        .maybeSingle();
+        .eq("id", targetId);
 
-      if (!error && !data) {
-        return {
-          data: null,
-          error: { message: "Target not found or you do not have permission to update it." },
-        };
+      if (error) {
+        return { data: null, error };
       }
 
-      return { data, error };
+      return { data: { id: targetId }, error: null };
     } catch (error) {
       console.error("Error updating target:", error);
       return { data: null, error };
