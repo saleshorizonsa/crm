@@ -38,6 +38,7 @@ const DealModal = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [dealType, setDealType] = useState("value"); // "value" | "product"
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteReferences, setDeleteReferences] = useState(null);
   const [dealProducts, setDealProducts] = useState([]);
@@ -79,6 +80,10 @@ const DealModal = ({
       setShowDeleteConfirm(false);
       setDeleteReferences(null);
       setErrors({});
+      // Auto-detect deal type: if existing deal has products default to product mode
+      setDealType(
+        deal?.deal_products?.length > 0 ? "product" : "value"
+      );
       console.log("🔄 Modal opened with deal:", deal);
       setFormData({
         title: deal?.title || "",
@@ -227,6 +232,9 @@ const DealModal = ({
         const newAmount = parseFloat(formData.amount || 0) + lineTotal;
         setFormData((prev) => ({ ...prev, amount: newAmount }));
 
+        // Clear products error once at least one product is added
+        if (errors.products) setErrors((prev) => ({ ...prev, products: "" }));
+
         // Refresh deal products
         await loadDealProducts();
 
@@ -283,6 +291,9 @@ const DealModal = ({
       // Update deal amount
       const newAmount = parseFloat(formData.amount || 0) + lineTotal;
       setFormData((prev) => ({ ...prev, amount: newAmount }));
+
+      // Clear products error once at least one product is added
+      if (errors.products) setErrors((prev) => ({ ...prev, products: "" }));
 
       // Reset form
       resetProductForm();
@@ -369,18 +380,29 @@ const DealModal = ({
   const handleSave = async (e) => {
     e.preventDefault();
 
-    // Validate: client and value are mutually required
     const newErrors = {};
     if (!formData.title?.trim()) {
       newErrors.title = "Deal title is required";
     }
-    const hasAmount = parseFloat(formData.amount) > 0;
-    const hasContact = !!formData.contact_id;
-    if (hasAmount && !hasContact) {
-      newErrors.contact_id = "Please select a client when entering a deal value";
-    }
-    if (hasContact && !hasAmount) {
-      newErrors.amount = "Please enter a deal value when a client is selected";
+    if (dealType === "product") {
+      // Product mode: client + at least one product are required
+      if (!formData.contact_id) {
+        newErrors.contact_id = "Client is required for product-based deals";
+      }
+      const productsToCheck = deal?.id ? dealProducts : selectedProducts;
+      if (productsToCheck.length === 0) {
+        newErrors.products = "Please add at least one product";
+      }
+    } else {
+      // Value mode: client and value are mutually required
+      const hasAmount = parseFloat(formData.amount) > 0;
+      const hasContact = !!formData.contact_id;
+      if (hasAmount && !hasContact) {
+        newErrors.contact_id = "Please select a client when entering a deal value";
+      }
+      if (hasContact && !hasAmount) {
+        newErrors.amount = "Please enter a deal value when a client is selected";
+      }
     }
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -589,13 +611,53 @@ const DealModal = ({
               )}
             </div>
 
+            {/* Deal Type Toggle */}
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">Deal Type</p>
+              <div className="flex items-center gap-1 p-1 bg-muted rounded-lg w-fit">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDealType("value");
+                    setErrors({});
+                  }}
+                  className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    dealType === "value"
+                      ? "bg-card shadow-sm text-card-foreground"
+                      : "text-muted-foreground hover:text-card-foreground"
+                  }`}
+                >
+                  <Icon name="DollarSign" size={14} />
+                  By Value
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDealType("product");
+                    setErrors({});
+                  }}
+                  className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    dealType === "product"
+                      ? "bg-card shadow-sm text-card-foreground"
+                      : "text-muted-foreground hover:text-card-foreground"
+                  }`}
+                >
+                  <Icon name="Package" size={14} />
+                  By Product
+                </button>
+              </div>
+            </div>
+
             {/* Contact */}
             <div>
               <Select
                 label={
                   <span>
                     Client
-                    {formData?.contact_id && (
+                    {dealType === "product" && (
+                      <span className="text-destructive ml-0.5">*</span>
+                    )}
+                    {dealType === "value" && formData?.contact_id && (
                       <span className="ml-1 text-xs text-muted-foreground font-normal">(required with value)</span>
                     )}
                   </span>
@@ -618,33 +680,45 @@ const DealModal = ({
               )}
             </div>
 
-            {/* Amount */}
-            <div>
-              <Input
-                label={
-                  <span>
-                    Deal Value ({preferredCurrency})
-                    {parseFloat(formData?.amount) > 0 && (
-                      <span className="ml-1 text-xs text-muted-foreground font-normal">(required with client)</span>
-                    )}
-                  </span>
-                }
-                type="number"
-                placeholder="0"
-                value={formData?.amount}
-                onChange={(e) => {
-                  handleInputChange("amount", parseFloat(e?.target?.value) || 0);
-                  if (errors.amount) setErrors((prev) => ({ ...prev, amount: "" }));
-                }}
-                required
-              />
-              {errors.amount && (
-                <p className="mt-1 text-xs text-destructive flex items-center gap-1">
-                  <Icon name="AlertCircle" size={12} />
-                  {errors.amount}
-                </p>
-              )}
-            </div>
+            {/* Amount — hidden in product mode (auto-calculated) */}
+            {dealType === "value" ? (
+              <div>
+                <Input
+                  label={
+                    <span>
+                      Deal Value ({preferredCurrency})
+                      {parseFloat(formData?.amount) > 0 && (
+                        <span className="ml-1 text-xs text-muted-foreground font-normal">(required with client)</span>
+                      )}
+                    </span>
+                  }
+                  type="number"
+                  placeholder="0"
+                  value={formData?.amount}
+                  onChange={(e) => {
+                    handleInputChange("amount", parseFloat(e?.target?.value) || 0);
+                    if (errors.amount) setErrors((prev) => ({ ...prev, amount: "" }));
+                  }}
+                  required
+                />
+                {errors.amount && (
+                  <p className="mt-1 text-xs text-destructive flex items-center gap-1">
+                    <Icon name="AlertCircle" size={12} />
+                    {errors.amount}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 flex items-center justify-between">
+                <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+                  <Icon name="Calculator" size={14} />
+                  Deal Value (auto-calculated)
+                </span>
+                <span className="text-lg font-bold text-card-foreground">
+                  {formatCurrency(formData?.amount || 0, preferredCurrency)}
+                </span>
+              </div>
+            )}
 
             {/* Stage, Priority, Close Date */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -690,11 +764,20 @@ const DealModal = ({
 
             {/* Products Section */}
             <div className="border border-border rounded-lg overflow-hidden">
-              <div className="bg-muted/30 px-4 py-3 border-b border-border">
+              <div className="bg-muted/30 px-4 py-3 border-b border-border flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
                   <Icon name="Package" size={16} />
                   Deal Products
+                  {dealType === "product" && (
+                    <span className="text-xs font-medium text-destructive">(required)</span>
+                  )}
                 </h3>
+                {errors.products && (
+                  <p className="text-xs text-destructive flex items-center gap-1">
+                    <Icon name="AlertCircle" size={12} />
+                    {errors.products}
+                  </p>
+                )}
               </div>
 
               <div className="p-4 space-y-4">
