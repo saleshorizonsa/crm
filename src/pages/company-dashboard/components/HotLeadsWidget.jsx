@@ -47,7 +47,7 @@ const HotLeadsWidget = ({ companyId }) => {
           Hot Leads
         </h3>
         <button
-          onClick={() => navigate("/sales-pipeline?stage=lead")}
+          onClick={() => navigate("/sales-pipeline?stage=lead", { state: { activeStage: "lead" } })}
           className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
         >
           View Pipeline
@@ -69,7 +69,7 @@ const HotLeadsWidget = ({ companyId }) => {
           {leads.map((lead) => (
             <li
               key={lead.id}
-              onClick={() => navigate("/sales-pipeline?stage=lead")}
+              onClick={() => navigate("/sales-pipeline?stage=lead", { state: { activeStage: "lead" } })}
               className="flex items-center justify-between gap-3 cursor-pointer rounded-lg hover:bg-gray-50 -mx-2 px-2 py-1 transition-colors"
             >
               <div className="flex items-center gap-3 min-w-0">

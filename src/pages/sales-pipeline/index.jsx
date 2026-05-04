@@ -25,20 +25,22 @@ const SalesPipeline = () => {
   const location = useLocation();
   const pipelineTopRef = useRef(null);
 
-  // Read ?stage= from URL so dashboard charts can deep-link here
-  const getInitialFilters = () => {
-    const params = new URLSearchParams(location.search);
-    return {
-      search: "",
-      owner_id: "",
-      stage: params.get("stage") || "",
-      minValue: "",
-      maxValue: "",
-      dateRange: "",
-      customDateRange: { from: "", to: "" },
-      showOverdue: false,
-    };
+  // Read active stage from navigation state (dashboard click) OR ?stage= URL param
+  const stageFromLocation = (loc) => {
+    const params = new URLSearchParams(loc.search);
+    return loc.state?.activeStage || params.get("stage") || "";
   };
+
+  const buildFilters = (stage = "") => ({
+    search: "",
+    owner_id: "",
+    stage,
+    minValue: "",
+    maxValue: "",
+    dateRange: "",
+    customDateRange: { from: "", to: "" },
+    showOverdue: false,
+  });
 
   const [isLoading, setIsLoading] = useState(true);
   const [deals, setDeals] = useState([]);
@@ -48,8 +50,15 @@ const SalesPipeline = () => {
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [showDealModal, setShowDealModal] = useState(false);
   const [viewMode, setViewMode] = useState("pipeline");
-  const [initialFilters] = useState(getInitialFilters);
-  const [filters, setFilters] = useState(getInitialFilters);
+  const [trackedKey, setTrackedKey] = useState(location.key);
+  const [filters, setFilters] = useState(() => buildFilters(stageFromLocation(location)));
+
+  // Synchronously reset filters when location.key changes (new navigation from dashboard).
+  // This runs during render so PipelineFilters always gets the right initialFilters on mount.
+  if (trackedKey !== location.key) {
+    setTrackedKey(location.key);
+    setFilters(buildFilters(stageFromLocation(location)));
+  }
 
   // Add cache timestamp to track data freshness
   const [lastFetchTime, setLastFetchTime] = useState(null);
@@ -454,12 +463,13 @@ const SalesPipeline = () => {
           {/* Filters and Analytics */}
           <div className="w-full" ref={pipelineTopRef}>
             <PipelineFilters
+              key={location.key}
               totalDeals={deals.length}
               filteredDeals={filteredDeals.length}
               filters={filters}
               onFiltersChange={setFilters}
               onExport={handleExportToCSV}
-              initialFilters={initialFilters}
+              initialFilters={filters}
             />
           </div>
 

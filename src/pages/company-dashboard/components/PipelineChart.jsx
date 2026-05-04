@@ -77,7 +77,7 @@ const PipelineChart = ({ pipelineData = [], selectedCompany }) => {
             <div
               key={stage.stage}
               className="relative cursor-pointer rounded-lg hover:bg-muted/40 transition-colors -mx-2 px-2 py-1 group"
-              onClick={() => navigate(`/sales-pipeline?stage=${stage.stage}`)}
+              onClick={() => navigate(`/sales-pipeline?stage=${stage.stage}`, { state: { activeStage: stage.stage } })}
               title={`View ${config.label} deals in pipeline`}
             >
               <div className="flex items-center justify-between mb-2">

@@ -102,7 +102,7 @@ const ManagerPipelineChart = ({
           <Bar
             dataKey="value"
             name="Pipeline Value"
-            onClick={(data) => navigate(`/sales-pipeline?stage=${data.stageKey}`)}
+            onClick={(data) => navigate(`/sales-pipeline?stage=${data.stageKey}`, { state: { activeStage: data.stageKey } })}
             style={{ cursor: "pointer" }}
           >
             {pipelineData.map((entry, index) => (

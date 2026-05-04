@@ -1588,7 +1588,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const handleActionClick = (action) => {
     switch (action.type) {
       case "review_deal":
-        navigate("/sales-pipeline?stage=negotiation");
+        navigate("/sales-pipeline?stage=negotiation", { state: { activeStage: "negotiation" } });
         break;
       case "performance_review":
         navigate("/sales-pipeline");

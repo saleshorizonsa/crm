@@ -123,7 +123,7 @@ const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
             <div
               key={stage.key}
               className="relative cursor-pointer hover:bg-gray-50 rounded-lg transition-colors -mx-2 px-2 group"
-              onClick={() => navigate(`/sales-pipeline?stage=${toDbStage(stage.key)}`)}
+              onClick={() => navigate(`/sales-pipeline?stage=${toDbStage(stage.key)}`, { state: { activeStage: toDbStage(stage.key) } })}
               title={`View ${stage.name} deals`}
             >
               <div className="flex items-center justify-between text-sm mb-2">
