@@ -374,7 +374,7 @@ const DateRangePicker = ({
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-2 w-[600px] max-w-[calc(100vw-2rem)] right-0 sm:right-auto sm:left-0 bg-white border border-border rounded-lg shadow-xl overflow-hidden">
+        <div className="absolute z-50 mt-2 w-[600px] max-w-[calc(100vw-2rem)] right-0 bg-white border border-border rounded-lg shadow-xl overflow-hidden">
           <div className="flex flex-col sm:flex-row max-h-[560px]">
             {/* Left: presets */}
             <div className="flex-1 sm:max-w-[260px] border-b sm:border-b-0 sm:border-r border-border overflow-y-auto p-2">
