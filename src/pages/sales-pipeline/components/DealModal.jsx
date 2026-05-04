@@ -33,6 +33,7 @@ const DealModal = ({
     expected_close_date: deal?.expected_close_date || "",
     contact_id: deal?.contact_id || null,
     priority: deal?.priority || "medium",
+    lost_reason: deal?.lost_reason || "",
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -93,6 +94,7 @@ const DealModal = ({
         expected_close_date: deal?.expected_close_date || "",
         contact_id: deal?.contact_id || null,
         priority: deal?.priority || "medium",
+        lost_reason: deal?.lost_reason || "",
       });
 
       // Load products for the catalog
@@ -383,6 +385,12 @@ const DealModal = ({
     const newErrors = {};
     if (!formData.title?.trim()) {
       newErrors.title = "Deal title is required";
+    }
+    if (!formData.description?.trim()) {
+      newErrors.description = "Description is required";
+    }
+    if (formData.stage === "lost" && !formData.lost_reason?.trim()) {
+      newErrors.lost_reason = "Please provide a reason for losing this deal";
     }
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -681,7 +689,11 @@ const DealModal = ({
                 label="Stage"
                 options={stages}
                 value={formData?.stage}
-                onChange={(value) => handleInputChange("stage", value)}
+                onChange={(value) => {
+                  handleInputChange("stage", value);
+                  if (value !== "lost" && errors.lost_reason)
+                    setErrors((prev) => ({ ...prev, lost_reason: "" }));
+                }}
               />
 
               <Select
@@ -701,20 +713,58 @@ const DealModal = ({
               />
             </div>
 
+            {/* Lost Reason — shown only when stage is "lost" */}
+            {formData?.stage === "lost" && (
+              <div>
+                <label className="block text-sm font-medium text-card-foreground mb-2">
+                  Reason for Loss <span className="text-destructive">*</span>
+                </label>
+                <textarea
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none ${
+                    errors.lost_reason ? "border-destructive" : "border-border"
+                  }`}
+                  rows={2}
+                  placeholder="Why was this deal lost? (e.g. budget, competitor, timing...)"
+                  value={formData?.lost_reason}
+                  onChange={(e) => {
+                    handleInputChange("lost_reason", e?.target?.value);
+                    if (errors.lost_reason)
+                      setErrors((prev) => ({ ...prev, lost_reason: "" }));
+                  }}
+                />
+                {errors.lost_reason && (
+                  <p className="mt-1 text-xs text-destructive flex items-center gap-1">
+                    <Icon name="AlertCircle" size={12} />
+                    {errors.lost_reason}
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Description */}
             <div>
               <label className="block text-sm font-medium text-card-foreground mb-2">
-                Description
+                Description <span className="text-destructive">*</span>
               </label>
               <textarea
-                className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none ${
+                  errors.description ? "border-destructive" : "border-border"
+                }`}
                 rows={3}
                 placeholder="Brief description of the deal..."
                 value={formData?.description}
-                onChange={(e) =>
-                  handleInputChange("description", e?.target?.value)
-                }
+                onChange={(e) => {
+                  handleInputChange("description", e?.target?.value);
+                  if (errors.description)
+                    setErrors((prev) => ({ ...prev, description: "" }));
+                }}
               />
+              {errors.description && (
+                <p className="mt-1 text-xs text-destructive flex items-center gap-1">
+                  <Icon name="AlertCircle" size={12} />
+                  {errors.description}
+                </p>
+              )}
             </div>
 
             {/* Products Section */}
