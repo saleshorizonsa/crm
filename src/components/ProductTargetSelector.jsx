@@ -4,6 +4,15 @@ import Input from "./ui/Input";
 import { productService } from "../services/supabaseService";
 import { calculateProductTargetValue } from "../utils/productTargetUtils";
 
+// Resolve the best unit price from product based on its base UOM
+const resolveUnitPrice = (product) => {
+  const uom = (product?.base_unit_of_measure || "").toUpperCase();
+  if (uom === "TON" && product?.price_per_ton) return product.price_per_ton;
+  if ((uom === "PC" || uom === "EA") && product?.price_per_pc) return product.price_per_pc;
+  if ((uom === "M" || uom === "FT" || uom === "M2") && product?.price_per_meter) return product.price_per_meter;
+  return product?.unit_price || null;
+};
+
 const ProductTargetSelector = ({
   active,
   productTargets,
@@ -34,6 +43,7 @@ const ProductTargetSelector = ({
 
           return (data || []).map((product) => {
             const previous = previousByProduct.get(product.id);
+            const masterPrice = resolveUnitPrice(product);
             return {
               product_id: product.id,
               product,
@@ -41,7 +51,7 @@ const ProductTargetSelector = ({
               target_quantity: previous?.target_quantity || "",
               unit_price:
                 previous?.unit_price ??
-                (product.unit_price ? product.unit_price.toString() : ""),
+                (masterPrice ? masterPrice.toString() : ""),
               target_value: previous?.target_value || "",
               target_value_touched: previous?.target_value_touched || false,
             };
@@ -260,7 +270,7 @@ const ProductTargetSelector = ({
                         {parseFloat(target.unit_price || 0) > 0 ? (
                           <>
                             <span className="text-xs text-muted-foreground block">
-                              Unit Price
+                              Price / {target.product?.base_unit_of_measure || "Unit"}
                             </span>
                             {Number(target.unit_price).toLocaleString(undefined, {
                               minimumFractionDigits: 2,
@@ -268,8 +278,8 @@ const ProductTargetSelector = ({
                             })}
                           </>
                         ) : (
-                          <span className="text-muted-foreground">
-                            No master price
+                          <span className="text-muted-foreground text-xs">
+                            No price set in master
                           </span>
                         )}
                       </div>

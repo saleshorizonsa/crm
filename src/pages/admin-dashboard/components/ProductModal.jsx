@@ -13,6 +13,9 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
     material_group: "",
     base_unit_of_measure: "EA",
     unit_price: "",
+    price_per_ton: "",
+    price_per_pc: "",
+    price_per_meter: "",
     maintenance_status: "Active",
     is_active: true,
   });
@@ -26,6 +29,9 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
         material_group: product.material_group || "",
         base_unit_of_measure: product.base_unit_of_measure || "EA",
         unit_price: product.unit_price?.toString() || "",
+        price_per_ton: product.price_per_ton?.toString() || "",
+        price_per_pc: product.price_per_pc?.toString() || "",
+        price_per_meter: product.price_per_meter?.toString() || "",
         maintenance_status: product.maintenance_status || "Active",
         is_active: product.is_active ?? true,
       });
@@ -43,12 +49,13 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
     setLoading(true);
 
     try {
+      const parsePrice = (v) => (v === "" || v === null ? null : parseFloat(v));
       const payload = {
         ...formData,
-        unit_price:
-          formData.unit_price === "" || formData.unit_price === null
-            ? null
-            : parseFloat(formData.unit_price),
+        unit_price: parsePrice(formData.unit_price),
+        price_per_ton: parsePrice(formData.price_per_ton),
+        price_per_pc: parsePrice(formData.price_per_pc),
+        price_per_meter: parsePrice(formData.price_per_meter),
       };
 
       const { data, error } = product
@@ -168,15 +175,55 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
             </div>
           </div>
 
-          {/* Unit Price and Maintenance Status */}
+          {/* Prices by UOM */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Pricing by Unit of Measure</label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Price per TON</label>
+                <Input
+                  type="number"
+                  placeholder="0.00"
+                  value={formData.price_per_ton}
+                  min="0"
+                  step="0.01"
+                  onChange={(e) => handleChange("price_per_ton", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Price per PC / Each</label>
+                <Input
+                  type="number"
+                  placeholder="0.00"
+                  value={formData.price_per_pc}
+                  min="0"
+                  step="0.01"
+                  onChange={(e) => handleChange("price_per_pc", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Price per Meter</label>
+                <Input
+                  type="number"
+                  placeholder="0.00"
+                  value={formData.price_per_meter}
+                  min="0"
+                  step="0.01"
+                  onChange={(e) => handleChange("price_per_meter", e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Unit Price (legacy default) and Maintenance Status */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">
-                Unit Price
+                Default Unit Price <span className="text-xs text-muted-foreground">(fallback)</span>
               </label>
               <Input
                 type="number"
-                placeholder="Optional default price"
+                placeholder="Optional fallback price"
                 value={formData.unit_price}
                 min="0"
                 step="0.01"

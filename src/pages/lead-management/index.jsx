@@ -4,18 +4,15 @@ import Button from "../../components/ui/Button";
 import Input from "../../components/ui/Input";
 import Header from "../../components/ui/Header";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
-import LeadStats from "./components/LeadStats";
-import LeadKanban from "./components/LeadKanban";
 import LeadFormModal from "./components/LeadFormModal";
 import { useAuth } from "../../contexts/AuthContext";
 import { leadService } from "../../services/supabaseService";
 
 const LeadManagement = () => {
-  const { user, company } = useAuth();
+  const { user } = useAuth();
   const [leads, setLeads] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [showClosed, setShowClosed] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
@@ -28,7 +25,8 @@ const LeadManagement = () => {
     try {
       const { data, error } = await leadService.getLeads();
       if (error) throw error;
-      setLeads(data || []);
+      // Only show lost leads
+      setLeads((data || []).filter((l) => l.lead_status === "lost"));
     } catch (err) {
       console.error("Error loading leads:", err);
     } finally {
@@ -37,24 +35,11 @@ const LeadManagement = () => {
   };
 
   const stats = useMemo(() => {
-    if (!leads.length) return { total: 0, byGrade: {}, thisMonth: 0, conversionRate: 0 };
-
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    const byGrade = leads.reduce((acc, l) => {
-      if (l.lead_grade) acc[l.lead_grade] = (acc[l.lead_grade] || 0) + 1;
-      return acc;
-    }, {});
-
-    const converted = leads.filter((l) => l.lead_status === "converted").length;
-    const thisMonth = leads.filter((l) => new Date(l.created_at) >= monthStart).length;
-
     return {
       total: leads.length,
-      byGrade,
-      thisMonth,
-      conversionRate: leads.length ? Math.round((converted / leads.length) * 100) : 0,
+      thisMonth: leads.filter((l) => new Date(l.created_at) >= monthStart).length,
     };
   }, [leads]);
 
@@ -75,10 +60,16 @@ const LeadManagement = () => {
       if (data.id) {
         const { data: updated, error } = await leadService.updateLead(data.id, data);
         if (error) throw error;
-        setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+        // Keep in list only if still lost
+        if (updated.lead_status === "lost") {
+          setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+        } else {
+          setLeads((prev) => prev.filter((l) => l.id !== updated.id));
+        }
       } else {
         const { data: created, error } = await leadService.createLead({
           ...data,
+          lead_status: "lost", // always lost in this view
           owner_id: user.id,
           status: "active",
         });
@@ -90,17 +81,6 @@ const LeadManagement = () => {
     } catch (err) {
       console.error("Error saving lead:", err);
       alert(`Failed to save lead: ${err.message}`);
-    }
-  };
-
-  const handleStatusChange = async (leadId, newStatus) => {
-    try {
-      const { data: updated, error } = await leadService.updateLeadStatus(leadId, newStatus);
-      if (error) throw error;
-      setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
-    } catch (err) {
-      console.error("Error updating lead status:", err);
-      alert(`Failed to update lead: ${err.message}`);
     }
   };
 
@@ -134,10 +114,13 @@ const LeadManagement = () => {
             <NavigationBreadcrumbs
               items={[
                 { label: "Dashboard", href: "/company-dashboard" },
-                { label: "Leads", href: "/lead-management" },
+                { label: "Lost Leads", href: "/lead-management" },
               ]}
             />
-            <h1 className="text-2xl font-semibold text-gray-900 mt-2">Lead Management</h1>
+            <h1 className="text-2xl font-semibold text-gray-900 mt-2">Lost Leads</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Capture and track leads that were lost for re-engagement
+            </p>
           </div>
           <Button
             variant="primary"
@@ -145,53 +128,126 @@ const LeadManagement = () => {
             iconName="Plus"
             iconPosition="left"
           >
-            Add Lead
+            Add Lost Lead
           </Button>
         </div>
 
-        <div className="space-y-6">
-          {/* Stats */}
-          <LeadStats stats={stats} />
-
-          {/* Toolbar */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex-1">
-              <Input
-                type="search"
-                placeholder="Search leads by name, email, or company…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full"
-              />
+        {/* Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-2 gap-4 mb-6">
+          <div className="bg-card border border-border rounded-lg p-4 flex items-center gap-3">
+            <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+              <Icon name="UserX" size={20} className="text-red-600" />
             </div>
-            <button
-              onClick={() => setShowClosed((v) => !v)}
-              className={`flex items-center gap-2 text-sm px-4 py-2 rounded-lg border transition-colors ${
-                showClosed
-                  ? "bg-gray-900 text-white border-gray-900"
-                  : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
-              }`}
-            >
-              <Icon name={showClosed ? "EyeOff" : "Eye"} size={14} />
-              {showClosed ? "Hide Closed" : "Show Closed"}
-            </button>
+            <div>
+              <p className="text-xl font-bold">{stats.total}</p>
+              <p className="text-xs text-muted-foreground">Total Lost Leads</p>
+            </div>
           </div>
-
-          {/* Kanban */}
-          {isLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <Icon name="Loader2" size={32} className="text-gray-400 animate-spin" />
+          <div className="bg-card border border-border rounded-lg p-4 flex items-center gap-3">
+            <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+              <Icon name="Calendar" size={20} className="text-orange-600" />
             </div>
-          ) : (
-            <LeadKanban
-              leads={filteredLeads}
-              onEdit={handleEdit}
-              onStatusChange={handleStatusChange}
-              onDelete={handleDelete}
-              showClosed={showClosed}
-            />
-          )}
+            <div>
+              <p className="text-xl font-bold">{stats.thisMonth}</p>
+              <p className="text-xs text-muted-foreground">Added This Month</p>
+            </div>
+          </div>
         </div>
+
+        {/* Search */}
+        <div className="mb-4">
+          <Input
+            type="search"
+            placeholder="Search by name, email, or company…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full max-w-md"
+          />
+        </div>
+
+        {/* Table */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Icon name="Loader2" size={32} className="text-gray-400 animate-spin" />
+          </div>
+        ) : filteredLeads.length === 0 ? (
+          <div className="bg-card border border-border rounded-lg p-12 text-center">
+            <Icon name="UserX" size={48} className="mx-auto text-muted-foreground mb-3" />
+            <p className="text-card-foreground font-medium">No lost leads yet</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {search ? "No results match your search." : "Add a lost lead to start tracking re-engagement opportunities."}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-card border border-border rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="text-left px-4 py-3 text-sm font-medium">Name</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium">Company</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium">Email</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium">Phone</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium">Source</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium">Added</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredLeads.map((lead) => (
+                    <tr key={lead.id} className="hover:bg-accent">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-card-foreground">
+                          {lead.first_name} {lead.last_name}
+                        </div>
+                        {lead.job_title && (
+                          <div className="text-xs text-muted-foreground">{lead.job_title}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                        {lead.company_name || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                        {lead.email || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                        {lead.phone || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground capitalize">
+                        {lead.lead_source?.replace("_", " ") || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                        {lead.created_at
+                          ? new Date(lead.created_at).toLocaleDateString()
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEdit(lead)}
+                            title="Edit"
+                          >
+                            <Icon name="Edit" size={15} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDelete(lead.id)}
+                            title="Delete"
+                          >
+                            <Icon name="Trash2" size={15} className="text-destructive" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </main>
 
       <LeadFormModal

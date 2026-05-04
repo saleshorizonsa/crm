@@ -191,7 +191,13 @@ const ProductMaster = () => {
                   Base UOM
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-medium">
-                  Unit Price
+                  Price/TON
+                </th>
+                <th className="text-left px-4 py-3 text-sm font-medium">
+                  Price/PC
+                </th>
+                <th className="text-left px-4 py-3 text-sm font-medium">
+                  Price/Meter
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-medium">
                   Status
@@ -204,7 +210,7 @@ const ProductMaster = () => {
             <tbody className="divide-y divide-border">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="px-4 py-12 text-center">
+                  <td colSpan="10" className="px-4 py-12 text-center">
                     <Icon
                       name="Package"
                       size={48}
@@ -230,14 +236,16 @@ const ProductMaster = () => {
                     <td className="px-4 py-3 text-sm">
                       {product.base_unit_of_measure || "N/A"}
                     </td>
-                    <td className="px-4 py-3 text-sm">
-                      {product.unit_price
-                        ? Number(product.unit_price).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })
-                        : "N/A"}
-                    </td>
+                    {["price_per_ton", "price_per_pc", "price_per_meter"].map((field) => (
+                      <td key={field} className="px-4 py-3 text-sm">
+                        {product[field]
+                          ? Number(product[field]).toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })
+                          : <span className="text-muted-foreground">—</span>}
+                      </td>
+                    ))}
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
