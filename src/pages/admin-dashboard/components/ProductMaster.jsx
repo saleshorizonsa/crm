@@ -14,6 +14,7 @@ const ProductMaster = () => {
   const [showModal, setShowModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [viewingProduct, setViewingProduct] = useState(null);
 
   useEffect(() => {
     loadProducts();
@@ -49,6 +50,10 @@ const ProductMaster = () => {
         product.material_group?.toLowerCase().includes(term)
     );
     setFilteredProducts(filtered);
+  };
+
+  const handleView = (product) => {
+    setViewingProduct(product);
   };
 
   const handleEdit = (product) => {
@@ -272,6 +277,14 @@ const ProductMaster = () => {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => handleView(product)}
+                          title="View Product"
+                        >
+                          <Icon name="Eye" size={16} className="text-blue-500" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => handleEdit(product)}
                           title="Edit Product"
                         >
@@ -299,7 +312,17 @@ const ProductMaster = () => {
         </div>
       </div>
 
-      {/* Product Modal */}
+      {/* View Modal (read-only) */}
+      {viewingProduct && (
+        <ProductModal
+          product={viewingProduct}
+          onClose={() => setViewingProduct(null)}
+          onSuccess={() => setViewingProduct(null)}
+          viewOnly
+        />
+      )}
+
+      {/* Edit / Create Modal */}
       {showModal && (
         <ProductModal
           product={editingProduct}

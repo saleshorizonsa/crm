@@ -4774,3 +4774,82 @@ export const reportService = {
     }
   },
 };
+
+// ========================================
+// PERMISSIONS SERVICE
+// ========================================
+// Required Supabase table (run once in SQL editor):
+//
+//   CREATE TABLE user_page_permissions (
+//     id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+//     user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
+//     company_id  UUID REFERENCES companies(id) ON DELETE CASCADE,
+//     page        TEXT NOT NULL,
+//     can_view    BOOLEAN NOT NULL DEFAULT TRUE,
+//     can_create  BOOLEAN NOT NULL DEFAULT FALSE,
+//     can_edit    BOOLEAN NOT NULL DEFAULT FALSE,
+//     updated_at  TIMESTAMPTZ DEFAULT NOW(),
+//     UNIQUE(user_id, company_id, page)
+//   );
+//   ALTER TABLE user_page_permissions ENABLE ROW LEVEL SECURITY;
+//   CREATE POLICY "Admins manage permissions" ON user_page_permissions
+//     USING (true) WITH CHECK (true);
+
+export const permissionsService = {
+  async getUserPermissions(userId, companyId) {
+    try {
+      const { data, error } = await supabase
+        .from("user_page_permissions")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("company_id", companyId);
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async getCompanyPermissions(companyId) {
+    try {
+      const { data, error } = await supabase
+        .from("user_page_permissions")
+        .select("*, user:user_id(id, full_name, email, role)")
+        .eq("company_id", companyId);
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  // Replaces all page permissions for a user in one atomic operation
+  async saveUserPermissions(userId, companyId, permissions) {
+    try {
+      const { error: deleteError } = await supabase
+        .from("user_page_permissions")
+        .delete()
+        .eq("user_id", userId)
+        .eq("company_id", companyId);
+      if (deleteError) return { error: deleteError };
+
+      if (!permissions.length) return { data: [], error: null };
+
+      const rows = permissions.map((p) => ({
+        user_id: userId,
+        company_id: companyId,
+        page: p.page,
+        can_view: p.can_view,
+        can_create: p.can_create,
+        can_edit: p.can_edit,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { data, error } = await supabase
+        .from("user_page_permissions")
+        .insert(rows)
+        .select();
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+};

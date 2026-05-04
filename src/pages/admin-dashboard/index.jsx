@@ -8,6 +8,7 @@ import ProductMaster from "./components/ProductMaster";
 import SalesTarget from "./components/SalesTarget";
 import CompanyManagement from "./components/CompanyManagement";
 import UomSettings from "./components/UomSettings";
+import UserAuthorization from "./components/UserAuthorization";
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState("users");
@@ -30,11 +31,12 @@ const AdminDashboard = () => {
   };
 
   const tabs = [
-    { id: "users", label: "User Management", icon: "Users" },
-    { id: "companies", label: "Companies", icon: "Building2" },
-    { id: "products", label: "Product Master", icon: "Package" },
-    { id: "targets", label: "Sales Targets", icon: "Target" },
-    { id: "settings", label: "Settings", icon: "Settings" },
+    { id: "users",         label: "User Management", icon: "Users"       },
+    { id: "authorization", label: "Authorization",   icon: "ShieldCheck" },
+    { id: "companies",     label: "Companies",       icon: "Building2"   },
+    { id: "products",      label: "Product Master",  icon: "Package"     },
+    { id: "targets",       label: "Sales Targets",   icon: "Target"      },
+    { id: "settings",      label: "Settings",        icon: "Settings"    },
   ];
 
   const handleLogout = async () => {
@@ -113,11 +115,12 @@ const AdminDashboard = () => {
 
         {/* Content */}
         <div className="flex-1 overflow-auto">
-          {activeTab === "users" && <UserManagement />}
-          {activeTab === "companies" && <CompanyManagement />}
-          {activeTab === "products" && <ProductMaster />}
-          {activeTab === "targets" && <SalesTarget />}
-          {activeTab === "settings" && <UomSettings />}
+          {activeTab === "users"         && <UserManagement />}
+          {activeTab === "authorization" && <UserAuthorization />}
+          {activeTab === "companies"     && <CompanyManagement />}
+          {activeTab === "products"      && <ProductMaster />}
+          {activeTab === "targets"       && <SalesTarget />}
+          {activeTab === "settings"      && <UomSettings />}
         </div>
       </div>
     </div>

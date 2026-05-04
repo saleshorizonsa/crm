@@ -6,7 +6,7 @@ import Select from "components/ui/Select";
 import { Checkbox } from "components/ui/Checkbox";
 import { adminService } from "../../../services/supabaseService";
 
-const ProductModal = ({ product, onClose, onSuccess }) => {
+const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
   const [formData, setFormData] = useState({
     material: "",
     description: "",
@@ -133,7 +133,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
           <div className="flex items-center gap-2">
             <Icon name="Package" className="text-primary" size={20} />
             <h2 className="text-lg font-semibold">
-              {product ? "Edit Product" : "Add New Product"}
+              {viewOnly ? "Product Details" : product ? "Edit Product" : "Add New Product"}
             </h2>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
@@ -142,18 +142,19 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        <form onSubmit={viewOnly ? (e) => e.preventDefault() : handleSubmit} className="p-4 space-y-4">
           {/* Material Name */}
           <div>
             <label className="block text-sm font-medium mb-1">
-              Material Name <span className="text-red-500">*</span>
+              Material Name {!viewOnly && <span className="text-red-500">*</span>}
             </label>
             <Input
               type="text"
               placeholder="e.g., Steel Rod 12mm"
               value={formData.material}
               onChange={(e) => handleChange("material", e.target.value)}
-              required
+              required={!viewOnly}
+              disabled={viewOnly}
             />
           </div>
 
@@ -161,11 +162,12 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
           <div>
             <label className="block text-sm font-medium mb-1">Description</label>
             <textarea
-              className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60 disabled:cursor-default"
               rows={3}
               placeholder="Product description..."
               value={formData.description}
               onChange={(e) => handleChange("description", e.target.value)}
+              disabled={viewOnly}
             />
           </div>
 
@@ -233,6 +235,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
               <Select
                 value={formData.base_unit_of_measure}
                 onChange={(e) => handleChange("base_unit_of_measure", e.target.value)}
+                disabled={viewOnly}
               >
                 <option value="EA">Each (EA)</option>
                 <option value="PC">Piece (PC)</option>
@@ -265,6 +268,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
                   min="0"
                   step="0.01"
                   onChange={(e) => handleChange("price_per_ton", e.target.value)}
+                  disabled={viewOnly}
                 />
               </div>
               <div>
@@ -276,6 +280,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
                   min="0"
                   step="0.01"
                   onChange={(e) => handleChange("price_per_pc", e.target.value)}
+                  disabled={viewOnly}
                 />
               </div>
               <div>
@@ -287,6 +292,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
                   min="0"
                   step="0.01"
                   onChange={(e) => handleChange("price_per_meter", e.target.value)}
+                  disabled={viewOnly}
                 />
               </div>
             </div>
@@ -305,6 +311,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
                 min="0"
                 step="0.01"
                 onChange={(e) => handleChange("unit_price", e.target.value)}
+                disabled={viewOnly}
               />
             </div>
 
@@ -313,6 +320,7 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
               <Select
                 value={formData.maintenance_status}
                 onChange={(e) => handleChange("maintenance_status", e.target.value)}
+                disabled={viewOnly}
               >
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
@@ -327,38 +335,47 @@ const ProductModal = ({ product, onClose, onSuccess }) => {
             <Checkbox
               id="is_active"
               checked={formData.is_active}
-              onCheckedChange={(checked) => handleChange("is_active", checked)}
+              onCheckedChange={(checked) => !viewOnly && handleChange("is_active", checked)}
+              disabled={viewOnly}
             />
-            <label htmlFor="is_active" className="text-sm font-medium cursor-pointer">
+            <label htmlFor="is_active" className={`text-sm font-medium ${viewOnly ? "cursor-default" : "cursor-pointer"}`}>
               Product is active and available for selection
             </label>
           </div>
 
           {/* Actions */}
-          <div className="flex gap-2 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              className="flex-1"
-              disabled={loading}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" className="flex-1" disabled={loading}>
-              {loading ? (
-                <>
-                  <Icon name="Loader2" className="animate-spin" size={16} />
-                  {product ? "Updating..." : "Creating..."}
-                </>
-              ) : (
-                <>
-                  <Icon name={product ? "Save" : "Plus"} size={16} />
-                  {product ? "Update Product" : "Create Product"}
-                </>
-              )}
-            </Button>
-          </div>
+          {viewOnly ? (
+            <div className="flex gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={onClose} className="flex-1">
+                Close
+              </Button>
+            </div>
+          ) : (
+            <div className="flex gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                className="flex-1"
+                disabled={loading}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="flex-1" disabled={loading}>
+                {loading ? (
+                  <>
+                    <Icon name="Loader2" className="animate-spin" size={16} />
+                    {product ? "Updating..." : "Creating..."}
+                  </>
+                ) : (
+                  <>
+                    <Icon name={product ? "Save" : "Plus"} size={16} />
+                    {product ? "Update Product" : "Create Product"}
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </form>
       </div>
     </div>
