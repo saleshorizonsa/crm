@@ -10,6 +10,13 @@ export default defineConfig({
   build: {
     outDir: "build",
     chunkSizeWarningLimit: 2000,
+    sourcemap: false,
+    rollupOptions: {
+      onwarn(warning, warn) {
+        if (warning.code === 'UNRESOLVED_IMPORT' && warning.message?.includes('pako')) return;
+        warn(warning);
+      },
+    },
   },
   plugins: [tsconfigPaths(), react(), tagger()],
   server: {
