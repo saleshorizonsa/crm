@@ -6,6 +6,7 @@ import PipelineStage from "./components/PipelineStage";
 import PipelineAnalytics from "./components/PipelineAnalytics";
 import DealModal from "./components/DealModal";
 import DealsList from "./components/DealsList";
+import LostReasonModal from "./components/LostReasonModal";
 import Button from "../../components/ui/Button";
 import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
@@ -55,6 +56,8 @@ const SalesPipeline = () => {
   const [users, setUsers] = useState([]);
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [showDealModal, setShowDealModal] = useState(false);
+  const [showLostModal, setShowLostModal] = useState(false);
+  const [dealBeingLost, setDealBeingLost] = useState(null);
   const [viewMode, setViewMode] = useState("pipeline");
   const [trackedKey, setTrackedKey] = useState(location.key);
   const [filters, setFilters] = useState(() => filtersFromLocation(location));
@@ -412,19 +415,23 @@ const SalesPipeline = () => {
   };
 
   const handleDealStageChange = async (dealId, newStage) => {
+    // Intercept 'lost' — show the reason modal instead of saving immediately
+    if (newStage === "lost") {
+      const deal = deals.find((d) => d.id === dealId);
+      if (deal) {
+        setDealBeingLost(deal);
+        setShowLostModal(true);
+      }
+      return;
+    }
+
     try {
-      // Find the deal being moved
       const deal = deals.find((d) => d.id === dealId);
       if (!deal) return;
 
       const updates = {
         stage: newStage,
-        // If moving to won/lost, update closed_at
-        closed_at: ["won", "lost"].includes(newStage)
-          ? new Date().toISOString()
-          : null,
-        // Reset lost_reason if moving from lost to another stage
-        lost_reason: newStage === "lost" ? deal.lost_reason : null,
+        closed_at: newStage === "won" ? new Date().toISOString() : null,
       };
 
       const { data, error } = await dealService.updateDeal(dealId, updates);
@@ -577,6 +584,31 @@ const SalesPipeline = () => {
           />
         </div>
       </main>
+
+      {/* Lost Reason Modal — shown on drag-drop to Lost stage */}
+      <LostReasonModal
+        isOpen={showLostModal}
+        deal={dealBeingLost}
+        onConfirm={async (code, notes) => {
+          try {
+            const { data, error } = await dealService.updateDealLost(
+              dealBeingLost.id,
+              { lost_reason_code: code, lost_reason_notes: notes },
+            );
+            if (error) throw error;
+            setDeals((prev) => prev.map((d) => (d.id === data.id ? data : d)));
+          } catch (err) {
+            console.error("Failed to mark deal lost:", err);
+          } finally {
+            setShowLostModal(false);
+            setDealBeingLost(null);
+          }
+        }}
+        onCancel={() => {
+          setShowLostModal(false);
+          setDealBeingLost(null);
+        }}
+      />
 
       {/* Deal Modal */}
       <DealModal

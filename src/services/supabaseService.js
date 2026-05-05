@@ -1090,6 +1090,54 @@ export const dealService = {
       return { data: [], error };
     }
   },
+
+  // Get active lost reason options for a company, grouped by category
+  async getLostReasons(companyId) {
+    try {
+      const { data, error } = await supabase
+        .from("lost_reason_options")
+        .select("*")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("category")
+        .order("sort_order");
+
+      if (error) return { grouped: {}, flat: [], error };
+
+      const flat = data || [];
+      const grouped = flat.reduce((acc, item) => {
+        if (!acc[item.category]) acc[item.category] = [];
+        acc[item.category].push(item);
+        return acc;
+      }, {});
+
+      return { grouped, flat, error: null };
+    } catch (error) {
+      return { grouped: {}, flat: [], error };
+    }
+  },
+
+  // Mark a deal as lost with a structured reason code + optional notes
+  async updateDealLost(dealId, { lost_reason_code, lost_reason_notes }) {
+    try {
+      const { data, error } = await supabase
+        .from("deals")
+        .update({
+          stage:             "lost",
+          lost_reason_code,
+          lost_reason_notes: lost_reason_notes || null,
+          lost_at:           new Date().toISOString(),
+          closed_at:         new Date().toISOString(),
+          updated_at:        new Date().toISOString(),
+        })
+        .eq("id", dealId)
+        .select()
+        .single();
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
 };
 
 // ========================================
@@ -4082,6 +4130,99 @@ export const adminService = {
         .eq("is_active", true)
         .order("full_name", { ascending: true });
 
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  // Seed default lost reason options for a company (idempotent — skips existing codes)
+  async seedLostReasons(companyId) {
+    const defaults = [
+      { code: "PRICE_HIGH",        label: "Price too high",                        category: "Price",       sort_order: 1 },
+      { code: "PRICE_COMPETITOR",  label: "Competitor offered lower price",         category: "Price",       sort_order: 2 },
+      { code: "BUDGET_CUT",        label: "Customer budget cut or frozen",          category: "Price",       sort_order: 3 },
+      { code: "CREDIT_TERMS",      label: "Better credit terms elsewhere",          category: "Price",       sort_order: 4 },
+      { code: "LOCAL_COMPETITOR",  label: "Lost to local competitor",               category: "Competition", sort_order: 1 },
+      { code: "IMPORT_COMPETITOR", label: "Lost to cheaper imported product",       category: "Competition", sort_order: 2 },
+      { code: "EXISTING_SUPPLIER", label: "Customer stayed with existing supplier", category: "Competition", sort_order: 3 },
+      { code: "SPEC_MISMATCH",     label: "Specification did not match",            category: "Product",     sort_order: 1 },
+      { code: "STOCK_DELAY",       label: "Stock unavailable or lead time too long",category: "Product",     sort_order: 2 },
+      { code: "MOQ_HIGH",          label: "Minimum order quantity too high",        category: "Product",     sort_order: 3 },
+      { code: "QUALITY_CONCERN",   label: "Quality concern raised",                 category: "Product",     sort_order: 4 },
+      { code: "PROJECT_CANCELLED", label: "Project cancelled or postponed",         category: "Customer",    sort_order: 1 },
+      { code: "NO_RESPONSE",       label: "Customer went silent",                   category: "Customer",    sort_order: 2 },
+      { code: "DECISION_CHANGE",   label: "Decision maker changed",                 category: "Customer",    sort_order: 3 },
+      { code: "CUSTOMER_CLOSED",   label: "Customer closed or restructured",        category: "Customer",    sort_order: 4 },
+      { code: "QUOTE_EXPIRED",     label: "Quote expired before decision",          category: "Commercial",  sort_order: 1 },
+      { code: "LC_TERMS",          label: "LC payment terms not accepted",          category: "Commercial",  sort_order: 2 },
+      { code: "MARGIN_LOW",        label: "Margin too low to proceed",              category: "Commercial",  sort_order: 3 },
+      { code: "WITHDREW_OFFER",    label: "We withdrew the offer",                  category: "Internal",    sort_order: 1 },
+      { code: "CAPACITY",          label: "Capacity not available",                 category: "Internal",    sort_order: 2 },
+    ];
+
+    try {
+      // Check which codes already exist
+      const { data: existing } = await supabase
+        .from("lost_reason_options")
+        .select("code")
+        .eq("company_id", companyId);
+
+      const existingCodes = new Set((existing || []).map((r) => r.code));
+      const toInsert = defaults
+        .filter((d) => !existingCodes.has(d.code))
+        .map((d) => ({ ...d, company_id: companyId }));
+
+      if (toInsert.length === 0) return { data: [], error: null };
+
+      const { data, error } = await supabase
+        .from("lost_reason_options")
+        .insert(toInsert)
+        .select();
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  // Admin: toggle is_active on a lost reason
+  async toggleLostReason(id, isActive) {
+    try {
+      const { data, error } = await supabase
+        .from("lost_reason_options")
+        .update({ is_active: isActive })
+        .eq("id", id)
+        .select()
+        .single();
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  // Admin: get ALL lost reasons for a company (active + inactive)
+  async getAllLostReasons(companyId) {
+    try {
+      const { data, error } = await supabase
+        .from("lost_reason_options")
+        .select("*")
+        .eq("company_id", companyId)
+        .order("category")
+        .order("sort_order");
+      return { data: data || [], error };
+    } catch (error) {
+      return { data: [], error };
+    }
+  },
+
+  // Admin: create a custom lost reason
+  async createLostReason(companyId, { code, label, category }) {
+    try {
+      const { data, error } = await supabase
+        .from("lost_reason_options")
+        .insert({ company_id: companyId, code, label, category, sort_order: 99 })
+        .select()
+        .single();
       return { data, error };
     } catch (error) {
       return { data: null, error };

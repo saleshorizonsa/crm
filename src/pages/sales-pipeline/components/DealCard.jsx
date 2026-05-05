@@ -4,6 +4,30 @@ import Button from "../../../components/ui/Button";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { dealProductService } from "../../../services/supabaseService";
 
+// Fallback label map — kept in sync with the default seed list
+const LOST_CODE_LABELS = {
+  PRICE_HIGH:        "Price too high",
+  PRICE_COMPETITOR:  "Competitor price",
+  BUDGET_CUT:        "Budget cut",
+  CREDIT_TERMS:      "Credit terms",
+  LOCAL_COMPETITOR:  "Local competitor",
+  IMPORT_COMPETITOR: "Import competitor",
+  EXISTING_SUPPLIER: "Existing supplier",
+  SPEC_MISMATCH:     "Spec mismatch",
+  STOCK_DELAY:       "Stock/lead time",
+  MOQ_HIGH:          "MOQ too high",
+  QUALITY_CONCERN:   "Quality concern",
+  PROJECT_CANCELLED: "Project cancelled",
+  NO_RESPONSE:       "No response",
+  DECISION_CHANGE:   "Decision changed",
+  CUSTOMER_CLOSED:   "Customer closed",
+  QUOTE_EXPIRED:     "Quote expired",
+  LC_TERMS:          "LC terms",
+  MARGIN_LOW:        "Margin too low",
+  WITHDREW_OFFER:    "Withdrew offer",
+  CAPACITY:          "Capacity",
+};
+
 const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editAmount, setEditAmount] = useState(deal?.amount);
@@ -101,6 +125,14 @@ const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
               ? `${deal.contact.first_name} ${deal.contact.last_name}`
               : "No contact assigned"}
           </p>
+          {deal?.stage === "lost" && deal?.lost_reason_code && (
+            <div className="flex items-center gap-1 mt-1">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700">
+                <Icon name="XCircle" size={9} />
+                {LOST_CODE_LABELS[deal.lost_reason_code] || deal.lost_reason_code}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

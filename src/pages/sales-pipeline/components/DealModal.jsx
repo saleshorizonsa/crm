@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
 import Select from "../../../components/ui/Select";
+import LostReasonModal from "./LostReasonModal";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import {
@@ -34,11 +35,15 @@ const DealModal = ({
     contact_id: deal?.contact_id || null,
     priority: deal?.priority || "medium",
     lost_reason: deal?.lost_reason || "",
+    lost_reason_code: deal?.lost_reason_code || "",
+    lost_reason_notes: deal?.lost_reason_notes || "",
   });
 
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [showLostModal, setShowLostModal] = useState(false);
+  const pendingDealDataRef = useRef(null);
   const [dealType, setDealType] = useState("value"); // "value" | "product"
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteReferences, setDeleteReferences] = useState(null);
@@ -95,6 +100,8 @@ const DealModal = ({
         contact_id: deal?.contact_id || null,
         priority: deal?.priority || "medium",
         lost_reason: deal?.lost_reason || "",
+        lost_reason_code: deal?.lost_reason_code || "",
+        lost_reason_notes: deal?.lost_reason_notes || "",
       });
 
       // Load products for the catalog
@@ -379,36 +386,10 @@ const DealModal = ({
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
-
-    const newErrors = {};
-    if (!formData.title?.trim()) {
-      newErrors.title = "Deal title is required";
-    }
-    if (!formData.description?.trim()) {
-      newErrors.description = "Description is required";
-    }
-    if (formData.stage === "lost" && !formData.lost_reason?.trim()) {
-      newErrors.lost_reason = "Please provide a reason for losing this deal";
-    }
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
-    setErrors({});
+  // Core save execution — called directly or after LostReasonModal confirms
+  const executeSave = async (dealData) => {
     setIsSaving(true);
-
     try {
-      const dealData = {
-        ...formData,
-        ...(deal?.id && { id: deal.id }),
-        amount: parseFloat(formData.amount) || 0,
-        owner_id: user?.id,
-        currency: preferredCurrency,
-        contact_id: formData.contact_id || null,
-      };
-
       const savedDeal = await onSave(dealData);
 
       console.log("Saved deal:", savedDeal);
@@ -476,6 +457,39 @@ const DealModal = ({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleSave = (e) => {
+    e.preventDefault();
+
+    const newErrors = {};
+    if (!formData.title?.trim())       newErrors.title       = "Deal title is required";
+    if (!formData.description?.trim()) newErrors.description = "Description is required";
+    if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
+    setErrors({});
+
+    const dealData = {
+      ...formData,
+      ...(deal?.id && { id: deal.id }),
+      amount:     parseFloat(formData.amount) || 0,
+      owner_id:   user?.id,
+      currency:   preferredCurrency,
+      contact_id: formData.contact_id || null,
+    };
+
+    // Intercept: when stage is 'lost' and no code chosen yet, show reason modal
+    if (formData.stage === "lost" && !formData.lost_reason_code) {
+      pendingDealDataRef.current = dealData;
+      setShowLostModal(true);
+      return;
+    }
+
+    // If 'lost' was already set (editing an existing lost deal), carry code through
+    if (formData.stage === "lost") {
+      dealData.lost_at = dealData.lost_at || new Date().toISOString();
+    }
+
+    executeSave(dealData);
   };
 
   // Handle delete button click - check for references first
@@ -713,31 +727,27 @@ const DealModal = ({
               />
             </div>
 
-            {/* Lost Reason — shown only when stage is "lost" */}
-            {formData?.stage === "lost" && (
-              <div>
-                <label className="block text-sm font-medium text-card-foreground mb-2">
-                  Reason for Loss <span className="text-destructive">*</span>
-                </label>
-                <textarea
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none ${
-                    errors.lost_reason ? "border-destructive" : "border-border"
-                  }`}
-                  rows={2}
-                  placeholder="Why was this deal lost? (e.g. budget, competitor, timing...)"
-                  value={formData?.lost_reason}
-                  onChange={(e) => {
-                    handleInputChange("lost_reason", e?.target?.value);
-                    if (errors.lost_reason)
-                      setErrors((prev) => ({ ...prev, lost_reason: "" }));
+            {/* Lost reason summary — shown when stage is already 'lost' and code is set */}
+            {formData?.stage === "lost" && formData?.lost_reason_code && (
+              <div className="flex items-center gap-3 px-3 py-2.5 rounded-md bg-red-50 border border-red-200 text-sm text-red-800">
+                <Icon name="XCircle" size={15} className="flex-shrink-0" />
+                <div className="flex-1">
+                  <span className="font-medium">Lost reason recorded: </span>
+                  {formData.lost_reason_code}
+                  {formData.lost_reason_notes && (
+                    <span className="text-red-600 ml-1">— {formData.lost_reason_notes}</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="text-red-400 hover:text-red-700 text-xs underline"
+                  onClick={() => {
+                    handleInputChange("lost_reason_code", "");
+                    handleInputChange("lost_reason_notes", "");
                   }}
-                />
-                {errors.lost_reason && (
-                  <p className="mt-1 text-xs text-destructive flex items-center gap-1">
-                    <Icon name="AlertCircle" size={12} />
-                    {errors.lost_reason}
-                  </p>
-                )}
+                >
+                  Change
+                </button>
               </div>
             )}
 
@@ -1167,6 +1177,33 @@ const DealModal = ({
           </div>
         </div>
       </div>
+
+      {/* Lost Reason Modal — shown when user saves with stage=lost and no code yet */}
+      <LostReasonModal
+        isOpen={showLostModal}
+        deal={deal || { title: formData.title }}
+        onConfirm={(code, notes) => {
+          setShowLostModal(false);
+          const pd = pendingDealDataRef.current;
+          if (!pd) return;
+          pendingDealDataRef.current = null;
+          const enriched = {
+            ...pd,
+            lost_reason_code:  code,
+            lost_reason_notes: notes || null,
+            lost_at:           new Date().toISOString(),
+            closed_at:         new Date().toISOString(),
+          };
+          // Keep formData in sync for UI
+          handleInputChange("lost_reason_code", code);
+          handleInputChange("lost_reason_notes", notes);
+          executeSave(enriched);
+        }}
+        onCancel={() => {
+          setShowLostModal(false);
+          pendingDealDataRef.current = null;
+        }}
+      />
     </div>
   );
 };

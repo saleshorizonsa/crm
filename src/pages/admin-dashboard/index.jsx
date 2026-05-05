@@ -9,6 +9,7 @@ import SalesTarget from "./components/SalesTarget";
 import CompanyManagement from "./components/CompanyManagement";
 import UomSettings from "./components/UomSettings";
 import UserAuthorization from "./components/UserAuthorization";
+import LostReasonSettings from "./components/LostReasonSettings";
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState("users");
@@ -36,6 +37,7 @@ const AdminDashboard = () => {
     { id: "companies",     label: "Companies",       icon: "Building2"   },
     { id: "products",      label: "Product Master",  icon: "Package"     },
     { id: "targets",       label: "Sales Targets",   icon: "Target"      },
+    { id: "lost-reasons",  label: "Lost Reasons",    icon: "XCircle"     },
     { id: "settings",      label: "Settings",        icon: "Settings"    },
   ];
 
@@ -120,6 +122,7 @@ const AdminDashboard = () => {
           {activeTab === "companies"     && <CompanyManagement />}
           {activeTab === "products"      && <ProductMaster />}
           {activeTab === "targets"       && <SalesTarget />}
+          {activeTab === "lost-reasons"  && <LostReasonSettings />}
           {activeTab === "settings"      && <UomSettings />}
         </div>
       </div>

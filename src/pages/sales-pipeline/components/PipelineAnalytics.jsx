@@ -20,13 +20,73 @@ import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
+import { supabase } from "../../../lib/supabase";
 import FunnelChart from "./FunnelChart";
+
+const LOST_CODE_LABELS = {
+  PRICE_HIGH:        "Price too high",
+  PRICE_COMPETITOR:  "Competitor offered lower price",
+  BUDGET_CUT:        "Customer budget cut or frozen",
+  CREDIT_TERMS:      "Better credit terms elsewhere",
+  LOCAL_COMPETITOR:  "Lost to local competitor",
+  IMPORT_COMPETITOR: "Lost to cheaper imported product",
+  EXISTING_SUPPLIER: "Customer stayed with existing supplier",
+  SPEC_MISMATCH:     "Specification did not match",
+  STOCK_DELAY:       "Stock unavailable or lead time too long",
+  MOQ_HIGH:          "Minimum order quantity too high",
+  QUALITY_CONCERN:   "Quality concern raised",
+  PROJECT_CANCELLED: "Project cancelled or postponed",
+  NO_RESPONSE:       "Customer went silent",
+  DECISION_CHANGE:   "Decision maker changed",
+  CUSTOMER_CLOSED:   "Customer closed or restructured",
+  QUOTE_EXPIRED:     "Quote expired before decision",
+  LC_TERMS:          "LC payment terms not accepted",
+  MARGIN_LOW:        "Margin too low to proceed",
+  WITHDREW_OFFER:    "We withdrew the offer",
+  CAPACITY:          "Capacity not available",
+};
 
 const PipelineAnalytics = ({ deals, onStageFilter }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [collapseToggle, setCollapseToggle] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
   const { company } = useAuth();
+  const [lostChartData, setLostChartData] = useState([]);
+
+  // Fetch lost deal reason distribution directly (separate from the deals prop)
+  useEffect(() => {
+    if (!company?.id) return;
+    const fetchLostReasons = async () => {
+      const { data, error } = await supabase
+        .from("deals")
+        .select("lost_reason_code, amount")
+        .eq("company_id", company.id)
+        .eq("stage", "lost")
+        .not("lost_reason_code", "is", null);
+
+      if (error || !data) return;
+
+      // Aggregate by code
+      const agg = {};
+      data.forEach(({ lost_reason_code, amount }) => {
+        if (!agg[lost_reason_code]) agg[lost_reason_code] = { count: 0, value: 0 };
+        agg[lost_reason_code].count += 1;
+        agg[lost_reason_code].value += parseFloat(amount || 0);
+      });
+
+      const chart = Object.entries(agg)
+        .map(([code, { count, value }]) => ({
+          code,
+          label: LOST_CODE_LABELS[code] || code,
+          count,
+          value,
+        }))
+        .sort((a, b) => b.count - a.count);
+
+      setLostChartData(chart);
+    };
+    fetchLostReasons();
+  }, [company?.id]);
 
   // Calculate metrics
   const getTotalPipelineValue = () => {
@@ -207,10 +267,11 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
   ].filter((item) => item.value > 0);
 
   const tabs = [
-    { id: "overview", label: "Overview", icon: "BarChart3" },
-    { id: "funnel", label: "Funnel", icon: "Filter" },
-    { id: "trends", label: "Trends", icon: "TrendingUp" },
-    { id: "forecast", label: "Forecast", icon: "Calendar" },
+    { id: "overview",  label: "Overview",    icon: "BarChart3"  },
+    { id: "funnel",    label: "Funnel",       icon: "Filter"     },
+    { id: "trends",    label: "Trends",       icon: "TrendingUp" },
+    { id: "forecast",  label: "Forecast",     icon: "Calendar"   },
+    { id: "lost",      label: "Lost Reasons", icon: "XCircle"    },
   ];
 
   if (collapseToggle) {
@@ -579,6 +640,114 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                 </ResponsiveContainer>
               </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === "lost" && (
+          <div className="space-y-6">
+            {lostChartData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <Icon name="XCircle" size={48} className="text-muted-foreground opacity-30 mb-3" />
+                <p className="text-base font-medium text-card-foreground">No lost deal data yet</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Lost reasons will appear here once deals are marked lost with a reason code.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Summary cards */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Icon name="XCircle" size={15} className="text-red-500" />
+                      <span className="text-xs text-red-700">Total Lost</span>
+                    </div>
+                    <p className="text-xl font-bold text-red-700">
+                      {lostChartData.reduce((s, r) => s + r.count, 0)}
+                    </p>
+                    <p className="text-xs text-red-500 mt-1">deals</p>
+                  </div>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Icon name="DollarSign" size={15} className="text-red-500" />
+                      <span className="text-xs text-red-700">Lost Value</span>
+                    </div>
+                    <p className="text-xl font-bold text-red-700">
+                      {formatCurrency(lostChartData.reduce((s, r) => s + r.value, 0), preferredCurrency)}
+                    </p>
+                    <p className="text-xs text-red-500 mt-1">total</p>
+                  </div>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Icon name="AlertCircle" size={15} className="text-red-500" />
+                      <span className="text-xs text-red-700">Top Reason</span>
+                    </div>
+                    <p className="text-sm font-bold text-red-700 leading-tight">
+                      {lostChartData[0]?.label || "—"}
+                    </p>
+                    <p className="text-xs text-red-500 mt-1">{lostChartData[0]?.count} deals</p>
+                  </div>
+                </div>
+
+                {/* Horizontal bar chart — count */}
+                <div>
+                  <h4 className="text-sm font-semibold text-card-foreground mb-3">
+                    Why deals are lost — deal count
+                  </h4>
+                  <div style={{ height: Math.max(200, lostChartData.length * 40) }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={lostChartData}
+                        layout="vertical"
+                        margin={{ top: 0, right: 16, left: 8, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--color-border)" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                        <YAxis
+                          type="category"
+                          dataKey="label"
+                          width={200}
+                          tick={{ fontSize: 11 }}
+                        />
+                        <Tooltip
+                          formatter={(value) => [`${value} deal${value !== 1 ? "s" : ""}`, "Count"]}
+                        />
+                        <Bar dataKey="count" fill="#ef4444" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Lost value by reason */}
+                <div>
+                  <h4 className="text-sm font-semibold text-card-foreground mb-3">
+                    Total lost value by reason
+                  </h4>
+                  <div className="space-y-2">
+                    {lostChartData.map((row) => {
+                      const maxVal = lostChartData[0]?.value || 1;
+                      const pct = Math.round((row.value / maxVal) * 100);
+                      return (
+                        <div key={row.code} className="flex items-center gap-3 text-sm">
+                          <div className="w-44 text-xs text-muted-foreground truncate flex-shrink-0">
+                            {row.label}
+                          </div>
+                          <div className="flex-1 bg-red-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="bg-red-500 h-2 rounded-full"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <div className="w-28 text-right text-xs font-medium text-red-700 flex-shrink-0">
+                            {formatCurrency(row.value, preferredCurrency)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
