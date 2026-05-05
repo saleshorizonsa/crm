@@ -33,6 +33,7 @@ const DealModal = ({
     amount: deal?.amount || 0,
     stage: deal?.stage || "lead",
     expected_close_date: deal?.expected_close_date || "",
+    creation_date: deal?.creation_date || new Date().toISOString().split('T')[0],
     contact_id: deal?.contact_id || null,
     priority: deal?.priority || "medium",
     lost_reason: deal?.lost_reason || "",
@@ -99,6 +100,7 @@ const DealModal = ({
         amount: deal?.amount || 0,
         stage: deal?.stage || "lead",
         expected_close_date: deal?.expected_close_date || "",
+        creation_date: deal?.creation_date || new Date().toISOString().split('T')[0],
         contact_id: deal?.contact_id || null,
         priority: deal?.priority || "medium",
         lost_reason: deal?.lost_reason || "",
@@ -465,8 +467,9 @@ const DealModal = ({
     e.preventDefault();
 
     const newErrors = {};
-    if (!formData.title?.trim())       newErrors.title       = "Deal title is required";
-    if (!formData.description?.trim()) newErrors.description = "Description is required";
+    if (!formData.title?.trim())       newErrors.title         = "Deal title is required";
+    if (!formData.description?.trim()) newErrors.description   = "Description is required";
+    if (!formData.creation_date)       newErrors.creation_date = "Creation date is required";
     if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
     setErrors({});
 
@@ -699,8 +702,8 @@ const DealModal = ({
               </div>
             )}
 
-            {/* Stage, Priority, Close Date */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Stage, Priority, Creation Date, Close Date */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               <Select
                 label="Stage"
                 options={stages}
@@ -718,6 +721,29 @@ const DealModal = ({
                 value={formData?.priority}
                 onChange={(value) => handleInputChange("priority", value)}
               />
+
+              <div>
+                <label className="block text-sm font-medium text-card-foreground mb-2">
+                  Creation Date <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={formData?.creation_date}
+                  onChange={(e) => {
+                    handleInputChange("creation_date", e?.target?.value);
+                    if (errors.creation_date) setErrors((prev) => ({ ...prev, creation_date: "" }));
+                  }}
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm ${
+                    errors.creation_date ? "border-destructive" : "border-border"
+                  }`}
+                />
+                {errors.creation_date && (
+                  <p className="mt-1 text-xs text-destructive flex items-center gap-1">
+                    <Icon name="AlertCircle" size={12} />
+                    {errors.creation_date}
+                  </p>
+                )}
+              </div>
 
               <Input
                 label="Expected Close Date"
