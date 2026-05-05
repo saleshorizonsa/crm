@@ -81,6 +81,7 @@ export const leadService = {
     });
 
     if (error) return { results: [], total: 0, error };
+    if (data?.error) return { results: [], total: 0, error: new Error(data.error) };
     return { results: data?.results || [], total: data?.total || 0, error: null };
   },
 
