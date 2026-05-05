@@ -113,11 +113,13 @@ const LeadManagement = () => {
   const [stats,           setStats]           = useState({ new:0, contacted:0, qualified:0, unqualified:0, converted:0, total:0 });
   const [filters,         setFilters]         = useState({ status:"", region:"", product:"", search:"", assigned_to:"" });
   const [selectedLeads,   setSelectedLeads]   = useState(new Set());
+  const [historyCounts,   setHistoryCounts]   = useState({});
 
   // Panels / modals
   const [showApolloPanel, setShowApolloPanel] = useState(false);
   const [showModal,       setShowModal]       = useState(false);
   const [selectedLead,    setSelectedLead]    = useState(null);
+  const [modalInitialTab, setModalInitialTab] = useState("person");
 
   // Import feedback
   const [importing,       setImporting]       = useState(false);
@@ -130,6 +132,12 @@ const LeadManagement = () => {
   const loadingRef = useRef(false);
 
   // ── Load ───────────────────────────────────────────────────────────────────
+  const loadHistoryCounts = useCallback(async (leadIds) => {
+    if (!leadIds || leadIds.length === 0) return;
+    const counts = await leadService.getHistoryCounts(leadIds);
+    setHistoryCounts(counts);
+  }, []);
+
   const loadLeads = useCallback(async () => {
     if (!company?.id || loadingRef.current) return;
     loadingRef.current = true;
@@ -137,10 +145,14 @@ const LeadManagement = () => {
     const { data, error } = await leadService.getLeads(
       company.id, filters, user?.id, role
     );
-    setLeads(error ? [] : (data || []));
+    const list = error ? [] : (data || []);
+    setLeads(list);
     setLoading(false);
     loadingRef.current = false;
-  }, [company?.id, filters, user?.id, role]);
+    if (list.length > 0) {
+      loadHistoryCounts(list.map((l) => l.id));
+    }
+  }, [company?.id, filters, user?.id, role, loadHistoryCounts]);
 
   const loadStats = useCallback(async () => {
     if (!company?.id) return;
@@ -210,31 +222,36 @@ const LeadManagement = () => {
     }
   };
 
-  const handleOpenLead = (lead) => {
+  const handleOpenLead = (lead, tab = "person") => {
     setSelectedLead(lead);
+    setModalInitialTab(tab);
     setShowModal(true);
   };
 
   const handleAddManually = () => {
     setSelectedLead(null);
+    setModalInitialTab("person");
     setShowModal(true);
   };
 
   const handleSaveLead = async (data) => {
     try {
       if (data.id) {
-        const { data: updated, error } = await leadService.updateLead(data.id, data);
+        const { data: updated, error } = await leadService.updateLead(data.id, data, user.id);
         if (error) throw error;
         setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+        // Refresh history count for this lead
+        loadHistoryCounts([updated.id]);
       } else {
         const { data: created, error } = await leadService.createLead({
           ...data,
           company_id:  company.id,
           assigned_to: user.id,
           assigned_by: user.id,
-        });
+        }, user.id);
         if (error) throw error;
         setLeads((prev) => [created, ...prev]);
+        loadHistoryCounts([created.id]);
       }
       setShowModal(false);
       setSelectedLead(null);
@@ -257,19 +274,21 @@ const LeadManagement = () => {
   const handleConvertLead = async (leadId) => {
     const { contact, error } = await leadService.convertLeadToContact(leadId, user.id);
     if (error) { alert("Conversion failed: " + error.message); return; }
-    // Update lead in list to show converted
     setLeads((prev) =>
       prev.map((l) => l.id === leadId ? { ...l, status: "converted", converted_to: contact.id } : l)
     );
+    // Refresh history count
+    loadHistoryCounts([leadId]);
     setShowModal(false);
     setSelectedLead(null);
     loadStats();
   };
 
   const handleQuickStatus = async (leadId, status) => {
-    const { data, error } = await leadService.updateLead(leadId, { status });
+    const { data, error } = await leadService.updateLead(leadId, { status }, user.id);
     if (!error && data) {
       setLeads((prev) => prev.map((l) => (l.id === leadId ? data : l)));
+      loadHistoryCounts([leadId]);
       loadStats();
     }
   };
@@ -287,7 +306,7 @@ const LeadManagement = () => {
 
   const handleBulkStatus = async (status) => {
     const ids = [...selectedLeads];
-    await Promise.all(ids.map((id) => leadService.updateLead(id, { status })));
+    await Promise.all(ids.map((id) => leadService.updateLead(id, { status }, user.id)));
     await loadLeads();
     setSelectedLeads(new Set());
     loadStats();
@@ -296,7 +315,7 @@ const LeadManagement = () => {
   const handleBulkAssign = async () => {
     if (!bulkAssignTo) return;
     const ids = [...selectedLeads];
-    await Promise.all(ids.map((id) => leadService.updateLead(id, { assigned_to: bulkAssignTo })));
+    await Promise.all(ids.map((id) => leadService.updateLead(id, { assigned_to: bulkAssignTo }, user.id)));
     await loadLeads();
     setSelectedLeads(new Set());
     setBulkAssignTo("");
@@ -392,7 +411,6 @@ const LeadManagement = () => {
                 className="h-9 text-sm"
               />
             </div>
-            {/* Status */}
             <select
               value={filters.status}
               onChange={(e) => setFilter("status", e.target.value)}
@@ -403,7 +421,6 @@ const LeadManagement = () => {
                 <option key={k} value={k}>{v.label}</option>
               ))}
             </select>
-            {/* Region */}
             <select
               value={filters.region}
               onChange={(e) => setFilter("region", e.target.value)}
@@ -414,7 +431,6 @@ const LeadManagement = () => {
                 <option key={k} value={k}>{v}</option>
               ))}
             </select>
-            {/* Product */}
             <select
               value={filters.product}
               onChange={(e) => setFilter("product", e.target.value)}
@@ -425,7 +441,6 @@ const LeadManagement = () => {
               <option value="pvc">PVC</option>
               <option value="trading">Trading</option>
             </select>
-            {/* Source */}
             <select
               value={filters.source || ""}
               onChange={(e) => setFilter("source", e.target.value)}
@@ -437,7 +452,6 @@ const LeadManagement = () => {
               <option value="import">Import</option>
               <option value="referral">Referral</option>
             </select>
-            {/* Assigned to (hidden for salesman) */}
             {role !== "salesman" && companyUsers.length > 0 && (
               <select
                 value={filters.assigned_to}
@@ -450,7 +464,6 @@ const LeadManagement = () => {
                 ))}
               </select>
             )}
-            {/* Clear filters */}
             {(filters.status || filters.region || filters.product || filters.source || filters.assigned_to) && (
               <button
                 type="button"
@@ -469,7 +482,6 @@ const LeadManagement = () => {
             <span className="text-sm font-medium text-primary">
               {selectedLeads.size} lead{selectedLeads.size !== 1 ? "s" : ""} selected
             </span>
-            {/* Assign to */}
             {role !== "salesman" && companyUsers.length > 0 && (
               <div className="flex items-center gap-2">
                 <select
@@ -557,6 +569,7 @@ const LeadManagement = () => {
                 <tbody className="divide-y divide-border">
                   {filteredLeads.map((lead) => {
                     const sc = STATUS_CONFIG[lead.status] || STATUS_CONFIG.new;
+                    const histCount = historyCounts[lead.id] || 0;
                     return (
                       <tr
                         key={lead.id}
@@ -665,9 +678,24 @@ const LeadManagement = () => {
                           })()}
                         </td>
 
-                        {/* Date */}
-                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                          {fmtDate(lead.created_at)}
+                        {/* Added + history count badge */}
+                        <td className="px-4 py-3">
+                          <div className="text-xs text-muted-foreground whitespace-nowrap">
+                            {fmtDate(lead.created_at)}
+                          </div>
+                          {histCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenLead(lead, "history");
+                              }}
+                              className="mt-0.5 flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              <Icon name="Clock" size={10} />
+                              {histCount} change{histCount !== 1 ? "s" : ""}
+                            </button>
+                          )}
                         </td>
 
                         {/* Actions */}
@@ -712,6 +740,8 @@ const LeadManagement = () => {
         onDelete={handleDeleteLead}
         onClose={() => { setShowModal(false); setSelectedLead(null); }}
         onConvert={handleConvertLead}
+        users={companyUsers}
+        initialTab={modalInitialTab}
       />
     </div>
   );
