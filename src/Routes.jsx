@@ -30,6 +30,7 @@ import AdminDashboard from "./pages/admin-dashboard";
 import Notifications from "./pages/notifications";
 import ForecastPage from "./pages/forecast";
 import ReportsPage from "./pages/reports";
+import CalendarPage from "./pages/calendar";
 
 const Routes = () => {
   return (
@@ -133,6 +134,14 @@ const Routes = () => {
                   element={
                     <ProtectedRoute>
                       <Notifications />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/calendar"
+                  element={
+                    <ProtectedRoute>
+                      <CalendarPage />
                     </ProtectedRoute>
                   }
                 />

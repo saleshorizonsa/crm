@@ -4,6 +4,7 @@ import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
 import Select from "../../../components/ui/Select";
 import LostReasonModal from "./LostReasonModal";
+import MeetingModal from "../../calendar/components/MeetingModal";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import {
@@ -42,7 +43,8 @@ const DealModal = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errors, setErrors] = useState({});
-  const [showLostModal, setShowLostModal] = useState(false);
+  const [showLostModal,    setShowLostModal]    = useState(false);
+  const [showMeetingModal, setShowMeetingModal] = useState(false);
   const pendingDealDataRef = useRef(null);
   const [dealType, setDealType] = useState("value"); // "value" | "product"
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -1146,6 +1148,16 @@ const DealModal = ({
                 Delete
               </Button>
             )}
+            <Button
+              variant="ghost"
+              type="button"
+              onClick={() => setShowMeetingModal(true)}
+              disabled={isSaving || isDeleting}
+              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+            >
+              <Icon name="CalendarPlus" size={16} className="mr-2" />
+              Schedule Meeting
+            </Button>
           </div>
 
           <div className="flex items-center space-x-3">
@@ -1177,6 +1189,25 @@ const DealModal = ({
           </div>
         </div>
       </div>
+
+      {/* Meeting scheduler — opened from footer */}
+      <MeetingModal
+        isOpen={showMeetingModal}
+        onClose={() => setShowMeetingModal(false)}
+        onSave={async (data, attendeeIds) => {
+          const { meetingService: ms } = await import("../../../services/meetingService");
+          const payload = { ...data, company_id: company?.id, created_by: user?.id };
+          delete payload.id;
+          delete payload.sync_google;
+          const { error } = await ms.createMeeting(payload, attendeeIds);
+          if (error) throw error;
+          setShowMeetingModal(false);
+        }}
+        onDelete={() => {}}
+        prefillDealId={deal?.id || null}
+        contacts={contacts}
+        users={users}
+      />
 
       {/* Lost Reason Modal — shown when user saves with stage=lost and no code yet */}
       <LostReasonModal

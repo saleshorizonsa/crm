@@ -4,6 +4,7 @@ import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
 import GeneralSettings from "./components/GeneralSettings";
 import CurrencySettings from "./components/CurrencySettings";
 import NotificationSettings from "./components/NotificationSettings";
+import CalendarSettings from "./components/CalendarSettings";
 import { useAuth } from "../../contexts/AuthContext";
 import { settingsService } from "../../services/supabaseService";
 import { useLanguage } from "../../i18n";
@@ -60,7 +61,8 @@ const Settings = () => {
       label: t("dashboard.currencyFormat"),
       icon: "DollarSign",
     },
-    { id: "notifications", label: t("dashboard.notifications"), icon: "Bell" },
+    { id: "notifications", label: t("dashboard.notifications"), icon: "Bell"     },
+    { id: "calendar",      label: "Calendar",                   icon: "Calendar"  },
   ];
 
   if (!user) {
@@ -105,6 +107,7 @@ const Settings = () => {
                     {tab.icon === "Settings" && "⚙️"}
                     {tab.icon === "DollarSign" && "💰"}
                     {tab.icon === "Bell" && "🔔"}
+                    {tab.icon === "Calendar" && "📅"}
                   </span>
                   <span>{tab.label}</span>
                 </button>
@@ -142,6 +145,7 @@ const Settings = () => {
                       isSaving={isSaving}
                     />
                   )}
+                  {activeTab === "calendar" && <CalendarSettings />}
                 </>
               )}
             </div>
