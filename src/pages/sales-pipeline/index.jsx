@@ -543,8 +543,8 @@ const SalesPipeline = () => {
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
             </div>
           ) : viewMode === "pipeline" ? (
-            <div className="flex">
-              <div className="flex gap-4 overflow-x-auto p-4 bg-gray-50 min-h-[calc(100vh-300px)] scrollbar-thin scrollbar-thumb-gray-300">
+            <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+              <div className="flex gap-4 p-4 bg-gray-50 min-h-[calc(100vh-300px)]" style={{ minWidth: "max-content" }}>
                 {stages.map((stage) => (
                   <PipelineStage
                     key={stage.id}
