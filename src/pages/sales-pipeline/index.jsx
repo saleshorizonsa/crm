@@ -61,6 +61,7 @@ const SalesPipeline = () => {
   const [viewMode, setViewMode] = useState("pipeline");
   const [trackedKey, setTrackedKey] = useState(location.key);
   const [filters, setFilters] = useState(() => filtersFromLocation(location));
+  const [drillDownContext, setDrillDownContext] = useState(null);
 
   // Synchronously reset filters when location.key changes (new navigation from dashboard).
   // This runs during render so PipelineFilters always gets the right initialFilters on mount.
@@ -69,9 +70,20 @@ const SalesPipeline = () => {
     setFilters(filtersFromLocation(location));
   }
 
-  // Clear navigation state after applying it so the back button does not re-apply the stage filter.
+  // Detect drill-down from Sales Performance Card and clear navigation state.
   useEffect(() => {
-    if (location.state?.activeStage || location.state?.activeFilter) {
+    const state = location.state;
+    if (state?.source === "performance-card" && state?.activeStage) {
+      const stageLabels = {
+        lead: "Lead", contact_made: "Qualified", proposal_sent: "Proposal",
+        negotiation: "Negotiation", won: "Won", lost: "Lost",
+      };
+      setDrillDownContext({
+        stage: state.activeStage,
+        label: stageLabels[state.activeStage] || state.activeStage,
+      });
+    }
+    if (state?.activeStage || state?.activeFilter || state?.source) {
       window.history.replaceState({}, document.title);
     }
   }, []);
@@ -524,6 +536,25 @@ const SalesPipeline = () => {
         </div>
 
         <div className="space-y-6">
+          {/* Drill-down banner — shown when navigated from Sales Performance Card */}
+          {drillDownContext && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg text-sm text-blue-700 border border-blue-100">
+              <Icon name="Filter" size={16} />
+              <span>
+                Showing <strong>{drillDownContext.label}</strong> deals from Sales Performance Card
+              </span>
+              <button
+                onClick={() => {
+                  setDrillDownContext(null);
+                  setFilters((f) => ({ ...f, stage: "" }));
+                }}
+                className="ml-auto text-blue-400 hover:text-blue-600 font-medium"
+              >
+                Clear ✕
+              </button>
+            </div>
+          )}
+
           {/* Filters and Analytics */}
           <div className="w-full" ref={pipelineTopRef}>
             <PipelineFilters

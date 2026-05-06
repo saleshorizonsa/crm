@@ -131,7 +131,7 @@ const EnhancedSupervisorDashboard = ({
     if (company?.id && effectiveUserProfile?.id) {
       loadSupervisorData();
     }
-  }, [company?.id, effectiveUserProfile?.id, dateRange.from, dateRange.to]);
+  }, [company?.id, effectiveUserProfile?.id]);
 
   // Generate filter options for month, quarter, and year
   const monthOptions = useMemo(() => {
@@ -301,10 +301,7 @@ const EnhancedSupervisorDashboard = ({
   };
 
   // Canonical date helper — always use closed_at for won deals
-  const dealDate = (deal) =>
-    deal.stage === "won"
-      ? deal.closed_at || deal.expected_close_date || deal.created_at
-      : deal.updated_at || deal.created_at;
+  const dealDate = (deal) => deal.updated_at || deal.created_at;
 
   // Filter all data based on selected filters
   const filteredDeals = useMemo(() => {
@@ -803,7 +800,7 @@ const EnhancedSupervisorDashboard = ({
         ),
         activityService.getUserActivities(company.id, effectiveUser.id, 20),
         userService.getCompanyUsers(company.id),
-        dealService.getDeals(company.id, { viewAll: true, dateFrom: dateRange.from, dateTo: dateRange.to }, effectiveUser.id),
+        dealService.getDeals(company.id, { viewAll: true }, effectiveUser.id),
         contactService.getContacts(company.id, {}, effectiveUser.id),
         taskService.getMyTasks(effectiveUser.id, company.id, {
           userOnly: false,
@@ -2240,6 +2237,7 @@ const EnhancedSupervisorDashboard = ({
               <SalesChart
                 data={salesData}
                 pipelineData={pipelineData}
+                allDeals={allDeals}
                 title="Sales Performance"
                 showTypeSelector={true}
               />

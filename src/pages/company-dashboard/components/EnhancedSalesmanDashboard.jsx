@@ -156,15 +156,10 @@ const EnhancedSalesmanDashboard = () => {
     return true;
   };
 
-  // Filter all data based on selected filters
-  // For won deals, use expected_close_date; for others use updated_at/created_at
   const filteredDeals = useMemo(() => {
     return (
       allDeals?.filter((deal) => {
-        const dateToCheck =
-          deal.stage === "won"
-            ? deal.expected_close_date || deal.updated_at || deal.created_at
-            : deal.updated_at || deal.created_at;
+        const dateToCheck = deal.updated_at || deal.created_at;
         return isInSelectedPeriod(dateToCheck);
       }) || []
     );
@@ -672,7 +667,7 @@ const EnhancedSalesmanDashboard = () => {
     if (company?.id && userProfile?.id) {
       loadSalesmanData();
     }
-  }, [company, userProfile, dateRange.from, dateRange.to]);
+  }, [company, userProfile]);
 
   // Recalculate executive metrics when filtered data changes
   useEffect(() => {
@@ -736,7 +731,7 @@ const EnhancedSalesmanDashboard = () => {
         companyService.getCompanyMetrics(company.id, user.id, false),
         companyService.getSalesData(company.id, "monthly", user.id, false),
         activityService.getUserActivities(company.id, user.id, 20),
-        dealService.getDeals(company.id, { viewAll: false, dateFrom: dateRange.from, dateTo: dateRange.to }, user.id),
+        dealService.getDeals(company.id, { viewAll: false }, user.id),
       ]);
 
       const [metricsResult, salesResult, activitiesResult, dealsResult] =
@@ -1417,6 +1412,7 @@ const EnhancedSalesmanDashboard = () => {
             <SalesChart
               data={salesData}
               pipelineData={pipelineData}
+              allDeals={allDeals}
               title="My Sales Performance"
               showTypeSelector={true}
             />

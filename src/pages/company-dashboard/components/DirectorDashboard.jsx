@@ -135,7 +135,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       loadActionItems();
       loadAllEmployees();
     }
-  }, [selectedCompany, dateRange.from, dateRange.to]);
+  }, [selectedCompany]);
 
   // Reload metrics when selected employee changes
   useEffect(() => {
@@ -191,14 +191,10 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   };
 
   // Filter all data based on selected filters
-  // For won deals, use expected_close_date; for others use updated_at/created_at
   const filteredDeals = useMemo(() => {
     return (
       allDealsData?.filter((deal) => {
-        const dateToCheck =
-          deal.stage === "won"
-            ? deal.expected_close_date || deal.updated_at || deal.created_at
-            : deal.updated_at || deal.created_at;
+        const dateToCheck = deal.updated_at || deal.created_at;
         return isInSelectedPeriod(dateToCheck);
       }) || []
     );
@@ -881,7 +877,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           ? activityService.getUserActivities(companyId, targetUserId, 20)
           : activityService.getActivities(companyId, 20),
         userService.getCompanyUsers(companyId),
-        dealService.getDeals(companyId, { viewAll, dateFrom: dateRange.from, dateTo: dateRange.to }, targetUserId),
+        dealService.getDeals(companyId, { viewAll }, targetUserId),
         contactService.getContacts(companyId, {}, targetUserId),
         taskService.getMyTasks(targetUserId || user.id, companyId, {
           userOnly: !viewAll,
@@ -1405,12 +1401,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
             // Filter deals by selected period
             const filteredDeals = (deals || []).filter((deal) => {
-              const dateToCheck =
-                deal.stage === "won" && deal.expected_close_date
-                  ? new Date(deal.expected_close_date)
-                  : deal.updated_at
-                    ? new Date(deal.updated_at)
-                    : new Date(deal.created_at);
+              const dateToCheck = deal.updated_at || deal.created_at;
               return isInSelectedPeriod(dateToCheck);
             });
 
@@ -1664,6 +1655,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           <SalesChart
             data={salesData}
             pipelineData={pipelineData}
+            allDeals={allDealsData}
             title="Sales Performance"
             showTypeSelector={true}
           />
@@ -1875,6 +1867,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         <div className="bg-white rounded-lg shadow p-6 h-full">
           <SalesChart
             data={salesData}
+            allDeals={allDealsData}
             title="Sales Overview"
             showTypeSelector={true}
           />

@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { ResponsiveFunnel } from "@nivo/funnel";
 import { ResponsivePie } from "@nivo/pie";
 import { ResponsiveBar } from "@nivo/bar";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
+import { useDateRange } from "../../../contexts/DateRangeContext";
 
 const STAGE_ORDER = [
   "lead",
@@ -26,12 +28,15 @@ const SalesChart = ({
   type: initialType = "pipeline",
   title,
   pipelineData = [],
+  allDeals,            // optional: raw deal array — when provided, computed from dateRange
   isLoading = false,
   showTypeSelector = true,
   readOnly = false,
 }) => {
   const { formatCurrency } = useCurrency();
   const { t } = useLanguage();
+  const navigate = useNavigate();
+  const { dateRange } = useDateRange();
 
   // Two top-level tabs only: Overview | Pipeline
   // (the old "funnel" / "distribution" map onto the new "pipeline" tab)
@@ -42,9 +47,40 @@ const SalesChart = ({
   // Chart variant inside the Pipeline tab
   const [chartType, setChartType] = useState("funnel"); // funnel | pyramid | donut | bar
 
+  // When allDeals provided, compute pipeline counts filtered by the global dateRange.
+  // This makes the Overview metrics respond to the date picker without re-fetching.
+  const effectivePipelineData = useMemo(() => {
+    if (!allDeals || allDeals.length === 0) return pipelineData;
+    const filtered = allDeals.filter((d) => {
+      const dt = d.updated_at || d.created_at;
+      if (!dt) return false;
+      if (!dateRange.isAllTime) {
+        if (dateRange.from && dt.slice(0, 10) < dateRange.from) return false;
+        if (dateRange.to && dt.slice(0, 10) > dateRange.to) return false;
+      }
+      return true;
+    });
+    return ["lead", "contact_made", "proposal_sent", "negotiation", "won", "lost"].map(
+      (stage) => {
+        const sd = filtered.filter((d) => d.stage === stage);
+        return {
+          stage,
+          count: sd.length,
+          totalValue: sd.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0),
+        };
+      }
+    );
+  }, [allDeals, pipelineData, dateRange.from, dateRange.to, dateRange.isAllTime]);
+
+  const handleStageClick = (stage) => {
+    navigate("/sales-pipeline", {
+      state: { activeStage: stage, source: "performance-card" },
+    });
+  };
+
   // Build stage data once; views derive their shape from this.
   const stageData = useMemo(() => {
-    if (!pipelineData || pipelineData.length === 0) return [];
+    if (!effectivePipelineData || effectivePipelineData.length === 0) return [];
 
     const stageLabels = {
       lead: t("deals.stages.leads"),
@@ -55,10 +91,10 @@ const SalesChart = ({
     };
 
     const counts = STAGE_ORDER.map(
-      (stage) => pipelineData.find((p) => p.stage === stage)?.count || 0
+      (stage) => effectivePipelineData.find((p) => p.stage === stage)?.count || 0
     );
     const amounts = STAGE_ORDER.map(
-      (stage) => pipelineData.find((p) => p.stage === stage)?.totalValue || 0
+      (stage) => effectivePipelineData.find((p) => p.stage === stage)?.totalValue || 0
     );
 
     // Cumulative ("reached this stage or beyond") so funnel/pyramid is monotonic.
@@ -78,12 +114,12 @@ const SalesChart = ({
       amount: cumulativeAmounts[idx],
       color: STAGE_COLORS[stage] || "#3b82f6",
     })).filter((d) => d.value > 0);
-  }, [pipelineData, t]);
+  }, [effectivePipelineData, t]);
 
   const conversionMetrics = useMemo(() => {
-    if (!pipelineData || pipelineData.length === 0) return null;
+    if (!effectivePipelineData || effectivePipelineData.length === 0) return null;
 
-    const get = (s) => pipelineData.find((p) => p.stage === s)?.count || 0;
+    const get = (s) => effectivePipelineData.find((p) => p.stage === s)?.count || 0;
     const totalLeads = get("lead");
     const totalContacted = get("contact_made");
     const totalProposals = get("proposal_sent");
@@ -92,23 +128,20 @@ const SalesChart = ({
     const totalLost = get("lost");
 
     const totalDeals =
-      totalLeads +
-      totalContacted +
-      totalProposals +
-      totalNegotiations +
-      totalWon +
-      totalLost;
+      totalLeads + totalContacted + totalProposals + totalNegotiations + totalWon + totalLost;
 
-    const reachedContact =
-      totalContacted + totalProposals + totalNegotiations + totalWon;
+    // "Reached" = currently in this stage OR any later active stage
+    const reachedContact = totalContacted + totalProposals + totalNegotiations + totalWon;
     const reachedProposal = totalProposals + totalNegotiations + totalWon;
     const reachedNegotiation = totalNegotiations + totalWon;
-    const reachedWon = totalWon;
 
     const totalPastLead = totalLeads + reachedContact;
     const totalPastContact = totalContacted + reachedProposal;
     const totalPastProposal = totalProposals + reachedNegotiation;
-    const totalPastNegotiation = totalNegotiations + reachedWon;
+    const totalPastNegotiation = totalNegotiations + totalWon;
+
+    // Win/Loss rates calculated from closed deals only
+    const closedDeals = totalWon + totalLost;
 
     return {
       leadToContact:
@@ -116,17 +149,17 @@ const SalesChart = ({
       contactToProposal:
         totalPastContact > 0 ? (reachedProposal / totalPastContact) * 100 : 0,
       proposalToNegotiation:
-        totalPastProposal > 0
-          ? (reachedNegotiation / totalPastProposal) * 100
-          : 0,
+        totalPastProposal > 0 ? (reachedNegotiation / totalPastProposal) * 100 : 0,
       negotiationToWin:
-        totalPastNegotiation > 0
-          ? (reachedWon / totalPastNegotiation) * 100
-          : 0,
-      overallWinRate: totalDeals > 0 ? (totalWon / totalDeals) * 100 : 0,
-      overallLossRate: totalDeals > 0 ? (totalLost / totalDeals) * 100 : 0,
+        totalPastNegotiation > 0 ? (totalWon / totalPastNegotiation) * 100 : 0,
+      // Win Rate = won / (won + lost)
+      overallWinRate: closedDeals > 0 ? (totalWon / closedDeals) * 100 : 0,
+      // Loss Rate = lost / (won + lost)
+      overallLossRate: closedDeals > 0 ? (totalLost / closedDeals) * 100 : 0,
+      // Close Rate = (won + lost) / all deals
+      closeRate: totalDeals > 0 ? (closedDeals / totalDeals) * 100 : 0,
     };
-  }, [pipelineData]);
+  }, [effectivePipelineData]);
 
   if (isLoading) {
     return (
@@ -206,7 +239,12 @@ const SalesChart = ({
         )}
 
         {activeView === "overview" && conversionMetrics && (
-          <OverviewView metrics={conversionMetrics} t={t} />
+          <OverviewView
+            metrics={conversionMetrics}
+            t={t}
+            onMetricClick={handleStageClick}
+            onStageClick={handleStageClick}
+          />
         )}
 
         {activeView === "pipeline" && !hasData && (
@@ -242,90 +280,136 @@ const EmptyState = ({ icon, label, sublabel }) => (
   </div>
 );
 
-const OverviewView = ({ metrics, t }) => (
-  <div className="space-y-6">
-    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-      <div className="bg-blue-50 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-blue-600 font-medium">
-            {t("dashboard.overallWinRate")}
-          </span>
-          <Icon name="TrendingUp" size={16} className="text-blue-600" />
-        </div>
-        <p className="text-2xl font-bold text-blue-900 mt-2">
-          {metrics.overallWinRate.toFixed(1)}%
-        </p>
-      </div>
-      <div className="bg-red-50 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-red-600 font-medium">
-            {t("deals.lossRate")}
-          </span>
-          <Icon name="TrendingDown" size={16} className="text-red-600" />
-        </div>
-        <p className="text-2xl font-bold text-red-900 mt-2">
-          {metrics.overallLossRate.toFixed(1)}%
-        </p>
-      </div>
-      <div className="bg-green-50 rounded-lg p-4 col-span-2 lg:col-span-1">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-green-600 font-medium">
-            {t("dashboard.closeRate")}
-          </span>
-          <Icon name="Target" size={16} className="text-green-600" />
-        </div>
-        <p className="text-2xl font-bold text-green-900 mt-2">
-          {metrics.negotiationToWin.toFixed(1)}%
-        </p>
-      </div>
-    </div>
+const STAGE_CONVERSION_ROWS = [
+  { labelKey: "deals.leadToContact",        fromStage: "lead",          color: "blue"   },
+  { labelKey: "deals.contactToProposal",    fromStage: "contact_made",  color: "indigo" },
+  { labelKey: "deals.proposalToNegotiation",fromStage: "proposal_sent", color: "purple" },
+  { labelKey: "deals.negotiationToWon",     fromStage: "negotiation",   color: "green"  },
+];
 
-    <div className="bg-gray-50 rounded-lg p-4">
-      <h4 className="text-sm font-semibold text-gray-700 mb-4">
-        {t("dashboard.stageConversionRates")}
-      </h4>
-      <div className="space-y-3">
-        {[
-          {
-            label: t("deals.leadToContact"),
-            value: metrics.leadToContact,
-            color: "blue",
-          },
-          {
-            label: t("deals.contactToProposal"),
-            value: metrics.contactToProposal,
-            color: "indigo",
-          },
-          {
-            label: t("deals.proposalToNegotiation"),
-            value: metrics.proposalToNegotiation,
-            color: "purple",
-          },
-          {
-            label: t("deals.negotiationToWon"),
-            value: metrics.negotiationToWin,
-            color: "green",
-          },
-        ].map((metric, idx) => (
-          <div key={idx}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm text-gray-600">{metric.label}</span>
-              <span className="text-sm font-semibold text-gray-900">
-                {metric.value.toFixed(1)}%
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className={`bg-${metric.color}-500 h-2 rounded-full transition-all duration-500`}
-                style={{ width: `${Math.min(metric.value, 100)}%` }}
-              ></div>
+const METRIC_VALUES = (metrics) => [
+  metrics.leadToContact,
+  metrics.contactToProposal,
+  metrics.proposalToNegotiation,
+  metrics.negotiationToWin,
+];
+
+const OverviewView = ({ metrics, t, onMetricClick, onStageClick }) => {
+  const metricValues = METRIC_VALUES(metrics);
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Win Rate — click to see Won deals */}
+        <div
+          className="bg-blue-50 rounded-lg p-4 cursor-pointer hover:bg-blue-100 transition-colors group"
+          onClick={() => onMetricClick?.("won")}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === "Enter" && onMetricClick?.("won")}
+          title="View Won deals in pipeline"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-blue-600 font-medium">
+              {t("dashboard.overallWinRate")}
+            </span>
+            <div className="flex items-center gap-1">
+              <Icon name="TrendingUp" size={16} className="text-blue-600" />
+              <Icon name="ExternalLink" size={12} className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
           </div>
-        ))}
+          <p className="text-2xl font-bold text-blue-900 mt-2">
+            {metrics.overallWinRate.toFixed(1)}%
+          </p>
+        </div>
+
+        {/* Loss Rate — click to see Lost deals */}
+        <div
+          className="bg-red-50 rounded-lg p-4 cursor-pointer hover:bg-red-100 transition-colors group"
+          onClick={() => onMetricClick?.("lost")}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === "Enter" && onMetricClick?.("lost")}
+          title="View Lost deals in pipeline"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-red-600 font-medium">
+              {t("deals.lossRate")}
+            </span>
+            <div className="flex items-center gap-1">
+              <Icon name="TrendingDown" size={16} className="text-red-600" />
+              <Icon name="ExternalLink" size={12} className="text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+          </div>
+          <p className="text-2xl font-bold text-red-900 mt-2">
+            {metrics.overallLossRate.toFixed(1)}%
+          </p>
+        </div>
+
+        {/* Close Rate — click to see Lead stage (all deals) */}
+        <div
+          className="bg-green-50 rounded-lg p-4 col-span-2 lg:col-span-1 cursor-pointer hover:bg-green-100 transition-colors group"
+          onClick={() => onMetricClick?.("lead")}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === "Enter" && onMetricClick?.("lead")}
+          title="View all deals in pipeline"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-green-600 font-medium">
+              {t("dashboard.closeRate")}
+            </span>
+            <div className="flex items-center gap-1">
+              <Icon name="Target" size={16} className="text-green-600" />
+              <Icon name="ExternalLink" size={12} className="text-green-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+          </div>
+          <p className="text-2xl font-bold text-green-900 mt-2">
+            {metrics.closeRate.toFixed(1)}%
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 rounded-lg p-4">
+        <h4 className="text-sm font-semibold text-gray-700 mb-4">
+          {t("dashboard.stageConversionRates")}
+        </h4>
+        <div className="space-y-3">
+          {STAGE_CONVERSION_ROWS.map((row, idx) => (
+            <div
+              key={row.fromStage}
+              className="cursor-pointer hover:bg-white rounded-lg transition-colors -mx-2 px-2 py-1 group"
+              onClick={() => onStageClick?.(row.fromStage)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === "Enter" && onStageClick?.(row.fromStage)}
+              title={`View ${row.fromStage} deals in pipeline`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm text-gray-600 flex items-center gap-1">
+                  {t(row.labelKey)}
+                  <Icon
+                    name="ExternalLink"
+                    size={10}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-blue-400"
+                  />
+                </span>
+                <span className="text-sm font-semibold text-gray-900">
+                  {metricValues[idx].toFixed(1)}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className={`bg-${row.color}-500 h-2 rounded-full transition-all duration-500`}
+                  style={{ width: `${Math.min(metricValues[idx], 100)}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 /**
  * PipelineView

@@ -125,7 +125,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     if (company?.id && userProfile?.id) {
       loadManagerData();
     }
-  }, [company?.id, userProfile?.id, dateRange.from, dateRange.to]);
+  }, [company?.id, userProfile?.id]);
 
   // Generate filter options for month, quarter, and year
   const monthOptions = useMemo(() => {
@@ -206,15 +206,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     return true;
   };
 
-  // Filter all data based on selected period
-  // For won deals, use expected_close_date; for others use updated_at/created_at
   const filteredDeals = useMemo(() => {
     return (
       allDeals?.filter((deal) => {
-        const dateToCheck =
-          deal.stage === "won"
-            ? deal.expected_close_date || deal.updated_at || deal.created_at
-            : deal.updated_at || deal.created_at;
+        const dateToCheck = deal.updated_at || deal.created_at;
         return isInSelectedPeriod(dateToCheck);
       }) || []
     );
@@ -679,7 +674,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         ),
         activityService.getUserActivities(company.id, effectiveUser.id, 20),
         userService.getCompanyUsers(company.id),
-        dealService.getDeals(company.id, { viewAll: true, dateFrom: dateRange.from, dateTo: dateRange.to }, effectiveUser.id),
+        dealService.getDeals(company.id, { viewAll: true }, effectiveUser.id),
         contactService.getContacts(company.id, {}, effectiveUser.id),
         taskService.getMyTasks(effectiveUser.id, company.id, {
           userOnly: false,
@@ -2113,6 +2108,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   <SalesChart
                     data={salesData}
                     pipelineData={pipelineData}
+                    allDeals={allDeals}
                     title="Sales Performance"
                     showTypeSelector={true}
                   />
