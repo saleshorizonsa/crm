@@ -5,7 +5,7 @@ import { resolveDateRange } from "../components/ui/DateRangePicker";
 const DateRangeContext = createContext(null);
 
 const STORAGE_KEY = "jasco_date_range";
-const DEFAULT_PRESET = "this-month";
+const DEFAULT_PRESET = "this-year";
 
 const loadFromStorage = () => {
   try {
