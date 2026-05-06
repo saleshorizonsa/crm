@@ -131,7 +131,7 @@ const EnhancedSupervisorDashboard = ({
     if (company?.id && effectiveUserProfile?.id) {
       loadSupervisorData();
     }
-  }, [company?.id, effectiveUserProfile?.id]);
+  }, [company?.id, effectiveUserProfile?.id, dateRange.from, dateRange.to]);
 
   // Generate filter options for month, quarter, and year
   const monthOptions = useMemo(() => {
@@ -800,7 +800,7 @@ const EnhancedSupervisorDashboard = ({
         ),
         activityService.getUserActivities(company.id, effectiveUser.id, 20),
         userService.getCompanyUsers(company.id),
-        dealService.getDeals(company.id, { viewAll: true }, effectiveUser.id),
+        dealService.getDeals(company.id, { viewAll: true, dateFrom: dateRange.from, dateTo: dateRange.to }, effectiveUser.id),
         contactService.getContacts(company.id, {}, effectiveUser.id),
         taskService.getMyTasks(effectiveUser.id, company.id, {
           userOnly: false,

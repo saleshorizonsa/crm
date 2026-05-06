@@ -667,7 +667,7 @@ const EnhancedSalesmanDashboard = () => {
     if (company?.id && userProfile?.id) {
       loadSalesmanData();
     }
-  }, [company, userProfile]);
+  }, [company, userProfile, dateRange.from, dateRange.to]);
 
   // Recalculate executive metrics when filtered data changes
   useEffect(() => {
@@ -731,7 +731,7 @@ const EnhancedSalesmanDashboard = () => {
         companyService.getCompanyMetrics(company.id, user.id, false),
         companyService.getSalesData(company.id, "monthly", user.id, false),
         activityService.getUserActivities(company.id, user.id, 20),
-        dealService.getDeals(company.id, { viewAll: false }, user.id),
+        dealService.getDeals(company.id, { viewAll: false, dateFrom: dateRange.from, dateTo: dateRange.to }, user.id),
       ]);
 
       const [metricsResult, salesResult, activitiesResult, dealsResult] =
