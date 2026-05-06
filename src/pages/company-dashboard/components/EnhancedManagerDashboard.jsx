@@ -206,15 +206,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     return true;
   };
 
-  // Filter all data based on selected period
-  // For won deals, use expected_close_date; for others use updated_at/created_at
   const filteredDeals = useMemo(() => {
     return (
       allDeals?.filter((deal) => {
-        const dateToCheck =
-          deal.stage === "won"
-            ? deal.expected_close_date || deal.updated_at || deal.created_at
-            : deal.updated_at || deal.created_at;
+        const dateToCheck = deal.updated_at || deal.created_at;
         return isInSelectedPeriod(dateToCheck);
       }) || []
     );

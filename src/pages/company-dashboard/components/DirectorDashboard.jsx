@@ -191,14 +191,10 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   };
 
   // Filter all data based on selected filters
-  // For won deals, use expected_close_date; for others use updated_at/created_at
   const filteredDeals = useMemo(() => {
     return (
       allDealsData?.filter((deal) => {
-        const dateToCheck =
-          deal.stage === "won"
-            ? deal.expected_close_date || deal.updated_at || deal.created_at
-            : deal.updated_at || deal.created_at;
+        const dateToCheck = deal.updated_at || deal.created_at;
         return isInSelectedPeriod(dateToCheck);
       }) || []
     );
@@ -1405,12 +1401,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
             // Filter deals by selected period
             const filteredDeals = (deals || []).filter((deal) => {
-              const dateToCheck =
-                deal.stage === "won" && deal.expected_close_date
-                  ? new Date(deal.expected_close_date)
-                  : deal.updated_at
-                    ? new Date(deal.updated_at)
-                    : new Date(deal.created_at);
+              const dateToCheck = deal.updated_at || deal.created_at;
               return isInSelectedPeriod(dateToCheck);
             });
 
