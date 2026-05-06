@@ -39,13 +39,24 @@ const SalesChart = ({
   const { dateRange } = useDateRange();
 
   // Two top-level tabs only: Overview | Pipeline
-  // (the old "funnel" / "distribution" map onto the new "pipeline" tab)
   const [activeView, setActiveView] = useState(
-    initialType === "overview" ? "overview" : "pipeline"
+    () => localStorage.getItem("perf_card_tab") || "overview"
   );
 
-  // Chart variant inside the Pipeline tab
-  const [chartType, setChartType] = useState("funnel"); // funnel | pyramid | donut | bar
+  // Chart variant inside the Pipeline tab — default donut
+  const [chartType, setChartType] = useState(
+    () => localStorage.getItem("perf_card_chart") || "donut"
+  );
+
+  const handleTabChange = (tab) => {
+    setActiveView(tab);
+    localStorage.setItem("perf_card_tab", tab);
+  };
+
+  const handleChartTypeChange = (type) => {
+    setChartType(type);
+    localStorage.setItem("perf_card_chart", type);
+  };
 
   // When allDeals provided, compute pipeline counts filtered by the global dateRange.
   // This makes the Overview metrics respond to the date picker without re-fetching.
@@ -185,7 +196,7 @@ const SalesChart = ({
             {activeView === "pipeline" && hasData && (
               <select
                 value={chartType}
-                onChange={(e) => setChartType(e.target.value)}
+                onChange={(e) => handleChartTypeChange(e.target.value)}
                 className="text-sm border border-gray-200 rounded-md px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 aria-label={t("dashboard.chartType")}
               >
@@ -201,7 +212,7 @@ const SalesChart = ({
             )}
             <div className="flex items-center space-x-2 bg-gray-100 rounded-lg p-1">
               <button
-                onClick={() => setActiveView("overview")}
+                onClick={() => handleTabChange("overview")}
                 className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                   activeView === "overview"
                     ? "bg-white text-gray-900 shadow-sm"
@@ -211,7 +222,7 @@ const SalesChart = ({
                 {t("dashboard.overview")}
               </button>
               <button
-                onClick={() => setActiveView("pipeline")}
+                onClick={() => handleTabChange("pipeline")}
                 className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                   activeView === "pipeline"
                     ? "bg-white text-gray-900 shadow-sm"

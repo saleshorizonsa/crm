@@ -21,7 +21,14 @@ import { capitalize } from "utils/helper";
 const TeamPerformance = ({ teamData = [], data = [], isLoading = false }) => {
   const { formatCurrency } = useCurrency();
   const { t } = useLanguage();
-  const [viewMode, setViewMode] = useState("overview"); // overview, comparison, individual
+  const [viewMode, setViewMode] = useState(
+    () => localStorage.getItem("team_card_view") || "comparison"
+  );
+
+  const handleViewChange = (view) => {
+    setViewMode(view);
+    localStorage.setItem("team_card_view", view);
+  };
 
   const COLORS = [
     "#3b82f6",
@@ -134,7 +141,7 @@ const TeamPerformance = ({ teamData = [], data = [], isLoading = false }) => {
         </h3>
         <div className="flex items-center space-x-2 bg-gray-100 rounded-lg p-1">
           <button
-            onClick={() => setViewMode("overview")}
+            onClick={() => handleViewChange("overview")}
             className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
               viewMode === "overview"
                 ? "bg-white text-gray-900 shadow-sm"
@@ -144,7 +151,7 @@ const TeamPerformance = ({ teamData = [], data = [], isLoading = false }) => {
             {t("dashboard.overview")}
           </button>
           <button
-            onClick={() => setViewMode("comparison")}
+            onClick={() => handleViewChange("comparison")}
             className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
               viewMode === "comparison"
                 ? "bg-white text-gray-900 shadow-sm"
