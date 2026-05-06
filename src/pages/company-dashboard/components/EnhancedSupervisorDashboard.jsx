@@ -301,7 +301,10 @@ const EnhancedSupervisorDashboard = ({
   };
 
   // Canonical date helper — always use closed_at for won deals
-  const dealDate = (deal) => deal.updated_at || deal.created_at;
+  const dealDate = (deal) =>
+    deal.stage === "won"
+      ? deal.closed_at || deal.expected_close_date || deal.created_at
+      : deal.updated_at || deal.created_at;
 
   // Filter all data based on selected filters
   const filteredDeals = useMemo(() => {
