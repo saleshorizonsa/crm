@@ -125,7 +125,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     if (company?.id && userProfile?.id) {
       loadManagerData();
     }
-  }, [company?.id, userProfile?.id, dateRange.from, dateRange.to]);
+  }, [company?.id, userProfile?.id]);
 
   // Generate filter options for month, quarter, and year
   const monthOptions = useMemo(() => {
@@ -674,7 +674,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         ),
         activityService.getUserActivities(company.id, effectiveUser.id, 20),
         userService.getCompanyUsers(company.id),
-        dealService.getDeals(company.id, { viewAll: true, dateFrom: dateRange.from, dateTo: dateRange.to }, effectiveUser.id),
+        dealService.getDeals(company.id, { viewAll: true }, effectiveUser.id),
         contactService.getContacts(company.id, {}, effectiveUser.id),
         taskService.getMyTasks(effectiveUser.id, company.id, {
           userOnly: false,

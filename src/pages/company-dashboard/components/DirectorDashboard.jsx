@@ -135,7 +135,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       loadActionItems();
       loadAllEmployees();
     }
-  }, [selectedCompany, dateRange.from, dateRange.to]);
+  }, [selectedCompany]);
 
   // Reload metrics when selected employee changes
   useEffect(() => {
@@ -877,7 +877,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           ? activityService.getUserActivities(companyId, targetUserId, 20)
           : activityService.getActivities(companyId, 20),
         userService.getCompanyUsers(companyId),
-        dealService.getDeals(companyId, { viewAll, dateFrom: dateRange.from, dateTo: dateRange.to }, targetUserId),
+        dealService.getDeals(companyId, { viewAll }, targetUserId),
         contactService.getContacts(companyId, {}, targetUserId),
         taskService.getMyTasks(targetUserId || user.id, companyId, {
           userOnly: !viewAll,
