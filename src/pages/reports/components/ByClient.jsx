@@ -26,7 +26,10 @@ const ByClient = ({ deals, formatCurrency }) => {
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [deals]);
 
-  const chartData = clients.slice(0, 10).map((c) => ({ name: c.label.slice(0, 18), value: c.total }));
+  const chartData = clients.slice(0, 10).map((c) => ({
+    name: c.label.length > 14 ? c.label.slice(0, 13) + "…" : c.label,
+    value: c.total,
+  }));
 
   if (!clients.length) return (
     <div className="flex flex-col items-center justify-center py-20 text-gray-400">
@@ -41,7 +44,7 @@ const ByClient = ({ deals, formatCurrency }) => {
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="text-sm font-semibold text-gray-700 mb-4">Top 10 Clients by Deal Value</h3>
         <ResponsiveContainer width="100%" height={230}>
-          <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 40, left: 0 }}>
+          <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 60, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
             <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={0} />
             <YAxis tickFormatter={fmt} tick={{ fontSize: 11 }} width={48} />

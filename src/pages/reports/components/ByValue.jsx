@@ -116,22 +116,35 @@ const ByValue = ({ deals, formatCurrency }) => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h3 className="text-sm font-semibold text-gray-700 mb-4">Stage Breakdown</h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={260}>
             <PieChart>
-              <Pie data={stageData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent*100).toFixed(0)}%`}>
+              <Pie
+                data={stageData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="45%"
+                outerRadius={90}
+                label={false}
+              >
                 {stageData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
               </Pie>
               <Tooltip formatter={(v) => formatCurrency(v)} />
+              <Legend
+                iconType="circle"
+                iconSize={8}
+                wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+              />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h3 className="text-sm font-semibold text-gray-700 mb-4">By Stage</h3>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {stageData.map((s, i) => (
               <div key={s.name} className="flex items-center gap-3">
-                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: STAGE_COLORS[Object.keys(STAGE_LABELS)[i]] || PIE_COLORS[i] }} />
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
                 <div className="flex-1 text-sm text-gray-700">{s.name}</div>
                 <div className="text-sm font-semibold text-gray-900">{formatCurrency(s.value)}</div>
                 <div className="text-xs text-gray-400 w-14 text-right">{s.count} deal{s.count !== 1 ? "s" : ""}</div>
