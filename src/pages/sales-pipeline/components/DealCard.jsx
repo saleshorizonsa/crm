@@ -74,7 +74,7 @@ const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
 
   const getUrgencyColor = () => {
     if (isClosedDeal) return "text-gray-500";
-    if (daysUntilClose < 0) return "text-red-600";
+    if (daysUntilClose < 0) return "text-orange-600";
     if (daysUntilClose <= 7) return "text-orange-600";
     if (daysUntilClose <= 30) return "text-blue-600";
     return "text-gray-500";

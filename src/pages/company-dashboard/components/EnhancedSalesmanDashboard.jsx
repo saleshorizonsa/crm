@@ -1511,7 +1511,7 @@ const EnhancedSalesmanDashboard = () => {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {isOverdue && (
-                          <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full">
+                          <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full">
                             Overdue
                           </span>
                         )}
@@ -1811,7 +1811,7 @@ const EnhancedSalesmanDashboard = () => {
                                 key={idx}
                                 className={`text-xs px-2 py-1 rounded-full font-medium ${
                                   r === "Overdue"
-                                    ? "bg-red-100 text-red-700"
+                                    ? "bg-orange-100 text-orange-700"
                                     : r === "High Value"
                                       ? "bg-purple-100 text-purple-700"
                                       : r === "Closing Soon"

@@ -253,7 +253,7 @@ const TaskListView = ({
                   <div
                     className={`flex items-center space-x-1 ${
                       isOverdue(task.due_date, task.status)
-                        ? "text-red-600 font-medium"
+                        ? "text-orange-600 font-medium"
                         : "text-muted-foreground"
                     }`}
                   >

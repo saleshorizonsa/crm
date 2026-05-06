@@ -187,8 +187,8 @@ const ForecastDealTable = ({ deals = [] }) => {
 
                     {/* Close date */}
                     <td className="px-4 py-3 hidden md:table-cell">
-                      <span className={`text-xs tabular-nums ${overdue ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
-                        {overdue && <Icon name="AlertCircle" size={11} className="inline mr-1 text-red-500" />}
+                      <span className={`text-xs tabular-nums ${overdue ? "text-orange-600 font-medium" : "text-muted-foreground"}`}>
+                        {overdue && <Icon name="AlertCircle" size={11} className="inline mr-1 text-orange-500" />}
                         {formatDate(deal.expected_close_date)}
                       </span>
                     </td>

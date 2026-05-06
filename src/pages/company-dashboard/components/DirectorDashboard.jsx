@@ -2211,7 +2211,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                               : target.status === "completed"
                                 ? "bg-blue-100 text-blue-800"
                                 : target.status === "overdue"
-                                  ? "bg-red-100 text-red-800"
+                                  ? "bg-orange-100 text-orange-800"
                                   : "bg-gray-100 text-gray-800"
                           }`}
                         >
@@ -2326,7 +2326,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                               : quantityRow.status === "completed"
                                 ? "bg-blue-100 text-blue-800"
                                 : quantityRow.status === "overdue"
-                                  ? "bg-red-100 text-red-800"
+                                  ? "bg-orange-100 text-orange-800"
                                   : "bg-gray-100 text-gray-800"
                           }`}
                         >
