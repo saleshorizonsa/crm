@@ -7,6 +7,7 @@ import LostReasonModal from "./LostReasonModal";
 import MeetingModal from "../../calendar/components/MeetingModal";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
+import { supabase } from "../../../lib/supabase";
 import {
   currencyService,
   productService,
@@ -15,6 +16,44 @@ import {
   uomService,
   salesTargetService,
 } from "../../../services/supabaseService";
+
+function ProductSearchDropdown({ results, onSelect, onClose, formatCurrency }) {
+  return (
+    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+      {results.map(product => (
+        <div
+          key={product.id}
+          onClick={() => { onSelect(product); onClose(); }}
+          className="flex items-center gap-3 px-3 py-2.5 hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0"
+        >
+          <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-400 text-xs">
+            📦
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-gray-800 truncate">
+              {product.material}
+            </div>
+            <div className="flex items-center gap-2 mt-0.5">
+              {product.description && (
+                <span className="text-xs text-gray-400 truncate max-w-[160px]">
+                  {product.description}
+                </span>
+              )}
+              {product.material_group && (
+                <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded flex-shrink-0">
+                  {product.material_group}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="text-sm font-medium text-gray-700 flex-shrink-0">
+            {formatCurrency(product.unit_price || 0)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const DealModal = ({
   deal,
@@ -54,12 +93,12 @@ const DealModal = ({
   const [selectedProducts, setSelectedProducts] = useState([]); // For new deals
 
   // Product selection state
-  const [allProducts, setAllProducts] = useState([]);
-  const [productGroups, setProductGroups] = useState([]);
-  const [selectedGroup, setSelectedGroup] = useState("");
-  const [filteredProducts, setFilteredProducts] = useState([]);
-  const [selectedProductId, setSelectedProductId] = useState("");
-  const [uomType, setUomType] = useState("qty"); // qty, sqm, or ton
+  const [productSearch, setProductSearch] = useState('');
+  const [productResults, setProductResults] = useState([]);
+  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [selectedProductData, setSelectedProductData] = useState(null);
+  const [uomType, setUomType] = useState("qty");
   const [uomValue, setUomValue] = useState("");
   const [unitRate, setUnitRate] = useState("");
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
@@ -108,9 +147,6 @@ const DealModal = ({
         lost_reason_notes: deal?.lost_reason_notes || "",
       });
 
-      // Load products for the catalog
-      loadProducts();
-
       // Load deal products if editing existing deal
       if (deal?.id) {
         console.log("🔍 Deal has ID:", deal.id);
@@ -138,35 +174,64 @@ const DealModal = ({
     }
   }, [isOpen, deal]);
 
-  // Filter products based on selected group
+  // Load all products when modal opens
   useEffect(() => {
-    if (selectedGroup) {
-      const filtered = allProducts.filter(
-        (product) => product.material_group === selectedGroup,
-      );
-      setFilteredProducts(filtered);
-    } else {
-      setFilteredProducts([]);
+    if (!isOpen) return;
+    async function loadAllProducts() {
+      const { data } = await supabase
+        .from('products')
+        .select('id, material, description, material_group, unit_price, base_unit_of_measure, is_active')
+        .eq('is_active', true)
+        .order('material', { ascending: true })
+        .limit(50);
+      setProductResults(data || []);
     }
-    // Reset product selection when group changes
-    setSelectedProductId("");
-  }, [selectedGroup, allProducts]);
+    loadAllProducts();
+  }, [isOpen]);
 
-  const loadProducts = async () => {
-    try {
-      const { data, error } = await productService.getProducts();
-      if (error) throw error;
-      setAllProducts(data || []);
-
-      // Extract unique product groups
-      const groups = [
-        ...new Set(data?.map((p) => p.material_group).filter(Boolean)),
-      ];
-      setProductGroups(groups.sort());
-    } catch (error) {
-      console.error("Error loading products:", error);
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (!e.target.closest('.product-search-container')) {
+        setShowProductDropdown(false);
+      }
     }
-  };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  async function searchProducts(query) {
+    if (!query || query.trim().length === 0) {
+      const { data } = await supabase
+        .from('products')
+        .select('id, material, description, material_group, unit_price, base_unit_of_measure, is_active')
+        .eq('is_active', true)
+        .order('material', { ascending: true })
+        .limit(50);
+      setProductResults(data || []);
+      setShowProductDropdown(true);
+      return;
+    }
+    setSearchLoading(true);
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, material, description, material_group, unit_price, base_unit_of_measure, is_active')
+      .eq('is_active', true)
+      .or(`material.ilike.%${query}%,description.ilike.%${query}%,material_group.ilike.%${query}%`)
+      .order('material', { ascending: true })
+      .limit(20);
+    setSearchLoading(false);
+    if (error || !data) { setProductResults([]); return; }
+    setProductResults(data);
+    setShowProductDropdown(data.length > 0);
+  }
+
+  function handleProductSelect(product) {
+    setShowProductDropdown(false);
+    setProductSearch('');
+    setSelectedProductData(product);
+    setUnitRate(product.unit_price ? String(product.unit_price) : '');
+  }
 
   const loadDealProducts = async () => {
     if (!deal?.id) return;
@@ -182,7 +247,7 @@ const DealModal = ({
   };
 
   const handleAddProduct = async () => {
-    if (!selectedProductId) {
+    if (!selectedProductData) {
       alert("Please select a product");
       return;
     }
@@ -203,9 +268,8 @@ const DealModal = ({
 
     // If editing existing deal, add to database
     if (deal?.id) {
-      // Check if product already exists in this deal
       const existingProduct = dealProducts.find(
-        (dp) => dp.product_id === selectedProductId,
+        (dp) => dp.product_id === selectedProductData.id,
       );
       if (existingProduct) {
         alert(
@@ -218,7 +282,7 @@ const DealModal = ({
       try {
         console.log("🔵 Adding product to existing deal:", {
           dealId: deal.id,
-          productId: selectedProductId,
+          productId: selectedProductData.id,
           uomType,
           uomValue: uomVal,
           unitRate: rate,
@@ -227,31 +291,26 @@ const DealModal = ({
 
         const { data, error } = await dealProductService.addProductToDeal(
           deal.id,
-          selectedProductId,
-          uomVal, // quantity = uom_value (so line_total calculates correctly as quantity * unit_price)
-          uomType === "sqm" ? uomVal : null, // sqm (for backwards compatibility)
-          uomType === "ton" ? uomVal : null, // ton (for backwards compatibility)
-          rate, // unitPrice
-          null, // notes
-          uomType, // uomType
-          uomVal, // uomValue
+          selectedProductData.id,
+          uomVal,
+          uomType === "sqm" ? uomVal : null,
+          uomType === "ton" ? uomVal : null,
+          rate,
+          null,
+          uomType,
+          uomVal,
         );
 
         console.log("🔵 Product add result:", { data, error });
 
         if (error) throw error;
 
-        // Update deal amount
         const newAmount = parseFloat(formData.amount || 0) + lineTotal;
         setFormData((prev) => ({ ...prev, amount: newAmount }));
 
-        // Clear products error once at least one product is added
         if (errors.products) setErrors((prev) => ({ ...prev, products: "" }));
 
-        // Refresh deal products
         await loadDealProducts();
-
-        // Reset form
         resetProductForm();
       } catch (error) {
         console.error("❌ Error adding product to deal:", error);
@@ -260,10 +319,8 @@ const DealModal = ({
         setIsLoadingProducts(false);
       }
     } else {
-      // If creating new deal, add to local array
-      // Check if product already exists in selectedProducts
       const existingProduct = selectedProducts.find(
-        (sp) => sp.productId === selectedProductId,
+        (sp) => sp.productId === selectedProductData.id,
       );
       if (existingProduct) {
         alert(
@@ -273,27 +330,22 @@ const DealModal = ({
       }
 
       console.log("🟢 Adding product to new deal (local state):", {
-        productId: selectedProductId,
+        productId: selectedProductData.id,
         uomType,
         uomValue: uomVal,
         unitRate: rate,
         lineTotal,
       });
 
-      const product = allProducts.find((p) => p.id === selectedProductId);
-      if (!product) {
-        console.error("❌ Product not found in allProducts");
-        return;
-      }
-
       const newProduct = {
-        product,
-        productId: selectedProductId,
-        quantity: uomVal, // Set quantity = uom_value so line_total calculates correctly
+        product: selectedProductData,
+        productId: selectedProductData.id,
+        product_group_name: selectedProductData.material_group || '',
+        quantity: uomVal,
         sqm: uomType === "sqm" ? uomVal : null,
         ton: uomType === "ton" ? uomVal : null,
         unit_price: rate,
-        line_total: lineTotal, // Add the calculated line total
+        line_total: lineTotal,
         uom_type: uomType,
         uom_value: uomVal,
       };
@@ -301,25 +353,21 @@ const DealModal = ({
       console.log("🟢 New product object:", newProduct);
       setSelectedProducts([...selectedProducts, newProduct]);
 
-      // Update deal amount
       const newAmount = parseFloat(formData.amount || 0) + lineTotal;
       setFormData((prev) => ({ ...prev, amount: newAmount }));
 
-      // Clear products error once at least one product is added
       if (errors.products) setErrors((prev) => ({ ...prev, products: "" }));
 
-      // Reset form
       resetProductForm();
     }
   };
 
   const resetProductForm = () => {
-    setSelectedGroup("");
-    setSelectedProductId("");
+    setSelectedProductData(null);
+    setProductSearch('');
     setUomType("qty");
     setUomValue("");
     setUnitRate("");
-    setFilteredProducts([]);
   };
 
   const handleRemoveProduct = async (indexOrId, lineTotal) => {
@@ -817,49 +865,66 @@ const DealModal = ({
               <div className="p-4 space-y-4">
                 {/* Product Selection */}
                 <div className="space-y-3">
-                  {/* Product Group Selection */}
+                  {/* Unified product search */}
                   <div>
                     <label className="block text-xs font-medium text-muted-foreground mb-1">
-                      Product Group
+                      Search Product
                     </label>
-                    <Select
-                      options={productGroups.map((group) => ({
-                        value: group,
-                        label: group,
-                      }))}
-                      value={selectedGroup}
-                      onChange={(value) => {
-                        setSelectedGroup(value);
-                        setSelectedProductId("");
-                      }}
-                      placeholder="Select product group..."
-                      searchable={true}
-                      clearable={true}
-                    />
+                    <div className="product-search-container relative">
+                      <input
+                        type="text"
+                        placeholder="Search by name, description or group..."
+                        value={productSearch}
+                        onChange={e => {
+                          setProductSearch(e.target.value);
+                          searchProducts(e.target.value);
+                        }}
+                        onFocus={() => {
+                          if (productResults.length > 0)
+                            setShowProductDropdown(true);
+                        }}
+                        className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                      {searchLoading && (
+                        <div className="absolute right-3 top-2.5 text-muted-foreground text-xs">
+                          ...
+                        </div>
+                      )}
+                      {showProductDropdown && productResults.length > 0 && (
+                        <ProductSearchDropdown
+                          results={productResults}
+                          onSelect={handleProductSelect}
+                          onClose={() => setShowProductDropdown(false)}
+                          formatCurrency={(v) => formatCurrency(v, preferredCurrency)}
+                        />
+                      )}
+                    </div>
                   </div>
 
-                  {/* Product Name Selection */}
-                  {selectedGroup && (
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1">
-                        Product Name
-                      </label>
-                      <Select
-                        options={filteredProducts.map((product) => ({
-                          value: product.id,
-                          label: `${product.material} - ${product.description}`,
-                        }))}
-                        value={selectedProductId}
-                        onChange={(value) => setSelectedProductId(value)}
-                        placeholder="Select product..."
-                        searchable={true}
-                        clearable={true}
-                      />
+                  {/* Selected product indicator */}
+                  {selectedProductData && (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                      <Icon name="Package" size={14} className="text-blue-600 flex-shrink-0" />
+                      <span className="font-medium text-blue-800 flex-1 truncate">
+                        {selectedProductData.material}
+                      </span>
+                      {selectedProductData.material_group && (
+                        <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded flex-shrink-0">
+                          {selectedProductData.material_group}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedProductData(null)}
+                        className="text-blue-400 hover:text-blue-700 flex-shrink-0"
+                      >
+                        <Icon name="X" size={14} />
+                      </button>
                     </div>
                   )}
 
                   {/* UOM Type, Value and Unit Rate */}
-                  {selectedProductId && (
+                  {selectedProductData && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-muted-foreground mb-1">
@@ -902,7 +967,7 @@ const DealModal = ({
                   )}
 
                   {/* Calculated Line Total Display */}
-                  {selectedProductId && uomType && uomValue && unitRate && (
+                  {selectedProductData && uomType && uomValue && unitRate && (
                     <div className="bg-primary/5 border border-primary/20 rounded-md p-3">
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">
@@ -924,7 +989,7 @@ const DealModal = ({
                     size="sm"
                     onClick={handleAddProduct}
                     disabled={
-                      !selectedProductId ||
+                      !selectedProductData ||
                       !uomType ||
                       !uomValue ||
                       !unitRate ||
@@ -969,7 +1034,7 @@ const DealModal = ({
                                 className="bg-muted/30 rounded-md p-3 flex items-center justify-between text-sm"
                               >
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <Icon
                                       name="Package"
                                       size={14}
@@ -978,6 +1043,14 @@ const DealModal = ({
                                     <span className="font-medium text-card-foreground truncate">
                                       {productData?.material}
                                     </span>
+                                    {(() => {
+                                      const grp = item.product_group_name || productData?.material_group;
+                                      return grp ? (
+                                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full flex-shrink-0">
+                                          {grp}
+                                        </span>
+                                      ) : null;
+                                    })()}
                                   </div>
                                 </div>
 
