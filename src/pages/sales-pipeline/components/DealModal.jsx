@@ -305,12 +305,19 @@ const DealModal = ({
 
         if (error) throw error;
 
-        const newAmount = parseFloat(formData.amount || 0) + lineTotal;
-        setFormData((prev) => ({ ...prev, amount: newAmount }));
-
         if (errors.products) setErrors((prev) => ({ ...prev, products: "" }));
 
-        await loadDealProducts();
+        // Reload then recalculate from the fresh list to avoid drift
+        const { data: freshProducts } = await dealProductService.getDealProducts(deal.id);
+        setDealProducts(freshProducts || []);
+        const newAmount = (freshProducts || []).reduce(
+          (sum, p) => sum + parseFloat(
+            p.line_total ||
+            (parseFloat(p.uom_value || p.quantity || 0) * parseFloat(p.unit_price || 0))
+          ), 0
+        );
+        setFormData((prev) => ({ ...prev, amount: newAmount }));
+
         resetProductForm();
       } catch (error) {
         console.error("❌ Error adding product to deal:", error);
@@ -351,9 +358,12 @@ const DealModal = ({
       };
 
       console.log("🟢 New product object:", newProduct);
-      setSelectedProducts([...selectedProducts, newProduct]);
+      const allProds = [...selectedProducts, newProduct];
+      setSelectedProducts(allProds);
 
-      const newAmount = parseFloat(formData.amount || 0) + lineTotal;
+      const newAmount = allProds.reduce(
+        (sum, p) => sum + parseFloat(p.line_total || 0), 0
+      );
       setFormData((prev) => ({ ...prev, amount: newAmount }));
 
       if (errors.products) setErrors((prev) => ({ ...prev, products: "" }));
@@ -370,7 +380,7 @@ const DealModal = ({
     setUnitRate("");
   };
 
-  const handleRemoveProduct = async (indexOrId, lineTotal) => {
+  const handleRemoveProduct = async (indexOrId) => {
     // If editing existing deal, remove from database
     if (deal?.id) {
       if (!confirm("Remove this product from the deal?")) return;
@@ -381,12 +391,16 @@ const DealModal = ({
           await dealProductService.removeProductFromDeal(indexOrId);
         if (error) throw error;
 
-        // Update deal amount
-        const newAmount =
-          parseFloat(formData.amount || 0) - parseFloat(lineTotal || 0);
+        // Reload then recalculate from remaining products to avoid drift
+        const { data: freshProducts } = await dealProductService.getDealProducts(deal.id);
+        setDealProducts(freshProducts || []);
+        const newAmount = (freshProducts || []).reduce(
+          (sum, p) => sum + parseFloat(
+            p.line_total ||
+            (parseFloat(p.uom_value || p.quantity || 0) * parseFloat(p.unit_price || 0))
+          ), 0
+        );
         setFormData((prev) => ({ ...prev, amount: Math.max(0, newAmount) }));
-
-        await loadDealProducts();
       } catch (error) {
         console.error("Error removing product:", error);
         alert("Failed to remove product");
@@ -394,14 +408,12 @@ const DealModal = ({
         setIsLoadingProducts(false);
       }
     } else {
-      // If creating new deal, remove from local array
-      const productToRemove = selectedProducts[indexOrId];
-      const newAmount =
-        parseFloat(formData.amount || 0) -
-        parseFloat(productToRemove.line_total || 0);
+      const remaining = selectedProducts.filter((_, i) => i !== indexOrId);
+      const newAmount = remaining.reduce(
+        (sum, p) => sum + parseFloat(p.line_total || 0), 0
+      );
       setFormData((prev) => ({ ...prev, amount: Math.max(0, newAmount) }));
-
-      setSelectedProducts(selectedProducts.filter((_, i) => i !== indexOrId));
+      setSelectedProducts(remaining);
     }
   };
 
@@ -529,6 +541,20 @@ const DealModal = ({
       currency:   preferredCurrency,
       contact_id: formData.contact_id || null,
     };
+
+    // Always recalculate amount from the actual product line items to prevent drift
+    if (deal?.id && dealProducts.length > 0) {
+      dealData.amount = dealProducts.reduce(
+        (sum, p) => sum + parseFloat(
+          p.line_total ||
+          (parseFloat(p.uom_value || p.quantity || 0) * parseFloat(p.unit_price || 0))
+        ), 0
+      );
+    } else if (!deal?.id && selectedProducts.length > 0) {
+      dealData.amount = selectedProducts.reduce(
+        (sum, p) => sum + parseFloat(p.line_total || 0), 0
+      );
+    }
 
     // Intercept: when stage is 'lost' and no code chosen yet, show reason modal
     if (formData.stage === "lost" && !formData.lost_reason_code) {
@@ -1078,7 +1104,9 @@ const DealModal = ({
                                       <span className="text-primary font-semibold">
                                         Total:{" "}
                                         {formatCurrency(
-                                          displayProduct.line_total || 0,
+                                          parseFloat(displayProduct.line_total) ||
+                                          (parseFloat(displayProduct.uom_value || displayProduct.quantity || 0) *
+                                           parseFloat(displayProduct.unit_price || 0)),
                                           preferredCurrency,
                                         )}
                                       </span>
@@ -1257,6 +1285,24 @@ const DealModal = ({
               <Icon name="CalendarPlus" size={16} className="mr-2" />
               Schedule Meeting
             </Button>
+            {userProfile?.role === 'admin' && deal?.id && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const result = await dealProductService.repairDealProductTotals(deal.id);
+                  alert('Fixed: ' + JSON.stringify(result.data));
+                  const { data: fresh } = await dealProductService.getDealProducts(deal.id);
+                  setDealProducts(fresh || []);
+                  const repairedAmount = (fresh || []).reduce(
+                    (sum, p) => sum + parseFloat(p.line_total || 0), 0
+                  );
+                  setFormData(prev => ({ ...prev, amount: repairedAmount }));
+                }}
+                className="text-xs text-red-500 underline ml-2"
+              >
+                Repair totals
+              </button>
+            )}
           </div>
 
           <div className="flex items-center space-x-3">

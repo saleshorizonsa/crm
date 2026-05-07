@@ -675,14 +675,16 @@ export const dealService = {
         query = query.ilike("title", `%${filters.search}%`);
       }
 
-      // Date range filter applied via updated_at for all deals.
+      // Date range filter: won deals use closed_at, all others use created_at.
+      // Only applied when at least one date boundary is supplied.
       const df = filters.dateFrom;
       const dt = filters.dateTo;
-      if (df) query = query.gte("updated_at", df);
-      if (dt) {
-        const endDate = new Date(dt);
-        endDate.setHours(23, 59, 59, 999);
-        query = query.lte("updated_at", endDate.toISOString());
+      if (df || dt) {
+        const wonCond = ["stage.eq.won", df && `closed_at.gte.${df}`, dt && `closed_at.lte.${dt}`]
+          .filter(Boolean).join(",");
+        const otherCond = ["stage.neq.won", df && `created_at.gte.${df}`, dt && `created_at.lte.${dt}`]
+          .filter(Boolean).join(",");
+        query = query.or(`and(${wonCond}),and(${otherCond})`);
       }
 
       const { data, error } = await query;
@@ -3649,6 +3651,8 @@ export const dealProductService = {
         uomValue,
       });
 
+      const calculatedLineTotal = (uomValue || quantity || 0) * (unitPrice || 0);
+
       const { data, error } = await supabase
         .from("deal_products")
         .insert({
@@ -3661,6 +3665,7 @@ export const dealProductService = {
           notes,
           uom_type: uomType,
           uom_value: uomValue,
+          line_total: calculatedLineTotal,
         })
         .select("*, product:products!product_id(*)");
 
@@ -3693,6 +3698,26 @@ export const dealProductService = {
   // Update deal product (quantity, unit price, notes)
   async updateDealProduct(dealProductId, updates) {
     try {
+      // Recalculate line_total whenever a pricing or quantity field changes
+      if (
+        updates.quantity !== undefined ||
+        updates.unit_price !== undefined ||
+        updates.uom_value !== undefined
+      ) {
+        const { data: current } = await supabase
+          .from("deal_products")
+          .select("quantity, unit_price, uom_value")
+          .eq("id", dealProductId)
+          .single();
+
+        const qty = parseFloat(
+          updates.uom_value ?? updates.quantity ??
+          current?.uom_value ?? current?.quantity ?? 0
+        );
+        const price = parseFloat(updates.unit_price ?? current?.unit_price ?? 0);
+        updates.line_total = qty * price;
+      }
+
       const { data, error } = await supabase
         .from("deal_products")
         .update({
@@ -3729,6 +3754,45 @@ export const dealProductService = {
     } catch (error) {
       console.error("Error in getDealProductsTotal:", error);
       return { data: 0, error };
+    }
+  },
+
+  // Repair incorrect line_total values and deal amount for a given deal
+  async repairDealProductTotals(dealId) {
+    try {
+      const { data: products, error: fetchErr } = await supabase
+        .from("deal_products")
+        .select("id, quantity, uom_value, unit_price, line_total")
+        .eq("deal_id", dealId);
+
+      if (fetchErr) throw fetchErr;
+      if (!products?.length) return { error: "No products found" };
+
+      let dealTotal = 0;
+
+      for (const p of products) {
+        const qty = parseFloat(p.uom_value || p.quantity || 0);
+        const price = parseFloat(p.unit_price || 0);
+        const correctTotal = qty * price;
+        dealTotal += correctTotal;
+
+        if (correctTotal !== parseFloat(p.line_total || 0)) {
+          await supabase
+            .from("deal_products")
+            .update({ line_total: correctTotal })
+            .eq("id", p.id);
+        }
+      }
+
+      await supabase
+        .from("deals")
+        .update({ amount: dealTotal })
+        .eq("id", dealId);
+
+      return { data: { dealTotal, productCount: products.length } };
+    } catch (error) {
+      console.error("Error in repairDealProductTotals:", error);
+      return { data: null, error };
     }
   },
 };
