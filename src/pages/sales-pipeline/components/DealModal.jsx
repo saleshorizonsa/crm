@@ -161,6 +161,16 @@ const DealModal = ({
             "products",
           );
           setDealProducts(deal.deal_products);
+          // Recalculate amount from actual line items in case DB deal.amount is stale
+          if (deal.deal_products.length > 0) {
+            const correctAmount = deal.deal_products.reduce(
+              (sum, p) => sum + parseFloat(
+                p.line_total ||
+                (parseFloat(p.uom_value || p.quantity || 0) * parseFloat(p.unit_price || 0))
+              ), 0
+            );
+            setFormData(prev => ({ ...prev, amount: correctAmount }));
+          }
         } else {
           console.log("⚠️ No deal_products in deal object, fetching...");
           loadDealProducts();
@@ -241,6 +251,16 @@ const DealModal = ({
       if (error) throw error;
       console.log("📥 Loaded deal products:", data);
       setDealProducts(data || []);
+      // Recalculate amount from actual line items in case DB deal.amount is stale
+      if (data?.length > 0) {
+        const correctAmount = data.reduce(
+          (sum, p) => sum + parseFloat(
+            p.line_total ||
+            (parseFloat(p.uom_value || p.quantity || 0) * parseFloat(p.unit_price || 0))
+          ), 0
+        );
+        setFormData(prev => ({ ...prev, amount: correctAmount }));
+      }
     } catch (error) {
       console.error("❌ Error loading deal products:", error);
     }
