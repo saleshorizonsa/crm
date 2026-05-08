@@ -18,6 +18,7 @@ import {
   contactService,
 } from "../../../services/supabaseService";
 import SupervisorSalesTargetAssignment from "../../../components/SupervisorSalesTargetAssignment";
+import SalesTargetTable from "../../../components/SalesTargetTable";
 import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
 import HotLeadsWidget from "./HotLeadsWidget";
@@ -1369,6 +1370,18 @@ const EnhancedSupervisorDashboard = ({
   const handleCancelEdit = () => {
     setEditingTarget(null);
     setShowAssignmentCard(false);
+  };
+
+  const handleDeleteTargetDirect = async (target) => {
+    const memberName = target?.assignee?.full_name || target?.assignee?.email || "Unknown";
+    if (!window.confirm(`Are you sure you want to delete this sales target for ${memberName}?`)) return;
+    try {
+      const { error } = await salesTargetService.deleteTarget(target.id);
+      if (error) { alert("Failed to delete target: " + error.message); return; }
+      loadSalesTargets();
+    } catch (error) {
+      alert("Failed to delete target: " + error.message);
+    }
   };
 
   const handleDeleteTarget = async () => {
@@ -3271,263 +3284,43 @@ const EnhancedSupervisorDashboard = ({
 
           {/* Team Targets Table */}
           {filteredAssignedTargets.length > 0 && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-md font-medium text-gray-900 flex items-center gap-2">
-                  <Icon name="ListChecks" size={18} className="text-gray-600" />
-                  Salesmen Targets Assigned
-                </h3>
-
-                {/* Filter Controls */}
-                <div className="flex items-center gap-3">
-                  <select
-                    value={tableTypeFilter}
-                    onChange={(e) => setTableTypeFilter(e.target.value)}
-                    className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
+            <SalesTargetTable
+              title="Salesmen Targets Assigned"
+              targets={assignedTargetsWithProgress.filter((target) => {
+                if (tableTypeFilter !== "all" && target.target_type !== tableTypeFilter) return false;
+                if (tableStatusFilter !== "all" && target.status !== tableStatusFilter) return false;
+                if (tableMemberFilter !== "all" && target.assigned_to !== tableMemberFilter) return false;
+                return true;
+              })}
+              role="supervisor"
+              onEdit={handleEditTarget}
+              onDelete={handleDeleteTargetDirect}
+              headerControls={
+                <>
+                  <select value={tableTypeFilter} onChange={(e) => setTableTypeFilter(e.target.value)}
+                    className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
                     <option value="all">All Types</option>
                     <option value="by_value">By Value</option>
                     <option value="by_clients">By Clients</option>
                     <option value="by_products">By Products</option>
                   </select>
-
-                  <select
-                    value={tableStatusFilter}
-                    onChange={(e) => setTableStatusFilter(e.target.value)}
-                    className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
+                  <select value={tableStatusFilter} onChange={(e) => setTableStatusFilter(e.target.value)}
+                    className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
                     <option value="all">All Status</option>
                     <option value="active">Active</option>
                     <option value="completed">Completed</option>
                     <option value="expired">Expired</option>
                   </select>
-
-                  <select
-                    value={tableMemberFilter}
-                    onChange={(e) => setTableMemberFilter(e.target.value)}
-                    className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
+                  <select value={tableMemberFilter} onChange={(e) => setTableMemberFilter(e.target.value)}
+                    className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
                     <option value="all">All Salesmen</option>
                     {allSubordinates.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.full_name || member.email}
-                      </option>
+                      <option key={member.id} value={member.id}>{member.full_name || member.email}</option>
                     ))}
                   </select>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Salesman
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Type
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Details
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Period
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Target
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Progress
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {assignedTargetsWithProgress
-                      .filter((target) => {
-                        // Apply type filter
-                        if (
-                          tableTypeFilter !== "all" &&
-                          target.target_type !== tableTypeFilter
-                        ) {
-                          return false;
-                        }
-                        // Apply status filter
-                        if (
-                          tableStatusFilter !== "all" &&
-                          target.status !== tableStatusFilter
-                        ) {
-                          return false;
-                        }
-                        // Apply member filter
-                        if (
-                          tableMemberFilter !== "all" &&
-                          target.assigned_to !== tableMemberFilter
-                        ) {
-                          return false;
-                        }
-                        return true;
-                      })
-                      .map((target) => {
-                        const member = allSubordinates.find(
-                          (s) => s.id === target.assigned_to,
-                        );
-                        const progressAmount = parseFloat(
-                          target.calculated_progress ??
-                            target.progress_amount ??
-                            0,
-                        );
-                        const achievement =
-                          parseFloat(target.target_amount) > 0
-                            ? (progressAmount /
-                                parseFloat(target.target_amount)) *
-                              100
-                            : 0;
-
-                        return (
-                          <tr key={target.id}>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm font-medium text-gray-900">
-                                {member?.full_name ||
-                                  member?.email ||
-                                  "Unknown"}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                              <span
-                                className={`px-2 py-1 text-xs rounded-full ${
-                                  target.target_type === "by_clients"
-                                    ? "bg-purple-100 text-purple-800"
-                                    : target.target_type === "by_products"
-                                      ? "bg-orange-100 text-orange-800"
-                                      : "bg-blue-100 text-blue-800"
-                                }`}
-                              >
-                                {target.target_type === "by_clients"
-                                  ? "By Client"
-                                  : target.target_type === "by_products"
-                                    ? "By Product"
-                                    : "By Value"}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-900">
-                              {target.target_type === "by_clients" &&
-                                target.contact && (
-                                  <div>
-                                    <div className="font-medium">
-                                      {target.contact.first_name}{" "}
-                                      {target.contact.last_name}
-                                    </div>
-                                    {target.contact.company_name && (
-                                      <div className="text-xs text-gray-500">
-                                        {target.contact.company_name}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              {target.target_type === "by_products" &&
-                                (target.product || target.product_group) && (
-                                  <div>
-                                    <div className="font-medium">
-                                      {target.product?.material ||
-                                        target.product_group}
-                                    </div>
-                                    {target.product?.material_group && (
-                                      <div className="text-xs text-gray-500">
-                                        {target.product.material_group}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              {target.target_type === "by_value" && (
-                                <div className="text-gray-500 text-xs">
-                                  Total sales value
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              <div className="capitalize">
-                                {target.period_type}
-                              </div>
-                              <div className="text-xs">
-                                {new Date(
-                                  target.period_start,
-                                ).toLocaleDateString()}{" "}
-                                to{" "}
-                                {new Date(
-                                  target.period_end,
-                                ).toLocaleDateString()}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              {parseFloat(target.target_amount || 0) > 0
-                                ? formatCurrency(target.target_amount)
-                                : target.target_quantity
-                                  ? `${Number(target.target_quantity).toLocaleString()} qty`
-                                  : "N/A"}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1">
-                                  <div className="text-sm font-medium text-gray-900">
-                                    {formatCurrency(progressAmount)}
-                                  </div>
-                                  <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
-                                    <div
-                                      className={`h-1.5 rounded-full ${
-                                        achievement >= 100
-                                          ? "bg-green-500"
-                                          : achievement >= 70
-                                            ? "bg-blue-500"
-                                            : achievement >= 40
-                                              ? "bg-amber-500"
-                                              : "bg-red-500"
-                                      }`}
-                                      style={{
-                                        width: `${Math.min(achievement, 100)}%`,
-                                      }}
-                                    />
-                                  </div>
-                                  <div className="text-xs text-gray-500 mt-1">
-                                    {achievement.toFixed(1)}%
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span
-                                className={`px-2 py-1 text-xs rounded-full ${
-                                  target.status === "active"
-                                    ? "bg-green-100 text-green-800"
-                                    : target.status === "completed"
-                                      ? "bg-blue-100 text-blue-800"
-                                      : "bg-gray-100 text-gray-800"
-                                }`}
-                              >
-                                {target.status}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEditTarget(target)}
-                                title="Edit target"
-                              >
-                                <Icon name="Edit" size={14} />
-                              </Button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                </>
+              }
+            />
           )}
         </div>
       )}

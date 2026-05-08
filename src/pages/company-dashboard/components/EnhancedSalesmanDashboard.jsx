@@ -6,6 +6,7 @@ import QuickActions from "./QuickActions";
 import Button from "../../../components/ui/Button";
 import Icon from "../../../components/AppIcon";
 import ProductTargetReport from "../../../components/ProductTargetReport";
+import SalesTargetTable from "../../../components/SalesTargetTable";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import {
@@ -1925,110 +1926,11 @@ const EnhancedSalesmanDashboard = () => {
                 </div>
               </div>
 
-              <div className="space-y-4">
-                {targetsWithCalculatedProgress.map((target) => {
-                  const progressAmount = parseFloat(
-                    target.calculated_progress ?? target.progress_amount ?? 0,
-                  );
-                  const targetAmount = parseFloat(target.target_amount || 0);
-                  const progress =
-                    targetAmount > 0 ? (progressAmount / targetAmount) * 100 : 0;
-                  const isOnTrack = progress >= 50;
-
-                  return (
-                    <div
-                      key={target.id}
-                      className={`border-2 rounded-lg p-6 transition-all ${
-                        isOnTrack
-                          ? "border-green-200 bg-green-50"
-                          : "border-orange-200 bg-orange-50"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            {target.target_type
-                              ?.replace("_", " ")
-                              .toUpperCase()}{" "}
-                            Target
-                          </h3>
-                          <p className="text-sm text-gray-600">
-                            {new Date(target.period_start).toLocaleDateString()}{" "}
-                            - {new Date(target.period_end).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div
-                          className={`px-3 py-1 rounded-full text-sm font-medium ${
-                            isOnTrack
-                              ? "bg-green-100 text-green-800"
-                              : "bg-orange-100 text-orange-800"
-                          }`}
-                        >
-                          {isOnTrack ? "On Track" : "Needs Attention"}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
-                        <div>
-                          <div className="text-sm text-gray-600 mb-1">
-                            Target Amount
-                          </div>
-                          <div className="text-2xl font-bold text-gray-900">
-                            {formatCurrency(target.target_amount)}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-sm text-gray-600 mb-1">
-                            Current Progress
-                          </div>
-                          <div className="text-2xl font-bold text-gray-900">
-                            {formatCurrency(progressAmount)}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-sm text-gray-600 mb-1">
-                            Completion
-                          </div>
-                          <div className="text-2xl font-bold text-gray-900">
-                            {Math.round(progress)}%
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Progress Bar */}
-                      <div className="mb-4">
-                        <div className="w-full bg-gray-200 rounded-full h-3">
-                          <div
-                            className={`h-3 rounded-full transition-all ${
-                              isOnTrack ? "bg-green-500" : "bg-orange-500"
-                            }`}
-                            style={{ width: `${Math.min(progress, 100)}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="text-gray-600">
-                          Assigned by:{" "}
-                          <span className="font-medium text-gray-900">
-                            {target.assigner?.full_name ||
-                              target.assigner?.email ||
-                              "Supervisor"}
-                          </span>
-                        </div>
-                        <div className="text-gray-600">
-                          Remaining:{" "}
-                          <span className="font-medium text-gray-900">
-                            {formatCurrency(
-                              Math.max(0, targetAmount - progressAmount),
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <SalesTargetTable
+                title="Your Assigned Targets"
+                targets={targetsWithCalculatedProgress}
+                role="salesman"
+              />
 
               <div className="mt-6">
                 <ProductTargetReport
