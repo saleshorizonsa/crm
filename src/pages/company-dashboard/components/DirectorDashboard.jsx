@@ -101,6 +101,10 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const [productTargetsData, setProductTargetsData] = useState([]);
   const [targetGridView, setTargetGridView] = useState("value");
   const [selectedTargetUser, setSelectedTargetUser] = useState(null);
+  const [editingTarget, setEditingTarget] = useState(null);
+  const [editForm, setEditForm] = useState({ targetAmount: "", periodType: "monthly", periodStart: "", periodEnd: "", notes: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
 
   // New enhanced data states
   const [executiveMetrics, setExecutiveMetrics] = useState(null);
@@ -327,9 +331,52 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     });
   }, [filteredAssignedTargets, allDealsData, allEmployees]);
 
+  // All targets (unfiltered by dashboard time period) — used in the Targets tab so yearly targets remain visible
+  const allTargetsWithProgress = useMemo(() => {
+    if (!assignedTargets || assignedTargets.length === 0) return assignedTargets || [];
+    const deals = allDealsData || [];
+    const employees = allEmployees || [];
+
+    const childIdsByParent = employees.reduce((acc, u) => {
+      if (u.supervisor_id) {
+        if (!acc[u.supervisor_id]) acc[u.supervisor_id] = [];
+        acc[u.supervisor_id].push(u.id);
+      }
+      return acc;
+    }, {});
+
+    return assignedTargets.map((target) => {
+      const periodStart = new Date(target.period_start);
+      const periodEnd = new Date(target.period_end);
+      periodEnd.setHours(23, 59, 59, 999);
+
+      const isInPeriod = (deal) => {
+        const dateStr = deal.expected_close_date || deal.updated_at || deal.created_at;
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        return d >= periodStart && d <= periodEnd;
+      };
+
+      const assignee = employees.find((u) => u.id === target.assigned_to);
+      const assigneeRole = assignee?.role || target.assignee?.role;
+      const includeSubordinates = assigneeRole === "manager" || assigneeRole === "supervisor" || assigneeRole === "head";
+
+      const ownerIds = new Set([target.assigned_to]);
+      if (includeSubordinates) {
+        (childIdsByParent[target.assigned_to] || []).forEach((id) => ownerIds.add(id));
+      }
+
+      const calculated_progress = deals
+        .filter((d) => d.stage === "won" && ownerIds.has(d.owner_id) && isInPeriod(d))
+        .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+
+      return { ...target, calculated_progress };
+    });
+  }, [assignedTargets, allDealsData, allEmployees]);
+
   const quantityTargetRows = useMemo(() => {
     const targetById = new Map(
-      (assignedTargetsWithProgress || []).map((target) => [target.id, target]),
+      (allTargetsWithProgress || []).map((target) => [target.id, target]),
     );
     const employees = allEmployees || [];
     const childIdsByParent = employees.reduce((acc, employee) => {
@@ -1533,8 +1580,47 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   };
 
   const handleEditTarget = (target) => {
-    setSelectedTargetUser(target.assigned_to);
-    setShowTargetAssignment(true);
+    setEditingTarget(target);
+    setEditForm({
+      targetAmount: target.target_amount || "",
+      periodType: target.period_type || "monthly",
+      periodStart: target.period_start?.slice(0, 10) || "",
+      periodEnd: target.period_end?.slice(0, 10) || "",
+      notes: target.notes || "",
+    });
+    setEditError("");
+  };
+
+  const handleSaveEditedTarget = async () => {
+    if (!editForm.targetAmount || parseFloat(editForm.targetAmount) <= 0) {
+      setEditError("Please enter a valid target amount");
+      return;
+    }
+    if (!editForm.periodStart || !editForm.periodEnd) {
+      setEditError("Please set both start and end dates");
+      return;
+    }
+    setEditSaving(true);
+    setEditError("");
+    try {
+      const { error } = await salesTargetService.updateTarget(editingTarget.id, {
+        targetAmount: parseFloat(editForm.targetAmount),
+        currency: editingTarget.currency || preferredCurrency,
+        periodType: editForm.periodType,
+        periodStart: editForm.periodStart,
+        periodEnd: editForm.periodEnd,
+        notes: editForm.notes,
+        targetType: editingTarget.target_type,
+        status: editingTarget.status,
+      });
+      if (error) throw error;
+      setEditingTarget(null);
+      loadSalesTargets(selectedCompany?.id);
+    } catch (err) {
+      setEditError(err.message || "Failed to update target");
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const handleDeleteTarget = async (target) => {
@@ -2075,7 +2161,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {targetGridView === "value" &&
-              assignedTargetsWithProgress?.length === 0 ? (
+              allTargetsWithProgress?.length === 0 ? (
                 <tr>
                   <td
                     colSpan="9"
@@ -2095,7 +2181,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                   </td>
                 </tr>
               ) : targetGridView === "value" ? (
-                assignedTargetsWithProgress
+                allTargetsWithProgress
                   ?.filter((target) => target && target.id && !target.deleted)
                   ?.map((target) => {
                     const progressAmount = parseFloat(
@@ -2614,6 +2700,123 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           {activeView === "products" && <ProductMaster />}
           {activeView === "sales-targets" && <SalesTarget />}
         </>
+      )}
+
+      {/* Edit Target Modal */}
+      {editingTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Edit Sales Target</h3>
+                <p className="text-sm text-gray-500">
+                  {editingTarget.assignee?.full_name || editingTarget.assignee?.email}
+                  {editingTarget.assignee?.role && ` · ${capitalize(editingTarget.assignee.role)}`}
+                </p>
+              </div>
+              <button onClick={() => setEditingTarget(null)} className="p-1 hover:bg-gray-100 rounded">
+                <Icon name="X" size={20} className="text-gray-500" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Target Amount ({editingTarget.currency || preferredCurrency})
+                </label>
+                <input
+                  type="number"
+                  value={editForm.targetAmount}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, targetAmount: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Period Type</label>
+                  <select
+                    value={editForm.periodType}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, periodType: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="yearly">Yearly</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={editForm.periodStart}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, periodStart: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={editForm.periodEnd}
+                  min={editForm.periodStart || undefined}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, periodEnd: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  placeholder="Optional notes..."
+                />
+              </div>
+
+              {editError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700 flex items-center gap-2">
+                  <Icon name="AlertCircle" size={14} />
+                  {editError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
+              <button
+                onClick={() => setEditingTarget(null)}
+                disabled={editSaving}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEditedTarget}
+                disabled={editSaving}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {editSaving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Icon name="Save" size={14} />
+                    Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Metric Insight Modal */}

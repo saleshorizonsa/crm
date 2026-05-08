@@ -363,7 +363,7 @@ export const translations = {
       salesTargets: "Sales Targets",
       userManagement: "User Management",
       productMaster: "Product Master",
-      salesTargetManager: "Sales Target Manager",
+      salesTargetManager: "Sales Managers Target",
       executiveDashboard: "Executive Dashboard",
       lastUpdated: "Last Updated",
       activePipeline: "Active Pipeline",
