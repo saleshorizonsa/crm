@@ -125,11 +125,11 @@ const PipelineFilters = ({
     onFiltersChange(newFilters);
   };
 
-  const handleDateRangeChange = (rangeValue, customRange) => {
+  const handleDateRangeChange = ({ from, to } = {}) => {
     const newFilters = {
       ...localFilters,
-      dateRange: rangeValue,
-      customDateRange: customRange || { from: "", to: "" },
+      dateRange: from && to ? { from, to } : "",
+      customDateRange: { from: from || "", to: to || "" },
     };
     setLocalFilters(newFilters);
     onFiltersChange(newFilters);
