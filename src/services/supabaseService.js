@@ -650,7 +650,11 @@ export const dealService = {
             notes,
             uom_type,
             uom_value,
-            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price)
+            cost_price,
+            line_cost,
+            line_margin,
+            margin_pct,
+            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price, cost_price)
           )
         `,
         )
@@ -935,7 +939,11 @@ export const dealService = {
             notes,
             uom_type,
             uom_value,
-            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price)
+            cost_price,
+            line_cost,
+            line_margin,
+            margin_pct,
+            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price, cost_price)
           )
         `,
         )
@@ -1044,7 +1052,11 @@ export const dealService = {
             unit_price,
             line_total,
             notes,
-            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price)
+            cost_price,
+            line_cost,
+            line_margin,
+            margin_pct,
+            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price, cost_price)
           )
         `,
         )
@@ -1077,7 +1089,11 @@ export const dealService = {
             unit_price,
             line_total,
             notes,
-            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price)
+            cost_price,
+            line_cost,
+            line_margin,
+            margin_pct,
+            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price, cost_price)
           )
         `,
         )
@@ -3626,6 +3642,28 @@ export const dealProductService = {
     }
   },
 
+  // Recalculate and persist deal-level margin totals
+  async updateDealMargin(dealId) {
+    try {
+      const { data: rows } = await supabase
+        .from("deal_products")
+        .select("line_total, line_cost")
+        .eq("deal_id", dealId);
+
+      const totalRevenue = rows?.reduce((s, r) => s + (parseFloat(r.line_total) || 0), 0) || 0;
+      const totalCost    = rows?.reduce((s, r) => s + (parseFloat(r.line_cost)  || 0), 0) || 0;
+      const grossMargin  = totalRevenue - totalCost;
+      const marginPct    = totalRevenue > 0 ? (grossMargin / totalRevenue) * 100 : null;
+
+      await supabase
+        .from("deals")
+        .update({ total_cost: totalCost, gross_margin: grossMargin, margin_pct: marginPct })
+        .eq("id", dealId);
+    } catch (err) {
+      console.error("Error in updateDealMargin:", err);
+    }
+  },
+
   // Add product to deal
   async addProductToDeal(
     dealId,
@@ -3637,6 +3675,7 @@ export const dealProductService = {
     notes = null,
     uomType = null,
     uomValue = null,
+    costPrice = null,
   ) {
     try {
       console.log("💾 dealProductService.addProductToDeal called with:", {
@@ -3649,9 +3688,14 @@ export const dealProductService = {
         notes,
         uomType,
         uomValue,
+        costPrice,
       });
 
-      const calculatedLineTotal = (uomValue || quantity || 0) * (unitPrice || 0);
+      const effectiveQty    = uomValue || quantity || 0;
+      const calculatedLineTotal = effectiveQty * (unitPrice || 0);
+      const lineCost        = effectiveQty * (costPrice || 0);
+      const lineMargin      = calculatedLineTotal - lineCost;
+      const marginPct       = calculatedLineTotal > 0 ? (lineMargin / calculatedLineTotal) * 100 : null;
 
       const { data, error } = await supabase
         .from("deal_products")
@@ -3666,12 +3710,20 @@ export const dealProductService = {
           uom_type: uomType,
           uom_value: uomValue,
           line_total: calculatedLineTotal,
+          cost_price: costPrice,
+          line_cost: lineCost,
+          line_margin: lineMargin,
+          margin_pct: marginPct,
         })
         .select("*, product:products!product_id(*)");
 
       console.log("💾 addProductToDeal result:", { data, error });
 
       if (error) throw error;
+
+      // Update deal-level margin totals
+      await this.updateDealMargin(dealId);
+
       return { data: data?.[0] || null, error: null };
     } catch (error) {
       console.error("❌ Error in addProductToDeal:", error);
@@ -3680,7 +3732,7 @@ export const dealProductService = {
   },
 
   // Remove product from deal
-  async removeProductFromDeal(dealProductId) {
+  async removeProductFromDeal(dealProductId, dealId = null) {
     try {
       const { error } = await supabase
         .from("deal_products")
@@ -3688,6 +3740,9 @@ export const dealProductService = {
         .eq("id", dealProductId);
 
       if (error) throw error;
+
+      if (dealId) await this.updateDealMargin(dealId);
+
       return { error: null };
     } catch (error) {
       console.error("Error in removeProductFromDeal:", error);
@@ -3696,26 +3751,31 @@ export const dealProductService = {
   },
 
   // Update deal product (quantity, unit price, notes)
-  async updateDealProduct(dealProductId, updates) {
+  async updateDealProduct(dealProductId, updates, dealId = null) {
     try {
-      // Recalculate line_total whenever a pricing or quantity field changes
+      // Recalculate line_total and margin whenever a pricing or quantity field changes
       if (
         updates.quantity !== undefined ||
         updates.unit_price !== undefined ||
-        updates.uom_value !== undefined
+        updates.uom_value !== undefined ||
+        updates.cost_price !== undefined
       ) {
         const { data: current } = await supabase
           .from("deal_products")
-          .select("quantity, unit_price, uom_value")
+          .select("quantity, unit_price, uom_value, cost_price")
           .eq("id", dealProductId)
           .single();
 
-        const qty = parseFloat(
-          updates.uom_value ?? updates.quantity ??
-          current?.uom_value ?? current?.quantity ?? 0
-        );
-        const price = parseFloat(updates.unit_price ?? current?.unit_price ?? 0);
-        updates.line_total = qty * price;
+        const qty        = parseFloat(updates.uom_value ?? updates.quantity ?? current?.uom_value ?? current?.quantity ?? 0);
+        const price      = parseFloat(updates.unit_price  ?? current?.unit_price  ?? 0);
+        const costPr     = parseFloat(updates.cost_price  ?? current?.cost_price  ?? 0);
+        const lineTotal  = qty * price;
+        const lineCost   = qty * costPr;
+        const lineMargin = lineTotal - lineCost;
+        updates.line_total  = lineTotal;
+        updates.line_cost   = lineCost;
+        updates.line_margin = lineMargin;
+        updates.margin_pct  = lineTotal > 0 ? (lineMargin / lineTotal) * 100 : null;
       }
 
       const { data, error } = await supabase
@@ -3728,6 +3788,9 @@ export const dealProductService = {
         .select("*, product:products!product_id(*)");
 
       if (error) throw error;
+
+      if (dealId) await this.updateDealMargin(dealId);
+
       return { data: data?.[0] || null, error: null };
     } catch (error) {
       console.error("Error in updateDealProduct:", error);

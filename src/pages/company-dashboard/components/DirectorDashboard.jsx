@@ -33,6 +33,7 @@ import ActionableDashboard from "./ActionableDashboard";
 import MetricInsightModal from "./MetricInsightModal";
 import PerformanceBarChart from "./PerformanceBarChart";
 import SalesForecast from "./SalesForecast";
+import MarginSummaryWidget from "./MarginSummaryWidget";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 
 // Employee-specific dashboards - use Enhanced versions for full features
@@ -1754,6 +1755,15 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
       {/* Sales Forecast */}
       <SalesForecast />
+
+      {/* Gross Margin Summary */}
+      <div>
+        <h3 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
+          <Icon name="TrendingUp" size={18} />
+          Gross Margin Overview
+        </h3>
+        <MarginSummaryWidget deals={filteredDeals} />
+      </div>
 
       <div className="bg-white rounded-lg shadow">
         <ActivityFeed

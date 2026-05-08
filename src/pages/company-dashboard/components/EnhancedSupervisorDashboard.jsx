@@ -23,6 +23,7 @@ import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
 import HotLeadsWidget from "./HotLeadsWidget";
 import SalesForecast from "./SalesForecast";
+import MarginSummaryWidget from "./MarginSummaryWidget";
 import MetricInsightModal from "./MetricInsightModal";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
@@ -2264,6 +2265,15 @@ const EnhancedSupervisorDashboard = ({
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <HotLeadsWidget companyId={company?.id} />
             <SalesForecast />
+          </div>
+
+          {/* Gross Margin Summary */}
+          <div>
+            <h3 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
+              <Icon name="TrendingUp" size={18} />
+              Gross Margin Overview
+            </h3>
+            <MarginSummaryWidget deals={filteredDeals} />
           </div>
 
           {/* Activity Feed */}

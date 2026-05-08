@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { useAuth } from "../../../contexts/AuthContext";
 import { dealProductService } from "../../../services/supabaseService";
 
 // Fallback label map — kept in sync with the default seed list
@@ -33,6 +34,8 @@ const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
   const [editAmount, setEditAmount] = useState(deal?.amount);
   const [productCount, setProductCount] = useState(0);
   const { formatCurrency, preferredCurrency } = useCurrency();
+  const { userProfile } = useAuth();
+  const canSeeMargin = userProfile?.role !== "salesman";
 
   // Load product count
   useEffect(() => {
@@ -169,6 +172,22 @@ const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
           </div>
         )}
       </div>
+
+      {/* --- Margin Indicator --- */}
+      {canSeeMargin && deal?.margin_pct != null && (
+        <div className="mb-2">
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+            deal.margin_pct >= 20
+              ? "bg-green-100 text-green-700"
+              : deal.margin_pct >= 10
+              ? "bg-amber-100 text-amber-700"
+              : "bg-red-100 text-red-700"
+          }`}>
+            <Icon name="TrendingUp" size={10} />
+            {deal.margin_pct.toFixed(1)}% margin
+          </span>
+        </div>
+      )}
 
       {/* --- Stage & Expected Close --- */}
       <div className="flex items-center justify-between text-xs text-gray-600 mb-2">

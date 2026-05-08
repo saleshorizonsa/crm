@@ -13,6 +13,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
     material_group: "",
     base_unit_of_measure: "EA",
     unit_price: "",
+    cost_price: "",
     price_per_ton: "",
     price_per_pc: "",
     price_per_meter: "",
@@ -44,6 +45,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
         material_group: product.material_group || "",
         base_unit_of_measure: product.base_unit_of_measure || "EA",
         unit_price: product.unit_price?.toString() || "",
+        cost_price: product.cost_price?.toString() || "",
         price_per_ton: product.price_per_ton?.toString() || "",
         price_per_pc: product.price_per_pc?.toString() || "",
         price_per_meter: product.price_per_meter?.toString() || "",
@@ -69,6 +71,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
       const payload = {
         ...formData,
         unit_price: parsePrice(formData.unit_price),
+        cost_price: parsePrice(formData.cost_price),
         price_per_ton: parsePrice(formData.price_per_ton),
         price_per_pc: parsePrice(formData.price_per_pc),
         price_per_meter: parsePrice(formData.price_per_meter),
@@ -298,7 +301,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
             </div>
           </div>
 
-          {/* Default Unit Price and Maintenance Status */}
+          {/* Default Unit Price, Cost Price and Maintenance Status */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">
@@ -316,18 +319,43 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Maintenance Status</label>
-              <Select
-                value={formData.maintenance_status}
-                onChange={(e) => handleChange("maintenance_status", e.target.value)}
+              <label className="block text-sm font-medium mb-1">
+                Cost Price <span className="text-xs text-muted-foreground">(internal)</span>
+              </label>
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={formData.cost_price}
+                min="0"
+                step="0.01"
+                onChange={(e) => handleChange("cost_price", e.target.value)}
                 disabled={viewOnly}
-              >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="Discontinued">Discontinued</option>
-                <option value="Under Review">Under Review</option>
-              </Select>
+              />
+              {(() => {
+                const sale = parseFloat(formData.unit_price);
+                const cost = parseFloat(formData.cost_price);
+                if (!isNaN(sale) && !isNaN(cost) && sale > 0) {
+                  const pct = ((sale - cost) / sale) * 100;
+                  const color = pct >= 20 ? "text-green-600" : pct >= 10 ? "text-amber-600" : "text-red-600";
+                  return <p className={`mt-1 text-xs font-medium ${color}`}>Margin: {pct.toFixed(1)}%</p>;
+                }
+                return null;
+              })()}
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Maintenance Status</label>
+            <Select
+              value={formData.maintenance_status}
+              onChange={(e) => handleChange("maintenance_status", e.target.value)}
+              disabled={viewOnly}
+            >
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+              <option value="Discontinued">Discontinued</option>
+              <option value="Under Review">Under Review</option>
+            </Select>
           </div>
 
           {/* Is Active Checkbox */}

@@ -25,6 +25,7 @@ import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
 import MetricInsightModal from "./MetricInsightModal";
 import SalesForecast from "./SalesForecast";
+import MarginSummaryWidget from "./MarginSummaryWidget";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
 import { Edit2 } from "lucide-react";
@@ -2133,6 +2134,15 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
               {/* Sales Forecast */}
               <SalesForecast />
+
+              {/* Gross Margin Summary */}
+              <div>
+                <h3 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
+                  <Icon name="TrendingUp" size={18} />
+                  Gross Margin Overview
+                </h3>
+                <MarginSummaryWidget deals={filteredDeals} />
+              </div>
 
               {/* Activity Feed */}
               <div className="bg-white rounded-lg shadow">

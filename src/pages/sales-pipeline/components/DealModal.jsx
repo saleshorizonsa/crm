@@ -319,6 +319,7 @@ const DealModal = ({
           null,
           uomType,
           uomVal,
+          selectedProductData.cost_price || null,
         );
 
         console.log("🔵 Product add result:", { data, error });
@@ -372,6 +373,7 @@ const DealModal = ({
         sqm: uomType === "sqm" ? uomVal : null,
         ton: uomType === "ton" ? uomVal : null,
         unit_price: rate,
+        cost_price: selectedProductData.cost_price || null,
         line_total: lineTotal,
         uom_type: uomType,
         uom_value: uomVal,
@@ -408,7 +410,7 @@ const DealModal = ({
       setIsLoadingProducts(true);
       try {
         const { error } =
-          await dealProductService.removeProductFromDeal(indexOrId);
+          await dealProductService.removeProductFromDeal(indexOrId, deal.id);
         if (error) throw error;
 
         // Reload then recalculate from remaining products to avoid drift
@@ -1067,6 +1069,23 @@ const DealModal = ({
                           </h4>
                         </div>
 
+                        {/* Low-margin warning banner */}
+                        {userProfile?.role !== "salesman" && (() => {
+                          const hasLowMargin = productsToShow.some(item => {
+                            const lt = parseFloat(item.line_total) || (parseFloat(item.uom_value || item.quantity || 0) * parseFloat(item.unit_price || 0));
+                            const cp = parseFloat(item.cost_price || item.product?.cost_price || 0);
+                            const qty = parseFloat(item.uom_value || item.quantity || 0);
+                            const mp = lt > 0 ? ((lt - qty * cp) / lt) * 100 : null;
+                            return mp != null && mp < 10;
+                          });
+                          return hasLowMargin ? (
+                            <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-md text-xs text-red-700">
+                              <Icon name="AlertTriangle" size={13} className="flex-shrink-0" />
+                              <span>One or more products have margin below 10% — review pricing before closing.</span>
+                            </div>
+                          ) : null;
+                        })()}
+
                         <div className="space-y-2 max-h-40 overflow-y-auto">
                           {productsToShow.map((item, idx) => {
                             const displayProduct = deal ? item : item;
@@ -1121,6 +1140,22 @@ const DealModal = ({
                                           )}
                                         </span>
                                       </span>
+                                                      {(() => {
+                                        const lt = parseFloat(displayProduct.line_total) ||
+                                          (parseFloat(displayProduct.uom_value || 0) * parseFloat(displayProduct.unit_price || 0));
+                                        const cp = parseFloat(item.cost_price || item.product?.cost_price || 0);
+                                        const qty2 = parseFloat(displayProduct.uom_value || displayProduct.quantity || 0);
+                                        const lc = qty2 * cp;
+                                        const mp = lt > 0 ? ((lt - lc) / lt) * 100 : null;
+                                        if (mp == null || userProfile?.role === "salesman") return null;
+                                        return (
+                                          <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
+                                            mp >= 20 ? "bg-green-100 text-green-700"
+                                            : mp >= 10 ? "bg-amber-100 text-amber-700"
+                                            : "bg-red-100 text-red-700"
+                                          }`}>{mp.toFixed(1)}%</span>
+                                        );
+                                      })()}
                                       <span className="text-primary font-semibold">
                                         Total:{" "}
                                         {formatCurrency(
@@ -1180,6 +1215,34 @@ const DealModal = ({
                             );
                           })}
                         </div>
+
+                        {/* Deal-level margin summary */}
+                        {userProfile?.role !== "salesman" && (() => {
+                          let totalRev = 0, totalCost = 0;
+                          productsToShow.forEach(item => {
+                            const lt = parseFloat(item.line_total) || (parseFloat(item.uom_value || item.quantity || 0) * parseFloat(item.unit_price || 0));
+                            const cp = parseFloat(item.cost_price || item.product?.cost_price || 0);
+                            const qty = parseFloat(item.uom_value || item.quantity || 0);
+                            totalRev  += lt;
+                            totalCost += qty * cp;
+                          });
+                          const gm  = totalRev - totalCost;
+                          const mp  = totalRev > 0 ? (gm / totalRev) * 100 : null;
+                          if (mp == null) return null;
+                          return (
+                            <div className={`mt-2 flex items-center justify-between px-3 py-2 rounded-md text-xs font-medium ${
+                              mp >= 20 ? "bg-green-50 border border-green-200 text-green-800"
+                              : mp >= 10 ? "bg-amber-50 border border-amber-200 text-amber-800"
+                              : "bg-red-50 border border-red-200 text-red-800"
+                            }`}>
+                              <span>Deal Gross Margin</span>
+                              <div className="flex items-center gap-3">
+                                <span>{formatCurrency(gm, preferredCurrency)}</span>
+                                <span className="font-bold">{mp.toFixed(1)}%</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )
                   );
