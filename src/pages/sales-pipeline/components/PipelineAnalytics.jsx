@@ -50,7 +50,8 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [collapseToggle, setCollapseToggle] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
-  const { company } = useAuth();
+  const { company, userProfile } = useAuth();
+  const canSeeLostReasons = userProfile?.role !== "salesman";
   const [lostChartData, setLostChartData] = useState([]);
 
   // Fetch lost deal reason distribution directly (separate from the deals prop)
@@ -271,7 +272,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
     { id: "funnel",    label: "Funnel",       icon: "Filter"     },
     { id: "trends",    label: "Trends",       icon: "TrendingUp" },
     { id: "forecast",  label: "Forecast",     icon: "Calendar"   },
-    { id: "lost",      label: "Lost Reasons", icon: "XCircle"    },
+    ...(canSeeLostReasons ? [{ id: "lost", label: "Lost Reasons", icon: "XCircle" }] : []),
   ];
 
   if (collapseToggle) {

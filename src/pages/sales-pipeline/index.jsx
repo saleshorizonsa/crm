@@ -624,7 +624,7 @@ const SalesPipeline = () => {
           try {
             const { data, error } = await dealService.updateDealLost(
               dealBeingLost.id,
-              { lost_reason_code: code, lost_reason_notes: notes },
+              { lost_reason_code: code, lost_reason_notes: notes, company_id: company?.id },
             );
             if (error) throw error;
             setDeals((prev) => prev.map((d) => (d.id === data.id ? data : d)));

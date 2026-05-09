@@ -129,11 +129,16 @@ const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
               : "No contact assigned"}
           </p>
           {deal?.stage === "lost" && deal?.lost_reason_code && (
-            <div className="flex items-center gap-1 mt-1">
+            <div className="flex items-center gap-1 mt-1 flex-wrap">
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700">
                 <Icon name="XCircle" size={9} />
                 {LOST_CODE_LABELS[deal.lost_reason_code] || deal.lost_reason_code}
               </span>
+              {deal?.lost_at && (
+                <span className="text-[10px] text-gray-400">
+                  {new Date(deal.lost_at).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
+                </span>
+              )}
             </div>
           )}
         </div>

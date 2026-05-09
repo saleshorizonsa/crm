@@ -1134,24 +1134,91 @@ export const dealService = {
   },
 
   // Mark a deal as lost with a structured reason code + optional notes
-  async updateDealLost(dealId, { lost_reason_code, lost_reason_notes }) {
+  async updateDealLost(dealId, { lost_reason_code, lost_reason_notes, company_id }) {
     try {
+      const now = new Date().toISOString();
       const { data, error } = await supabase
         .from("deals")
         .update({
           stage:             "lost",
           lost_reason_code,
           lost_reason_notes: lost_reason_notes || null,
-          lost_at:           new Date().toISOString(),
-          closed_at:         new Date().toISOString(),
-          updated_at:        new Date().toISOString(),
+          lost_reason:       lost_reason_code, // backward compat
+          lost_at:           now,
+          closed_at:         now,
+          updated_at:        now,
         })
         .eq("id", dealId)
         .select()
         .single();
+
+      if (!error && data) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const { flat } = company_id
+          ? await this.getLostReasons(company_id)
+          : { flat: [] };
+        const option = flat.find((r) => r.code === lost_reason_code);
+        const label  = option?.label || lost_reason_code || "Unknown reason";
+
+        await supabase.from("activities").insert({
+          type:        "note",
+          title:       "Deal marked as lost",
+          description: `Deal lost — ${label}${lost_reason_notes ? `: ${lost_reason_notes}` : ""}`,
+          deal_id:     dealId,
+          company_id:  company_id || data.company_id,
+          user_id:     user?.id,
+          created_at:  now,
+        });
+      }
+
       return { data, error };
     } catch (error) {
       return { data: null, error };
+    }
+  },
+
+  // Aggregate lost deal analytics by reason code
+  async getLostReasonsAnalytics(companyId, dateFrom, dateTo) {
+    try {
+      let query = supabase
+        .from("deals")
+        .select("lost_reason_code, amount")
+        .eq("company_id", companyId)
+        .eq("stage", "lost")
+        .not("lost_reason_code", "is", null);
+
+      if (dateFrom) query = query.gte("lost_at", dateFrom);
+      if (dateTo)   query = query.lte("lost_at", dateTo);
+
+      const { data, error } = await query;
+      if (error) return { data: [], error };
+
+      const { flat } = await this.getLostReasons(companyId);
+      const labelMap  = Object.fromEntries(flat.map((r) => [r.code, r]));
+
+      const agg = {};
+      let totalDeals = 0;
+      (data || []).forEach(({ lost_reason_code, amount }) => {
+        if (!agg[lost_reason_code]) agg[lost_reason_code] = { count: 0, totalValue: 0 };
+        agg[lost_reason_code].count      += 1;
+        agg[lost_reason_code].totalValue += parseFloat(amount || 0);
+        totalDeals += 1;
+      });
+
+      const result = Object.entries(agg)
+        .map(([code, { count, totalValue }]) => ({
+          code,
+          label:      labelMap[code]?.label    || code,
+          category:   labelMap[code]?.category || "Other",
+          count,
+          totalValue,
+          percentage: totalDeals > 0 ? (count / totalDeals) * 100 : 0,
+        }))
+        .sort((a, b) => b.count - a.count);
+
+      return { data: result, error: null };
+    } catch (error) {
+      return { data: [], error };
     }
   },
 };

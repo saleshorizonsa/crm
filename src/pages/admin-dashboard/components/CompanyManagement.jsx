@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
-import { companyService } from "../../../services/supabaseService";
+import { companyService, adminService } from "../../../services/supabaseService";
 
 const CompanyManagement = () => {
   const [companies, setCompanies] = useState([]);
@@ -55,6 +55,10 @@ const CompanyManagement = () => {
               : company
           )
         );
+        // When activating a company, ensure default lost reasons are seeded
+        if (!currentStatus) {
+          adminService.seedLostReasons(companyId).catch(() => {});
+        }
       } else {
         alert("Failed to update company status");
       }
