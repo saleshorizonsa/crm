@@ -640,21 +640,8 @@ export const dealService = {
           contact:contacts!contact_id(id, first_name, last_name, email, phone, company_name),
           owner:users!owner_id(id, full_name, email, avatar_url),
           deal_products(
-            id,
-            product_id,
-            quantity,
-            sqm,
-            ton,
-            unit_price,
-            line_total,
-            notes,
-            uom_type,
-            uom_value,
-            cost_price,
-            line_cost,
-            line_margin,
-            margin_pct,
-            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price, cost_price)
+            *,
+            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price)
           )
         `,
         )
@@ -929,21 +916,8 @@ export const dealService = {
           contact:contacts!contact_id(id, first_name, last_name, email, phone, company_name),
           owner:users!owner_id(id, full_name, email, avatar_url),
           deal_products(
-            id,
-            product_id,
-            quantity,
-            sqm,
-            ton,
-            unit_price,
-            line_total,
-            notes,
-            uom_type,
-            uom_value,
-            cost_price,
-            line_cost,
-            line_margin,
-            margin_pct,
-            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price, cost_price)
+            *,
+            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price)
           )
         `,
         )
@@ -1044,19 +1018,8 @@ export const dealService = {
           contact:contacts!contact_id(id, first_name, last_name, email, phone, company_name),
           owner:users!owner_id(id, full_name, email, avatar_url),
           deal_products(
-            id,
-            product_id,
-            quantity,
-            sqm,
-            ton,
-            unit_price,
-            line_total,
-            notes,
-            cost_price,
-            line_cost,
-            line_margin,
-            margin_pct,
-            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price, cost_price)
+            *,
+            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price)
           )
         `,
         )
@@ -1081,19 +1044,8 @@ export const dealService = {
           contact:contacts!contact_id(id, first_name, last_name, email, phone, company_name),
           owner:users!owner_id(id, full_name, email, avatar_url),
           deal_products(
-            id,
-            product_id,
-            quantity,
-            sqm,
-            ton,
-            unit_price,
-            line_total,
-            notes,
-            cost_price,
-            line_cost,
-            line_margin,
-            margin_pct,
-            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price, cost_price)
+            *,
+            product:products!product_id(id, material, description, material_group, base_unit_of_measure, unit_price)
           )
         `,
         )
@@ -3829,7 +3781,7 @@ export const dealProductService = {
       ) {
         const { data: current } = await supabase
           .from("deal_products")
-          .select("quantity, unit_price, uom_value, cost_price")
+          .select("*")
           .eq("id", dealProductId)
           .single();
 
