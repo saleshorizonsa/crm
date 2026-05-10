@@ -1671,14 +1671,12 @@ export const contactService = {
       if (usersError) return { data: null, error: usersError };
 
       const userIds = (allUsers || []).map((u) => u.id);
-      console.log("[recalcScores] visible user IDs:", userIds.length);
       if (userIds.length === 0) return { data: { updated: 0, failed: 0 }, error: null };
 
       const { data: contacts, error: contactsError } = await supabase
         .from("contacts")
         .select("*")
         .in("owner_id", userIds);
-      console.log("[recalcScores] contacts fetched:", contacts?.length ?? 0, "error:", contactsError);
       if (contactsError) return { data: null, error: contactsError };
 
       const companyContacts = contacts || [];

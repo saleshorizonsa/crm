@@ -1252,16 +1252,30 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
           const { data: clientTargets } = await supabase
             .from("client_targets")
             .select(
-              "*, contact:contacts(id, first_name, last_name, company_name)",
+              "*, contact:contacts(id, first_name, last_name, company_name), sales_target:sales_targets(period_start, period_end)",
             )
             .in("sales_target_id", clientBasedTargetIds);
 
-          // Calculate client achievements from deals
+          // Calculate client achievements from deals (filtered by target period)
           const clientTargetsWithProgress = (clientTargets || []).map((ct) => {
-            const clientDeals =
+            const parentTarget = ct.sales_target;
+            let clientDeals =
               deals?.filter(
                 (d) => d.stage === "won" && d.contact_id === ct.contact_id,
               ) || [];
+
+            if (parentTarget?.period_start && parentTarget?.period_end) {
+              const periodStart = new Date(parentTarget.period_start);
+              const periodEnd = new Date(parentTarget.period_end);
+              periodEnd.setHours(23, 59, 59, 999);
+              clientDeals = clientDeals.filter((d) => {
+                const dealDate = d.closed_at
+                  ? new Date(d.closed_at)
+                  : new Date(d.updated_at || d.created_at);
+                return dealDate >= periodStart && dealDate <= periodEnd;
+              });
+            }
+
             const clientAchieved = clientDeals.reduce(
               (sum, d) => sum + getConvertedAmount(d),
               0,

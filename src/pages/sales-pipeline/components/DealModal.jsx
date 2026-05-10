@@ -508,8 +508,8 @@ const DealModal = ({
           const targetUserId = savedDeal.owner_id || user?.id;
           const companyId = savedDeal.company_id || company?.id;
           const { data: targets } = await salesTargetService.getMyTargets(companyId, targetUserId);
-          const closeDate = savedDeal.expected_close_date
-            ? new Date(savedDeal.expected_close_date)
+          const closeDate = savedDeal.closed_at
+            ? new Date(savedDeal.closed_at)
             : new Date();
           const activeTargets = (targets || []).filter((t) => {
             if (t.status !== "active") return false;

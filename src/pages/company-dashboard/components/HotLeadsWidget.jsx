@@ -10,15 +10,26 @@ const HotLeadsWidget = ({ companyId }) => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!companyId) return;
-
     const fetchHotLeads = async () => {
       setIsLoading(true);
       try {
+        // contacts has no company_id column — scope via owner_id.
+        // RLS already limits the users query to the current company's users.
+        const { data: users, error: usersError } = await supabase
+          .from("users")
+          .select("id");
+        if (usersError) throw usersError;
+
+        const userIds = (users || []).map((u) => u.id);
+        if (userIds.length === 0) {
+          setLeads([]);
+          return;
+        }
+
         const { data, error } = await supabase
           .from("contacts")
           .select("id, first_name, last_name, company_name, lead_score, lead_grade")
-          .eq("company_id", companyId)
+          .in("owner_id", userIds)
           .in("lead_grade", ["hot", "warm"])
           .order("lead_score", { ascending: false })
           .limit(5);
@@ -33,7 +44,7 @@ const HotLeadsWidget = ({ companyId }) => {
     };
 
     fetchHotLeads();
-  }, [companyId]);
+  }, []);
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
