@@ -63,7 +63,7 @@ const SalesChart = ({
   const effectivePipelineData = useMemo(() => {
     if (!allDeals || allDeals.length === 0) return pipelineData;
     const filtered = allDeals.filter((d) => {
-      const dt = d.updated_at || d.created_at;
+      const dt = d.stage === "won" ? d.closed_at : d.created_at;
       if (!dt) return false;
       if (!dateRange.isAllTime) {
         if (dateRange.from && dt.slice(0, 10) < dateRange.from) return false;

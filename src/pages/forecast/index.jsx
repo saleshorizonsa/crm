@@ -13,6 +13,8 @@ import AIPredictionCard   from "./components/AIPredictionCard";
 import StageBreakdown     from "./components/StageBreakdown";
 import ForecastDealTable  from "./components/ForecastDealTable";
 import ProjectionChart    from "../company-dashboard/components/forecast/ProjectionChart";
+import ForecastAISummary  from "../company-dashboard/components/forecast/ForecastAISummary";
+import { useCurrency }    from "../../contexts/CurrencyContext";
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
@@ -39,6 +41,7 @@ const PageSkeleton = () => (
 
 const ForecastPage = () => {
   const { user, userProfile, company } = useAuth();
+  const { preferredCurrency } = useCurrency();
 
   const { dateRange } = useDateRange();
   const [rawData, setRawData] = useState({ deals: [], target: null });
@@ -151,6 +154,17 @@ const ForecastPage = () => {
           <div className="space-y-6">
             {/* KPI Bar */}
             <ForecastKPIBar forecast={forecast} targetAmount={targetAmount} />
+
+            {/* AI Forecast Summary */}
+            <ForecastAISummary
+              deals={rawData.deals}
+              target={targetAmount}
+              period={new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+              companyName={company?.name}
+              role={userProfile?.role}
+              currency={preferredCurrency || "SAR"}
+              companyId={company?.id}
+            />
 
             {/* Row 1: Projection chart + AI Prediction */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

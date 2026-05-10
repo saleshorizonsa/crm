@@ -14,7 +14,7 @@ const DealVelocity = ({ deals = [], isLoading = false }) => {
 
     // Get deals won in last 30 days
     const wonDeals = deals.filter((deal) => {
-      const updatedDate = new Date(deal.updated_at || deal.created_at);
+      const updatedDate = new Date(deal.closed_at || deal.created_at);
       return deal.stage === "won" && updatedDate >= thirtyDaysAgo;
     });
 
@@ -23,7 +23,7 @@ const DealVelocity = ({ deals = [], isLoading = false }) => {
       wonDeals.length > 0
         ? wonDeals.reduce((sum, deal) => {
             const created = new Date(deal.created_at);
-            const closed = new Date(deal.updated_at || deal.created_at);
+            const closed = new Date(deal.closed_at || deal.created_at);
             const daysToClose = Math.floor(
               (closed - created) / (1000 * 60 * 60 * 24)
             );

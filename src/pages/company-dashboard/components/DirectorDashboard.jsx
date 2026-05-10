@@ -34,6 +34,7 @@ import MetricInsightModal from "./MetricInsightModal";
 import PerformanceBarChart from "./PerformanceBarChart";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
+import ForecastAISummary from "./forecast/ForecastAISummary";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 
 // Employee-specific dashboards - use Enhanced versions for full features
@@ -200,7 +201,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const filteredDeals = useMemo(() => {
     return (
       allDealsData?.filter((deal) => {
-        const dateToCheck = deal.updated_at || deal.created_at;
+        const dateToCheck = deal.stage === "won" ? deal.closed_at : deal.created_at;
         return isInSelectedPeriod(dateToCheck);
       }) || []
     );
@@ -302,7 +303,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
       const isInPeriod = (deal) => {
         const dateStr =
-          deal.expected_close_date || deal.updated_at || deal.created_at;
+          deal.stage === "won" ? deal.closed_at : deal.created_at;
         if (!dateStr) return false;
         const d = new Date(dateStr);
         return d >= periodStart && d <= periodEnd;
@@ -353,7 +354,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       periodEnd.setHours(23, 59, 59, 999);
 
       const isInPeriod = (deal) => {
-        const dateStr = deal.expected_close_date || deal.updated_at || deal.created_at;
+        const dateStr = deal.stage === "won" ? deal.closed_at : deal.created_at;
         if (!dateStr) return false;
         const d = new Date(dateStr);
         return d >= periodStart && d <= periodEnd;
@@ -595,11 +596,8 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     // Recalculate salesData from filtered deals (for charts)
     // Group filtered deals by month for sales chart
     const salesDataByPeriod = filteredDeals.reduce((acc, deal) => {
-      // Use expected_close_date for won deals, otherwise updated_at/created_at
       const dateToUse =
-        deal.stage === "won"
-          ? deal.expected_close_date || deal.updated_at || deal.created_at
-          : deal.updated_at || deal.created_at;
+        deal.stage === "won" ? deal.closed_at || deal.created_at : deal.created_at;
       const dealDate = new Date(dateToUse);
       const periodKey = `${dealDate.getFullYear()}-${dealDate.getMonth()}`;
 
@@ -767,9 +765,8 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
       return months.map((month, index) => {
         const monthDeals = wonDeals.filter((d) => {
-          // Use expected_close_date for won deals
           const dealDate = new Date(
-            d.expected_close_date || d.updated_at || d.created_at,
+            d.closed_at || d.created_at,
           );
           return (
             dealDate.getFullYear() === displayYear &&
@@ -795,9 +792,8 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         const startMonth = index * 3;
         const endMonth = startMonth + 2;
         const quarterDeals = wonDeals.filter((d) => {
-          // Use expected_close_date for won deals
           const dealDate = new Date(
-            d.expected_close_date || d.updated_at || d.created_at,
+            d.closed_at || d.created_at,
           );
           const dealMonth = dealDate.getMonth();
           return (
@@ -822,9 +818,8 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
       return years.map((year) => {
         const yearDeals = wonDeals.filter((d) => {
-          // Use expected_close_date for won deals
           const dealDate = new Date(
-            d.expected_close_date || d.updated_at || d.created_at,
+            d.closed_at || d.created_at,
           );
           return dealDate.getFullYear() === year;
         });
@@ -1450,7 +1445,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
             // Filter deals by selected period
             const filteredDeals = (deals || []).filter((deal) => {
-              const dateToCheck = deal.updated_at || deal.created_at;
+              const dateToCheck = deal.stage === "won" ? deal.closed_at : deal.created_at;
               return isInSelectedPeriod(dateToCheck);
             });
 
@@ -1755,6 +1750,17 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
       {/* Sales Forecast */}
       <SalesForecast />
+
+      {/* AI Forecast Summary */}
+      <ForecastAISummary
+        deals={filteredDeals}
+        target={executiveMetrics?.totalTarget || 0}
+        period={new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+        companyName={selectedCompany?.name}
+        role={userProfile?.role}
+        currency={preferredCurrency || "SAR"}
+        companyId={selectedCompany?.id}
+      />
 
       {/* Gross Margin Summary */}
       <div>

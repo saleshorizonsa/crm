@@ -160,7 +160,7 @@ const EnhancedSalesmanDashboard = () => {
   const filteredDeals = useMemo(() => {
     return (
       allDeals?.filter((deal) => {
-        const dateToCheck = deal.updated_at || deal.created_at;
+        const dateToCheck = deal.stage === "won" ? deal.closed_at : deal.created_at;
         return isInSelectedPeriod(dateToCheck);
       }) || []
     );
@@ -246,7 +246,7 @@ const EnhancedSalesmanDashboard = () => {
 
       const calculated_progress = wonDeals.reduce((sum, deal) => {
         const dateStr =
-          deal.expected_close_date || deal.updated_at || deal.created_at;
+          deal.stage === "won" ? deal.closed_at : deal.created_at;
         if (!dateStr) return sum;
         const dealDate = new Date(dateStr);
         if (dealDate >= periodStart && dealDate <= periodEnd) {
@@ -295,9 +295,8 @@ const EnhancedSalesmanDashboard = () => {
 
       return months.map((month, index) => {
         const monthDeals = wonDeals.filter((d) => {
-          // Use expected_close_date for won deals
           const dealDate = new Date(
-            d.expected_close_date || d.updated_at || d.created_at,
+            d.closed_at || d.created_at,
           );
           return (
             dealDate.getFullYear() === currentYear &&
@@ -322,9 +321,8 @@ const EnhancedSalesmanDashboard = () => {
         const startMonth = index * 3;
         const endMonth = startMonth + 2;
         const quarterDeals = wonDeals.filter((d) => {
-          // Use expected_close_date for won deals
           const dealDate = new Date(
-            d.expected_close_date || d.updated_at || d.created_at,
+            d.closed_at || d.created_at,
           );
           const dealMonth = dealDate.getMonth();
           return (
@@ -349,9 +347,8 @@ const EnhancedSalesmanDashboard = () => {
 
       return years.map((year) => {
         const yearDeals = wonDeals.filter((d) => {
-          // Use expected_close_date for won deals
           const dealDate = new Date(
-            d.expected_close_date || d.updated_at || d.created_at,
+            d.closed_at || d.created_at,
           );
           return dealDate.getFullYear() === year;
         });

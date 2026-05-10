@@ -199,8 +199,9 @@ const SalesPipeline = () => {
 
       if (resolved.startDate && resolved.endDate) {
         filtered = filtered.filter((deal) => {
-          if (!deal.expected_close_date) return false;
-          const dealDate = new Date(deal.expected_close_date);
+          const dateField = deal.stage === "won" ? deal.closed_at : deal.created_at;
+          if (!dateField) return false;
+          const dealDate = new Date(dateField);
           return dealDate >= resolved.startDate && dealDate <= resolved.endDate;
         });
       }

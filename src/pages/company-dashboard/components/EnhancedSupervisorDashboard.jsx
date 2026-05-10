@@ -203,9 +203,8 @@ const EnhancedSupervisorDashboard = ({
 
       return months.map((month, index) => {
         const monthDeals = wonDeals.filter((d) => {
-          // Use expected_close_date for won deals
           const dealDate = new Date(
-            d.expected_close_date || d.updated_at || d.created_at,
+            d.closed_at || d.created_at,
           );
           return (
             dealDate.getFullYear() === currentYear &&
@@ -230,9 +229,8 @@ const EnhancedSupervisorDashboard = ({
         const startMonth = index * 3;
         const endMonth = startMonth + 2;
         const quarterDeals = wonDeals.filter((d) => {
-          // Use expected_close_date for won deals
           const dealDate = new Date(
-            d.expected_close_date || d.updated_at || d.created_at,
+            d.closed_at || d.created_at,
           );
           const dealMonth = dealDate.getMonth();
           return (
@@ -257,9 +255,8 @@ const EnhancedSupervisorDashboard = ({
 
       return years.map((year) => {
         const yearDeals = wonDeals.filter((d) => {
-          // Use expected_close_date for won deals
           const dealDate = new Date(
-            d.expected_close_date || d.updated_at || d.created_at,
+            d.closed_at || d.created_at,
           );
           return dealDate.getFullYear() === year;
         });
@@ -302,8 +299,7 @@ const EnhancedSupervisorDashboard = ({
     return true;
   };
 
-  // Canonical date helper — always use closed_at for won deals
-  const dealDate = (deal) => deal.updated_at || deal.created_at;
+  const dealDate = (deal) => deal.stage === "won" ? deal.closed_at : deal.created_at;
 
   // Filter all data based on selected filters
   const filteredDeals = useMemo(() => {
@@ -667,7 +663,7 @@ const EnhancedSupervisorDashboard = ({
 
       const isInPeriod = (deal) => {
         const dateStr =
-          deal.expected_close_date || deal.updated_at || deal.created_at;
+          deal.stage === "won" ? deal.closed_at : deal.created_at;
         if (!dateStr) return false;
         const d = new Date(dateStr);
         return d >= periodStart && d <= periodEnd;

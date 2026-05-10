@@ -701,6 +701,19 @@ export const dealService = {
         `,
         )
         ?.single();
+      if (data?.id) {
+        supabase
+          .from("deal_stage_history")
+          .insert({
+            deal_id:    data.id,
+            company_id: data.company_id,
+            stage:      data.stage || "lead",
+            entered_at: data.created_at || new Date().toISOString(),
+            created_by: data.owner_id,
+          })
+          .then(() => {})
+          .catch(() => {});
+      }
       return { data, error };
     } catch (error) {
       return { data: null, error };
@@ -788,6 +801,29 @@ export const dealService = {
 
       if (data?.contact_id) {
         contactService._refreshScoreForContact(data.contact_id).catch(() => {});
+      }
+
+      // Track stage transition in deal_stage_history (fire-and-forget)
+      if (updates.stage && oldDeal && updates.stage !== oldDeal.stage) {
+        const now = new Date().toISOString();
+        const cid = data?.company_id || oldDeal.company_id;
+        Promise.all([
+          supabase
+            .from("deal_stage_history")
+            .update({ exited_at: now })
+            .eq("deal_id", dealId)
+            .eq("stage", oldDeal.stage)
+            .is("exited_at", null),
+          supabase
+            .from("deal_stage_history")
+            .insert({
+              deal_id:    dealId,
+              company_id: cid,
+              stage:      updates.stage,
+              entered_at: now,
+              created_by: data?.owner_id || oldDeal.owner_id,
+            }),
+        ]).catch(() => {});
       }
 
       return { data, error: null };
@@ -4921,12 +4957,18 @@ export const forecastService = {
            contact:contacts!contact_id(id, first_name, last_name, company_name),
            owner:users!owner_id(id, full_name)`,
         )
-        .neq("stage", "lost")
-        // Deals closing within the period, OR open deals with no date yet
-        .or(
-          `and(expected_close_date.gte.${periodStart},expected_close_date.lte.${periodEnd}),` +
-            `and(stage.neq.won,expected_close_date.is.null)`,
+        .neq("stage", "lost");
+
+      // Scope to period when one is set:
+      //   • Won deals  → only those closing within [periodStart, periodEnd] (for accurate KPI attainment)
+      //   • Open deals → ALL of them regardless of close date (needed for the 12-week projection)
+      // When isAllTime (no period), the outer .neq("stage","lost") already returns every non-lost deal.
+      if (periodStart && periodEnd) {
+        dealsQuery = dealsQuery.or(
+          `and(stage.eq.won,expected_close_date.gte.${periodStart},expected_close_date.lte.${periodEnd}),` +
+            `stage.neq.won`,
         );
+      }
 
       if (companyId) dealsQuery = dealsQuery.eq("company_id", companyId);
       if (ownerIds)  dealsQuery = dealsQuery.in("owner_id", ownerIds);

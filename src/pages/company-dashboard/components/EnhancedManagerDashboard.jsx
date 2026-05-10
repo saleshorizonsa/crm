@@ -26,6 +26,7 @@ import ActionableDashboard from "./ActionableDashboard";
 import MetricInsightModal from "./MetricInsightModal";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
+import ForecastAISummary from "./forecast/ForecastAISummary";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
 import { Edit2 } from "lucide-react";
@@ -211,7 +212,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   const filteredDeals = useMemo(() => {
     return (
       allDeals?.filter((deal) => {
-        const dateToCheck = deal.updated_at || deal.created_at;
+        const dateToCheck = deal.stage === "won" ? deal.closed_at : deal.created_at;
         return isInSelectedPeriod(dateToCheck);
       }) || []
     );
@@ -368,7 +369,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
       const isInPeriod = (deal) => {
         const dateStr =
-          deal.expected_close_date || deal.updated_at || deal.created_at;
+          deal.stage === "won" ? deal.closed_at : deal.created_at;
         if (!dateStr) return false;
         const d = new Date(dateStr);
         return d >= periodStart && d <= periodEnd;
@@ -489,10 +490,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     // Get subordinate IDs from allSubordinates (includes all team members)
     const teamSubordinateIds = allSubordinates?.map((s) => s.id) || [];
 
-    // Filter won deals by expected_close_date (when deal was actually won)
     const dealsInPeriod = allDeals.filter((deal) => {
-      if (deal.stage !== "won" || !deal.expected_close_date) return false;
-      return isInSelectedPeriod(deal.expected_close_date);
+      if (deal.stage !== "won" || !deal.closed_at) return false;
+      return isInSelectedPeriod(deal.closed_at);
     });
 
     // Calculate manager's own won deals revenue from deals in the selected period
@@ -571,9 +571,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
       return months.map((month, index) => {
         const monthDeals = wonDeals.filter((d) => {
-          // Use expected_close_date for won deals
           const dealDate = new Date(
-            d.expected_close_date || d.updated_at || d.created_at,
+            d.closed_at || d.created_at,
           );
           return (
             dealDate.getFullYear() === currentYear &&
@@ -598,9 +597,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         const startMonth = index * 3;
         const endMonth = startMonth + 2;
         const quarterDeals = wonDeals.filter((d) => {
-          // Use expected_close_date for won deals
           const dealDate = new Date(
-            d.expected_close_date || d.updated_at || d.created_at,
+            d.closed_at || d.created_at,
           );
           const dealMonth = dealDate.getMonth();
           return (
@@ -625,9 +623,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
       return years.map((year) => {
         const yearDeals = wonDeals.filter((d) => {
-          // Use expected_close_date for won deals
           const dealDate = new Date(
-            d.expected_close_date || d.updated_at || d.created_at,
+            d.closed_at || d.created_at,
           );
           return dealDate.getFullYear() === year;
         });
@@ -877,11 +874,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
     // Recalculate salesData from filtered deals (for charts)
     const salesDataByPeriod = filteredDeals.reduce((acc, deal) => {
-      // Use expected_close_date for won deals, otherwise updated_at/created_at
       const dateToUse =
-        deal.stage === "won"
-          ? deal.expected_close_date || deal.updated_at || deal.created_at
-          : deal.updated_at || deal.created_at;
+        deal.stage === "won" ? deal.closed_at || deal.created_at : deal.created_at;
       const dealDate = new Date(dateToUse);
       let periodKey;
 
@@ -2134,6 +2128,17 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
               {/* Sales Forecast */}
               <SalesForecast />
+
+              {/* AI Forecast Summary */}
+              <ForecastAISummary
+                deals={filteredDeals}
+                target={executiveMetrics?.totalTarget || 0}
+                period={new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                companyName={company?.name}
+                role={userProfile?.role}
+                currency={preferredCurrency || "SAR"}
+                companyId={company?.id}
+              />
 
               {/* Gross Margin Summary */}
               <div>
