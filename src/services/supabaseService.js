@@ -1665,6 +1665,9 @@ export const contactService = {
     try {
       // Get all user IDs in the company first, then fetch their contacts.
       // This mirrors getTeamMetrics and works within owner_id-based RLS.
+      console.log("[recalcScores] called with companyId:", companyId, typeof companyId);
+      const { data: sampleUsers } = await supabase.from("users").select("id, company_id").limit(3);
+      console.log("[recalcScores] sample users (to compare company_id):", sampleUsers);
       const { data: companyUsers, error: usersError } = await supabase
         .from("users")
         .select("id")
