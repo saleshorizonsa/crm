@@ -1663,25 +1663,12 @@ export const contactService = {
   // Fetches deals and activities in two bulk queries to avoid N+1.
   async recalculateAllScores(companyId) {
     try {
-      // Get all user IDs in the company first, then fetch their contacts.
-      // This mirrors getTeamMetrics and works within owner_id-based RLS.
-      console.log("[recalcScores] called with companyId:", companyId, typeof companyId);
-      const { data: sampleUsers } = await supabase.from("users").select("id, company_id").limit(3);
-      console.log("[recalcScores] sample users (to compare company_id):", sampleUsers);
-      const { data: companyUsers, error: usersError } = await supabase
-        .from("users")
-        .select("id")
-        .eq("company_id", companyId);
-      if (usersError) return { data: null, error: usersError };
-
-      const userIds = (companyUsers || []).map((u) => u.id);
-      console.log("[recalcScores] company users found:", userIds.length, userIds);
-      if (userIds.length === 0) return { data: { updated: 0, failed: 0 }, error: null };
-
+      // Query contacts directly by company_id — contacts table has this column
+      // and it is the most direct scope without depending on the users table structure.
       const { data: contacts, error: contactsError } = await supabase
         .from("contacts")
         .select("*")
-        .in("owner_id", userIds);
+        .eq("company_id", companyId);
       console.log("[recalcScores] contacts fetched:", contacts?.length ?? 0, "error:", contactsError);
       if (contactsError) return { data: null, error: contactsError };
 
