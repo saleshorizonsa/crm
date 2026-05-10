@@ -730,12 +730,32 @@ export const dealService = {
         .eq("id", dealId)
         .single();
 
+      const now = new Date().toISOString();
+      const isWinningOrLosing =
+        updates.stage &&
+        (updates.stage === "won" || updates.stage === "lost") &&
+        oldDeal &&
+        updates.stage !== oldDeal.stage;
+      const isReopeningDeal =
+        updates.stage &&
+        updates.stage !== "won" &&
+        updates.stage !== "lost" &&
+        oldDeal &&
+        (oldDeal.stage === "won" || oldDeal.stage === "lost");
+
+      const updatePayload = {
+        ...updates,
+        updated_at: now,
+      };
+      if (isWinningOrLosing) {
+        updatePayload.closed_at = now;
+      } else if (isReopeningDeal) {
+        updatePayload.closed_at = null;
+      }
+
       const { data, error } = await supabase
         .from("deals")
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq("id", dealId)
         .select(
           `
@@ -945,7 +965,7 @@ export const dealService = {
 
       const { data, error } = await supabase
         .from("deals")
-        .upsert(payload)
+        .upsert(payload, { onConflict: "id" })
         .select(
           `
           *,
@@ -1643,14 +1663,26 @@ export const contactService = {
   // Fetches deals and activities in two bulk queries to avoid N+1.
   async recalculateAllScores(companyId) {
     try {
+      // Get all user IDs in the company first, then fetch their contacts.
+      // This mirrors getTeamMetrics and works within owner_id-based RLS.
+      const { data: companyUsers, error: usersError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("company_id", companyId);
+      if (usersError) return { data: null, error: usersError };
+
+      const userIds = (companyUsers || []).map((u) => u.id);
+      console.log("[recalcScores] company users found:", userIds.length, userIds);
+      if (userIds.length === 0) return { data: { updated: 0, failed: 0 }, error: null };
+
       const { data: contacts, error: contactsError } = await supabase
         .from("contacts")
-        .select("*, owner:users!owner_id(company_id)");
+        .select("*")
+        .in("owner_id", userIds);
+      console.log("[recalcScores] contacts fetched:", contacts?.length ?? 0, "error:", contactsError);
       if (contactsError) return { data: null, error: contactsError };
 
-      const companyContacts = (contacts || []).filter(
-        (c) => c.owner?.company_id === companyId,
-      );
+      const companyContacts = contacts || [];
       if (companyContacts.length === 0) return { data: { updated: 0, failed: 0 }, error: null };
 
       const contactIds = companyContacts.map((c) => c.id);

@@ -17,18 +17,14 @@ const HotLeadsWidget = ({ companyId }) => {
       try {
         const { data, error } = await supabase
           .from("contacts")
-          .select("id, first_name, last_name, company_name, lead_score, lead_grade, owner:users!owner_id(company_id)")
+          .select("id, first_name, last_name, company_name, lead_score, lead_grade")
+          .eq("company_id", companyId)
           .in("lead_grade", ["hot", "warm"])
           .order("lead_score", { ascending: false })
-          .limit(20);
+          .limit(5);
 
         if (error) throw error;
-
-        const filtered = (data || [])
-          .filter((c) => c.owner?.company_id === companyId)
-          .slice(0, 5);
-
-        setLeads(filtered);
+        setLeads(data || []);
       } catch (err) {
         console.error("HotLeadsWidget error:", err);
       } finally {
