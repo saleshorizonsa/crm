@@ -1663,12 +1663,21 @@ export const contactService = {
   // Fetches deals and activities in two bulk queries to avoid N+1.
   async recalculateAllScores(companyId) {
     try {
-      // Query contacts directly by company_id — contacts table has this column
-      // and it is the most direct scope without depending on the users table structure.
+      // contacts has no company_id column — scope via owner_id.
+      // Fetch all user IDs visible to the current session (RLS already scopes this).
+      const { data: allUsers, error: usersError } = await supabase
+        .from("users")
+        .select("id");
+      if (usersError) return { data: null, error: usersError };
+
+      const userIds = (allUsers || []).map((u) => u.id);
+      console.log("[recalcScores] visible user IDs:", userIds.length);
+      if (userIds.length === 0) return { data: { updated: 0, failed: 0 }, error: null };
+
       const { data: contacts, error: contactsError } = await supabase
         .from("contacts")
         .select("*")
-        .eq("company_id", companyId);
+        .in("owner_id", userIds);
       console.log("[recalcScores] contacts fetched:", contacts?.length ?? 0, "error:", contactsError);
       if (contactsError) return { data: null, error: contactsError };
 
