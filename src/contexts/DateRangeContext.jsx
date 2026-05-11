@@ -14,20 +14,6 @@ const defaultRange = () => {
   };
 };
 
-const loadFromStorage = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      // Support new { from, to } format
-      if (parsed?.from && parsed?.to) {
-        return { from: parsed.from, to: parsed.to, isAllTime: false };
-      }
-    }
-  } catch {}
-  return null;
-};
-
 const saveToStorage = (from, to) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ from, to }));
@@ -35,9 +21,7 @@ const saveToStorage = (from, to) => {
 };
 
 export const DateRangeProvider = ({ children }) => {
-  const [dateRange, setDateRangeState] = useState(
-    () => loadFromStorage() || defaultRange()
-  );
+  const [dateRange, setDateRangeState] = useState(defaultRange);
 
   // Accepts { from, to } — called by DateRangePicker's onChange
   const setRange = ({ from, to } = {}) => {

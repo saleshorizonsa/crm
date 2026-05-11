@@ -193,14 +193,6 @@ const findMatchingPreset = (periodType, date) => {
 
 const STORAGE_KEY = "jasco_date_picker_v2";
 
-const loadSaved = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return null;
-};
-
 const saveState = (state) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -246,34 +238,18 @@ const DateRangePicker = ({
   triggerClassName = "",
   placeholder,
 }) => {
-  const saved = loadSaved();
-
-  // Resolve initial activePreset — null means "free navigation" (no preset highlighted)
-  const initPreset = saved && "activePreset" in saved ? saved.activePreset : "thisMonth";
-
-  // Resolve initial activePeriodType
-  const initPeriodType = saved?.activePeriodType
-    ?? (initPreset ? getPeriodType(initPreset) : "month");
-
-  // Resolve initial navigatedDate
-  const initNavigatedDate = (() => {
-    if (CURRENT_PRESETS.has(initPreset)) return new Date();
-    if (LAST_PRESETS.has(initPreset))    return getRepresentativeDate(initPreset);
-    // null (free nav) or unknown: restore saved date
-    if (saved?.navigatedDate) {
-      const d = new Date(saved.navigatedDate);
-      if (!isNaN(d.getTime())) return d;
-    }
-    return new Date();
-  })();
+  // Always default to "This Month" — never restore from localStorage
+  const initPreset = "thisMonth";
+  const initPeriodType = getPeriodType(initPreset); // "month"
+  const initNavigatedDate = new Date();
 
   const [open, setOpen]                   = useState(false);
   const [activePreset, setActivePreset]   = useState(initPreset);      // string | null
   const [activePeriodType, setActivePeriodType] = useState(initPeriodType);
   const [navigatedDate, setNavigatedDate] = useState(initNavigatedDate);
-  const [showCustom, setShowCustom]       = useState(initPreset === "custom");
-  const [customFrom, setCustomFrom]       = useState(saved?.customFrom || "");
-  const [customTo, setCustomTo]           = useState(saved?.customTo   || "");
+  const [showCustom, setShowCustom]       = useState(false);
+  const [customFrom, setCustomFrom]       = useState("");
+  const [customTo, setCustomTo]           = useState("");
   const [customError, setCustomError]     = useState("");
 
   const wrapperRef = useRef(null);

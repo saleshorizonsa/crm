@@ -3,10 +3,25 @@ import Header from "../../components/ui/Header";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
 import RoleBasedDashboard from "./components/RoleBasedDashboard";
 import { useAuth } from "../../contexts/AuthContext";
+import DateRangePicker from "../../components/ui/DateRangePicker";
+import { useDateRange } from "../../contexts/DateRangeContext";
+import { format, parseISO } from "date-fns";
 
 const CompanyDashboard = () => {
   const { company, user, userProfile } = useAuth();
+  const { dateRange, setRange } = useDateRange();
   const [selectedCompany, setSelectedCompany] = useState(company);
+
+  const periodLabel = (() => {
+    if (dateRange.isAllTime || (!dateRange.from && !dateRange.to)) return "All time";
+    try {
+      const from = format(parseISO(dateRange.from), "d MMM yyyy");
+      const to   = format(parseISO(dateRange.to),   "d MMM yyyy");
+      return dateRange.from === dateRange.to ? from : `${from} – ${to}`;
+    } catch {
+      return "";
+    }
+  })();
 
   const handleCompanyChange = (newCompany) => {
     setSelectedCompany(newCompany);
@@ -86,6 +101,15 @@ const CompanyDashboard = () => {
               <NavigationBreadcrumbs
                 items={[{ label: "Dashboard", href: "/company-dashboard" }]}
               />
+
+              {/* Period selector bar */}
+              <div className="flex items-center justify-between mt-4 mb-6 px-1">
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <span className="font-medium text-gray-700">Viewing:</span>
+                  <span>{periodLabel}</span>
+                </div>
+                <DateRangePicker onChange={setRange} />
+              </div>
 
               {/* Role-based Dashboard */}
               <RoleBasedDashboard
