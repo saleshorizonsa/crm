@@ -131,40 +131,47 @@ const SalesChart = ({
     if (!effectivePipelineData || effectivePipelineData.length === 0) return null;
 
     const get = (s) => effectivePipelineData.find((p) => p.stage === s)?.count || 0;
-    const totalLeads = get("lead");
-    const totalContacted = get("contact_made");
-    const totalProposals = get("proposal_sent");
+    const totalLeads        = get("lead");
+    const totalContacted    = get("contact_made");
+    const totalProposals    = get("proposal_sent");
     const totalNegotiations = get("negotiation");
-    const totalWon = get("won");
-    const totalLost = get("lost");
+    const totalWon          = get("won");
+    const totalLost         = get("lost");
 
-    const totalDeals =
-      totalLeads + totalContacted + totalProposals + totalNegotiations + totalWon + totalLost;
-
-    // "Reached" = currently in this stage OR any later active stage
-    const reachedContact = totalContacted + totalProposals + totalNegotiations + totalWon;
-    const reachedProposal = totalProposals + totalNegotiations + totalWon;
-    const reachedNegotiation = totalNegotiations + totalWon;
-
-    const totalPastLead = totalLeads + reachedContact;
-    const totalPastContact = totalContacted + reachedProposal;
-    const totalPastProposal = totalProposals + reachedNegotiation;
-    const totalPastNegotiation = totalNegotiations + totalWon;
-
-    // Win/Loss rates calculated from closed deals only
+    const totalDeals  = totalLeads + totalContacted + totalProposals + totalNegotiations + totalWon + totalLost;
     const closedDeals = totalWon + totalLost;
+
+    // Intermediate stage conversions are computed from ACTIVE deals only
+    // (deals not yet won or lost). Including won deals in both the numerator
+    // and denominator caused every intermediate rate to show 100% whenever
+    // there were no deals stuck in the middle stages — e.g. selecting
+    // "All Months" when all deals have already closed as won.
+    //
+    // negotiationToWin uses (negotiation + won) so it reflects the real
+    // close rate from the final funnel stage without double-counting lost.
+    const activeTotal           = totalLeads + totalContacted + totalProposals + totalNegotiations;
+    const activeReachedContact  = totalContacted + totalProposals + totalNegotiations;
+    const activeReachedProposal = totalProposals + totalNegotiations;
 
     return {
       leadToContact:
-        totalPastLead > 0 ? (reachedContact / totalPastLead) * 100 : 0,
+        activeTotal > 0
+          ? (activeReachedContact / activeTotal) * 100
+          : 0,
       contactToProposal:
-        totalPastContact > 0 ? (reachedProposal / totalPastContact) * 100 : 0,
+        activeReachedContact > 0
+          ? (activeReachedProposal / activeReachedContact) * 100
+          : 0,
       proposalToNegotiation:
-        totalPastProposal > 0 ? (reachedNegotiation / totalPastProposal) * 100 : 0,
+        activeReachedProposal > 0
+          ? (totalNegotiations / activeReachedProposal) * 100
+          : 0,
       negotiationToWin:
-        totalPastNegotiation > 0 ? (totalWon / totalPastNegotiation) * 100 : 0,
+        (totalNegotiations + totalWon) > 0
+          ? (totalWon / (totalNegotiations + totalWon)) * 100
+          : 0,
       // Win Rate = won / (won + lost)
-      overallWinRate: closedDeals > 0 ? (totalWon / closedDeals) * 100 : 0,
+      overallWinRate:  closedDeals > 0 ? (totalWon  / closedDeals) * 100 : 0,
       // Loss Rate = lost / (won + lost)
       overallLossRate: closedDeals > 0 ? (totalLost / closedDeals) * 100 : 0,
       // Close Rate = (won + lost) / all deals

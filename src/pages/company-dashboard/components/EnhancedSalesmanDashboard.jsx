@@ -1430,7 +1430,6 @@ const EnhancedSalesmanDashboard = () => {
             <SalesChart
               data={salesData}
               pipelineData={pipelineData}
-              allDeals={allDeals}
               title="My Sales Performance"
               showTypeSelector={true}
             />
