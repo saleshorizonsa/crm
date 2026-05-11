@@ -43,6 +43,8 @@ const EnhancedSalesmanDashboard = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [cardsLoading, setCardsLoading] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [activeView, setActiveView] = useState("overview");
 
   // Separate filter states for month, quarter, and year
@@ -161,10 +163,18 @@ const EnhancedSalesmanDashboard = () => {
     return (
       allDeals?.filter((deal) => {
         const dateToCheck = deal.stage === "won" ? deal.closed_at : deal.created_at;
-        return isInSelectedPeriod(dateToCheck);
+        if (!isInSelectedPeriod(dateToCheck)) return false;
+        // Also apply global date range from context when set
+        if (dateRange?.from || dateRange?.to) {
+          const date = dateToCheck?.split?.("T")?.[0];
+          if (!date) return false;
+          if (dateRange.from && date < dateRange.from) return false;
+          if (dateRange.to && date > dateRange.to) return false;
+        }
+        return true;
       }) || []
     );
-  }, [allDeals, selectedMonth, selectedQuarter, selectedYear]);
+  }, [allDeals, selectedMonth, selectedQuarter, selectedYear, dateRange?.from, dateRange?.to]);
 
   const filteredTasks = useMemo(() => {
     return (
@@ -665,7 +675,7 @@ const EnhancedSalesmanDashboard = () => {
     if (company?.id && userProfile?.id) {
       loadSalesmanData();
     }
-  }, [company, userProfile]);
+  }, [company?.id, userProfile?.id, dateRange?.from, dateRange?.to, refreshKey]);
 
   // Recalculate executive metrics when filtered data changes
   useEffect(() => {
@@ -720,10 +730,11 @@ const EnhancedSalesmanDashboard = () => {
   ]);
 
   const loadSalesmanData = async () => {
-    // Only show loading spinner on initial load, not on refocus/refresh
+    // Only show full-page spinner on initial load, not on subsequent refreshes
     if (isInitialLoad) {
       setIsLoading(true);
     }
+    setCardsLoading(true);
     try {
       const results = await Promise.allSettled([
         companyService.getCompanyMetrics(company.id, user.id, false),
@@ -755,6 +766,7 @@ const EnhancedSalesmanDashboard = () => {
     } finally {
       setIsLoading(false);
       setIsInitialLoad(false);
+      setCardsLoading(false);
     }
   };
 
@@ -1024,6 +1036,14 @@ const EnhancedSalesmanDashboard = () => {
               Welcome back, {userProfile?.full_name || user?.email}
             </p>
           </div>
+          <button
+            onClick={() => setRefreshKey((k) => k + 1)}
+            disabled={cardsLoading}
+            className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1 disabled:opacity-40 transition-opacity"
+          >
+            <span className={cardsLoading ? "animate-spin inline-block" : ""}>↻</span>
+            {cardsLoading ? "Updating..." : "Refresh"}
+          </button>
         </div>
 
         {/* Time Filter Dropdowns */}
@@ -1152,7 +1172,7 @@ const EnhancedSalesmanDashboard = () => {
       {activeView === "overview" && (
         <div className="space-y-8">
           {/* Revenue & Target Card */}
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className={`bg-white rounded-lg shadow p-6 transition-opacity duration-200 ${cardsLoading ? "opacity-50" : "opacity-100"}`}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
                 Revenue Overview
@@ -1247,7 +1267,7 @@ const EnhancedSalesmanDashboard = () => {
 
           {/* Quick Stats Row */}
           {executiveMetrics && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 transition-opacity duration-200 ${cardsLoading ? "opacity-50" : "opacity-100"}`}>
               <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
                 <div className="p-3 bg-blue-100 rounded-lg">
                   <Icon name="TrendingUp" size={24} className="text-blue-600" />
