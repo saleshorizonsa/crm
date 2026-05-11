@@ -235,6 +235,9 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
                   className="rounded border-gray-300"
                 />
               </th>
+              <th className="px-4 py-3 min-w-[140px]">
+                Company
+              </th>
               <th
                 className="px-4 py-3 cursor-pointer"
                 onClick={() => handleSort("title")}
@@ -290,6 +293,11 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
                     className="rounded border-gray-300"
                   />
                 </td>
+                <td className="px-4 py-3">
+                  <span className="text-sm font-medium text-gray-900 truncate max-w-[160px] block">
+                    {deal.contact?.company_name || "—"}
+                  </span>
+                </td>
                 <td className="px-4 py-3 font-medium text-gray-900">
                   {deal.title}
                 </td>
@@ -312,18 +320,9 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
                   {formatDate(deal.expected_close_date)}
                 </td>
                 <td className="px-4 py-3">
-                  {deal.contact ? (
-                    <div>
-                      <div className="font-medium">
-                        {deal.contact.first_name} {deal.contact.last_name}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {deal.contact.email}
-                      </div>
-                    </div>
-                  ) : (
-                    "—"
-                  )}
+                  <span className="text-sm text-gray-600">
+                    {deal.contact?.first_name || "—"}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   {deal.owner ? (
