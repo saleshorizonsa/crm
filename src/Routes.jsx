@@ -7,6 +7,7 @@ import {
 } from "react-router-dom";
 import ScrollToTop from "./components/ScrollToTop";
 import ErrorBoundary from "./components/ErrorBoundary";
+import AIAssistant from "./components/AIAssistant";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { HomeRedirect } from "./components/HomeRedirect";
 import { AuthProvider } from "./contexts/AuthContext";
@@ -163,6 +164,7 @@ const Routes = () => {
                 />
                 <Route path="*" element={<NotFound />} />
               </RouterRoutes>
+              <AIAssistant />
               </DateRangeProvider>
             </CurrencyProvider>
           </AuthProvider>
