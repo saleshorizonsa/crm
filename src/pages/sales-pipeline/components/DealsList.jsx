@@ -1,9 +1,81 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
-import Select from "../../../components/ui/Select";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { Edit2Icon } from "lucide-react";
+
+const STAGE_WEIGHTS = {
+  lead:          0.10,
+  contact_made:  0.25,
+  proposal_sent: 0.50,
+  negotiation:   0.75,
+  won:           1.00,
+  lost:          0.00,
+};
+
+function SelectionSummaryBar({ totals, onClear, formatCurrency }) {
+  return (
+    <div className="flex items-center bg-blue-50 border border-blue-100 rounded-xl overflow-x-auto">
+      {/* Selected count */}
+      <div className="flex flex-col items-center justify-center px-5 py-3 bg-blue-600 text-white min-w-[90px] flex-shrink-0">
+        <span className="text-xl font-semibold leading-tight">{totals.count}</span>
+        <span className="text-xs opacity-80 mt-0.5">Selected</span>
+      </div>
+
+      <div className="w-px h-12 bg-blue-100 flex-shrink-0" />
+
+      <div className="flex flex-col items-center justify-center px-5 py-3 flex-1 min-w-[110px]">
+        <span className="text-sm font-semibold text-gray-900">{formatCurrency(totals.totalValue)}</span>
+        <span className="text-xs text-gray-500 mt-0.5">Total value</span>
+      </div>
+
+      <div className="w-px h-12 bg-blue-100 flex-shrink-0" />
+
+      <div className="flex flex-col items-center justify-center px-5 py-3 flex-1 min-w-[110px]">
+        <span className="text-sm font-semibold text-blue-600">{formatCurrency(totals.weightedValue)}</span>
+        <span className="text-xs text-gray-500 mt-0.5">Weighted</span>
+      </div>
+
+      <div className="w-px h-12 bg-blue-100 flex-shrink-0" />
+
+      <div className="flex flex-col items-center justify-center px-5 py-3 flex-1 min-w-[110px]">
+        <span className="text-sm font-semibold text-green-600">{formatCurrency(totals.wonValue)}</span>
+        <span className="text-xs text-gray-500 mt-0.5">Won</span>
+      </div>
+
+      <div className="w-px h-12 bg-blue-100 flex-shrink-0" />
+
+      <div className="flex flex-col items-center justify-center px-5 py-3 flex-1 min-w-[110px]">
+        <span className="text-sm font-semibold text-gray-900">{formatCurrency(totals.avgDealSize)}</span>
+        <span className="text-xs text-gray-500 mt-0.5">Avg deal</span>
+      </div>
+
+      <div className="w-px h-12 bg-blue-100 flex-shrink-0" />
+
+      <div className="flex flex-col justify-center px-5 py-3 flex-1 min-w-[160px]">
+        <span className="text-xs text-gray-500 mb-1">By stage</span>
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(totals.byStage).map(([stage, count]) => (
+            <span
+              key={stage}
+              className="text-xs px-1.5 py-0.5 bg-white border border-blue-100 rounded-md text-gray-600 whitespace-nowrap"
+            >
+              {stage.replace(/_/g, " ")} {count}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <button
+        onClick={onClear}
+        className="flex items-center justify-center px-4 self-stretch text-blue-400 hover:text-blue-600 hover:bg-blue-100 transition-colors border-l border-blue-100 flex-shrink-0"
+        title="Clear selection"
+      >
+        <span className="text-lg leading-none">✕</span>
+      </button>
+    </div>
+  );
+}
 
 const DealsList = ({ deals, onStageChange, onEditDeal }) => {
   const [sortConfig, setSortConfig] = useState({
@@ -50,15 +122,6 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
     return colorMap[stage] || "bg-gray-100 text-gray-800";
   };
 
-  const stageOptions = [
-    { value: "lead", label: "Lead" },
-    { value: "contact_made", label: "Qualified" },
-    { value: "proposal_sent", label: "Proposal" },
-    { value: "negotiation", label: "Negotiation" },
-    { value: "closed-won", label: "Won" },
-    { value: "closed-lost", label: "Lost" },
-  ];
-
   const handleSort = (key) => {
     setSortConfig({
       key,
@@ -95,6 +158,44 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
     );
   };
 
+  const clearSelection = () => setSelectedRows([]);
+
+  const selectionTotals = useMemo(() => {
+    if (selectedRows.length === 0) return null;
+
+    const selectedIds = new Set(selectedRows);
+    const selected = deals.filter((d) => selectedIds.has(d.id));
+    if (selected.length === 0) return null;
+
+    const totalValue = selected.reduce(
+      (s, d) => s + parseFloat(d.amount || 0),
+      0
+    );
+    const weightedValue = selected.reduce(
+      (s, d) =>
+        s + parseFloat(d.amount || 0) * (STAGE_WEIGHTS[d.stage] ?? 0),
+      0
+    );
+    const wonValue = selected
+      .filter((d) => d.stage === "won")
+      .reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+    const avgDealSize = totalValue / selected.length;
+
+    const byStage = {};
+    selected.forEach((d) => {
+      byStage[d.stage] = (byStage[d.stage] || 0) + 1;
+    });
+
+    return {
+      count: selected.length,
+      totalValue,
+      weightedValue: Math.round(weightedValue),
+      wonValue,
+      avgDealSize: Math.round(avgDealSize),
+      byStage,
+    };
+  }, [selectedRows, deals]);
+
   const SortIcon = ({ column }) => (
     <Icon
       name={
@@ -111,6 +212,17 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
 
   return (
     <div className="bg-white rounded-lg shadow">
+      {/* Selection summary bar — sticky at top, above table header */}
+      {selectionTotals && (
+        <div className="sticky top-0 z-20 bg-white px-4 pt-3 pb-2">
+          <SelectionSummaryBar
+            totals={selectionTotals}
+            onClear={clearSelection}
+            formatCurrency={formatCurrency}
+          />
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm text-left">
           <thead className="text-xs text-gray-700 uppercase bg-gray-50">
@@ -118,7 +230,7 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
               <th className="px-4 py-3">
                 <input
                   type="checkbox"
-                  checked={selectedRows.length === deals.length}
+                  checked={deals.length > 0 && selectedRows.length === deals.length}
                   onChange={handleSelectAll}
                   className="rounded border-gray-300"
                 />
