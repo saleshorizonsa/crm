@@ -1811,7 +1811,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             return (
                               <div
                                 key={member.id}
-                                className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200"
+                                className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 cursor-pointer hover:bg-blue-50 hover:border-blue-200 transition-colors"
+                                onClick={() => setSelectedEmployee(member)}
+                                title={`View ${member.full_name || member.email}'s dashboard`}
                               >
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-sm font-medium">
@@ -2182,8 +2184,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-semibold text-gray-900">My Team</h2>
                 <div className="text-sm text-gray-600">
-                  {subordinates.length}{" "}
-                  {subordinates.length === 1 ? "supervisor" : "supervisors"}
+                  {allSubordinates.length}{" "}
+                  {allSubordinates.length === 1 ? "member" : "members"}
                 </div>
               </div>
 
@@ -2210,7 +2212,16 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {teamData.map((member) => (
-                      <tr key={member.id} className="hover:bg-gray-50">
+                      <tr
+                        key={member.id}
+                        className={`hover:bg-blue-50 transition-colors ${member.id !== user?.id ? "cursor-pointer" : ""}`}
+                        onClick={() => {
+                          if (member.id === user?.id) return;
+                          const sub = allSubordinates.find((s) => s.id === member.id) || member;
+                          setSelectedEmployee(sub);
+                        }}
+                        title={member.id !== user?.id ? `View ${member.name || member.full_name}'s dashboard` : ""}
+                      >
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <div className="flex-shrink-0 h-10 w-10">
@@ -2230,11 +2241,16 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                               )}
                             </div>
                             <div className="ml-4">
-                              <div className="text-sm font-medium text-gray-900">
+                              <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
                                 {member.name}
                                 {member.id === user.id && (
-                                  <span className="ml-2 text-xs text-gray-500">
+                                  <span className="text-xs text-gray-500">
                                     (You)
+                                  </span>
+                                )}
+                                {member.id !== user.id && (
+                                  <span className="text-xs text-blue-500 opacity-0 group-hover:opacity-100">
+                                    View →
                                   </span>
                                 )}
                               </div>
@@ -2515,7 +2531,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                                 return (
                                   <div
                                     key={member.id}
-                                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors cursor-pointer"
+                                    onClick={() => setSelectedEmployee(member)}
+                                    title={`View ${member.full_name || member.email}'s dashboard`}
                                   >
                                     <div className="flex-1">
                                       <div className="font-medium text-sm text-gray-900">

@@ -749,7 +749,7 @@ const EnhancedSalesmanDashboard = ({
         companyService.getCompanyMetrics(company.id, effectiveUser.id, false),
         companyService.getSalesData(company.id, "monthly", effectiveUser.id, false),
         activityService.getUserActivities(company.id, effectiveUser.id, 20),
-        dealService.getDeals(company.id, { viewAll: false }, effectiveUser.id),
+        dealService.getDeals(company.id, { viewAll: true }, effectiveUser.id),
       ]);
 
       const [metricsResult, salesResult, activitiesResult, dealsResult] =
@@ -814,13 +814,16 @@ const EnhancedSalesmanDashboard = ({
           : selectedQuarter && !selectedMonth
             ? 90
             : 30;
-      const { data: deals } = await dealService.getDeals(
+      const { data: allFetchedDeals } = await dealService.getDeals(
         company.id,
-        { viewAll: false },
+        { viewAll: true },
         effectiveUser.id,
       );
+      const deals = (allFetchedDeals || []).filter(
+        (d) => d.owner_id === effectiveUser.id,
+      );
 
-      if (deals) {
+      if (deals.length >= 0) {
         const wonDeals = deals.filter((d) => d.stage === "won");
         const totalRevenue = wonDeals.reduce(
           (sum, d) => sum + convertDealAmount(d),
@@ -848,10 +851,13 @@ const EnhancedSalesmanDashboard = ({
 
   const loadPipelineData = async () => {
     try {
-      const { data: deals } = await dealService.getDeals(
+      const { data: allFetchedDeals } = await dealService.getDeals(
         company.id,
-        { viewAll: false },
+        { viewAll: true },
         effectiveUser.id,
+      );
+      const deals = (allFetchedDeals || []).filter(
+        (d) => d.owner_id === effectiveUser.id,
       );
 
       if (deals) {
@@ -884,10 +890,13 @@ const EnhancedSalesmanDashboard = ({
 
   const loadActionItems = async () => {
     try {
-      const { data: deals } = await dealService.getDeals(
+      const { data: allFetchedDeals } = await dealService.getDeals(
         company.id,
-        { viewAll: false },
+        { viewAll: true },
         effectiveUser.id,
+      );
+      const deals = (allFetchedDeals || []).filter(
+        (d) => d.owner_id === effectiveUser.id,
       );
       const { data: tasks } = await taskService.getMyTasks(
         effectiveUser.id,
