@@ -1229,6 +1229,87 @@ export const dealService = {
       return { data: [], error };
     }
   },
+
+  async getAtRiskDeals(companyId) {
+    try {
+      const { data: deals, error } = await supabase
+        .from("deals")
+        .select(`
+          id, title, amount, currency, stage, expected_close_date, updated_at, created_at,
+          owner:users!owner_id(id, full_name, email, avatar_url),
+          contact:contacts!contact_id(id, first_name, last_name, company_name)
+        `)
+        .eq("company_id", companyId)
+        .not("stage", "in", '("won","lost")')
+        .order("amount", { ascending: false });
+
+      if (error) throw error;
+      if (!deals?.length) return { data: [], error: null };
+
+      const dealIds = deals.map((d) => d.id);
+      const { data: activities } = await supabase
+        .from("activities")
+        .select("deal_id, created_at")
+        .in("deal_id", dealIds)
+        .order("created_at", { ascending: false });
+
+      const lastActivityMap = {};
+      (activities || []).forEach((a) => {
+        if (!lastActivityMap[a.deal_id]) lastActivityMap[a.deal_id] = a.created_at;
+      });
+
+      const now = new Date();
+      const MS_PER_DAY = 86400000;
+
+      const result = deals
+        .map((deal) => {
+          const daysSinceActivity = lastActivityMap[deal.id]
+            ? Math.floor((now - new Date(lastActivityMap[deal.id])) / MS_PER_DAY)
+            : null;
+          const daysSinceUpdate = Math.floor((now - new Date(deal.updated_at)) / MS_PER_DAY);
+          const daysOverdue = deal.expected_close_date
+            ? Math.floor((now - new Date(deal.expected_close_date)) / MS_PER_DAY)
+            : null;
+
+          const flags = [];
+          if (daysOverdue > 0) flags.push({ type: "overdue", days: daysOverdue });
+          if (daysSinceActivity === null || daysSinceActivity >= 14)
+            flags.push({ type: "no_activity", days: daysSinceActivity });
+          else if (daysSinceActivity >= 7)
+            flags.push({ type: "no_activity_soon", days: daysSinceActivity });
+          if (daysSinceUpdate >= 21) flags.push({ type: "stalled", days: daysSinceUpdate });
+          else if (daysSinceUpdate >= 14) flags.push({ type: "stalling", days: daysSinceUpdate });
+
+          if (flags.length === 0) return null;
+
+          const isCritical =
+            flags.some((f) => f.type === "overdue") &&
+            flags.some((f) => f.type === "no_activity" || f.type === "stalled");
+          const isWarning =
+            !isCritical &&
+            flags.some((f) => ["overdue", "no_activity", "stalled"].includes(f.type));
+
+          return {
+            ...deal,
+            risk_flags: flags,
+            risk_level: isCritical ? "critical" : isWarning ? "warning" : "watch",
+            last_activity_at: lastActivityMap[deal.id] || null,
+            days_since_activity: daysSinceActivity,
+            days_overdue: daysOverdue,
+          };
+        })
+        .filter(Boolean);
+
+      const order = { critical: 0, warning: 1, watch: 2 };
+      result.sort(
+        (a, b) => order[a.risk_level] - order[b.risk_level] || b.amount - a.amount
+      );
+
+      return { data: result, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
 };
 
 // ========================================

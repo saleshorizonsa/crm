@@ -35,6 +35,7 @@ import PerformanceBarChart from "./PerformanceBarChart";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
 import ForecastAISummary from "./forecast/ForecastAISummary";
+import AtRiskDealsPanel from "./AtRiskDealsPanel";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 
 // Employee-specific dashboards - use Enhanced versions for full features
@@ -1719,6 +1720,11 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         selectedYear={selectedYear}
         timePeriod={timePeriod}
       />
+
+      {/* At-Risk Deals */}
+      {selectedCompany?.id && (
+        <AtRiskDealsPanel companyId={selectedCompany.id} />
+      )}
 
       {/* Pipeline and Action Items */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

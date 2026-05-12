@@ -2493,6 +2493,27 @@ export const translations = {
       seeding: "Seeding…",
     },
 
+    // At-Risk Deals Panel
+    atRisk: {
+      title: "At-Risk Deals",
+      subtitle: "Deals needing your attention",
+      critical: "Critical",
+      warning: "Warning",
+      watch: "Watch",
+      allHealthy: "All deals are healthy",
+      allHealthyHint: "No deals require immediate attention.",
+      flagOverdue: "Overdue",
+      flagNoActivity: "No activity",
+      flagSlowActivity: "Slow activity",
+      flagStalled: "Stalled",
+      flagSlowing: "Slowing",
+      openDeal: "Open Deal",
+      scheduleCall: "Schedule Call",
+      lastActivity: "Last activity",
+      totalAtRisk: "{count} deals at risk",
+      atStake: "at stake",
+    },
+
     // Reports (granular)
     reportsPage: {
       title: "Reports",
@@ -5130,6 +5151,27 @@ export const translations = {
       deactivate: "تعطيل",
       activate: "تفعيل",
       seeding: "جار التحميل...",
+    },
+
+    // At-Risk Deals Panel
+    atRisk: {
+      title: "الصفقات المهددة",
+      subtitle: "الصفقات التي تحتاج انتباهك",
+      critical: "حرج",
+      warning: "تحذير",
+      watch: "مراقبة",
+      allHealthy: "جميع الصفقات بحالة جيدة",
+      allHealthyHint: "لا توجد صفقات تحتاج إلى اهتمام فوري.",
+      flagOverdue: "متأخرة",
+      flagNoActivity: "لا نشاط",
+      flagSlowActivity: "نشاط بطيء",
+      flagStalled: "متوقفة",
+      flagSlowing: "تتباطأ",
+      openDeal: "فتح الصفقة",
+      scheduleCall: "جدولة مكالمة",
+      lastActivity: "آخر نشاط",
+      totalAtRisk: "{count} صفقة في خطر",
+      atStake: "على المحك",
     },
 
     // Reports (granular)
