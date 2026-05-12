@@ -20,6 +20,7 @@ const MONTHS = ["January","February","March","April","May","June",
                 "July","August","September","October","November","December"];
 
 const CalendarGrid = ({ meetings, currentDate, onDateSelect, onMeetingClick, selectedDate }) => {
+  const now   = new Date();
   const year  = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
@@ -110,18 +111,21 @@ const CalendarGrid = ({ meetings, currentDate, onDateSelect, onMeetingClick, sel
 
             {/* Meeting pills */}
             <div className="space-y-0.5">
-              {cell.meetings.slice(0, 3).map((m) => (
-                <div
-                  key={m.id}
-                  onClick={(e) => { e.stopPropagation(); onMeetingClick && onMeetingClick(m); }}
-                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-white truncate cursor-pointer hover:opacity-80 transition-opacity ${
-                    TYPE_COLORS[m.type] || TYPE_COLORS.other
-                  } ${STATUS_OPACITY[m.status] || ""}`}
-                  title={m.title}
-                >
-                  <span className="truncate">{m.title}</span>
-                </div>
-              ))}
+              {cell.meetings.slice(0, 3).map((m) => {
+                const isPastScheduled = m.status === "scheduled" && new Date(m.start_time) < now;
+                return (
+                  <div
+                    key={m.id}
+                    onClick={(e) => { e.stopPropagation(); onMeetingClick && onMeetingClick(m); }}
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-white truncate cursor-pointer hover:opacity-80 transition-opacity ${
+                      TYPE_COLORS[m.type] || TYPE_COLORS.other
+                    } ${STATUS_OPACITY[m.status] || ""} ${isPastScheduled ? "opacity-50 italic" : ""}`}
+                    title={m.title}
+                  >
+                    <span className="truncate">{m.title}</span>
+                  </div>
+                );
+              })}
               {cell.meetings.length > 3 && (
                 <div className="text-[10px] text-muted-foreground pl-1">
                   +{cell.meetings.length - 3} more

@@ -149,8 +149,18 @@ const TaskDetailModal = ({
       newErrors.title = t("tasks.taskTitleRequired");
     }
 
-    if (formData.title?.length > 200) {
+    } else if (formData.title?.length > 200) {
       newErrors.title = t("tasks.titleTooLong");
+    }
+
+    // Block past due dates only when creating a new task, not when editing
+    if (formData.due_date && !task) {
+      const due = new Date(formData.due_date);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (due < today) {
+        newErrors.due_date = t("tasks.dueDatePast");
+      }
     }
 
     setErrors(newErrors);

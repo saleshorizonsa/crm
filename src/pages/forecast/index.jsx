@@ -152,7 +152,15 @@ const ForecastPage = () => {
         )}
 
         {/* Main content */}
-        {!isLoading && !fetchError && (dateRange.from || dateRange.isAllTime) && (
+        {!isLoading && !fetchError && (dateRange.from || dateRange.isAllTime) && rawData.deals.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Icon name="TrendingUp" size={48} className="text-muted-foreground mb-3" />
+            <p className="text-lg font-medium text-card-foreground mb-1">{t("forecastPage.noDeals")}</p>
+            <p className="text-sm text-muted-foreground">{t("forecastPage.tryDifferentPeriod")}</p>
+          </div>
+        )}
+
+        {!isLoading && !fetchError && (dateRange.from || dateRange.isAllTime) && rawData.deals.length > 0 && (
           <div className="space-y-6">
             {/* KPI Bar */}
             <ForecastKPIBar forecast={forecast} targetAmount={targetAmount} />

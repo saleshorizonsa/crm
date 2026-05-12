@@ -19,6 +19,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteReferences, setDeleteReferences] = useState(null);
+  const [validationErrors, setValidationErrors] = useState({});
 
   useEffect(() => {
     if (contact) {
@@ -40,14 +41,15 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    const dataToSave = {
-      ...formData,
-    };
+    const errs = {};
+    if (!formData.first_name?.trim()) errs.first_name = t("contacts.firstNameRequired");
+    if (!formData.last_name?.trim())  errs.last_name  = t("contacts.lastNameRequired");
+    if (!formData.email?.trim())      errs.email      = t("contacts.emailRequired");
+    if (Object.keys(errs).length > 0) { setValidationErrors(errs); return; }
+    setValidationErrors({});
 
-    if (contact?.id) {
-      dataToSave.id = contact.id;
-    }
-
+    const dataToSave = { ...formData };
+    if (contact?.id) dataToSave.id = contact.id;
     onSave(dataToSave);
   };
 
@@ -143,9 +145,12 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
                     name="first_name"
                     value={formData.first_name}
                     onChange={handleChange}
-                    required
                     placeholder="John"
+                    className={validationErrors.first_name ? "border-destructive" : ""}
                   />
+                  {validationErrors.first_name && (
+                    <p className="text-xs text-destructive mt-1">{validationErrors.first_name}</p>
+                  )}
                 </div>
 
                 <div>
@@ -156,9 +161,12 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
                     name="last_name"
                     value={formData.last_name}
                     onChange={handleChange}
-                    required
                     placeholder="Doe"
+                    className={validationErrors.last_name ? "border-destructive" : ""}
                   />
+                  {validationErrors.last_name && (
+                    <p className="text-xs text-destructive mt-1">{validationErrors.last_name}</p>
+                  )}
                 </div>
 
                 <div>
@@ -170,9 +178,12 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
-                    required
                     placeholder="john.doe@example.com"
+                    className={validationErrors.email ? "border-destructive" : ""}
                   />
+                  {validationErrors.email && (
+                    <p className="text-xs text-destructive mt-1">{validationErrors.email}</p>
+                  )}
                 </div>
 
                 <div>

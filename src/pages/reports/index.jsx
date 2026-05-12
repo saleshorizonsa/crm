@@ -217,6 +217,12 @@ const ReportsPage = () => {
             <p className="text-sm font-medium text-red-600">{error}</p>
             <button onClick={fetchDeals} className="mt-3 text-xs text-blue-500 hover:underline">{t("reportsPage.tryAgain")}</button>
           </div>
+        ) : deals.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <span className="text-5xl mb-3">📊</span>
+            <h3 className="text-base font-medium text-gray-700 mb-1">{t("reportsPage.noDeals")}</h3>
+            <p className="text-sm text-gray-400">{t("reportsPage.tryDifferentPeriod")}</p>
+          </div>
         ) : (
           <>
             {activeTab === "value"    && <ByValue    deals={deals} formatCurrency={formatCurrency} />}

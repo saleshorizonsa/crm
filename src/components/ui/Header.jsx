@@ -39,15 +39,16 @@ const Header = ({
     }
   }, [propSelectedCompany]);
 
-  // Load unread notification count
+  // Load unread notification count and refresh immediately when notifications are read
   useEffect(() => {
     if (user?.id) {
       loadUnreadCount();
-      
-      // Refresh count every 30 seconds
       const interval = setInterval(loadUnreadCount, 30000);
-      
-      return () => clearInterval(interval);
+      window.addEventListener("notifications:read", loadUnreadCount);
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener("notifications:read", loadUnreadCount);
+      };
     }
   }, [user?.id]);
 

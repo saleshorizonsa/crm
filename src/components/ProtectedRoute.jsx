@@ -1,5 +1,6 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { capitalize } from "../utils/helper";
 
 const Spinner = () => (
   <div className="flex items-center justify-center h-screen">

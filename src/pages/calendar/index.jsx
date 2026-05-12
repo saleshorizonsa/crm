@@ -56,12 +56,26 @@ const CalendarPage = () => {
 
   const loadSupportData = useCallback(async () => {
     if (!company?.id) return;
-    const [usersRes, dealsRes, contactsRes, connRes] = await Promise.all([
-      supabase.from("users").select("id, full_name").eq("company_id", company.id).eq("is_active", true).order("full_name"),
+    // Fetch users first so we can scope contacts by owner_id.
+    // Contacts have no direct company_id column — they belong to a company
+    // through their owner (users.company_id).
+    const usersRes = await supabase
+      .from("users")
+      .select("id, full_name")
+      .eq("company_id", company.id)
+      .eq("is_active", true)
+      .order("full_name");
+
+    const ownerIds = (usersRes.data || []).map((u) => u.id);
+
+    const [dealsRes, contactsRes, connRes] = await Promise.all([
       supabase.from("deals").select("id, title").eq("company_id", company.id).neq("stage","lost").neq("stage","won").order("title"),
-      supabase.from("contacts").select("id, first_name, last_name").eq("company_id", company.id).order("first_name"),
+      ownerIds.length > 0
+        ? supabase.from("contacts").select("id, first_name, last_name").in("owner_id", ownerIds).order("first_name")
+        : Promise.resolve({ data: [] }),
       meetingService.getCalendarConnection(user.id),
     ]);
+
     setCompanyUsers(usersRes.data || []);
     setDeals(dealsRes.data || []);
     setContacts(contactsRes.data || []);

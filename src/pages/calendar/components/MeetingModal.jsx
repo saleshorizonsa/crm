@@ -2,22 +2,23 @@ import React, { useState, useEffect } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
+import { useLanguage } from "../../../i18n";
 
-const TYPES = [
-  { value: "meeting",  label: "Meeting",    icon: "Users"      },
-  { value: "call",     label: "Call",       icon: "Phone"      },
-  { value: "demo",     label: "Demo",       icon: "Monitor"    },
-  { value: "followup", label: "Follow-up",  icon: "RefreshCw"  },
-  { value: "other",    label: "Other",      icon: "Calendar"   },
+const TYPE_KEYS = [
+  { value: "meeting",  labelKey: "calendar.typeMeeting",  icon: "Users"      },
+  { value: "call",     labelKey: "calendar.typeCall",     icon: "Phone"      },
+  { value: "demo",     labelKey: "calendar.typeDemo",     icon: "Monitor"    },
+  { value: "followup", labelKey: "calendar.typeFollowup", icon: "RefreshCw"  },
+  { value: "other",    labelKey: "calendar.typeOther",    icon: "Calendar"   },
 ];
 
-const REMINDERS = [
-  { value: 0,   label: "No reminder"    },
-  { value: 5,   label: "5 min before"   },
-  { value: 15,  label: "15 min before"  },
-  { value: 30,  label: "30 min before"  },
-  { value: 60,  label: "1 hour before"  },
-  { value: 1440,label: "1 day before"   },
+const REMINDER_KEYS = [
+  { value: 0,    labelKey: "calendar.reminderNone"    },
+  { value: 5,    labelKey: "calendar.reminder5min"    },
+  { value: 15,   labelKey: "calendar.reminder15min"   },
+  { value: 30,   labelKey: "calendar.reminder30min"   },
+  { value: 60,   labelKey: "calendar.reminder1hour"   },
+  { value: 1440, labelKey: "calendar.reminder1day"    },
 ];
 
 const selClass =
@@ -65,6 +66,7 @@ const MeetingModal = ({
   prefillContactId = null,
   prefillDate     = null,
 }) => {
+  const { t } = useLanguage();
   const [form,       setForm]       = useState(EMPTY);
   const [attendeeIds,setAttendeeIds]= useState([]);
   const [isSaving,   setIsSaving]   = useState(false);
@@ -92,7 +94,6 @@ const MeetingModal = ({
       });
       setAttendeeIds((meeting.attendees || []).map((a) => a.user_id).filter(Boolean));
     } else {
-      // Default start: next full hour
       const now = new Date();
       now.setMinutes(0, 0, 0);
       now.setHours(now.getHours() + 1);
@@ -130,11 +131,11 @@ const MeetingModal = ({
   const handleSave = async (e) => {
     e.preventDefault();
     setError("");
-    if (!form.title.trim()) { setError("Title is required."); return; }
-    if (!form.start_time)   { setError("Start time is required."); return; }
-    if (!form.end_time)     { setError("End time is required."); return; }
+    if (!form.title.trim()) { setError(t("calendarPage.titleRequired")); return; }
+    if (!form.start_time)   { setError(t("calendarPage.startRequired")); return; }
+    if (!form.end_time)     { setError(t("calendarPage.endRequired")); return; }
     if (new Date(form.end_time) <= new Date(form.start_time)) {
-      setError("End time must be after start time.");
+      setError(t("calendarPage.endAfterStart"));
       return;
     }
     setIsSaving(true);
@@ -151,7 +152,7 @@ const MeetingModal = ({
         attendeeIds
       );
     } catch (err) {
-      setError(err.message || "Failed to save.");
+      setError(err.message || t("calendarPage.saveFailed"));
     } finally {
       setIsSaving(false);
     }
@@ -172,7 +173,7 @@ const MeetingModal = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <h2 className="text-lg font-semibold text-gray-900">
-            {meeting ? "Edit Meeting" : "Schedule Meeting"}
+            {meeting ? t("calendarPage.editMeeting") : t("calendarPage.scheduleMeeting")}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-md">
             <Icon name="X" size={18} />
@@ -185,32 +186,32 @@ const MeetingModal = ({
             {/* Title */}
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                Title <span className="text-red-500">*</span>
+                {t("common.title")} <span className="text-red-500">*</span>
               </label>
               <Input
                 value={form.title}
                 onChange={(e) => set("title", e.target.value)}
-                placeholder="e.g. Product demo with Acme Corp"
+                placeholder={t("calendarPage.titlePlaceholder")}
                 autoFocus
               />
             </div>
 
             {/* Type chips */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-2">Type</label>
+              <label className="block text-xs font-medium text-gray-700 mb-2">{t("calendarPage.type")}</label>
               <div className="flex flex-wrap gap-2">
-                {TYPES.map((t) => (
+                {TYPE_KEYS.map((tp) => (
                   <button
-                    key={t.value}
+                    key={tp.value}
                     type="button"
-                    onClick={() => set("type", t.value)}
+                    onClick={() => set("type", tp.value)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                      form.type === t.value
+                      form.type === tp.value
                         ? "bg-primary text-white border-primary"
                         : "bg-white text-gray-600 border-gray-200 hover:border-primary hover:text-primary"
                     }`}
                   >
-                    <Icon name={t.icon} size={11} />{t.label}
+                    <Icon name={tp.icon} size={11} />{t(tp.labelKey)}
                   </button>
                 ))}
               </div>
@@ -220,7 +221,7 @@ const MeetingModal = ({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Start <span className="text-red-500">*</span>
+                  {t("calendarPage.start")} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="datetime-local"
@@ -231,7 +232,7 @@ const MeetingModal = ({
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  End <span className="text-red-500">*</span>
+                  {t("calendarPage.end")} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="datetime-local"
@@ -245,15 +246,15 @@ const MeetingModal = ({
             {/* Location + URL */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Location</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t("calendarPage.location")}</label>
                 <Input
                   value={form.location}
                   onChange={(e) => set("location", e.target.value)}
-                  placeholder="Office / address"
+                  placeholder={t("calendarPage.locationPlaceholder")}
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Video link</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t("calendarPage.videoLink")}</label>
                 <Input
                   value={form.meeting_url}
                   onChange={(e) => set("meeting_url", e.target.value)}
@@ -266,18 +267,18 @@ const MeetingModal = ({
             <div className="grid grid-cols-2 gap-3">
               {deals.length > 0 && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Linked deal</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">{t("calendarPage.linkedDeal")}</label>
                   <select value={form.deal_id} onChange={(e) => set("deal_id", e.target.value)} className={selClass}>
-                    <option value="">— None —</option>
+                    <option value="">{t("common.none")}</option>
                     {deals.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
                   </select>
                 </div>
               )}
               {contacts.length > 0 && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Linked contact</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">{t("calendarPage.linkedContact")}</label>
                   <select value={form.contact_id} onChange={(e) => set("contact_id", e.target.value)} className={selClass}>
-                    <option value="">— None —</option>
+                    <option value="">{t("common.none")}</option>
                     {contacts.map((c) => (
                       <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>
                     ))}
@@ -289,7 +290,7 @@ const MeetingModal = ({
             {/* Attendees */}
             {users.length > 0 && (
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-2">Attendees</label>
+                <label className="block text-xs font-medium text-gray-700 mb-2">{t("calendarPage.attendees")}</label>
                 <div className="flex flex-wrap gap-2 p-3 border border-border rounded-md bg-background min-h-[42px]">
                   {users.map((u) => (
                     <button
@@ -317,14 +318,14 @@ const MeetingModal = ({
             {/* Reminder */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Reminder</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t("calendarPage.reminder")}</label>
                 <select
                   value={form.reminder_minutes}
                   onChange={(e) => set("reminder_minutes", parseInt(e.target.value))}
                   className={selClass}
                 >
-                  {REMINDERS.map((r) => (
-                    <option key={r.value} value={r.value}>{r.label}</option>
+                  {REMINDER_KEYS.map((r) => (
+                    <option key={r.value} value={r.value}>{t(r.labelKey)}</option>
                   ))}
                 </select>
               </div>
@@ -345,7 +346,7 @@ const MeetingModal = ({
                     </button>
                     <span className="text-xs font-medium text-gray-700 flex items-center gap-1">
                       <Icon name="Calendar" size={12} className="text-blue-500" />
-                      Sync to Google Calendar
+                      {t("calendarPage.syncGoogle")}
                     </span>
                   </label>
                 </div>
@@ -354,13 +355,13 @@ const MeetingModal = ({
 
             {/* Notes */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">{t("common.notes")}</label>
               <textarea
                 rows={3}
                 value={form.notes}
                 onChange={(e) => set("notes", e.target.value)}
                 className={`${selClass} resize-none`}
-                placeholder="Agenda, talking points…"
+                placeholder={t("calendarPage.notesPlaceholder")}
               />
             </div>
 
@@ -387,23 +388,23 @@ const MeetingModal = ({
                     {isDeleting
                       ? <Icon name="Loader2" size={13} className="animate-spin" />
                       : <Icon name="Trash2" size={13} />}
-                    {confirmDel ? "Confirm?" : "Delete"}
+                    {confirmDel ? t("common.confirm") : t("common.delete")}
                   </Button>
                   {confirmDel && (
                     <button type="button" onClick={() => setConfirmDel(false)}
                       className="text-xs text-gray-400 hover:text-gray-600 underline">
-                      Cancel
+                      {t("common.cancel")}
                     </button>
                   )}
                 </>
               )}
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" type="button" onClick={onClose} size="sm">Cancel</Button>
+              <Button variant="outline" type="button" onClick={onClose} size="sm">{t("common.cancel")}</Button>
               <Button type="submit" size="sm" disabled={isSaving} className="gap-1.5">
                 {isSaving
-                  ? <><Icon name="Loader2" size={13} className="animate-spin" />Saving…</>
-                  : <><Icon name="CalendarCheck" size={13} />{meeting ? "Save" : "Schedule"}</>}
+                  ? <><Icon name="Loader2" size={13} className="animate-spin" />{t("common.saving")}</>
+                  : <><Icon name="CalendarCheck" size={13} />{meeting ? t("common.save") : t("calendarPage.schedule")}</>}
               </Button>
             </div>
           </div>

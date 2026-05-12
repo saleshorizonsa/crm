@@ -67,7 +67,7 @@ const DealModal = ({
 }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
   const { user, userProfile, company } = useAuth();
-  const { t } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const [formData, setFormData] = useState({
     title: deal?.title || "",
     description: deal?.description || "",
@@ -1047,7 +1047,7 @@ const DealModal = ({
                     }
                     className="w-full"
                   >
-                    <Icon name="Plus" size={16} className="mr-2" />
+                    <Icon name="Plus" size={16} className={isRTL ? "ml-2" : "mr-2"} />
                     {isLoadingProducts ? t("deals.adding") : t("deals.addProduct")}
                   </Button>
                 </div>
@@ -1350,7 +1350,7 @@ const DealModal = ({
                 disabled={isSaving || isDeleting}
                 className="text-destructive hover:text-destructive hover:bg-destructive/10"
               >
-                <Icon name="Trash2" size={16} className="mr-2" />
+                <Icon name="Trash2" size={16} className={isRTL ? "ml-2" : "mr-2"} />
                 {t("common.delete")}
               </Button>
             )}
@@ -1361,7 +1361,7 @@ const DealModal = ({
               disabled={isSaving || isDeleting}
               className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
             >
-              <Icon name="CalendarPlus" size={16} className="mr-2" />
+              <Icon name="CalendarPlus" size={16} className={isRTL ? "ml-2" : "mr-2"} />
               {t("dashboard.scheduleMeeting")}
             </Button>
             {userProfile?.role === 'admin' && deal?.id && (

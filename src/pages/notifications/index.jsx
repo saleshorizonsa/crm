@@ -85,6 +85,7 @@ const Notifications = () => {
               : n
           )
         );
+        window.dispatchEvent(new Event("notifications:read"));
       }
     } catch (error) {
       console.error("Error marking notification as read:", error);
@@ -96,6 +97,7 @@ const Notifications = () => {
       const { error } = await notificationService.markAllAsRead(user?.id);
       if (!error) {
         await loadNotifications();
+        window.dispatchEvent(new Event("notifications:read"));
       }
     } catch (error) {
       console.error("Error marking all as read:", error);
