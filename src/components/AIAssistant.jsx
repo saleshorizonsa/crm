@@ -18,35 +18,12 @@ const SUGGESTED_PROMPTS = [
   "Why is my win rate changing?",
 ];
 
-async function callAnthropicAPI(userMessage, history, user, userProfile, company) {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("NO_API_KEY");
-
-  const systemPrompt = `You are an AI assistant built into Jasco CRM — a sales CRM used by Steel, PVC and Trading companies in Saudi Arabia and the GCC region.
-
-You help salesmen and managers with:
-- Analysing their pipeline and deals
-- Drafting professional follow-up messages to clients in English or Arabic
-- Suggesting next actions for stalled deals
-- Explaining CRM features and how to use them
-- Answering questions about their performance
-
-Current user: ${userProfile?.full_name || user?.email || "Unknown"}
-Role: ${userProfile?.role || "Unknown"}
-Company: ${company?.name || "Unknown"}
-Keep responses concise and actionable. Maximum 3-4 sentences unless drafting a message.`;
-
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+// Calls the same-origin Vercel proxy — no CORS, no API key in browser.
+async function callProxy(userMessage, history, systemPrompt) {
+  const response = await fetch("/api/ai-assistant", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-allow-browser": "true",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 500,
       system: systemPrompt,
       messages: [
         ...history.slice(-6),
@@ -55,7 +32,16 @@ Keep responses concise and actionable. Maximum 3-4 sentences unless drafting a m
     }),
   });
 
-  if (!response.ok) throw new Error("API_ERROR");
+  if (!response.ok) {
+    let body = {};
+    try { body = await response.json(); } catch {}
+    console.error("[AIAssistant] Proxy error:", response.status, body);
+    if (response.status === 500 && body?.error === "AI service not configured") {
+      throw new Error("NOT_CONFIGURED");
+    }
+    throw new Error(`HTTP_${response.status}`);
+  }
+
   const data = await response.json();
   return (
     data.content?.[0]?.text ||
@@ -105,10 +91,7 @@ const AIAssistant = () => {
   useEffect(() => {
     const start = setTimeout(() => setShowPulse(true), 800);
     const stop = setTimeout(() => setShowPulse(false), 3500);
-    return () => {
-      clearTimeout(start);
-      clearTimeout(stop);
-    };
+    return () => { clearTimeout(start); clearTimeout(stop); };
   }, []);
 
   // Auto-scroll to bottom on new messages or typing indicator
@@ -118,26 +101,36 @@ const AIAssistant = () => {
 
   // Focus input when panel opens
   useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 120);
-    }
+    if (isOpen) setTimeout(() => inputRef.current?.focus(), 120);
   }, [isOpen]);
 
-  // Hide on public/auth routes
+  // Hide on public / auth-only routes
   if (PUBLIC_ROUTES.includes(location.pathname)) return null;
 
   const formatTime = (ts) =>
     new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   const appendMessage = (role, content) => {
-    const msg = {
-      id: `${Date.now()}-${Math.random()}`,
-      role,
-      content,
-      timestamp: Date.now(),
-    };
-    setMessages((prev) => [...prev, msg]);
+    setMessages((prev) => [
+      ...prev,
+      { id: `${Date.now()}-${Math.random()}`, role, content, timestamp: Date.now() },
+    ]);
   };
+
+  const buildSystemPrompt = () =>
+    `You are an AI assistant built into Jasco CRM — a sales CRM used by Steel, PVC and Trading companies in Saudi Arabia and the GCC region.
+
+You help salesmen and managers with:
+- Analysing their pipeline and deals
+- Drafting professional follow-up messages to clients in English or Arabic
+- Suggesting next actions for stalled deals
+- Explaining CRM features and how to use them
+- Answering questions about their performance
+
+Current user: ${userProfile?.full_name || user?.email || "Unknown"}
+Role: ${userProfile?.role || "Unknown"}
+Company: ${company?.name || "Unknown"}
+Keep responses concise and actionable. Maximum 3-4 sentences unless drafting a message.`;
 
   const handleSend = async (text) => {
     const message = (text ?? input).trim();
@@ -145,37 +138,24 @@ const AIAssistant = () => {
 
     setInput("");
     setSessionCount((c) => c + 1);
-
-    // Check API key before touching state
-    const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      appendMessage("user", message);
-      appendMessage(
-        "error",
-        "AI Assistant not configured. Contact your administrator."
-      );
-      return;
-    }
-
     appendMessage("user", message);
     setLoading(true);
 
-    // Build history array for API — only user/assistant pairs, last 6
+    // History for API — only user/assistant turns, last 6
     const history = messages
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map(({ role, content }) => ({ role, content }));
 
     try {
-      const reply = await callAnthropicAPI(
-        message,
-        history,
-        user,
-        userProfile,
-        company
-      );
+      const reply = await callProxy(message, history, buildSystemPrompt());
       appendMessage("assistant", reply);
-    } catch {
-      appendMessage("error", "Could not connect to AI. Please try again.");
+    } catch (err) {
+      console.error("[AIAssistant]", err);
+      if (err.message === "NOT_CONFIGURED") {
+        appendMessage("error", "AI Assistant not configured. Contact your administrator.");
+      } else {
+        appendMessage("error", "Could not connect to AI. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -196,19 +176,13 @@ const AIAssistant = () => {
       {isOpen && (
         <div
           className="fixed bottom-20 right-6 z-[500] flex flex-col bg-white rounded-xl shadow-xl overflow-hidden"
-          style={{
-            width: 360,
-            height: 480,
-            animation: "aiSlideUp 0.2s ease-out",
-          }}
+          style={{ width: 360, height: 480, animation: "aiSlideUp 0.2s ease-out" }}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-purple-600 to-purple-700 flex-shrink-0">
             <div className="flex items-center gap-2">
               <span className="text-white text-base leading-none">✦</span>
-              <span className="text-white font-semibold text-sm">
-                AI Assistant
-              </span>
+              <span className="text-white font-semibold text-sm">AI Assistant</span>
               <span className="bg-purple-500/50 text-purple-100 text-[10px] font-medium px-1.5 py-0.5 rounded-full leading-none">
                 Haiku
               </span>
@@ -229,9 +203,7 @@ const AIAssistant = () => {
               <div className="h-full flex flex-col items-center justify-center gap-4">
                 <div className="text-center">
                   <div className="text-3xl mb-2 text-purple-400">✦</div>
-                  <p className="text-sm font-medium text-gray-700">
-                    How can I help you?
-                  </p>
+                  <p className="text-sm font-medium text-gray-700">How can I help you?</p>
                   <p className="text-xs text-gray-400 mt-1">
                     Ask me anything about your pipeline or deals
                   </p>
@@ -267,9 +239,7 @@ const AIAssistant = () => {
                     {msg.role === "assistant" && (
                       <div className="flex items-end gap-2">
                         <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0 mb-0.5">
-                          <span className="text-purple-600 text-xs leading-none">
-                            ✦
-                          </span>
+                          <span className="text-purple-600 text-xs leading-none">✦</span>
                         </div>
                         <div className="bg-gray-100 text-gray-800 rounded-2xl rounded-bl-sm px-4 py-2.5 max-w-[80%] text-sm leading-relaxed whitespace-pre-wrap break-words">
                           {msg.content}
@@ -284,12 +254,9 @@ const AIAssistant = () => {
                     )}
 
                     <span className="text-[10px] text-gray-400 mt-1 px-1">
-                      {msg.role === "user"
-                        ? "You"
-                        : msg.role === "error"
-                        ? "System"
-                        : "AI"}{" "}
-                      · {formatTime(msg.timestamp)}
+                      {msg.role === "user" ? "You" : msg.role === "error" ? "System" : "AI"}
+                      {" · "}
+                      {formatTime(msg.timestamp)}
                     </span>
                   </div>
                 ))}
@@ -303,8 +270,7 @@ const AIAssistant = () => {
           {/* Session limit banner */}
           {atLimit && (
             <div className="px-4 py-2 bg-amber-50 border-t border-amber-200 text-xs text-amber-700 text-center flex-shrink-0">
-              You have reached the session limit. Please refresh to start a new
-              conversation.
+              You have reached the session limit. Please refresh to start a new conversation.
             </div>
           )}
 
@@ -317,8 +283,7 @@ const AIAssistant = () => {
               onKeyDown={handleKeyDown}
               onInput={(e) => {
                 e.target.style.height = "auto";
-                e.target.style.height =
-                  Math.min(e.target.scrollHeight, 96) + "px";
+                e.target.style.height = Math.min(e.target.scrollHeight, 96) + "px";
               }}
               placeholder="Ask anything..."
               disabled={loading || atLimit}
@@ -333,14 +298,9 @@ const AIAssistant = () => {
               aria-label="Send message"
             >
               <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                width="15" height="15" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" strokeWidth="2.5"
+                strokeLinecap="round" strokeLinejoin="round"
               >
                 <line x1="22" y1="2" x2="11" y2="13" />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
@@ -369,14 +329,9 @@ const AIAssistant = () => {
       >
         {isOpen ? (
           <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+            width="20" height="20" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" strokeWidth="2.5"
+            strokeLinecap="round" strokeLinejoin="round"
           >
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
@@ -386,11 +341,11 @@ const AIAssistant = () => {
         )}
       </button>
 
-      {/* Slide-up keyframe — injected once */}
+      {/* Slide-up keyframe */}
       <style>{`
         @keyframes aiSlideUp {
           from { opacity: 0; transform: translateY(10px); }
-          to   { opacity: 1; transform: translateY(0);    }
+          to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </>
