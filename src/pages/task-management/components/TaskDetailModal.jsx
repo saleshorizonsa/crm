@@ -147,8 +147,6 @@ const TaskDetailModal = ({
 
     if (!formData.title?.trim()) {
       newErrors.title = t("tasks.taskTitleRequired");
-    }
-
     } else if (formData.title?.length > 200) {
       newErrors.title = t("tasks.titleTooLong");
     }
