@@ -36,11 +36,22 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 
-const EnhancedSalesmanDashboard = () => {
+const EnhancedSalesmanDashboard = ({
+  viewAsUser = null,
+  readOnly = false,
+  filterMonth = undefined,
+  filterQuarter = undefined,
+  filterYear = undefined,
+}) => {
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { dateRange } = useDateRange();
   const navigate = useNavigate();
+
+  // When viewing as another user (manager "view as"), use their identity for all queries
+  const effectiveUser = viewAsUser || { id: user?.id };
+  const effectiveUserProfile = viewAsUser || userProfile;
+
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [activeView, setActiveView] = useState("overview");
@@ -49,6 +60,15 @@ const EnhancedSalesmanDashboard = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedQuarter, setSelectedQuarter] = useState(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  // Sync from parent filter props when manager controls filters via "View As"
+  useEffect(() => {
+    if (filterMonth !== undefined) {
+      setSelectedMonth(filterMonth ?? null);
+      setSelectedQuarter(filterQuarter ?? null);
+      setSelectedYear(filterYear ?? null);
+    }
+  }, [filterMonth, filterQuarter, filterYear]);
 
   // Performance Trend toggle (separate from main filters)
   const [trendPeriod, setTrendPeriod] = useState("month"); // month, quarter, year
@@ -267,9 +287,9 @@ const EnhancedSalesmanDashboard = () => {
     return salesTargetService.calculateProductTargetProgress(
       productTargetsData,
       allDeals,
-      user?.id ? [user.id] : null,
+      effectiveUser?.id ? [effectiveUser.id] : null,
     );
-  }, [productTargetsData, allDeals, user?.id]);
+  }, [productTargetsData, allDeals, effectiveUser?.id]);
 
   // Calculate performance trend based on trendPeriod toggle (NOT affected by main filters)
   const performanceTrendData = useMemo(() => {
@@ -662,10 +682,10 @@ const EnhancedSalesmanDashboard = () => {
   ];
 
   useEffect(() => {
-    if (company?.id && userProfile?.id) {
+    if (company?.id && effectiveUserProfile?.id) {
       loadSalesmanData();
     }
-  }, [company, userProfile]);
+  }, [company, effectiveUserProfile?.id]);
 
   // Recalculate executive metrics when filtered data changes
   useEffect(() => {
@@ -726,10 +746,10 @@ const EnhancedSalesmanDashboard = () => {
     }
     try {
       const results = await Promise.allSettled([
-        companyService.getCompanyMetrics(company.id, user.id, false),
-        companyService.getSalesData(company.id, "monthly", user.id, false),
-        activityService.getUserActivities(company.id, user.id, 20),
-        dealService.getDeals(company.id, { viewAll: false }, user.id),
+        companyService.getCompanyMetrics(company.id, effectiveUser.id, false),
+        companyService.getSalesData(company.id, "monthly", effectiveUser.id, false),
+        activityService.getUserActivities(company.id, effectiveUser.id, 20),
+        dealService.getDeals(company.id, { viewAll: false }, effectiveUser.id),
       ]);
 
       const [metricsResult, salesResult, activitiesResult, dealsResult] =
@@ -761,7 +781,7 @@ const EnhancedSalesmanDashboard = () => {
   const loadPendingTasks = async () => {
     try {
       const { data: tasks } = await taskService.getMyTasks(
-        user.id,
+        effectiveUser.id,
         company.id,
         { userOnly: true },
       );
@@ -797,7 +817,7 @@ const EnhancedSalesmanDashboard = () => {
       const { data: deals } = await dealService.getDeals(
         company.id,
         { viewAll: false },
-        user.id,
+        effectiveUser.id,
       );
 
       if (deals) {
@@ -831,7 +851,7 @@ const EnhancedSalesmanDashboard = () => {
       const { data: deals } = await dealService.getDeals(
         company.id,
         { viewAll: false },
-        user.id,
+        effectiveUser.id,
       );
 
       if (deals) {
@@ -867,16 +887,16 @@ const EnhancedSalesmanDashboard = () => {
       const { data: deals } = await dealService.getDeals(
         company.id,
         { viewAll: false },
-        user.id,
+        effectiveUser.id,
       );
       const { data: tasks } = await taskService.getMyTasks(
-        user.id,
+        effectiveUser.id,
         company.id,
         { userOnly: true },
       );
       const { data: targets } = await salesTargetService.getMyTargets(
         company.id,
-        user.id,
+        effectiveUser.id,
       );
 
       const actions = [];
@@ -977,7 +997,7 @@ const EnhancedSalesmanDashboard = () => {
       // Load targets assigned TO this salesman (view-only)
       const { data: myTargetsData } = await salesTargetService.getMyTargets(
         company.id,
-        user.id,
+        effectiveUser.id,
       );
       setMyTargets(myTargetsData || []);
 
@@ -1021,9 +1041,19 @@ const EnhancedSalesmanDashboard = () => {
               Salesman Dashboard
             </h1>
             <p className="text-gray-600 mt-1">
-              Welcome back, {userProfile?.full_name || user?.email}
+              {readOnly
+                ? `Viewing as: ${effectiveUserProfile?.full_name || effectiveUser?.email}`
+                : `Welcome back, ${userProfile?.full_name || user?.email}`}
             </p>
           </div>
+          {readOnly && (
+            <div className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800 flex items-center gap-1">
+                <Icon name="Eye" size={14} />
+                Read-only view
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Time Filter Dropdowns */}

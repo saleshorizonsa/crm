@@ -19,7 +19,7 @@ import {
 } from "../../../services/supabaseService";
 import ManagerSalesTargetAssignment from "../../../components/ManagerSalesTargetAssignment";
 import EnhancedSupervisorDashboard from "./EnhancedSupervisorDashboard";
-import SalesmanDashboard from "./SalesmanDashboard";
+import EnhancedSalesmanDashboard from "./EnhancedSalesmanDashboard";
 import EmployeeSelector from "../../../components/ui/EmployeeSelector";
 import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
@@ -1523,7 +1523,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
           )}
           {(selectedEmployee.role === "salesman" ||
             selectedEmployee.role === "agent") && (
-            <SalesmanDashboard
+            <EnhancedSalesmanDashboard
               viewAsUser={selectedEmployee}
               readOnly={true}
               filterMonth={selectedMonth}
