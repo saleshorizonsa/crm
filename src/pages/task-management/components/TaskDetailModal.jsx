@@ -4,6 +4,7 @@ import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
 import { useAuth } from "../../../contexts/AuthContext";
 import { userService } from "../../../services/supabaseService";
+import { useLanguage } from "../../../i18n";
 
 const TaskDetailModal = ({
   task,
@@ -15,6 +16,7 @@ const TaskDetailModal = ({
   users = [],
 }) => {
   const { user, userProfile } = useAuth();
+  const { t } = useLanguage();
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -144,11 +146,11 @@ const TaskDetailModal = ({
     const newErrors = {};
 
     if (!formData.title?.trim()) {
-      newErrors.title = "Task title is required";
+      newErrors.title = t("tasks.taskTitleRequired");
     }
 
     if (formData.title?.length > 200) {
-      newErrors.title = "Title must be less than 200 characters";
+      newErrors.title = t("tasks.titleTooLong");
     }
 
     setErrors(newErrors);
@@ -199,7 +201,7 @@ const TaskDetailModal = ({
         <div className="flex items-center justify-between p-6 border-b border-border sticky top-0 bg-card z-10">
           <h2 className="text-xl font-semibold text-card-foreground flex items-center space-x-2">
             <Icon name="CheckSquare" size={24} />
-            <span>{task ? "Edit Task" : "Create New Task"}</span>
+            <span>{task ? t("tasks.editTask") : t("tasks.createNewTask")}</span>
           </h2>
           <button
             onClick={onClose}
@@ -214,13 +216,13 @@ const TaskDetailModal = ({
           {/* Title */}
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-2">
-              Task Title <span className="text-red-500">*</span>
+              {t("tasks.taskTitle")} <span className="text-red-500">*</span>
             </label>
             <Input
               type="text"
               value={formData.title}
               onChange={(e) => handleChange("title", e.target.value)}
-              placeholder="Enter task title"
+              placeholder={t("tasks.enterTaskTitle")}
               className={errors.title ? "border-red-500" : ""}
             />
             {errors.title && (
@@ -231,12 +233,12 @@ const TaskDetailModal = ({
           {/* Description */}
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-2">
-              Description
+              {t("common.description")}
             </label>
             <textarea
               value={formData.description}
               onChange={(e) => handleChange("description", e.target.value)}
-              placeholder="Enter task description"
+              placeholder={t("tasks.enterTaskDescription")}
               rows={4}
               className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
             />
@@ -247,48 +249,48 @@ const TaskDetailModal = ({
             {/* Priority */}
             <div>
               <label className="block text-sm font-medium text-card-foreground mb-2">
-                Priority
+                {t("tasks.priority")}
               </label>
               <select
                 value={formData.priority}
                 onChange={(e) => handleChange("priority", e.target.value)}
                 className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
+                <option value="low">{t("tasks.low")}</option>
+                <option value="medium">{t("tasks.medium")}</option>
+                <option value="high">{t("tasks.high")}</option>
               </select>
             </div>
 
             {/* Status */}
             <div>
               <label className="block text-sm font-medium text-card-foreground mb-2">
-                Status
+                {t("common.status")}
               </label>
               <select
                 value={formData.status}
                 onChange={(e) => handleChange("status", e.target.value)}
                 className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
-                <option value="pending">Pending</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
+                <option value="pending">{t("tasks.pending")}</option>
+                <option value="in_progress">{t("tasks.inProgress")}</option>
+                <option value="completed">{t("tasks.completed")}</option>
+                <option value="cancelled">{t("tasks.cancelled")}</option>
               </select>
             </div>
 
             {/* Task Type */}
             <div>
               <label className="block text-sm font-medium text-card-foreground mb-2">
-                Task Type
+                {t("tasks.taskType")}
               </label>
               <select
                 value={formData.task_type}
                 onChange={(e) => handleChange("task_type", e.target.value)}
                 className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
-                <option value="general">General</option>
-                <option value="visit">Visit</option>
+                <option value="general">{t("tasks.general")}</option>
+                <option value="visit">{t("tasks.visit")}</option>
               </select>
             </div>
           </div>
@@ -296,7 +298,7 @@ const TaskDetailModal = ({
           {/* Due Date */}
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-2">
-              Due Date
+              {t("tasks.dueDate")}
             </label>
             <Input
               type="date"
@@ -308,7 +310,7 @@ const TaskDetailModal = ({
           {/* Assigned To */}
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-2">
-              Assigned To
+              {t("tasks.assignedTo")}
             </label>
             <select
               value={formData.assigned_to}
@@ -328,14 +330,14 @@ const TaskDetailModal = ({
             {/* Related Contact */}
             <div>
               <label className="block text-sm font-medium text-card-foreground mb-2">
-                Related Client
+                {t("tasks.relatedClient")}
               </label>
               <select
                 value={formData.contact_id}
                 onChange={(e) => handleChange("contact_id", e.target.value)}
                 className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
-                <option value="">No Client</option>
+                <option value="">{t("tasks.noClient")}</option>
                 {contacts.map((contact) => (
                   <option key={contact.id} value={contact.id}>
                     {contact.first_name} {contact.last_name}
@@ -347,14 +349,14 @@ const TaskDetailModal = ({
             {/* Related Deal */}
             <div>
               <label className="block text-sm font-medium text-card-foreground mb-2">
-                Related Deal
+                {t("tasks.relatedDeal")}
               </label>
               <select
                 value={formData.deal_id}
                 onChange={(e) => handleChange("deal_id", e.target.value)}
                 className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
-                <option value="">No deal</option>
+                <option value="">{t("tasks.noDeal")}</option>
                 {deals.map((deal) => (
                   <option key={deal.id} value={deal.id}>
                     {deal.title}
@@ -368,17 +370,17 @@ const TaskDetailModal = ({
           {task && (
             <div className="bg-muted/30 rounded-lg p-4 space-y-2">
               <h3 className="text-sm font-medium text-card-foreground mb-2">
-                Task Information
+                {t("tasks.taskInformation")}
               </h3>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <span className="text-muted-foreground">Created:</span>{" "}
+                  <span className="text-muted-foreground">{t("tasks.createdAtLabel")}:</span>{" "}
                   <span className="text-card-foreground">
                     {new Date(task.created_at).toLocaleDateString()}
                   </span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Created By:</span>{" "}
+                  <span className="text-muted-foreground">{t("tasks.createdByLabel")}:</span>{" "}
                   <span className="text-card-foreground">
                     {task.created_by_name || "Unknown"}
                   </span>
@@ -386,7 +388,7 @@ const TaskDetailModal = ({
                 {task.completed_at && (
                   <>
                     <div>
-                      <span className="text-muted-foreground">Completed:</span>{" "}
+                      <span className="text-muted-foreground">{t("tasks.completedAtLabel")}:</span>{" "}
                       <span className="text-card-foreground">
                         {new Date(task.completed_at).toLocaleDateString()}
                       </span>
@@ -417,18 +419,18 @@ const TaskDetailModal = ({
               onClick={onClose}
               disabled={isSubmitting}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? (
                 <span className="flex items-center space-x-2">
                   <Icon name="Loader" size={16} className="animate-spin" />
-                  <span>Saving...</span>
+                  <span>{t("tasks.saving")}</span>
                 </span>
               ) : (
                 <span className="flex items-center space-x-2">
                   <Icon name="Save" size={16} />
-                  <span>{task ? "Update Task" : "Create Task"}</span>
+                  <span>{task ? t("tasks.updateTask") : t("tasks.createNewTask")}</span>
                 </span>
               )}
             </Button>

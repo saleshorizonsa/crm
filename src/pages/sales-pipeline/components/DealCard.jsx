@@ -4,6 +4,7 @@ import Button from "../../../components/ui/Button";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { dealProductService } from "../../../services/supabaseService";
+import { useLanguage } from "../../../i18n";
 
 // Fallback label map — kept in sync with the default seed list
 const LOST_CODE_LABELS = {
@@ -35,6 +36,7 @@ const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
   const [productCount, setProductCount] = useState(0);
   const { formatCurrency, preferredCurrency } = useCurrency();
   const { userProfile } = useAuth();
+  const { t } = useLanguage();
   const canSeeMargin = userProfile?.role !== "salesman";
 
   // Load product count
@@ -121,12 +123,12 @@ const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-semibold text-gray-800 truncate">
-            {deal?.title || "Untitled Deal"}
+            {deal?.title || t("deals.newDeal")}
           </h3>
           <p className="text-xs text-gray-500 truncate">
             {deal?.contact
               ? `${deal.contact.first_name} ${deal.contact.last_name}`
-              : "No contact assigned"}
+              : t("deals.selectContact")}
           </p>
           {deal?.stage === "lost" && deal?.lost_reason_code && (
             <div className="flex items-center gap-1 mt-1 flex-wrap">
@@ -189,7 +191,7 @@ const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
               : "bg-red-100 text-red-700"
           }`}>
             <Icon name="TrendingUp" size={10} />
-            {deal.margin_pct.toFixed(1)}% margin
+            {deal.margin_pct.toFixed(1)}% {t("pipeline.margin")}
           </span>
         </div>
       )}
@@ -207,7 +209,7 @@ const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
             {!isClosedDeal && daysUntilClose <= 7 && daysUntilClose >= 0
               ? ` (${daysUntilClose}d)`
               : ""}
-            {!isClosedDeal && daysUntilClose < 0 ? " (Overdue)" : ""}
+            {!isClosedDeal && daysUntilClose < 0 ? ` (${t("pipeline.overdue")})` : ""}
           </span>
         </div>
       </div>
@@ -217,7 +219,7 @@ const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
         <div className="mb-2 flex items-center space-x-1 px-2 py-1 bg-blue-50 rounded text-xs text-blue-700">
           <Icon name="Package" size={12} />
           <span>
-            {productCount} {productCount === 1 ? "product" : "products"}
+            {productCount} {productCount === 1 ? t("common.product") : t("common.products")}
           </span>
         </div>
       )}
@@ -229,7 +231,7 @@ const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
             <Icon name="User" size={10} className="text-primary" />
           </div>
           <span className="text-xs text-gray-500">
-            {deal?.owner?.full_name || "Unassigned"}
+            {deal?.owner?.full_name || t("tasks.unassigned")}
           </span>
         </div>
       </div>

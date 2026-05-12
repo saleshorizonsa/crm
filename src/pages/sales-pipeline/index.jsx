@@ -10,6 +10,7 @@ import LostReasonModal from "./components/LostReasonModal";
 import Button from "../../components/ui/Button";
 import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
+import { useLanguage } from "../../i18n";
 import { useLocation } from "react-router-dom";
 import {
   dealService,
@@ -23,6 +24,7 @@ import { formatLocalDateYMD } from "utils/dateFormat";
 import { resolveDateRange } from "../../components/ui/DateRangePicker";
 
 const SalesPipeline = () => {
+  const { t } = useLanguage();
   const { company, userProfile, user } = useAuth();
   const location = useLocation();
   const pipelineTopRef = useRef(null);
@@ -75,8 +77,8 @@ const SalesPipeline = () => {
     const state = location.state;
     if (state?.source === "performance-card" && state?.activeStage) {
       const stageLabels = {
-        lead: "Lead", contact_made: "Qualified", proposal_sent: "Proposal",
-        negotiation: "Negotiation", won: "Won", lost: "Lost",
+        lead: t("deals.lead"), contact_made: t("deals.qualified"), proposal_sent: t("deals.proposal"),
+        negotiation: t("deals.negotiation"), won: t("deals.won"), lost: t("deals.lost"),
       };
       setDrillDownContext({
         stage: state.activeStage,
@@ -457,16 +459,16 @@ const SalesPipeline = () => {
   };
 
   const stages = [
-    { id: "lead", name: "Lead" },
-    { id: "contact_made", name: "Qualified" },
-    { id: "proposal_sent", name: "Proposal" },
-    { id: "negotiation", name: "Negotiation" },
-    { id: "won", name: "Won" },
-    { id: "lost", name: "Lost" },
+    { id: "lead", name: t("deals.lead") },
+    { id: "contact_made", name: t("deals.qualified") },
+    { id: "proposal_sent", name: t("deals.proposal") },
+    { id: "negotiation", name: t("deals.negotiation") },
+    { id: "won", name: t("deals.won") },
+    { id: "lost", name: t("deals.lost") },
   ];
 
   if (!company) {
-    return <div>No company selected</div>;
+    return <div>{t("common.noData")}</div>;
   }
 
   return (
@@ -478,12 +480,12 @@ const SalesPipeline = () => {
           <div>
             <NavigationBreadcrumbs
               items={[
-                { label: "Dashboard", href: "/company-dashboard" },
-                { label: "Sales Funnel", href: "/sales-pipeline" },
+                { label: t("nav.dashboard"), href: "/company-dashboard" },
+                { label: t("nav.pipeline"), href: "/sales-pipeline" },
               ]}
             />
             <h1 className="text-2xl font-semibold text-gray-900 mt-2">
-              Sales Funnel
+              {t("nav.pipeline")}
             </h1>
           </div>
 
@@ -496,7 +498,7 @@ const SalesPipeline = () => {
                 className="flex items-center gap-2"
               >
                 <Icon name="Columns" size={16} />
-                Funnel
+                {t("dashboard.funnel")}
               </Button>
               <Button
                 variant={viewMode === "table" ? "default" : "ghost"}
@@ -504,7 +506,7 @@ const SalesPipeline = () => {
                 onClick={() => setViewMode("table")}
                 className="flex items-center gap-2"
               >
-                Table
+                {t("pipeline.table")}
               </Button>
             </div>
             <button
@@ -531,7 +533,7 @@ const SalesPipeline = () => {
               iconName="Plus"
               iconPosition="left"
             >
-              Add Deal
+              {t("deals.addDeal")}
             </Button>
           </div>
         </div>
@@ -542,7 +544,7 @@ const SalesPipeline = () => {
             <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg text-sm text-blue-700 border border-blue-100">
               <Icon name="Filter" size={16} />
               <span>
-                Showing <strong>{drillDownContext.label}</strong> deals from Sales Performance Card
+                {t("pipeline.showing")} <strong>{drillDownContext.label}</strong> {t("pipeline.dealsFromPerformanceCard")}
               </span>
               <button
                 onClick={() => {
@@ -551,7 +553,7 @@ const SalesPipeline = () => {
                 }}
                 className="ml-auto text-blue-400 hover:text-blue-600 font-medium"
               >
-                Clear ✕
+                {t("pipeline.clearFilters")} ✕
               </button>
             </div>
           )}

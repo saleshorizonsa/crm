@@ -1,7 +1,9 @@
 import React from "react";
 import Icon from "../../../components/AppIcon";
+import { useLanguage } from "../../../i18n";
 
 const ContactStats = ({ stats }) => {
+  const { t } = useLanguage();
   // If stats are being loaded or not available, show loading state
   if (!stats) {
     return (
@@ -22,28 +24,28 @@ const ContactStats = ({ stats }) => {
 
   const statCards = [
     {
-      title: "Total Clients",
+      title: t("contacts.totalClients"),
       value: stats.total || 0,
       icon: "Users",
       color: "text-primary",
       bgColor: "bg-primary/10",
     },
     {
-      title: "Active",
+      title: t("common.active"),
       value: stats.byStatus?.active || 0,
       icon: "CheckCircle",
       color: "text-green-600",
       bgColor: "bg-green-100",
     },
     {
-      title: "Inactive",
+      title: t("common.inactive"),
       value: stats.byStatus?.inactive || 0,
       icon: "XCircle",
       color: "text-orange-600",
       bgColor: "bg-orange-100",
     },
     {
-      title: "Recent Activity",
+      title: t("contacts.recentActivity"),
       value: stats.recentActivity || 0,
       icon: "Activity",
       color: "text-blue-600",

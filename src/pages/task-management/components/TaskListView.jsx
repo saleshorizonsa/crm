@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import { Checkbox } from "../../../components/ui/Checkbox";
+import { useLanguage } from "../../../i18n";
 
 const TaskListView = ({
   tasks,
@@ -16,6 +17,7 @@ const TaskListView = ({
     key: "due_date",
     direction: "asc",
   });
+  const { t } = useLanguage();
 
   const sortedTasks = useMemo(() => {
     if (!tasks) return [];
@@ -71,7 +73,7 @@ const TaskListView = ({
           styles[priority] || styles.low
         }`}
       >
-        {priority}
+        {priority === "high" ? t("tasks.high") : priority === "medium" ? t("tasks.medium") : t("tasks.low")}
       </span>
     );
   };
@@ -84,10 +86,10 @@ const TaskListView = ({
       cancelled: "bg-gray-100 text-gray-700 border-gray-200",
     };
     const labels = {
-      pending: "Pending",
-      in_progress: "In Progress",
-      completed: "Completed",
-      cancelled: "Cancelled",
+      pending: t("tasks.pending"),
+      in_progress: t("tasks.inProgress"),
+      completed: t("tasks.completed"),
+      cancelled: t("tasks.cancelled"),
     };
     return (
       <span
@@ -101,7 +103,7 @@ const TaskListView = ({
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return "No date";
+    if (!dateString) return t("tasks.noDate");
     const date = new Date(dateString);
     return date.toLocaleDateString("en-US", {
       month: "short",
@@ -158,10 +160,10 @@ const TaskListView = ({
           className="mx-auto mb-4 text-muted-foreground opacity-50"
         />
         <h3 className="text-lg font-medium text-card-foreground mb-2">
-          No tasks found
+          {t("tasks.noTasksFound")}
         </h3>
         <p className="text-muted-foreground">
-          Create a new task to get started
+          {t("tasks.createToGetStarted")}
         </p>
       </div>
     );
@@ -200,21 +202,21 @@ const TaskListView = ({
                   onChange={handleSelectAll}
                 />
               </th>
-              <SortableHeader column="title">Task</SortableHeader>
-              <SortableHeader column="priority">Priority</SortableHeader>
-              <SortableHeader column="status">Status</SortableHeader>
-              <SortableHeader column="due_date">Due Date</SortableHeader>
+              <SortableHeader column="title">{t("common.task")}</SortableHeader>
+              <SortableHeader column="priority">{t("tasks.priority")}</SortableHeader>
+              <SortableHeader column="status">{t("common.status")}</SortableHeader>
+              <SortableHeader column="due_date">{t("tasks.dueDate")}</SortableHeader>
               <SortableHeader column="assigned_to_name">
-                Assigned To
+                {t("tasks.assignedTo")}
               </SortableHeader>
               <SortableHeader column="created_by_name">
-                Created By
+                {t("tasks.createdByColLabel")}
               </SortableHeader>
               <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Related
+                {t("tasks.relatedLabel")}
               </th>
               <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Actions
+                {t("common.actions")}
               </th>
             </tr>
           </thead>
@@ -273,7 +275,7 @@ const TaskListView = ({
                     </div>
                   ) : (
                     <span className="text-sm text-muted-foreground">
-                      Unassigned
+                      {t("tasks.unassigned")}
                     </span>
                   )}
                 </td>
@@ -286,7 +288,7 @@ const TaskListView = ({
                     </div>
                   ) : (
                     <span className="text-sm text-muted-foreground">
-                      Unknown
+                      {t("tasks.unknown")}
                     </span>
                   )}
                 </td>
@@ -328,7 +330,7 @@ const TaskListView = ({
                             completed_at: new Date().toISOString(),
                           })
                         }
-                        title="Mark as complete"
+                        title={t("tasks.markAsComplete")}
                       >
                         <Icon
                           name="CheckCircle"
@@ -341,7 +343,7 @@ const TaskListView = ({
                       size="sm"
                       variant="ghost"
                       onClick={() => onTaskClick(task)}
-                      title="Edit task"
+                      title={t("tasks.editTask")}
                     >
                       <Icon name="Edit" size={16} />
                     </Button>
@@ -349,7 +351,7 @@ const TaskListView = ({
                       size="sm"
                       variant="ghost"
                       onClick={() => onTaskDelete(task.id)}
-                      title="Delete task"
+                      title={t("tasks.deleteTask2")}
                     >
                       <Icon name="Trash2" size={16} className="text-red-600" />
                     </Button>

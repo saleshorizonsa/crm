@@ -1,6 +1,7 @@
 import React from "react";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import Icon from "../../../components/AppIcon";
+import { useLanguage } from "../../../i18n";
 
 const ManagerActionableMetrics = ({
   metrics,
@@ -11,6 +12,7 @@ const ManagerActionableMetrics = ({
   onViewPerformance,
 }) => {
   const { formatCurrency } = useCurrency();
+  const { t } = useLanguage();
 
   const calculateTeamMetrics = () => {
     if (!teamData || !salesTargets) return {};
@@ -68,10 +70,10 @@ const ManagerActionableMetrics = ({
     if (lowPerformers.length > 0) {
       alerts.push({
         type: "warning",
-        title: `${lowPerformers.length} team member(s) need attention`,
-        description: "Low conversion rates detected",
+        title: `${lowPerformers.length} ${t("dashboard.membersNeedAttention").replace("{count}", "").trim()}`,
+        description: t("dashboard.lowConversionRatesDetected"),
         action: () => onViewPerformance("low-performers"),
-        actionLabel: "Review Performance",
+        actionLabel: t("dashboard.reviewPerformanceAction"),
       });
     }
 
@@ -85,10 +87,10 @@ const ManagerActionableMetrics = ({
     if (membersWithoutTargets.length > 0) {
       alerts.push({
         type: "info",
-        title: `${membersWithoutTargets.length} member(s) without targets`,
-        description: "Assign sales targets to improve performance tracking",
+        title: `${membersWithoutTargets.length} ${t("dashboard.membersWithoutTargetsCount").replace("{count}", "").trim()}`,
+        description: t("dashboard.assignTargetsImprove"),
         action: () => onAssignTarget(),
-        actionLabel: "Assign Targets",
+        actionLabel: t("dashboard.assignTargetsAction"),
       });
     }
 
@@ -99,12 +101,10 @@ const ManagerActionableMetrics = ({
     ) {
       alerts.push({
         type: "warning",
-        title: "Team target achievement below expectation",
-        description: `Only ${teamMetrics.targetAchievement.toFixed(
-          1
-        )}% of targets achieved`,
+        title: t("dashboard.teamTargetBelowExpectation"),
+        description: `${t("dashboard.onlyPercentAchieved").replace("{percent}", teamMetrics.targetAchievement.toFixed(1))}`,
         action: () => onViewPerformance("targets"),
-        actionLabel: "View Details",
+        actionLabel: t("dashboard.viewDetailsAction"),
       });
     }
 
@@ -120,11 +120,11 @@ const ManagerActionableMetrics = ({
         <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 rounded-lg text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-blue-100 text-sm">Team Revenue</p>
+              <p className="text-blue-100 text-sm">{t("dashboard.teamRevenue")}</p>
               <p className="text-2xl font-bold">
                 {formatCurrency(teamMetrics.totalTeamRevenue)}
               </p>
-              <p className="text-blue-100 text-xs mt-1">This quarter</p>
+              <p className="text-blue-100 text-xs mt-1">{t("dashboard.teamRevenueSub")}</p>
             </div>
             <Icon name="trending-up" className="w-8 h-8 text-blue-200" />
           </div>
@@ -133,7 +133,7 @@ const ManagerActionableMetrics = ({
         <div className="bg-gradient-to-r from-green-500 to-green-600 p-6 rounded-lg text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-green-100 text-sm">Target Achievement</p>
+              <p className="text-green-100 text-sm">{t("dashboard.targetAchievement")}</p>
               <p className="text-2xl font-bold">
                 {teamMetrics.targetAchievement.toFixed(1)}%
               </p>
@@ -149,10 +149,10 @@ const ManagerActionableMetrics = ({
         <div className="bg-gradient-to-r from-purple-500 to-purple-600 p-6 rounded-lg text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-purple-100 text-sm">Active Pipeline</p>
+              <p className="text-purple-100 text-sm">{t("dashboard.activePipeline")}</p>
               <p className="text-2xl font-bold">{teamMetrics.activePipeline}</p>
               <p className="text-purple-100 text-xs mt-1">
-                Total deals in progress
+                {t("dashboard.totalDealsInProgress")}
               </p>
             </div>
             <Icon name="pipeline" className="w-8 h-8 text-purple-200" />
@@ -162,11 +162,11 @@ const ManagerActionableMetrics = ({
         <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-6 rounded-lg text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-orange-100 text-sm">Avg. Conversion</p>
+              <p className="text-orange-100 text-sm">{t("dashboard.avgConversion")}</p>
               <p className="text-2xl font-bold">
                 {teamMetrics.avgConversion.toFixed(1)}%
               </p>
-              <p className="text-orange-100 text-xs mt-1">Team average</p>
+              <p className="text-orange-100 text-xs mt-1">{t("dashboard.teamAverageLabel")}</p>
             </div>
             <Icon name="percentage" className="w-8 h-8 text-orange-200" />
           </div>
@@ -177,7 +177,7 @@ const ManagerActionableMetrics = ({
       {alerts.length > 0 && (
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Performance Alerts
+            {t("dashboard.performanceAlerts")}
           </h3>
           <div className="space-y-3">
             {alerts.map((alert, index) => (

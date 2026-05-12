@@ -2,19 +2,21 @@ import React, { useState } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
+import { useLanguage } from "../../../i18n";
 
 const ContactFilters = ({ filters, onFilterChange }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const { t } = useLanguage();
 
   const statuses = ["active", "inactive"];
 
   const activityPeriods = [
-    { label: "All Time", value: "all" },
-    { label: "Last 7 days", value: "7d" },
-    { label: "Last 30 days", value: "30d" },
-    { label: "Last 90 days", value: "90d" },
-    { label: "Last 6 months", value: "6m" },
-    { label: "Last year", value: "1y" },
+    { label: t("contacts.allTime"), value: "all" },
+    { label: t("contacts.last7Days"), value: "7d" },
+    { label: t("contacts.last30Days"), value: "30d" },
+    { label: t("contacts.last90Days"), value: "90d" },
+    { label: t("contacts.last6Months"), value: "6m" },
+    { label: t("contacts.lastYear"), value: "1y" },
   ];
 
   const getActiveFilterCount = () => {
@@ -49,7 +51,7 @@ const ContactFilters = ({ filters, onFilterChange }) => {
         <div className="flex-1">
           <Input
             type="search"
-            placeholder="Search clients by name, email, or company..."
+            placeholder={t("contacts.searchClientsPlaceholder")}
             value={filters?.search || ""}
             onChange={(e) =>
               onFilterChange({ ...filters, search: e.target.value })
@@ -64,7 +66,7 @@ const ContactFilters = ({ filters, onFilterChange }) => {
           className="flex items-center space-x-2"
         >
           <Icon name="Filter" size={16} />
-          <span>Filters</span>
+          <span>{t("common.filter")}</span>
           {activeFilterCount > 0 && (
             <span className="bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full">
               {activeFilterCount}
@@ -80,7 +82,7 @@ const ContactFilters = ({ filters, onFilterChange }) => {
             className="text-muted-foreground hover:text-foreground"
           >
             <Icon name="X" size={16} className="mr-1" />
-            Clear
+            {t("common.clear")}
           </Button>
         )}
       </div>
@@ -91,7 +93,7 @@ const ContactFilters = ({ filters, onFilterChange }) => {
           {/* Status Filter */}
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-2">
-              Status
+              {t("common.status")}
             </label>
             <select
               value={filters?.status || ""}
@@ -100,7 +102,7 @@ const ContactFilters = ({ filters, onFilterChange }) => {
               }
               className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
-              <option value="">All Statuses</option>
+              <option value="">{t("contacts.allStatuses")}</option>
               {statuses.map((status) => (
                 <option key={status} value={status}>
                   {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -112,7 +114,7 @@ const ContactFilters = ({ filters, onFilterChange }) => {
           {/* Activity Period Filter */}
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-2">
-              Last Activity
+              {t("contacts.lastActivity")}
             </label>
             <select
               value={filters?.activityPeriod || "all"}
@@ -144,7 +146,7 @@ const ContactFilters = ({ filters, onFilterChange }) => {
           }
         >
           <Icon name="CheckCircle" size={14} className="mr-1" />
-          Active
+          {t("common.active")}
         </Button>
 
         <Button
@@ -158,7 +160,7 @@ const ContactFilters = ({ filters, onFilterChange }) => {
           }
         >
           <Icon name="XCircle" size={14} className="mr-1" />
-          Inactive
+          {t("common.inactive")}
         </Button>
 
         <div className="w-px bg-border self-stretch mx-1" />
@@ -169,7 +171,7 @@ const ContactFilters = ({ filters, onFilterChange }) => {
           onClick={() => handleSortToggle("hottest")}
         >
           <Icon name="TrendingUp" size={14} className="mr-1" />
-          Hottest first
+          {t("contacts.hottestFirst")}
         </Button>
 
         <Button
@@ -178,7 +180,7 @@ const ContactFilters = ({ filters, onFilterChange }) => {
           onClick={() => handleSortToggle("coldest")}
         >
           <Icon name="TrendingDown" size={14} className="mr-1" />
-          Coldest first
+          {t("contacts.coldestFirst")}
         </Button>
       </div>
     </div>

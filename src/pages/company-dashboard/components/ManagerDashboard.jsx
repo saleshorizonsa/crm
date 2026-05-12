@@ -29,10 +29,12 @@ import {
   salesTargetService,
 } from "../../../services/supabaseService";
 import { supabase } from "../../../lib/supabase";
+import { useLanguage } from "../../../i18n";
 
 const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
+  const { t } = useLanguage();
 
   // Helper to convert deal amount to user's preferred currency
   const getConvertedAmount = (deal) => {
@@ -313,7 +315,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         />
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Quick Actions
+            {t("dashboard.quickActions")}
           </h3>
           <ManagerQuickActions
             subordinates={subordinates}
@@ -331,7 +333,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <SalesChart
             data={salesData}
-            title="Team Sales Performance"
+            title={t("dashboard.teamSalesPerformance")}
             showTypeSelector={true}
             readOnly={readOnly}
           />
@@ -345,7 +347,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <ActivityFeed
           activities={activities}
-          title="Team Activities"
+          title={t("dashboard.teamActivities")}
           companyId={company?.id}
           users={allSubordinates}
         />
@@ -450,9 +452,9 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
             </div>
             <div>
               <h3 className="text-lg font-semibold text-gray-900">
-                Your Current Targets
+                {t("dashboard.yourCurrentTargets")}
               </h3>
-              <p className="text-sm text-gray-500">Assigned by Director</p>
+              <p className="text-sm text-gray-500">{t("dashboard.assignedByDirector")}</p>
             </div>
           </div>
 
@@ -462,7 +464,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
                   <p className="text-sm text-blue-600 font-medium">
-                    Total Allocated
+                    {t("dashboard.totalAllocated")}
                   </p>
                   <p className="text-2xl font-bold text-blue-700">
                     {formatCurrency(totalAllocatedToMe)}
@@ -470,7 +472,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                 </div>
                 <div className="p-4 bg-green-50 rounded-lg border border-green-100">
                   <p className="text-sm text-green-600 font-medium">
-                    Assigned to Team
+                    {t("dashboard.assignedToTeam")}
                   </p>
                   <p className="text-2xl font-bold text-green-700">
                     {formatCurrency(totalAssignedByMe)}
@@ -478,7 +480,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                 </div>
                 <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
                   <p className="text-sm text-amber-600 font-medium">
-                    Available Budget
+                    {t("dashboard.availableBudget")}
                   </p>
                   <p className="text-2xl font-bold text-amber-700">
                     {formatCurrency(availableBudget)}
@@ -504,7 +506,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     >
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-sm font-medium text-gray-900 capitalize">
-                          {target.period_type} Target
+                          {target.period_type} {t("dashboard.periodTarget")}
                         </span>
                         <span
                           className={`px-2 py-1 text-xs rounded-full ${
@@ -522,7 +524,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           {formatCurrency(target.target_amount)}
                         </div>
                         <div className="text-sm text-gray-600">
-                          Progress:{" "}
+                          {t("dashboard.progressLabel")}:{" "}
                           {formatCurrency(target.progress_amount || 0)}
                           <span className="ml-2 text-xs">
                             ({progress.toFixed(1)}%)
@@ -543,7 +545,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           />
                         </div>
                         <div className="text-xs text-gray-500">
-                          {target.period_start} to {target.period_end}
+                          {target.period_start} {t("dashboard.toLabel")} {target.period_end}
                         </div>
                       </div>
 
@@ -551,7 +553,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       {clientBreakdown && clientBreakdown.length > 0 && (
                         <div className="border-t border-gray-100 pt-3">
                           <p className="text-xs font-medium text-gray-600 mb-2">
-                            Client Breakdown:
+                            {t("dashboard.clientBreakdown")}:
                           </p>
                           <div className="space-y-2 max-h-32 overflow-y-auto">
                             {clientBreakdown.map((cb, idx) => {
@@ -597,13 +599,13 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                 <div className="border-t border-gray-200 pt-6">
                   <h4 className="text-md font-medium text-gray-900 mb-4 flex items-center gap-2">
                     <Icon name="Users" size={18} className="text-gray-600" />
-                    Team Achievement Breakdown
+                    {t("dashboard.teamAchievementBreakdown")}
                   </h4>
                   <div className="mb-4 p-4 bg-gray-50 rounded-lg">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm text-gray-500">
-                          Total Team Target
+                          {t("dashboard.totalTeamTarget")}
                         </p>
                         <p className="text-xl font-bold text-gray-900">
                           {formatCurrency(totalTeamTarget)}
@@ -611,7 +613,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       </div>
                       <div>
                         <p className="text-sm text-gray-500">
-                          Total Team Achieved
+                          {t("dashboard.totalTeamAchieved")}
                         </p>
                         <p className="text-xl font-bold text-green-600">
                           {formatCurrency(totalTeamAchieved)}
@@ -644,7 +646,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                               100
                             ).toFixed(1)
                           : 0}
-                        % Overall Achievement
+                        % {t("dashboard.overallAchievement")}
                       </p>
                     </div>
                   </div>
@@ -669,7 +671,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             {formatCurrency(member.targetAmount)}
                           </div>
                           <div className="text-xs text-gray-500">
-                            {member.progress.toFixed(1)}% achieved
+                            {member.progress.toFixed(1)}% {t("dashboard.achievedLabel")}
                           </div>
                         </div>
                         <div className="w-16">
@@ -703,7 +705,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                 size={48}
                 className="mx-auto text-gray-300 mb-4"
               />
-              <p>No targets assigned by director yet.</p>
+              <p>{t("dashboard.noTargetsAssignedByDirector")}</p>
             </div>
           )}
         </div>
@@ -722,7 +724,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h3 className="text-md font-medium text-gray-900 mb-4 flex items-center gap-2">
             <Icon name="ListChecks" size={18} className="text-gray-600" />
-            Team Targets Assigned
+            {t("dashboard.teamTargetsAssigned")}
           </h3>
           {salesTargets.filter((t) =>
             allSubordinates?.some((s) => s.id === t.assigned_to),
@@ -732,22 +734,22 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Team Member
+                      {t("dashboard.teamMemberCol")}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Type
+                      {t("dashboard.typeCol")}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Period
+                      {t("dashboard.periodCol")}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Target Amount
+                      {t("dashboard.targetAmount")}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Progress
+                      {t("dashboard.progressLabel")}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
+                      {t("dashboard.statusCol")}
                     </th>
                   </tr>
                 </thead>
@@ -786,8 +788,8 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                               }`}
                             >
                               {target.target_type === "by_clients"
-                                ? "By Clients"
-                                : "Total Value"}
+                                ? t("dashboard.byClients")
+                                : t("dashboard.totalValue")}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -795,7 +797,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                               {target.period_type}
                             </div>
                             <div className="text-xs text-gray-500">
-                              {target.period_start} to {target.period_end}
+                              {target.period_start} {t("dashboard.toLabel")} {target.period_end}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -860,7 +862,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">
-              No targets assigned to team members yet.
+              {t("dashboard.noTeamTargetsYet")}
             </div>
           )}
         </div>
@@ -881,7 +883,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
           <div className="h-64 bg-gray-200 rounded"></div>
           <div className="h-64 bg-gray-200 rounded"></div>
         </div>
-        <div className="text-center mt-4 text-gray-600">Loading ...</div>
+        <div className="text-center mt-4 text-gray-600">{t("dashboard.loadingDash")}</div>
       </div>
     );
   }
@@ -895,7 +897,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
             <div className="flex items-center gap-4">
               <div className="flex-1 max-w-md">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  View Dashboard As
+                  {t("dashboard.viewDashboardAs")}
                 </label>
                 <EmployeeSelector
                   employees={allSubordinates}
@@ -909,7 +911,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                 <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
                   <p className="text-sm text-blue-800">
                     <Icon name="Eye" size={14} className="inline mr-1" />
-                    Viewing as:{" "}
+                    {t("dashboard.viewingAs")}:{" "}
                     <span className="font-semibold">
                       {selectedEmployee.full_name || selectedEmployee.email}
                     </span>
@@ -947,7 +949,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              Overview
+              {t("dashboard.overviewTab")}
             </button>
             <button
               onClick={() => setActiveView("team")}
@@ -957,7 +959,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              Team Management
+              {t("dashboard.teamManagementTab")}
             </button>
             <button
               onClick={() => setActiveView("targets")}
@@ -967,7 +969,7 @@ const ManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              Sales Targets
+              {t("dashboard.salesTargetsTab")}
             </button>
           </div>
 

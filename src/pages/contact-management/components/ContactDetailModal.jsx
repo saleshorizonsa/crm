@@ -3,8 +3,10 @@ import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
 import { contactService } from "../../../services/supabaseService";
+import { useLanguage } from "../../../i18n";
 
 const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
+  const { t } = useLanguage();
   const [formData, setFormData] = useState({
     first_name: "",
     last_name: "",
@@ -119,7 +121,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
           <form onSubmit={handleSubmit}>
             <div className="flex items-center justify-between p-6 border-b border-border">
               <h2 className="text-xl font-semibold text-card-foreground">
-                {contact ? "Edit Client" : "New Client"}
+                {contact ? t("contacts.editClient") : t("contacts.newClient")}
               </h2>
               <Button
                 variant="ghost"
@@ -135,7 +137,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
-                    First Name <span className="text-destructive">*</span>
+                    {t("contacts.firstName")} <span className="text-destructive">*</span>
                   </label>
                   <Input
                     name="first_name"
@@ -148,7 +150,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
 
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
-                    Last Name <span className="text-destructive">*</span>
+                    {t("contacts.lastName")} <span className="text-destructive">*</span>
                   </label>
                   <Input
                     name="last_name"
@@ -161,7 +163,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
 
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
-                    Email <span className="text-destructive">*</span>
+                    {t("common.email")} <span className="text-destructive">*</span>
                   </label>
                   <Input
                     type="email"
@@ -175,7 +177,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
 
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
-                    Phone
+                    {t("common.phone")}
                   </label>
                   <Input
                     type="tel"
@@ -188,7 +190,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
 
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
-                    Job Title
+                    {t("contacts.jobTitle")}
                   </label>
                   <Input
                     name="job_title"
@@ -200,7 +202,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
 
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
-                    Company
+                    {t("common.company")}
                   </label>
                   <Input
                     name="company_name"
@@ -212,7 +214,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
 
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
-                    Status
+                    {t("common.status")}
                   </label>
                   <select
                     name="status"
@@ -220,8 +222,8 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
                     onChange={handleChange}
                     className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
+                    <option value="active">{t("common.active")}</option>
+                    <option value="inactive">{t("common.inactive")}</option>
                   </select>
                 </div>
               </div>
@@ -238,7 +240,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
                     className="text-destructive hover:text-destructive hover:bg-destructive/10"
                   >
                     <Icon name="Trash2" size={16} className="mr-2" />
-                    Delete
+                    {t("common.delete")}
                   </Button>
                 )}
               </div>
@@ -249,11 +251,11 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
                   type="button"
                   disabled={isDeleting}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
                 <Button variant="primary" type="submit" disabled={isDeleting}>
                   <Icon name="Save" size={16} className="mr-2" />
-                  {contact ? "Update Client" : "Create Client"}
+                  {contact ? t("contacts.updateClient") : t("contacts.createClient")}
                 </Button>
               </div>
             </div>
@@ -273,56 +275,49 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
                   </div>
                   <h3 className="text-lg font-semibold text-card-foreground">
                     {deleteReferences?.totalReferences > 0
-                      ? "Cannot Delete Client"
-                      : "Delete Client"}
+                      ? t("contacts.cannotDeleteClient")
+                      : t("contacts.deleteClient")}
                   </h3>
                 </div>
 
                 {deleteReferences?.totalReferences > 0 ? (
                   <div className="mb-4">
                     <p className="text-sm text-destructive font-medium mb-3">
-                      This client cannot be deleted because it has the following
-                      references:
+                      {t("contacts.clientHasReferences")}
                     </p>
                     <ul className="space-y-2 text-sm">
                       {deleteReferences.references.deals > 0 && (
                         <li className="flex items-center text-amber-600">
                           <Icon name="Briefcase" size={16} className="mr-2" />
-                          {deleteReferences.references.deals} deal(s) linked to
-                          this client
+                          {deleteReferences.references.deals} {t("contacts.dealsLinked")}
                         </li>
                       )}
                       {deleteReferences.references.activities > 0 && (
                         <li className="flex items-center text-amber-600">
                           <Icon name="Activity" size={16} className="mr-2" />
-                          {deleteReferences.references.activities} activity(ies)
-                          associated
+                          {deleteReferences.references.activities} {t("contacts.activitiesAssociated")}
                         </li>
                       )}
                       {deleteReferences.references.tasks > 0 && (
                         <li className="flex items-center text-amber-600">
                           <Icon name="CheckSquare" size={16} className="mr-2" />
-                          {deleteReferences.references.tasks} task(s) linked to
-                          this client
+                          {deleteReferences.references.tasks} {t("contacts.tasksLinked")}
                         </li>
                       )}
                       {deleteReferences.references.contact_tags > 0 && (
                         <li className="flex items-center text-amber-600">
                           <Icon name="Tag" size={16} className="mr-2" />
-                          {deleteReferences.references.contact_tags} tag(s)
-                          associated
+                          {deleteReferences.references.contact_tags} {t("contacts.tagsAssociated")}
                         </li>
                       )}
                     </ul>
                     <p className="text-sm text-muted-foreground mt-3">
-                      Please remove or reassign all related records before
-                      deleting this client.
+                      {t("contacts.removeBeforeDeleting")}
                     </p>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground mb-4">
-                    Are you sure you want to delete this client? This action
-                    cannot be undone.
+                    {t("contacts.deleteClientConfirm")}
                   </p>
                 )}
 
@@ -332,7 +327,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
                     onClick={() => setShowDeleteConfirm(false)}
                     disabled={isDeleting}
                   >
-                    {deleteReferences?.totalReferences > 0 ? "Close" : "Cancel"}
+                    {deleteReferences?.totalReferences > 0 ? t("common.close") : t("common.cancel")}
                   </Button>
                   {deleteReferences?.totalReferences === 0 && (
                     <Button
@@ -340,7 +335,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
                       onClick={handleDeleteConfirm}
                       loading={isDeleting}
                     >
-                      {isDeleting ? "Deleting..." : "Delete Client"}
+                      {isDeleting ? t("deals.deleting") : t("contacts.deleteClient")}
                     </Button>
                   )}
                 </div>

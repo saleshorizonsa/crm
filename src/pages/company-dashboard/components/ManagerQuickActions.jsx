@@ -1,6 +1,7 @@
 import React from "react";
 import Button from "../../../components/ui/Button";
 import Icon from "../../../components/AppIcon";
+import { useLanguage } from "../../../i18n";
 
 const ManagerQuickActions = ({
   subordinates,
@@ -10,6 +11,7 @@ const ManagerQuickActions = ({
   onScheduleMeeting,
   onViewReports,
 }) => {
+  const { t } = useLanguage();
   const getQuickStats = () => {
     const membersWithoutTargets =
       subordinates?.filter(
@@ -31,8 +33,8 @@ const ManagerQuickActions = ({
 
   const quickActions = [
     {
-      title: "Assign Sales Targets",
-      description: `${stats.membersWithoutTargets} member(s) need targets assigned`,
+      title: t("dashboard.assignSalesTargets"),
+      description: `${stats.membersWithoutTargets} ${t("dashboard.membersNeedTargets").replace("{count}", "").trim()}`,
       icon: "target",
       color:
         stats.membersWithoutTargets > 0
@@ -44,8 +46,8 @@ const ManagerQuickActions = ({
       priority: stats.membersWithoutTargets > 0 ? "high" : "normal",
     },
     {
-      title: "Create New Deal",
-      description: "Add a new deal to the pipeline",
+      title: t("dashboard.createNewDeal"),
+      description: t("dashboard.addDealToPipeline"),
       icon: "plus-circle",
       color: "bg-green-500 hover:bg-green-600",
       textColor: "text-white",
@@ -54,8 +56,8 @@ const ManagerQuickActions = ({
       priority: "normal",
     },
     {
-      title: "Schedule Team Meeting",
-      description: "Plan performance review or strategy session",
+      title: t("dashboard.scheduleTeamMeeting"),
+      description: t("dashboard.planReviewSession"),
       icon: "calendar",
       color: "bg-blue-500 hover:bg-blue-600",
       textColor: "text-white",
@@ -64,8 +66,8 @@ const ManagerQuickActions = ({
       priority: "normal",
     },
     {
-      title: "Generate Reports",
-      description: "Export team performance and target reports",
+      title: t("dashboard.generateReports"),
+      description: t("dashboard.exportReports"),
       icon: "file-text",
       color: "bg-purple-500 hover:bg-purple-600",
       textColor: "text-white",
@@ -74,8 +76,8 @@ const ManagerQuickActions = ({
       priority: "normal",
     },
     {
-      title: "Review Team Performance",
-      description: `${stats.activeTargets} active target(s) to monitor`,
+      title: t("dashboard.reviewTeamPerformance"),
+      description: `${stats.activeTargets} ${t("dashboard.activeTargets")}`,
       icon: "bar-chart",
       color: "bg-indigo-500 hover:bg-indigo-600",
       textColor: "text-white",
@@ -84,8 +86,8 @@ const ManagerQuickActions = ({
       priority: stats.activeTargets > 3 ? "high" : "normal",
     },
     {
-      title: "Manage Team",
-      description: "Add or modify team member assignments",
+      title: t("dashboard.manageTeam"),
+      description: t("dashboard.addModifyTeamMembers"),
       icon: "users",
       color: "bg-teal-500 hover:bg-teal-600",
       textColor: "text-white",
@@ -106,11 +108,10 @@ const ManagerQuickActions = ({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">
-          Manager Quick Actions
+          {t("dashboard.managerQuickActions")}
         </h3>
         <div className="text-sm text-gray-500">
-          {stats.totalTeamMembers} team members • {stats.activeTargets} active
-          targets
+          {stats.totalTeamMembers} {t("dashboard.teamMembers")} • {stats.activeTargets} {t("dashboard.activeTargets")}
         </div>
       </div>
 
@@ -124,12 +125,10 @@ const ManagerQuickActions = ({
             />
             <div className="flex-1">
               <p className="text-sm font-medium text-orange-800">
-                Action Required: {stats.membersWithoutTargets} team member(s)
-                without sales targets
+                {t("dashboard.actionRequired")}: {stats.membersWithoutTargets} {t("dashboard.membersWithoutTargets").replace("{count}", "").trim()}
               </p>
               <p className="text-sm text-orange-700 mt-1">
-                Assign targets to improve performance tracking and team
-                accountability.
+                {t("dashboard.assignTargetsImprove")}
               </p>
             </div>
             <Button
@@ -138,7 +137,7 @@ const ManagerQuickActions = ({
               onClick={onAssignTarget}
               className="ml-4 text-orange-700 border-orange-300 hover:bg-orange-100"
             >
-              Assign Now
+              {t("dashboard.assignNow")}
             </Button>
           </div>
         </div>
@@ -158,7 +157,7 @@ const ManagerQuickActions = ({
             {action.priority === "high" && (
               <div className="absolute top-2 right-2">
                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                  Priority
+                  {t("dashboard.priorityLabel")}
                 </span>
               </div>
             )}
@@ -203,25 +202,25 @@ const ManagerQuickActions = ({
             <p className="text-2xl font-bold text-gray-900">
               {stats.totalTeamMembers}
             </p>
-            <p className="text-sm text-gray-600">Team Members</p>
+            <p className="text-sm text-gray-600">{t("dashboard.teamMembers")}</p>
           </div>
           <div>
             <p className="text-2xl font-bold text-blue-600">
               {stats.activeTargets}
             </p>
-            <p className="text-sm text-gray-600">Active Targets</p>
+            <p className="text-sm text-gray-600">{t("dashboard.activeTargets")}</p>
           </div>
           <div>
             <p className="text-2xl font-bold text-green-600">
               {stats.totalTeamMembers - stats.membersWithoutTargets}
             </p>
-            <p className="text-sm text-gray-600">With Targets</p>
+            <p className="text-sm text-gray-600">{t("dashboard.withTargets")}</p>
           </div>
           <div>
             <p className="text-2xl font-bold text-orange-600">
               {stats.membersWithoutTargets}
             </p>
-            <p className="text-sm text-gray-600">Need Targets</p>
+            <p className="text-sm text-gray-600">{t("dashboard.needTargets")}</p>
           </div>
         </div>
       </div>

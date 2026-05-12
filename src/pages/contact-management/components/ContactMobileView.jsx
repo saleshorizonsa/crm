@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import Icon from "../../../components/AppIcon";
 import Image from "../../../components/AppImage";
 import Button from "../../../components/ui/Button";
+import { useLanguage } from "../../../i18n";
 
 const ContactMobileView = ({
   contacts,
@@ -11,6 +12,7 @@ const ContactMobileView = ({
   onQuickAction,
 }) => {
   const [expandedCard, setExpandedCard] = useState(null);
+  const { t } = useLanguage();
 
   const getRelationshipStatusColor = (status) => {
     const colors = {
@@ -137,7 +139,7 @@ const ContactMobileView = ({
                 className="text-xs"
               >
                 <Icon name="Mail" size={14} className="mr-1" />
-                Email
+                {t("common.email")}
               </Button>
               <Button
                 variant="ghost"
@@ -146,7 +148,7 @@ const ContactMobileView = ({
                 className="text-xs"
               >
                 <Icon name="Phone" size={14} className="mr-1" />
-                Call
+                {t("common.phone")}
               </Button>
               <Button
                 variant="ghost"
@@ -155,7 +157,7 @@ const ContactMobileView = ({
                 className="text-xs"
               >
                 <Icon name="Eye" size={14} className="mr-1" />
-                View
+                {t("common.view")}
               </Button>
             </div>
           </div>
@@ -167,13 +169,13 @@ const ContactMobileView = ({
                 {/* Additional Info */}
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <span className="text-muted-foreground">Phone:</span>
+                    <span className="text-muted-foreground">{t("common.phone")}:</span>
                     <p className="text-card-foreground mt-1">
                       {contact?.phone || "+1 (555) 123-4567"}
                     </p>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Location:</span>
+                    <span className="text-muted-foreground">{t("common.address")}:</span>
                     <p className="text-card-foreground mt-1">
                       San Francisco, CA
                     </p>
@@ -182,7 +184,7 @@ const ContactMobileView = ({
 
                 {/* Tags */}
                 <div>
-                  <span className="text-xs text-muted-foreground">Tags:</span>
+                  <span className="text-xs text-muted-foreground">{t("contacts.tags")}:</span>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {["VIP", "Decision Maker"]?.map((tag) => (
                       <span
@@ -198,7 +200,7 @@ const ContactMobileView = ({
                 {/* Recent Activity */}
                 <div>
                   <span className="text-xs text-muted-foreground">
-                    Recent Activity:
+                    {t("contacts.recentActivity")}:
                   </span>
                   <div className="mt-1 p-2 bg-muted/30 rounded text-xs">
                     <p className="text-card-foreground">
@@ -217,7 +219,7 @@ const ContactMobileView = ({
                     className="flex-1 text-xs"
                   >
                     <Icon name="Plus" size={14} className="mr-1" />
-                    Add Task
+                    {t("tasks.addTask")}
                   </Button>
                   <Button
                     variant="outline"
@@ -226,7 +228,7 @@ const ContactMobileView = ({
                     className="flex-1 text-xs"
                   >
                     <Icon name="TrendingUp" size={14} className="mr-1" />
-                    Create Deal
+                    {t("deals.createDeal")}
                   </Button>
                 </div>
               </div>
@@ -241,7 +243,7 @@ const ContactMobileView = ({
             size={48}
             className="text-muted-foreground mx-auto mb-4"
           />
-          <p className="text-muted-foreground">No clients found</p>
+          <p className="text-muted-foreground">{t("contacts.noClientsFound")}</p>
         </div>
       )}
     </div>

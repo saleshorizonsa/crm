@@ -1,6 +1,7 @@
 import React from "react";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import Icon from "../../../components/AppIcon";
+import { useLanguage } from "../../../i18n";
 
 const SupervisorExecutiveMetrics = ({
   metrics,
@@ -10,6 +11,7 @@ const SupervisorExecutiveMetrics = ({
   isLoading,
 }) => {
   const { formatCurrency } = useCurrency();
+  const { t } = useLanguage();
 
   if (isLoading) {
     return (
@@ -71,10 +73,10 @@ const SupervisorExecutiveMetrics = ({
 
   const metricCards = [
     {
-      title: "Team Revenue",
+      title: t("dashboard.teamRevenue"),
       value: formatCurrency(totalTeamRevenue),
-      subValue: `Target: ${formatCurrency(currentTargetAmount)}`,
-      change: `${targetAchievementRate}% of target`,
+      subValue: `${t("dashboard.forecastTarget")}: ${formatCurrency(currentTargetAmount)}`,
+      change: `${targetAchievementRate}% ${t("dashboard.ofTarget")}`,
       trend:
         targetAchievementRate >= 80
           ? "up"
@@ -87,10 +89,10 @@ const SupervisorExecutiveMetrics = ({
       borderColor: "border-green-200",
     },
     {
-      title: "Team Performance",
+      title: t("dashboard.teamPerformance"),
       value: `${wonDeals}/${totalTeamDeals}`,
-      subValue: `${avgConversionRate}% avg conversion`,
-      change: totalTeamDeals > 0 ? `${wonDeals} deals won` : "No deals yet",
+      subValue: `${avgConversionRate}% ${t("dashboard.avgConversionRate")}`,
+      change: totalTeamDeals > 0 ? `${wonDeals} ${t("dashboard.wonDeals")}` : t("dashboard.noDealsYet"),
       trend:
         avgConversionRate >= 20
           ? "up"
@@ -103,10 +105,10 @@ const SupervisorExecutiveMetrics = ({
       borderColor: "border-blue-200",
     },
     {
-      title: "Sales Team",
+      title: t("dashboard.salesTeam"),
       value: salesmanCount,
-      subValue: `${salesmanCount} active salesmen`,
-      change: salesmanCount > 0 ? "Team ready" : "Add salesmen",
+      subValue: `${salesmanCount} ${t("dashboard.activeSalesmen")}`,
+      change: salesmanCount > 0 ? t("dashboard.teamReady") : t("dashboard.addSalesmen"),
       trend:
         salesmanCount >= 3 ? "up" : salesmanCount >= 1 ? "neutral" : "down",
       icon: "👥",
@@ -115,10 +117,10 @@ const SupervisorExecutiveMetrics = ({
       borderColor: "border-purple-200",
     },
     {
-      title: "Active Tasks",
+      title: t("dashboard.activeTasks"),
       value: activeTaskCount,
-      subValue: "Pending completion",
-      change: activeTaskCount <= 5 ? "Manageable load" : "High workload",
+      subValue: t("dashboard.pendingCompletion"),
+      change: activeTaskCount <= 5 ? t("dashboard.manageableLoad") : t("dashboard.highWorkload"),
       trend:
         activeTaskCount <= 5
           ? "up"

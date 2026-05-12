@@ -6,17 +6,19 @@ import { supabase } from "../../lib/supabase";
 import Icon from "../../components/AppIcon";
 import Button from "../../components/ui/Button";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
+import { useLanguage } from "../../i18n";
 
 const Notifications = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [notifications, setNotifications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState("all"); // all, unread, read
 
   const breadcrumbs = [
-    { label: "Home", path: "/" },
-    { label: "Notifications", path: "/notifications" },
+    { label: t("nav.home"), path: "/" },
+    { label: t("notifications.title"), path: "/notifications" },
   ];
 
   useEffect(() => {
@@ -144,13 +146,13 @@ const Notifications = () => {
   };
 
   const formatTimeAgo = (timestamp) => {
-    if (!timestamp) return "Unknown time";
+    if (!timestamp) return t("notifications.unknownTime");
 
     const now = new Date();
     const time = new Date(timestamp);
     const diffInMinutes = Math.floor((now - time) / (1000 * 60));
 
-    if (diffInMinutes < 1) return "Just now";
+    if (diffInMinutes < 1) return t("notifications.justNow");
     if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
     if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
     return `${Math.floor(diffInMinutes / 1440)}d ago`;
@@ -163,7 +165,7 @@ const Notifications = () => {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading notifications...</p>
+          <p className="text-gray-600">{t("notifications.loadingNotifications")}</p>
         </div>
       </div>
     );
@@ -184,7 +186,7 @@ const Notifications = () => {
               </button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">
-                  Notifications
+                  {t("notifications.title")}
                 </h1>
                 <NavigationBreadcrumbs items={breadcrumbs} />
               </div>
@@ -192,7 +194,7 @@ const Notifications = () => {
             {unreadCount > 0 && (
               <Button onClick={handleMarkAllAsRead} variant="outline" size="sm">
                 <Icon name="Check" size={16} className="mr-2" />
-                Mark all as read
+                {t("notifications.markAllRead")}
               </Button>
             )}
           </div>
@@ -206,10 +208,10 @@ const Notifications = () => {
           <div className="px-6 py-4 border-b border-gray-200">
             <p className="text-sm text-gray-500">
               {unreadCount > 0
-                ? `${unreadCount} unread notification${
-                    unreadCount !== 1 ? "s" : ""
+                ? `${unreadCount} ${
+                    unreadCount !== 1 ? t("notifications.unreadCountPlural") : t("notifications.unreadCount")
                   }`
-                : "All caught up!"}
+                : t("notifications.allCaughtUp")}
             </p>
           </div>
 
@@ -223,7 +225,7 @@ const Notifications = () => {
                   : "text-gray-600 hover:bg-gray-100"
               }`}
             >
-              All
+              {t("notifications.all")}
             </button>
             <button
               onClick={() => setFilter("unread")}
@@ -233,7 +235,7 @@ const Notifications = () => {
                   : "text-gray-600 hover:bg-gray-100"
               }`}
             >
-              Unread
+              {t("notifications.unread")}
               {notifications.filter((n) => !n.is_read).length > 0 && (
                 <span className="ml-2 px-2 py-0.5 text-xs bg-blue-600 text-white rounded-full">
                   {notifications.filter((n) => !n.is_read).length}
@@ -248,7 +250,7 @@ const Notifications = () => {
                   : "text-gray-600 hover:bg-gray-100"
               }`}
             >
-              Read
+              {t("notifications.read")}
             </button>
           </div>
         </div>
@@ -263,12 +265,12 @@ const Notifications = () => {
                 className="mx-auto text-gray-300 mb-4"
               />
               <h3 className="text-lg font-medium text-gray-900 mb-1">
-                No notifications
+                {t("notifications.noNotifications")}
               </h3>
               <p className="text-sm text-gray-500">
                 {filter === "unread"
-                  ? "You're all caught up!"
-                  : "You don't have any notifications yet."}
+                  ? t("notifications.allCaughtUpUnread")
+                  : t("notifications.noNotificationsYet")}
               </p>
             </div>
           ) : (
@@ -317,15 +319,15 @@ const Notifications = () => {
                           <button
                             onClick={() => handleMarkAsRead(notification.id)}
                             className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                            title="Mark as read"
+                            title={t("notifications.markAsRead")}
                           >
-                            Mark read
+                            {t("notifications.markRead")}
                           </button>
                         )}
                         <button
                           onClick={() => handleDelete(notification.id)}
                           className="text-xs text-red-600 hover:text-red-700"
-                          title="Delete"
+                          title={t("common.delete")}
                         >
                           <Icon name="Trash2" size={14} />
                         </button>

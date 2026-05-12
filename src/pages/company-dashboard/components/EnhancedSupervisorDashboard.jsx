@@ -27,6 +27,7 @@ import MarginSummaryWidget from "./MarginSummaryWidget";
 import MetricInsightModal from "./MetricInsightModal";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
+import { useLanguage } from "../../../i18n";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
 import {
   BarChart,
@@ -48,6 +49,7 @@ const EnhancedSupervisorDashboard = ({
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { dateRange } = useDateRange();
+  const { t } = useLanguage();
 
   // If viewing as another user (director view), use that user's data
   const effectiveUser = viewAsUser || { id: user?.id };
@@ -448,7 +450,7 @@ const EnhancedSupervisorDashboard = ({
     } else if (selectedYear !== null) {
       return `${selectedYear}`;
     }
-    return "Current";
+    return t("dashboard.currentPeriod");
   };
 
   // Filter targets based on selected filters - check if target period overlaps with selected filters
@@ -1432,10 +1434,10 @@ const EnhancedSupervisorDashboard = ({
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
-              Supervisor Dashboard
+              {t("roles.supervisor")} {t("nav.dashboard")}
             </h1>
             <p className="text-gray-600 mt-1">
-              Welcome back, {userProfile?.full_name || user?.email}
+              {t("dashboard.welcomeBack")}, {userProfile?.full_name || user?.email}
             </p>
           </div>
         </div>
@@ -1444,12 +1446,12 @@ const EnhancedSupervisorDashboard = ({
         {filterMonth === undefined && (
           <div className="flex items-center gap-4 flex-wrap">
             <label className="text-sm font-medium text-gray-700">
-              Filter by:
+              {t("reports.filterBy")}:
             </label>
 
             {/* Month Filter */}
             <div className="flex items-center gap-2">
-              <label className="text-sm text-gray-600">Month:</label>
+              <label className="text-sm text-gray-600">{t("dashboard.month")}:</label>
               <select
                 value={selectedMonth !== null ? selectedMonth : ""}
                 onChange={(e) => {
@@ -1463,7 +1465,7 @@ const EnhancedSupervisorDashboard = ({
                 }}
                 className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[140px]"
               >
-                <option value="">All Months</option>
+                <option value="">{t("pipeline.allMonths")}</option>
                 {monthOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -1474,7 +1476,7 @@ const EnhancedSupervisorDashboard = ({
 
             {/* Quarter Filter */}
             <div className="flex items-center gap-2">
-              <label className="text-sm text-gray-600">Quarter:</label>
+              <label className="text-sm text-gray-600">{t("dashboard.quarter")}:</label>
               <select
                 value={selectedQuarter !== null ? selectedQuarter : ""}
                 onChange={(e) => {
@@ -1491,7 +1493,7 @@ const EnhancedSupervisorDashboard = ({
                 }}
                 className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[120px]"
               >
-                <option value="">All Quarters</option>
+                <option value="">{t("pipeline.allQuarters")}</option>
                 {quarterOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -1502,7 +1504,7 @@ const EnhancedSupervisorDashboard = ({
 
             {/* Year Filter */}
             <div className="flex items-center gap-2">
-              <label className="text-sm text-gray-600">Year:</label>
+              <label className="text-sm text-gray-600">{t("dashboard.year")}:</label>
               <select
                 value={selectedYear !== null ? selectedYear : ""}
                 onChange={(e) => {
@@ -1512,7 +1514,7 @@ const EnhancedSupervisorDashboard = ({
                 }}
                 className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[100px]"
               >
-                <option value="">All Years</option>
+                <option value="">{t("pipeline.allYears")}</option>
                 {yearOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -1532,7 +1534,7 @@ const EnhancedSupervisorDashboard = ({
                 className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 ml-2"
               >
                 <Icon name="X" size={14} />
-                Clear all filters
+                {t("pipeline.clearFilters")}
               </button>
             )}
           </div>
@@ -1543,9 +1545,9 @@ const EnhancedSupervisorDashboard = ({
       <div className="border-b border-gray-200">
         <nav className="flex space-x-8">
           {[
-            { id: "overview", label: "Overview", icon: "LayoutDashboard" },
-            { id: "team", label: "Team Management", icon: "Users" },
-            { id: "targets", label: "Sales Targets", icon: "Target" },
+            { id: "overview", label: t("dashboard.overview"), icon: "LayoutDashboard" },
+            { id: "team", label: t("dashboard.teamManagement"), icon: "Users" },
+            { id: "targets", label: t("dashboard.salesTargets"), icon: "Target" },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -1572,7 +1574,7 @@ const EnhancedSupervisorDashboard = ({
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                   <Icon name="Target" size={20} className="text-blue-600" />
-                  Your {getPeriodLabel()} Targets
+                  {t("dashboard.myData")} {getPeriodLabel()} {t("common.targets")}
                 </h3>
                 <div className="flex items-center gap-4">
                   {(() => {
@@ -1594,7 +1596,7 @@ const EnhancedSupervisorDashboard = ({
                     return (
                       <div className="text-right">
                         <div className="text-sm text-gray-500">
-                          Overall Progress
+                          {t("dashboard.overallProgress")}
                         </div>
                         <div
                           className={`text-lg font-bold ${
@@ -1624,7 +1626,7 @@ const EnhancedSupervisorDashboard = ({
                       ),
                     )}
                   </div>
-                  <div className="text-sm text-blue-600">Total Target</div>
+                  <div className="text-sm text-blue-600">{t("dashboard.totalTarget")}</div>
                 </div>
                 <div className="bg-green-50 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-green-700">
@@ -1635,7 +1637,7 @@ const EnhancedSupervisorDashboard = ({
                           ?.subordinates_contribution || 0),
                     )}
                   </div>
-                  <div className="text-sm text-green-600">Total Achieved</div>
+                  <div className="text-sm text-green-600">{t("dashboard.totalAchieved")}</div>
                 </div>
                 <div className="bg-purple-50 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-purple-700">
@@ -1644,7 +1646,7 @@ const EnhancedSupervisorDashboard = ({
                         0,
                     )}
                   </div>
-                  <div className="text-sm text-purple-600">Your Revenue</div>
+                  <div className="text-sm text-purple-600">{t("dashboard.yourRevenue")}</div>
                 </div>
                 <div className="bg-red-500 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-white">
@@ -1659,7 +1661,7 @@ const EnhancedSupervisorDashboard = ({
                             ?.subordinates_contribution || 0)),
                     )}
                   </div>
-                  <div className="text-sm text-white">Remaining Revenue</div>
+                  <div className="text-sm text-white">{t("dashboard.remainingRevenue")}</div>
                 </div>
               </div>
 
@@ -1757,7 +1759,7 @@ const EnhancedSupervisorDashboard = ({
                           <div className="text-xs border-t border-blue-100 pt-3 space-y-2">
                             <div className="flex justify-between items-center">
                               <span className="text-gray-600 flex items-center gap-1">
-                                <Icon name="User" size={12} /> Your Revenue
+                                <Icon name="User" size={12} /> {t("dashboard.yourRevenue")}
                               </span>
                               <span className="font-medium text-gray-900">
                                 {formatCurrency(target.supervisor_revenue || 0)}
@@ -1765,8 +1767,7 @@ const EnhancedSupervisorDashboard = ({
                             </div>
                             <div className="flex justify-between items-center">
                               <span className="text-gray-600 flex items-center gap-1">
-                                <Icon name="Users" size={12} /> Team
-                                Contribution
+                                <Icon name="Users" size={12} /> {t("dashboard.teamContribution")}
                               </span>
                               <span className="font-medium text-gray-900">
                                 {formatCurrency(
@@ -1787,7 +1788,7 @@ const EnhancedSupervisorDashboard = ({
                 <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <p className="text-sm text-blue-800">
                     <Icon name="Info" size={16} className="inline mr-2" />
-                    No targets assigned for this period, showing revenue only.
+                    {t("dashboard.noTargetsForPeriod")}
                   </p>
                 </div>
               )}
@@ -1802,10 +1803,10 @@ const EnhancedSupervisorDashboard = ({
                     <div className="flex items-center gap-2">
                       <Icon name="Users" size={18} className="text-blue-600" />
                       <span className="text-sm font-medium text-gray-900">
-                        Team Performance Breakdown
+                        {t("dashboard.teamPerformanceBreakdown")}
                       </span>
                       <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                        {subordinates.length} salesmen
+                        {subordinates.length} {t("dashboard.salesmen")}
                       </span>
                     </div>
                     <Icon
@@ -1851,7 +1852,7 @@ const EnhancedSupervisorDashboard = ({
                                   {member.full_name}
                                 </div>
                                 <div className="text-xs text-gray-500">
-                                  Salesman
+                                  {t("pipeline.salesman")}
                                 </div>
                               </div>
                             </div>
@@ -1864,7 +1865,7 @@ const EnhancedSupervisorDashboard = ({
                                   ? `of ${formatCurrency(
                                       memberTarget,
                                     )} (${memberProgress.toFixed(0)}%)`
-                                  : "No target assigned"}
+                                  : t("dashboard.noTargetAssigned")}
                               </div>
                             </div>
                             <div className="w-16">
@@ -1907,10 +1908,10 @@ const EnhancedSupervisorDashboard = ({
                         className="text-purple-600"
                       />
                       <span className="text-sm font-medium text-gray-900">
-                        Client Achievement Breakdown
+                        {t("dashboard.clientAchievementBreakdown")}
                       </span>
                       <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                        {clientTargetsData.length} clients
+                        {clientTargetsData.length} {t("common.clients")}
                       </span>
                     </div>
                     <Icon
@@ -1970,7 +1971,7 @@ const EnhancedSupervisorDashboard = ({
                                   ? `of ${formatCurrency(
                                       target,
                                     )} (${progress.toFixed(0)}%)`
-                                  : "No target"}
+                                  : t("dashboard.noTarget")}
                               </p>
                             </div>
                           </div>
@@ -1997,10 +1998,10 @@ const EnhancedSupervisorDashboard = ({
                         className="text-indigo-600"
                       />
                       <span className="text-sm font-medium text-gray-900">
-                        Product Group Performance Breakdown
+                        {t("dashboard.productGroupPerformanceBreakdown")}
                       </span>
                       <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
-                        {productTargetsData.length} groups
+                        {productTargetsData.length} {t("common.group")}s
                       </span>
                     </div>
                     <Icon
@@ -2050,7 +2051,7 @@ const EnhancedSupervisorDashboard = ({
                                   ? `of ${formatCurrency(
                                       target,
                                     )} (${progress.toFixed(0)}%)`
-                                  : "No target"}
+                                  : t("dashboard.noTarget")}
                               </p>
                             </div>
                           </div>
@@ -2066,7 +2067,7 @@ const EnhancedSupervisorDashboard = ({
           {/* Metrics Cards - First Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <MetricsCard
-              title="Total Revenue"
+              title={t("dashboard.totalRevenue")}
               value={formatCurrency(executiveMetrics?.totalRevenue || 0)}
               change="+12.5%"
               trend="up"
@@ -2074,7 +2075,7 @@ const EnhancedSupervisorDashboard = ({
               onClick={() => handleMetricClick("totalRevenue")}
             />
             <MetricsCard
-              title="Active Deals"
+              title={t("dashboard.activeDeals")}
               value={`${metrics?.totalDeals || 0}`}
               change="+8.2%"
               trend="up"
@@ -2082,14 +2083,14 @@ const EnhancedSupervisorDashboard = ({
               onClick={() => handleMetricClick("activePipeline")}
             />
             <MetricsCard
-              title="Contacts"
+              title={t("dashboard.totalContacts")}
               value={`${metrics?.totalContacts || 0}`}
               change="+5.4%"
               trend="up"
               icon="👥"
             />
             <MetricsCard
-              title="Tasks"
+              title={t("nav.tasks")}
               value={`${metrics?.totalTasks || 0}`}
               change="-2.1%"
               trend="down"
@@ -2101,7 +2102,7 @@ const EnhancedSupervisorDashboard = ({
           {executiveMetrics && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <MetricsCard
-                title="Pipeline Value"
+                title={t("dashboard.pipelineValue")}
                 value={formatCurrency(executiveMetrics.activePipeline)}
                 icon="TrendingUp"
                 trend={8}
@@ -2110,7 +2111,7 @@ const EnhancedSupervisorDashboard = ({
                 onClick={() => handleMetricClick("activePipeline")}
               />
               <MetricsCard
-                title="Win Rate"
+                title={t("dashboard.winRate")}
                 value={`${executiveMetrics.winRate.toFixed(1)}%`}
                 icon="Target"
                 trend={5}
@@ -2119,7 +2120,7 @@ const EnhancedSupervisorDashboard = ({
                 onClick={() => handleMetricClick("winRate")}
               />
               <MetricsCard
-                title="Won Deals"
+                title={t("dashboard.wonDeals")}
                 value={`${executiveMetrics.wonDeals}`}
                 subtitle={`of ${executiveMetrics.totalDeals} total`}
                 icon="Briefcase"
@@ -2128,9 +2129,9 @@ const EnhancedSupervisorDashboard = ({
                 onClick={() => handleMetricClick("dealsClosed")}
               />
               <MetricsCard
-                title="Team Members"
+                title={t("dashboard.teamMembers")}
                 value={`${subordinates.length + 1}`}
-                subtitle="including you"
+                subtitle={t("dashboard.includingYou")}
                 icon="Users"
                 iconColor="text-orange-600"
                 iconBgColor="bg-orange-100"
@@ -2143,7 +2144,7 @@ const EnhancedSupervisorDashboard = ({
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Performance Trend
+                {t("dashboard.performanceTrend")}
               </h3>
               {/* Trend Period Toggle */}
               <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
@@ -2155,7 +2156,7 @@ const EnhancedSupervisorDashboard = ({
                       : "text-gray-600 hover:text-gray-800"
                   }`}
                 >
-                  Monthly
+                  {t("dashboard.monthly")}
                 </button>
                 <button
                   onClick={() => setTrendPeriod("quarter")}
@@ -2165,7 +2166,7 @@ const EnhancedSupervisorDashboard = ({
                       : "text-gray-600 hover:text-gray-800"
                   }`}
                 >
-                  Quarterly
+                  {t("dashboard.quarterly")}
                 </button>
                 <button
                   onClick={() => setTrendPeriod("year")}
@@ -2175,7 +2176,7 @@ const EnhancedSupervisorDashboard = ({
                       : "text-gray-600 hover:text-gray-800"
                   }`}
                 >
-                  Yearly
+                  {t("dashboard.yearly")}
                 </button>
               </div>
             </div>
@@ -2195,7 +2196,7 @@ const EnhancedSupervisorDashboard = ({
                   <Tooltip
                     formatter={(value, name) => [
                       name === "revenue" ? formatCurrency(value) : value,
-                      name === "revenue" ? "Revenue" : "Deals",
+                      name === "revenue" ? t("dashboard.totalRevenue") : t("common.deals"),
                     ]}
                   />
                   <Bar
@@ -2214,7 +2215,7 @@ const EnhancedSupervisorDashboard = ({
                     size={48}
                     className="mx-auto mb-2 text-gray-300"
                   />
-                  <p>No performance data available</p>
+                  <p>{t("dashboard.noRevenueData")}</p>
                 </div>
               </div>
             )}
@@ -2229,13 +2230,13 @@ const EnhancedSupervisorDashboard = ({
                       ),
                     )}
                   </div>
-                  <div className="text-sm text-gray-500">Total Revenue</div>
+                  <div className="text-sm text-gray-500">{t("dashboard.totalRevenueSummary")}</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">
                     {performanceTrendData.reduce((sum, d) => sum + d.deals, 0)}
                   </div>
-                  <div className="text-sm text-gray-500">Deals Closed</div>
+                  <div className="text-sm text-gray-500">{t("dashboard.dealsClosedSummary")}</div>
                 </div>
               </div>
             )}
@@ -2248,7 +2249,7 @@ const EnhancedSupervisorDashboard = ({
                 data={salesData}
                 pipelineData={pipelineData}
                 allDeals={allDeals}
-                title="Sales Performance"
+                title={t("dashboard.salesPerformance")}
                 showTypeSelector={true}
               />
             </div>
@@ -2267,7 +2268,7 @@ const EnhancedSupervisorDashboard = ({
           <div>
             <h3 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
               <Icon name="TrendingUp" size={18} />
-              Gross Margin Overview
+              {t("dashboard.grossMarginOverview")}
             </h3>
             <MarginSummaryWidget deals={filteredDeals} />
           </div>
@@ -2276,7 +2277,7 @@ const EnhancedSupervisorDashboard = ({
           <div className="bg-white rounded-lg shadow">
             <ActivityFeed
               activities={filteredActivities}
-              title="Recent Activity"
+              title={t("dashboard.recentActivity")}
               companyId={company?.id}
               users={subordinates}
               currentUserId={userProfile?.id}
@@ -2289,10 +2290,10 @@ const EnhancedSupervisorDashboard = ({
       {activeView === "team" && (
         <div className="space-y-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-gray-900">My Team</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t("dashboard.myTeam")}</h2>
             <div className="text-sm text-gray-600">
               {subordinates.length}{" "}
-              {subordinates.length === 1 ? "salesman" : "salesmen"}
+              {subordinates.length === 1 ? t("pipeline.salesman") : t("pipeline.salesmen")}
             </div>
           </div>
 
@@ -2301,19 +2302,19 @@ const EnhancedSupervisorDashboard = ({
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Member
+                    {t("common.member")}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Role
+                    {t("common.role")}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Deals
+                    {t("common.deals")}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Revenue
+                    {t("common.revenue")}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Conversion Rate
+                    {t("dashboard.conversionRate")}
                   </th>
                 </tr>
               </thead>
@@ -2342,7 +2343,7 @@ const EnhancedSupervisorDashboard = ({
                             {member.name}
                             {member.id === user.id && (
                               <span className="ml-2 text-xs text-gray-500">
-                                (You)
+                                {t("dashboard.youLabel")}
                               </span>
                             )}
                           </div>
@@ -2362,7 +2363,7 @@ const EnhancedSupervisorDashboard = ({
                         {member.deals}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {member.wonDeals} won, {member.activeDeals} active
+                        {member.wonDeals} {t("common.won")}, {member.activeDeals} {t("common.active")}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -2410,10 +2411,10 @@ const EnhancedSupervisorDashboard = ({
                   className="mx-auto text-gray-400 mb-4"
                 />
                 <h3 className="text-sm font-medium text-gray-900 mb-1">
-                  No team members yet
+                  {t("dashboard.noTeamMembersYet")}
                 </h3>
                 <p className="text-sm text-gray-500">
-                  Salesmen will appear here once assigned to your team.
+                  {t("dashboard.salesmenWillAppear")}
                 </p>
               </div>
             )}
@@ -2432,9 +2433,9 @@ const EnhancedSupervisorDashboard = ({
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">
-                  Your {getPeriodLabel()} Targets
+                  {t("dashboard.myData")} {getPeriodLabel()} {t("common.targets")}
                 </h3>
-                <p className="text-sm text-gray-500">Assigned by Manager</p>
+                <p className="text-sm text-gray-500">{t("dashboard.assignedByManager")}</p>
               </div>
             </div>
 
@@ -2444,7 +2445,7 @@ const EnhancedSupervisorDashboard = ({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="p-4 bg-green-50 rounded-lg border border-green-100">
                     <p className="text-sm text-green-600 font-medium">
-                      Total Allocated
+                      {t("dashboard.totalAllocated")}
                     </p>
                     <p className="text-2xl font-bold text-green-700">
                       {formatCurrency(
@@ -2457,7 +2458,7 @@ const EnhancedSupervisorDashboard = ({
                   </div>
                   <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
                     <p className="text-sm text-blue-600 font-medium">
-                      Assigned to Salesmen
+                      {t("dashboard.assignedToSalesmen")}
                     </p>
                     <p className="text-2xl font-bold text-blue-700">
                       {formatCurrency(
@@ -2470,7 +2471,7 @@ const EnhancedSupervisorDashboard = ({
                   </div>
                   <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
                     <p className="text-sm text-amber-600 font-medium">
-                      Available Budget
+                      {t("dashboard.availableBudget")}
                     </p>
                     <p className="text-2xl font-bold text-amber-700">
                       {formatCurrency(
@@ -2513,7 +2514,7 @@ const EnhancedSupervisorDashboard = ({
                       >
                         <div className="flex items-center justify-between mb-3">
                           <span className="text-sm font-medium text-gray-900 capitalize">
-                            {target.period_type} Target
+                            {target.period_type} {t("dashboard.periodTarget")}
                           </span>
                           <span
                             className={`px-2 py-1 text-xs rounded-full ${
@@ -2531,7 +2532,7 @@ const EnhancedSupervisorDashboard = ({
                             {formatCurrency(target.target_amount)}
                           </div>
                           <div className="text-sm text-gray-600">
-                            Progress:{" "}
+                            {t("common.progress")}:{" "}
                             {formatCurrency(
                               target.calculated_progress ||
                                 target.progress_amount ||
@@ -2564,10 +2565,10 @@ const EnhancedSupervisorDashboard = ({
 
                         {target.assigner && (
                           <div className="border-t border-gray-100 pt-3 text-xs text-gray-500">
-                            Assigned by:{" "}
+                            {t("dashboard.assignedBy")}:{" "}
                             {target.assigner?.full_name ||
                               target.assigner?.email ||
-                              "Manager"}
+                              t("roles.manager")}
                           </div>
                         )}
                       </div>
@@ -2590,10 +2591,10 @@ const EnhancedSupervisorDashboard = ({
                             className="text-blue-600"
                           />
                           <span className="text-sm font-medium text-gray-900">
-                            Team Performance Breakdown
+                            {t("dashboard.teamPerformanceBreakdown")}
                           </span>
                           <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                            {allSubordinates.length} salesmen
+                            {allSubordinates.length} {t("dashboard.salesmen")}
                           </span>
                         </div>
                         <Icon
@@ -2652,7 +2653,7 @@ const EnhancedSupervisorDashboard = ({
                                     <div className="text-xs text-gray-500">
                                       {totalTarget > 0
                                         ? `of ${formatCurrency(totalTarget)} (${memberProgress.toFixed(0)}%)`
-                                        : "No target assigned"}
+                                        : t("dashboard.noTargetAssigned")}
                                     </div>
                                   </div>
                                   <div className="w-16">
@@ -2701,10 +2702,10 @@ const EnhancedSupervisorDashboard = ({
                           className="text-purple-600"
                         />
                         <span className="text-sm font-medium text-gray-900">
-                          Client Performance Breakdown
+                          {t("dashboard.clientPerformanceBreakdown")}
                         </span>
                         <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                          {clientTargetsData.length} clients
+                          {clientTargetsData.length} {t("common.clients")}
                         </span>
                       </div>
                       <Icon
@@ -2766,7 +2767,7 @@ const EnhancedSupervisorDashboard = ({
                                     ? `of ${formatCurrency(
                                         target,
                                       )} (${progress.toFixed(0)}%)`
-                                    : "No target"}
+                                    : t("dashboard.noTarget")}
                                 </p>
                               </div>
                             </div>
@@ -2793,10 +2794,10 @@ const EnhancedSupervisorDashboard = ({
                           className="text-indigo-600"
                         />
                         <span className="text-sm font-medium text-gray-900">
-                          Product Group Performance Breakdown
+                          {t("dashboard.productGroupPerformanceBreakdown")}
                         </span>
                         <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
-                          {productTargetsData.length} groups
+                          {productTargetsData.length} {t("common.group")}s
                         </span>
                       </div>
                       <Icon
@@ -2835,7 +2836,7 @@ const EnhancedSupervisorDashboard = ({
                                     {productGroup}
                                   </p>
                                   <p className="text-xs text-gray-500">
-                                    Product Group
+                                    {t("dashboard.productGroup")}
                                   </p>
                                 </div>
                               </div>
@@ -2848,7 +2849,7 @@ const EnhancedSupervisorDashboard = ({
                                     ? `of ${formatCurrency(
                                         target,
                                       )} (${progress.toFixed(0)}%)`
-                                    : "No target"}
+                                    : t("dashboard.noTarget")}
                                 </p>
                               </div>
                             </div>
@@ -2866,9 +2867,9 @@ const EnhancedSupervisorDashboard = ({
                   size={48}
                   className="mx-auto text-gray-300 mb-4"
                 />
-                <p>No targets assigned by manager yet.</p>
+                <p>{t("dashboard.noTargetsAssignedByManager")}</p>
                 <p className="text-sm mt-2">
-                  Contact your manager to get sales targets assigned.
+                  {t("dashboard.contactManagerForTargets")}
                 </p>
               </div>
             )}
@@ -2881,7 +2882,7 @@ const EnhancedSupervisorDashboard = ({
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
                 <Icon name="BarChart3" size={20} className="text-blue-600" />
-                Targets Breakdown
+                {t("dashboard.targetsBreakdown")}
               </h3>
 
               <div className="space-y-6">
@@ -2896,13 +2897,13 @@ const EnhancedSupervisorDashboard = ({
                           size={18}
                           className="text-green-600"
                         />
-                        Targets by Total Value
+                        {t("dashboard.targetsByTotalValue")}
                       </h4>
                       <button
                         onClick={() => setShowTeamBreakdown(!showTeamBreakdown)}
                         className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
                       >
-                        {showTeamBreakdown ? "Hide Details" : "Show Details"}
+                        {showTeamBreakdown ? t("dashboard.hideDetails") : t("dashboard.showDetails")}
                         <Icon
                           name={showTeamBreakdown ? "ChevronUp" : "ChevronDown"}
                           size={16}
@@ -2976,7 +2977,7 @@ const EnhancedSupervisorDashboard = ({
                                   />
                                 </div>
                                 <div className="text-sm text-gray-600">
-                                  {progress.toFixed(1)}% achieved
+                                  {progress.toFixed(1)}{t("dashboard.percentAchieved")}
                                 </div>
                               </div>
                             );
@@ -2996,9 +2997,9 @@ const EnhancedSupervisorDashboard = ({
                           size={18}
                           className="text-purple-600"
                         />
-                        Targets by Clients
+                        {t("dashboard.targetsByClients")}
                         <span className="text-sm font-normal text-gray-500">
-                          ({clientTargetsData.length} clients)
+                          ({clientTargetsData.length} {t("common.clients")})
                         </span>
                       </h4>
                       <button
@@ -3007,7 +3008,7 @@ const EnhancedSupervisorDashboard = ({
                         }
                         className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
                       >
-                        {showClientBreakdown ? "Hide Details" : "Show Details"}
+                        {showClientBreakdown ? t("dashboard.hideDetails") : t("dashboard.showDetails")}
                         <Icon
                           name={
                             showClientBreakdown ? "ChevronUp" : "ChevronDown"
@@ -3075,7 +3076,7 @@ const EnhancedSupervisorDashboard = ({
                                 />
                               </div>
                               <div className="text-sm text-gray-600">
-                                {progress.toFixed(1)}% achieved
+                                {progress.toFixed(1)}{t("dashboard.percentAchieved")}
                               </div>
                             </div>
                           );
@@ -3095,9 +3096,9 @@ const EnhancedSupervisorDashboard = ({
                           size={18}
                           className="text-orange-600"
                         />
-                        Targets by Products
+                        {t("dashboard.targetsByProducts")}
                         <span className="text-sm font-normal text-gray-500">
-                          ({productTargetsData.length} products)
+                          ({productTargetsData.length} {t("common.products")})
                         </span>
                       </h4>
                       <button
@@ -3106,7 +3107,7 @@ const EnhancedSupervisorDashboard = ({
                         }
                         className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
                       >
-                        {showProductBreakdown ? "Hide Details" : "Show Details"}
+                        {showProductBreakdown ? t("dashboard.hideDetails") : t("dashboard.showDetails")}
                         <Icon
                           name={
                             showProductBreakdown ? "ChevronUp" : "ChevronDown"
@@ -3162,7 +3163,7 @@ const EnhancedSupervisorDashboard = ({
                                 />
                               </div>
                               <div className="text-sm text-gray-600">
-                                {progress.toFixed(1)}% achieved
+                                {progress.toFixed(1)}{t("dashboard.percentAchieved")}
                               </div>
                             </div>
                           );
@@ -3176,7 +3177,7 @@ const EnhancedSupervisorDashboard = ({
           )}
 
           <ProductTargetReport
-            title="Team Performance by Product"
+            title={t("dashboard.teamPerformanceBreakdown")}
             productTargets={periodFilteredProductTargets}
             formatCurrency={formatCurrency}
             showUser
@@ -3188,7 +3189,7 @@ const EnhancedSupervisorDashboard = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <h3 className="text-md font-semibold text-gray-900 mb-3">
-                  Top Performing Products
+                  {t("dashboard.topPerformingProducts")}
                 </h3>
                 <div className="space-y-2">
                   {topProductPerformance.map((product) => (
@@ -3214,7 +3215,7 @@ const EnhancedSupervisorDashboard = ({
 
               <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <h3 className="text-md font-semibold text-gray-900 mb-3">
-                  Underperforming Products
+                  {t("dashboard.underperformingProducts")}
                 </h3>
                 <div className="space-y-2">
                   {underperformingProducts.map((product) => (
@@ -3263,9 +3264,9 @@ const EnhancedSupervisorDashboard = ({
               />
               {showAssignmentCard
                 ? editingTarget
-                  ? "Cancel Editing"
-                  : "Hide Assignment Form"
-                : "Assign New Target"}
+                  ? t("dashboard.cancelEditing")
+                  : t("dashboard.hideAssignmentForm")
+                : t("dashboard.assignNewTarget")}
             </button>
           </div>
 
@@ -3291,7 +3292,7 @@ const EnhancedSupervisorDashboard = ({
           {/* Team Targets Table */}
           {filteredAssignedTargets.length > 0 && (
             <SalesTargetTable
-              title="Salesmen Targets Assigned"
+              title={t("dashboard.salesmenTargetsAssigned")}
               targets={assignedTargetsWithProgress.filter((target) => {
                 if (tableTypeFilter !== "all" && target.target_type !== tableTypeFilter) return false;
                 if (tableStatusFilter !== "all" && target.status !== tableStatusFilter) return false;
@@ -3305,21 +3306,21 @@ const EnhancedSupervisorDashboard = ({
                 <>
                   <select value={tableTypeFilter} onChange={(e) => setTableTypeFilter(e.target.value)}
                     className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
-                    <option value="all">All Types</option>
-                    <option value="by_value">By Value</option>
-                    <option value="by_clients">By Clients</option>
-                    <option value="by_products">By Products</option>
+                    <option value="all">{t("pipeline.allTypes")}</option>
+                    <option value="by_value">{t("pipeline.byValue")}</option>
+                    <option value="by_clients">{t("pipeline.byClients")}</option>
+                    <option value="by_products">{t("pipeline.byProducts")}</option>
                   </select>
                   <select value={tableStatusFilter} onChange={(e) => setTableStatusFilter(e.target.value)}
                     className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
-                    <option value="all">All Status</option>
-                    <option value="active">Active</option>
-                    <option value="completed">Completed</option>
-                    <option value="expired">Expired</option>
+                    <option value="all">{t("pipeline.allStatus")}</option>
+                    <option value="active">{t("common.active")}</option>
+                    <option value="completed">{t("common.completed")}</option>
+                    <option value="expired">{t("pipeline.expired")}</option>
                   </select>
                   <select value={tableMemberFilter} onChange={(e) => setTableMemberFilter(e.target.value)}
                     className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
-                    <option value="all">All Salesmen</option>
+                    <option value="all">{t("pipeline.allSalesmen")}</option>
                     {allSubordinates.map((member) => (
                       <option key={member.id} value={member.id}>{member.full_name || member.email}</option>
                     ))}
@@ -3337,7 +3338,7 @@ const EnhancedSupervisorDashboard = ({
           {pipelineData.length > 0 && (
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-6">
-                Pipeline Analytics
+                {t("dashboard.pipelineAnalytics")}
               </h2>
               <PipelineChart data={pipelineData} />
             </div>
@@ -3346,7 +3347,7 @@ const EnhancedSupervisorDashboard = ({
           {actionItems.length > 0 && (
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-6">
-                Action Items
+                {t("dashboard.actionItems")}
               </h2>
               <ActionableDashboard actions={actionItems} />
             </div>
@@ -3367,7 +3368,7 @@ const EnhancedSupervisorDashboard = ({
             <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-xl">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold">Target Details</h2>
+                  <h2 className="text-2xl font-bold">{t("dashboard.targetDetails")}</h2>
                   <p className="text-blue-100 text-sm mt-1">
                     {selectedTargetDetail.target_type
                       ?.replace("_", " ")
@@ -3389,14 +3390,14 @@ const EnhancedSupervisorDashboard = ({
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-blue-50 rounded-lg p-4 text-center border border-blue-200">
                   <div className="text-sm text-blue-600 mb-1">
-                    Target Amount
+                    {t("dashboard.targetAmountLabel")}
                   </div>
                   <div className="text-2xl font-bold text-blue-700">
                     {formatCurrency(selectedTargetDetail.target_amount)}
                   </div>
                 </div>
                 <div className="bg-green-50 rounded-lg p-4 text-center border border-green-200">
-                  <div className="text-sm text-green-600 mb-1">Achieved</div>
+                  <div className="text-sm text-green-600 mb-1">{t("dashboard.achieved")}</div>
                   <div className="text-2xl font-bold text-green-700">
                     {formatCurrency(
                       (selectedTargetDetail.supervisor_revenue || 0) +
@@ -3406,7 +3407,7 @@ const EnhancedSupervisorDashboard = ({
                 </div>
                 <div className="bg-purple-50 rounded-lg p-4 text-center border border-purple-200">
                   <div className="text-sm text-purple-600 mb-1">
-                    Your Revenue
+                    {t("dashboard.yourRevenue")}
                   </div>
                   <div className="text-2xl font-bold text-purple-700">
                     {formatCurrency(
@@ -3416,7 +3417,7 @@ const EnhancedSupervisorDashboard = ({
                 </div>
                 <div className="bg-orange-50 rounded-lg p-4 text-center border border-orange-200">
                   <div className="text-sm text-orange-600 mb-1">
-                    Team Revenue
+                    {t("dashboard.teamRevenue")}
                   </div>
                   <div className="text-2xl font-bold text-orange-700">
                     {formatCurrency(
@@ -3430,7 +3431,7 @@ const EnhancedSupervisorDashboard = ({
               <div className="bg-gray-50 rounded-lg p-4">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium text-gray-700">
-                    Overall Progress
+                    {t("dashboard.overallProgress")}
                   </span>
                   <span className="text-lg font-bold text-blue-600">
                     {(
@@ -3464,7 +3465,7 @@ const EnhancedSupervisorDashboard = ({
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                     <Icon name="Users" size={20} className="text-blue-600" />
-                    Team Performance Breakdown
+                    {t("dashboard.teamPerformanceBreakdown")}
                   </h3>
                   <div className="space-y-3">
                     {subordinates.map((member) => {
@@ -3497,7 +3498,7 @@ const EnhancedSupervisorDashboard = ({
                               {member.full_name}
                             </div>
                             <div className="text-sm text-gray-500">
-                              Salesman
+                              {t("pipeline.salesman")}
                             </div>
                           </div>
                           <div className="text-right">
@@ -3507,7 +3508,7 @@ const EnhancedSupervisorDashboard = ({
                             <div className="text-xs text-gray-500">
                               {memberTarget > 0
                                 ? `of ${formatCurrency(memberTarget)}`
-                                : "No target"}
+                                : t("dashboard.noTarget")}
                             </div>
                           </div>
                           <div className="w-20">
@@ -3547,7 +3548,7 @@ const EnhancedSupervisorDashboard = ({
                       size={20}
                       className="text-purple-600"
                     />
-                    Client Performance ({clientTargetsData.length} clients)
+                    {t("dashboard.clientPerformanceBreakdown")} ({clientTargetsData.length} {t("common.clients")})
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {clientTargetsData.map((ct) => {
@@ -3609,8 +3610,8 @@ const EnhancedSupervisorDashboard = ({
                       size={20}
                       className="text-orange-600"
                     />
-                    Product Group Performance ({productTargetsData.length}{" "}
-                    groups)
+                    {t("dashboard.productGroupPerformanceBreakdown")} ({productTargetsData.length}{" "}
+                    {t("common.group")}s)
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {productTargetsData.map((pt) => {

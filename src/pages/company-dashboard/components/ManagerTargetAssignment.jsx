@@ -5,6 +5,7 @@ import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
 import Icon from "../../../components/AppIcon";
 import { formatLocalDateYMD } from "utils/dateFormat";
+import { useLanguage } from "../../../i18n";
 
 const ManagerTargetAssignment = ({
   managerTargets,
@@ -24,6 +25,7 @@ const ManagerTargetAssignment = ({
   console.log("- managerId:", managerId);
 
   const { formatCurrency, preferredCurrency } = useCurrency();
+  const { t } = useLanguage();
   const [isLoading, setIsLoading] = useState(false);
   const [assignments, setAssignments] = useState([]);
   const [availableAmount, setAvailableAmount] = useState(0);
@@ -353,7 +355,7 @@ const ManagerTargetAssignment = ({
     <div className="bg-white rounded-lg shadow p-6">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-gray-900">
-          Assign Sales Targets
+          {t("dashboard.assignSalesTargets")}
         </h3>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
           <Icon name="x" className="w-5 h-5" />
@@ -371,12 +373,10 @@ const ManagerTargetAssignment = ({
             />
             <div>
               <p className="text-sm font-medium text-yellow-800">
-                Period Validation Required
+                {t("dashboard.periodValidationRequired")}
               </p>
               <p className="text-xs text-yellow-700 mt-1">
-                You can only assign targets for periods where you have allocated
-                budget. The database validates period overlap, not just total
-                amounts.
+                {t("dashboard.periodValidationDesc")}
               </p>
             </div>
           </div>
@@ -384,20 +384,20 @@ const ManagerTargetAssignment = ({
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mb-4">
           <div>
-            <p className="text-blue-600 font-medium">Total Allocated</p>
+            <p className="text-blue-600 font-medium">{t("dashboard.totalAllocated")}</p>
             <p className="text-xl font-bold text-blue-800">
               {formatCurrency(availableAmount)}
             </p>
-            <p className="text-xs text-blue-600">Across all periods</p>
+            <p className="text-xs text-blue-600">{t("dashboard.acrossPeriods")}</p>
           </div>
           <div>
-            <p className="text-blue-600 font-medium">Total Assigning</p>
+            <p className="text-blue-600 font-medium">{t("dashboard.totalAssigning")}</p>
             <p className="text-xl font-bold text-blue-800">
               {formatCurrency(getTotalAssignedAmount(), preferredCurrency)}
             </p>
           </div>
           <div>
-            <p className="text-blue-600 font-medium">Remaining</p>
+            <p className="text-blue-600 font-medium">{t("dashboard.remaining")}</p>
             <p
               className={`text-xl font-bold ${
                 getRemainingAmount() < 0 ? "text-red-600" : "text-green-600"
@@ -412,7 +412,7 @@ const ManagerTargetAssignment = ({
         {managerTargets && managerTargets.length > 0 && (
           <div className="border-t border-blue-200 pt-3">
             <p className="text-xs text-blue-700 font-medium mb-2">
-              Your Allocated Budget Periods:
+              {t("dashboard.allocatedBudgetPeriods")}
             </p>
             <div className="space-y-2">
               {managerTargets.map((target) => {
@@ -447,18 +447,18 @@ const ManagerTargetAssignment = ({
                         }`}
                       >
                         {isCurrentPeriod
-                          ? "ACTIVE"
+                          ? t("dashboard.activePeriodStatus")
                           : isFuture
-                          ? "FUTURE"
-                          : "PAST"}
+                          ? t("dashboard.futurePeriodStatus")
+                          : t("dashboard.pastPeriodStatus")}
                       </span>
                     </div>
                     <div className="text-gray-600">
-                      {target.period_start} to {target.period_end}
+                      {target.period_start} {t("dashboard.toLabel")} {target.period_end}
                     </div>
                     {isFuture && (
                       <div className="text-blue-700 font-medium mt-1">
-                        ✓ Use dates within this period for assignments
+                        ✓ {t("dashboard.useDatesWithinPeriod")}
                       </div>
                     )}
                   </div>
@@ -467,12 +467,7 @@ const ManagerTargetAssignment = ({
             </div>
             <div className="bg-red-100 border border-red-300 rounded p-2 mt-2">
               <p className="text-xs text-red-700 font-medium">
-                ⚠️ CRITICAL: Your target dates must fall within one of the
-                periods above
-              </p>
-              <p className="text-xs text-red-600">
-                Example: Use dates 2025-12-01 to 2025-12-31 to access your
-                $20,000 December budget
+                ⚠️ {t("dashboard.criticalTargetDates")}
               </p>
             </div>
           </div>
@@ -488,7 +483,7 @@ const ManagerTargetAssignment = ({
           >
             <div className="flex items-center justify-between mb-4">
               <h4 className="font-medium text-gray-900">
-                Assignment #{index + 1}
+                {t("dashboard.assignmentNumber")}{index + 1}
               </h4>
               <button
                 onClick={() => handleRemoveAssignment(assignment.id)}
@@ -501,7 +496,7 @@ const ManagerTargetAssignment = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Team Member
+                  {t("dashboard.teamMemberLabel")}
                 </label>
                 <select
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -515,7 +510,7 @@ const ManagerTargetAssignment = ({
                   }
                   required
                 >
-                  <option value="">Select team member...</option>
+                  <option value="">{t("dashboard.selectTeamMember")}</option>
                   {subordinates?.map((subordinate) => (
                     <option key={subordinate.id} value={subordinate.id}>
                       {subordinate.full_name || subordinate.email} (
@@ -527,7 +522,7 @@ const ManagerTargetAssignment = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Target Amount ({preferredCurrency})
+                  {t("dashboard.targetAmountFieldLabel")} ({preferredCurrency})
                 </label>
                 <Input
                   type="number"
@@ -546,7 +541,7 @@ const ManagerTargetAssignment = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Period Type
+                  {t("dashboard.periodTypeFieldLabel")}
                 </label>
                 <select
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -560,15 +555,15 @@ const ManagerTargetAssignment = ({
                   }
                   required
                 >
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="yearly">Yearly</option>
+                  <option value="monthly">{t("dashboard.monthly")}</option>
+                  <option value="quarterly">{t("dashboard.quarterly")}</option>
+                  <option value="yearly">{t("dashboard.yearly")}</option>
                 </select>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Start Date
+                  {t("dashboard.startDateFieldLabel")}
                 </label>
                 <Input
                   type="date"
@@ -586,7 +581,7 @@ const ManagerTargetAssignment = ({
 
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes (Optional)
+                  {t("dashboard.notesOptional")}
                 </label>
                 <Input
                   value={assignment.notes}
@@ -597,7 +592,7 @@ const ManagerTargetAssignment = ({
                       e.target.value
                     )
                   }
-                  placeholder="Additional notes or instructions..."
+                  placeholder={t("dashboard.additionalNotesPlaceholder")}
                 />
               </div>
             </div>
@@ -609,12 +604,12 @@ const ManagerTargetAssignment = ({
       <div className="flex items-center justify-between">
         <Button variant="outline" onClick={handleAddAssignment}>
           <Icon name="plus" className="w-4 h-4 mr-2" />
-          Add Assignment
+          {t("dashboard.addAssignment")}
         </Button>
 
         <div className="flex space-x-3">
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             variant="primary"
@@ -624,8 +619,8 @@ const ManagerTargetAssignment = ({
             }
           >
             {isLoading
-              ? "Assigning..."
-              : `Assign Targets (${assignments.length})`}
+              ? t("dashboard.assigning")
+              : `${t("dashboard.assignTargetsCount")} (${assignments.length})`}
           </Button>
         </div>
       </div>

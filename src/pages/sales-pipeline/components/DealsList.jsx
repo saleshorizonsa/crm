@@ -3,6 +3,7 @@ import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { Edit2Icon } from "lucide-react";
+import { useLanguage } from "../../../i18n";
 
 const STAGE_WEIGHTS = {
   lead:          0.10,
@@ -13,47 +14,47 @@ const STAGE_WEIGHTS = {
   lost:          0.00,
 };
 
-function SelectionSummaryBar({ totals, onClear, formatCurrency }) {
+function SelectionSummaryBar({ totals, onClear, formatCurrency, t }) {
   return (
     <div className="flex items-center bg-blue-50 border border-blue-100 rounded-xl overflow-x-auto">
       {/* Selected count */}
       <div className="flex flex-col items-center justify-center px-5 py-3 bg-blue-600 text-white min-w-[90px] flex-shrink-0">
         <span className="text-xl font-semibold leading-tight">{totals.count}</span>
-        <span className="text-xs opacity-80 mt-0.5">Selected</span>
+        <span className="text-xs opacity-80 mt-0.5">{t("common.selected")}</span>
       </div>
 
       <div className="w-px h-12 bg-blue-100 flex-shrink-0" />
 
       <div className="flex flex-col items-center justify-center px-5 py-3 flex-1 min-w-[110px]">
         <span className="text-sm font-semibold text-gray-900">{formatCurrency(totals.totalValue)}</span>
-        <span className="text-xs text-gray-500 mt-0.5">Total value</span>
+        <span className="text-xs text-gray-500 mt-0.5">{t("pipeline.totalValue")}</span>
       </div>
 
       <div className="w-px h-12 bg-blue-100 flex-shrink-0" />
 
       <div className="flex flex-col items-center justify-center px-5 py-3 flex-1 min-w-[110px]">
         <span className="text-sm font-semibold text-blue-600">{formatCurrency(totals.weightedValue)}</span>
-        <span className="text-xs text-gray-500 mt-0.5">Weighted</span>
+        <span className="text-xs text-gray-500 mt-0.5">{t("pipeline.weighted")}</span>
       </div>
 
       <div className="w-px h-12 bg-blue-100 flex-shrink-0" />
 
       <div className="flex flex-col items-center justify-center px-5 py-3 flex-1 min-w-[110px]">
         <span className="text-sm font-semibold text-green-600">{formatCurrency(totals.wonValue)}</span>
-        <span className="text-xs text-gray-500 mt-0.5">Won</span>
+        <span className="text-xs text-gray-500 mt-0.5">{t("deals.won")}</span>
       </div>
 
       <div className="w-px h-12 bg-blue-100 flex-shrink-0" />
 
       <div className="flex flex-col items-center justify-center px-5 py-3 flex-1 min-w-[110px]">
         <span className="text-sm font-semibold text-gray-900">{formatCurrency(totals.avgDealSize)}</span>
-        <span className="text-xs text-gray-500 mt-0.5">Avg deal</span>
+        <span className="text-xs text-gray-500 mt-0.5">{t("pipeline.avgDeal")}</span>
       </div>
 
       <div className="w-px h-12 bg-blue-100 flex-shrink-0" />
 
       <div className="flex flex-col justify-center px-5 py-3 flex-1 min-w-[160px]">
-        <span className="text-xs text-gray-500 mb-1">By stage</span>
+        <span className="text-xs text-gray-500 mb-1">{t("common.stage")}</span>
         <div className="flex flex-wrap gap-1.5">
           {Object.entries(totals.byStage).map(([stage, count]) => (
             <span
@@ -84,6 +85,7 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
   });
   const [selectedRows, setSelectedRows] = useState([]);
   const { formatCurrency, preferredCurrency } = useCurrency();
+  const { t } = useLanguage();
 
   const formatDate = (date) => {
     if (!date) return "—";
@@ -96,14 +98,14 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
 
   const getStageLabel = (stage) => {
     const stageMap = {
-      lead: "Lead",
-      contact_made: "Qualified",
-      proposal_sent: "Proposal",
-      negotiation: "Negotiation",
-      won: "Won",
-      lost: "Lost",
-      "closed-won": "Won",
-      "closed-lost": "Lost",
+      lead: t("deals.lead"),
+      contact_made: t("deals.qualified"),
+      proposal_sent: t("deals.proposal"),
+      negotiation: t("deals.negotiation"),
+      won: t("deals.won"),
+      lost: t("deals.lost"),
+      "closed-won": t("deals.won"),
+      "closed-lost": t("deals.lost"),
     };
     return stageMap[stage] || stage;
   };
@@ -219,6 +221,7 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
             totals={selectionTotals}
             onClear={clearSelection}
             formatCurrency={formatCurrency}
+            t={t}
           />
         </div>
       )}
@@ -236,14 +239,14 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
                 />
               </th>
               <th className="px-4 py-3 min-w-[140px]">
-                Company
+                {t("common.company")}
               </th>
               <th
                 className="px-4 py-3 cursor-pointer"
                 onClick={() => handleSort("title")}
               >
                 <div className="flex items-center">
-                  Deal Name
+                  {t("deals.dealName")}
                   <SortIcon column="title" />
                 </div>
               </th>
@@ -252,7 +255,7 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
                 onClick={() => handleSort("amount")}
               >
                 <div className="flex items-center">
-                  Amount
+                  {t("common.amount")}
                   <SortIcon column="amount" />
                 </div>
               </th>
@@ -261,7 +264,7 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
                 onClick={() => handleSort("stage")}
               >
                 <div className="flex items-center">
-                  Stage
+                  {t("common.stage")}
                   <SortIcon column="stage" />
                 </div>
               </th>
@@ -270,13 +273,13 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
                 onClick={() => handleSort("expected_close_date")}
               >
                 <div className="flex items-center">
-                  Expected Close
+                  {t("deals.expectedCloseDate")}
                   <SortIcon column="expected_close_date" />
                 </div>
               </th>
-              <th className="px-4 py-3">Contact</th>
-              <th className="px-4 py-3">Owner</th>
-              <th className="px-4 py-3">Actions</th>
+              <th className="px-4 py-3">{t("common.contact")}</th>
+              <th className="px-4 py-3">{t("common.owner")}</th>
+              <th className="px-4 py-3">{t("common.actions")}</th>
             </tr>
           </thead>
           <tbody>

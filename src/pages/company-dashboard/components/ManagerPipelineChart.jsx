@@ -1,6 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { useLanguage } from "../../../i18n";
 import {
   BarChart,
   Bar,
@@ -23,6 +24,7 @@ const ManagerPipelineChart = ({
 }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   // Pipeline stage distribution - matching Director Dashboard
   const getPipelineData = () => {
@@ -82,7 +84,7 @@ const ManagerPipelineChart = ({
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">
-        Pipeline Distribution
+        {t("dashboard.distribution")}
       </h3>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart
@@ -101,7 +103,7 @@ const ManagerPipelineChart = ({
           <Tooltip content={<CustomTooltip />} />
           <Bar
             dataKey="value"
-            name="Pipeline Value"
+            name={t("dashboard.pipelineValue")}
             onClick={(data) => navigate(`/sales-pipeline?stage=${data.stageKey}`, { state: { activeStage: data.stageKey } })}
             style={{ cursor: "pointer" }}
           >
@@ -118,13 +120,13 @@ const ManagerPipelineChart = ({
           <p className="text-2xl font-bold text-gray-900">
             {pipelineData.reduce((sum, stage) => sum + stage.count, 0)}
           </p>
-          <p className="text-sm text-gray-600">Total Deals</p>
+          <p className="text-sm text-gray-600">{t("dashboard.totalDeals")}</p>
         </div>
         <div className="text-center">
           <p className="text-2xl font-bold text-green-600">
             {pipelineData.find((stage) => stage.stage === "Won")?.count || 0}
           </p>
-          <p className="text-sm text-gray-600">Won Deals</p>
+          <p className="text-sm text-gray-600">{t("dashboard.wonDeals")}</p>
         </div>
         <div className="text-center">
           <p className="text-2xl font-bold text-blue-600">
@@ -135,7 +137,7 @@ const ManagerPipelineChart = ({
               preferredCurrency
             )}
           </p>
-          <p className="text-sm text-gray-600">Active Pipeline</p>
+          <p className="text-sm text-gray-600">{t("dashboard.activePipeline")}</p>
         </div>
       </div>
     </div>

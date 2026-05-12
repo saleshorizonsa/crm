@@ -10,10 +10,12 @@ import CompanyManagement from "./components/CompanyManagement";
 import UomSettings from "./components/UomSettings";
 import UserAuthorization from "./components/UserAuthorization";
 import LostReasonSettings from "./components/LostReasonSettings";
+import { useLanguage } from "../../i18n";
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState("users");
   const { signOut, userProfile, company } = useAuth();
+  const { t } = useLanguage();
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [recalcMsg, setRecalcMsg] = useState(null);
 
@@ -24,25 +26,25 @@ const AdminDashboard = () => {
     const { data, error } = await contactService.recalculateAllScores(company.id);
     setIsRecalculating(false);
     if (error) {
-      setRecalcMsg({ ok: false, text: "Recalculation failed." });
+      setRecalcMsg({ ok: false, text: t("admin.recalcFailed") });
     } else {
-      setRecalcMsg({ ok: true, text: `${data.updated} contact${data.updated !== 1 ? "s" : ""} updated.` });
+      setRecalcMsg({ ok: true, text: `${data.updated} ${data.updated !== 1 ? t("admin.contactsUpdated") : t("admin.contactUpdated")}` });
     }
     setTimeout(() => setRecalcMsg(null), 4000);
   };
 
   const tabs = [
-    { id: "users",         label: "User Management", icon: "Users"       },
-    { id: "authorization", label: "Authorization",   icon: "ShieldCheck" },
-    { id: "companies",     label: "Companies",       icon: "Building2"   },
-    { id: "products",      label: "Product Master",  icon: "Package"     },
-    { id: "targets",       label: "Sales Targets",   icon: "Target"      },
-    { id: "lost-reasons",  label: "Lost Reasons",    icon: "XCircle"     },
-    { id: "settings",      label: "Settings",        icon: "Settings"    },
+    { id: "users",         label: t("admin.userManagement"), icon: "Users"       },
+    { id: "authorization", label: t("admin.authorization"),  icon: "ShieldCheck" },
+    { id: "companies",     label: t("admin.companyManagement"), icon: "Building2" },
+    { id: "products",      label: t("admin.productMaster"),  icon: "Package"     },
+    { id: "targets",       label: t("admin.salesTargets"),   icon: "Target"      },
+    { id: "lost-reasons",  label: t("admin.lostReasons"),    icon: "XCircle"     },
+    { id: "settings",      label: t("admin.settings"),       icon: "Settings"    },
   ];
 
   const handleLogout = async () => {
-    if (confirm("Are you sure you want to log out?")) {
+    if (confirm(t("auth.confirmLogout"))) {
       await signOut();
     }
   };
@@ -54,9 +56,9 @@ const AdminDashboard = () => {
         <div className="bg-background border-b border-border px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+              <h1 className="text-2xl font-bold">{t("admin.title")}</h1>
               <p className="text-sm text-muted-foreground mt-1">
-                Manage users, products, and sales targets
+                {t("admin.manageDescription")}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -71,12 +73,12 @@ const AdminDashboard = () => {
                 onClick={handleRecalculate}
                 disabled={isRecalculating}
                 className="gap-2"
-                title="Recalculate lead scores for all contacts"
+                title={t("contacts.leadScore")}
               >
                 {isRecalculating
                   ? <Icon name="Loader2" size={14} className="animate-spin" />
                   : <Icon name="RefreshCw" size={14} />}
-                {isRecalculating ? "Recalculating…" : "Recalc Scores"}
+                {isRecalculating ? t("admin.recalculating") : t("admin.recalcScores")}
               </Button>
               <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-lg">
                 <Icon name="Shield" className="text-primary" size={20} />
@@ -91,7 +93,7 @@ const AdminDashboard = () => {
                 className="gap-2"
               >
                 <Icon name="LogOut" size={16} />
-                Logout
+                {t("auth.logout")}
               </Button>
             </div>
           </div>

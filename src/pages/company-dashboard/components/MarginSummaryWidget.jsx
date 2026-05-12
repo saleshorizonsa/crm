@@ -11,9 +11,11 @@ import {
 } from "recharts";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { useLanguage } from "../../../i18n";
 
 const MarginSummaryWidget = ({ deals = [] }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
+  const { t } = useLanguage();
 
   const { avgMargin, totalGrossProfit, lowestMarginDeal, repData } = useMemo(() => {
     const wonDeals = deals.filter(
@@ -34,7 +36,7 @@ const MarginSummaryWidget = ({ deals = [] }) => {
     const allWithMargin = deals.filter((d) => d.margin_pct != null);
     const repMap = {};
     allWithMargin.forEach((d) => {
-      const name = d.owner?.full_name || "Unassigned";
+      const name = d.owner?.full_name || t("dashboard.unassigned");
       if (!repMap[name]) repMap[name] = { total: 0, count: 0 };
       repMap[name].total += d.margin_pct || 0;
       repMap[name].count += 1;
@@ -71,7 +73,7 @@ const MarginSummaryWidget = ({ deals = [] }) => {
     return (
       <div className="bg-card border border-border rounded-xl p-6 text-center text-muted-foreground text-sm">
         <Icon name="TrendingUp" size={24} className="mx-auto mb-2 opacity-40" />
-        No margin data yet — add cost prices to products to enable tracking.
+        {t("dashboard.noMarginData")}
       </div>
     );
   }
@@ -82,19 +84,19 @@ const MarginSummaryWidget = ({ deals = [] }) => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <MetricCard
           icon="Percent"
-          label="Avg Deal Margin (Won)"
+          label={t("dashboard.avgDealMarginWon")}
           value={avgMargin != null ? `${avgMargin.toFixed(1)}%` : "—"}
           color={avgMargin != null && avgMargin < 10 ? "bg-red-500" : avgMargin != null && avgMargin < 20 ? "bg-amber-500" : "bg-green-600"}
         />
         <MetricCard
           icon="DollarSign"
-          label="Total Gross Profit (Won)"
+          label={t("dashboard.totalGrossProfitWon")}
           value={formatCurrency(totalGrossProfit, preferredCurrency)}
           color="bg-primary"
         />
         <MetricCard
           icon="AlertTriangle"
-          label="Lowest Margin Deal"
+          label={t("dashboard.lowestMarginDeal")}
           value={lowestMarginDeal ? `${lowestMarginDeal.margin_pct.toFixed(1)}%` : "—"}
           sub={lowestMarginDeal?.title}
           color={lowestMarginDeal && lowestMarginDeal.margin_pct < 10 ? "bg-red-500" : "bg-amber-500"}
@@ -106,7 +108,7 @@ const MarginSummaryWidget = ({ deals = [] }) => {
         <div className="bg-card border border-border rounded-xl p-4">
           <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
             <Icon name="BarChart2" size={16} />
-            Avg Margin by Rep
+            {t("dashboard.avgMarginByRep")}
           </h3>
           <ResponsiveContainer width="100%" height={repData.length * 36 + 20}>
             <BarChart
@@ -127,7 +129,7 @@ const MarginSummaryWidget = ({ deals = [] }) => {
                 width={70}
                 tick={{ fontSize: 11 }}
               />
-              <Tooltip formatter={(v) => [`${v}%`, "Margin"]} />
+              <Tooltip formatter={(v) => [`${v}%`, t("dashboard.marginLabel")]} />
               <Bar dataKey="margin" radius={[0, 4, 4, 0]}>
                 {repData.map((entry, index) => (
                   <Cell key={index} fill={marginColor(entry.margin)} />

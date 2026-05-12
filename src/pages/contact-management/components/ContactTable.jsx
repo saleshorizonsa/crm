@@ -3,6 +3,7 @@ import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import LeadScoreBadge from "../../../components/ui/LeadScoreBadge";
 import { Edit2Icon } from "lucide-react";
+import { useLanguage } from "../../../i18n";
 
 const NUMERIC_KEYS = new Set(["lead_score"]);
 
@@ -16,6 +17,7 @@ const ContactTable = ({
 }) => {
   const [hoveredRow, setHoveredRow] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+  const { t } = useLanguage();
 
   const sortedContacts = useMemo(() => {
     // External sort (hottest/coldest) overrides column sort
@@ -60,17 +62,17 @@ const ContactTable = ({
   };
 
   const formatLastContact = (date) => {
-    if (!date) return "Never";
+    if (!date) return t("contacts.never");
 
     const now = new Date();
     const contactDate = new Date(date);
     const diffTime = Math.abs(now - contactDate);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    if (diffDays === 0) return "Today";
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 30) return `${Math.ceil(diffDays / 7)} weeks ago`;
+    if (diffDays === 0) return t("contacts.today");
+    if (diffDays === 1) return t("contacts.yesterday");
+    if (diffDays < 7) return `${diffDays} ${t("contacts.daysAgo")}`;
+    if (diffDays < 30) return `${Math.ceil(diffDays / 7)} ${t("contacts.weeksAgo")}`;
     return contactDate.toLocaleDateString();
   };
 
@@ -102,7 +104,7 @@ const ContactTable = ({
           size={48}
           className="text-muted-foreground mx-auto mb-4 animate-spin"
         />
-        <p className="text-muted-foreground">Loading contacts...</p>
+        <p className="text-muted-foreground">{t("contacts.loadingContacts")}</p>
       </div>
     );
   }
@@ -136,7 +138,7 @@ const ContactTable = ({
               >
                 <div className="flex items-center space-x-2">
                   <span className="text-sm font-medium text-muted-foreground">
-                    Client
+                    {t("common.client")}
                   </span>
                   {getSortIcon("name")}
                 </div>
@@ -147,7 +149,7 @@ const ContactTable = ({
               >
                 <div className="flex items-center space-x-2">
                   <span className="text-sm font-medium text-muted-foreground">
-                    Company
+                    {t("common.company")}
                   </span>
                   {getSortIcon("company_name")}
                 </div>
@@ -158,7 +160,7 @@ const ContactTable = ({
               >
                 <div className="flex items-center space-x-2">
                   <span className="text-sm font-medium text-muted-foreground">
-                    Role
+                    {t("common.role")}
                   </span>
                   {getSortIcon("job_title")}
                 </div>
@@ -169,7 +171,7 @@ const ContactTable = ({
               >
                 <div className="flex items-center space-x-2">
                   <span className="text-sm font-medium text-muted-foreground">
-                    Last Contact
+                    {t("contacts.lastContacted")}
                   </span>
                   {getSortIcon("last_contacted_at")}
                 </div>
@@ -180,7 +182,7 @@ const ContactTable = ({
               >
                 <div className="flex items-center space-x-2">
                   <span className="text-sm font-medium text-muted-foreground">
-                    Status
+                    {t("common.status")}
                   </span>
                   {getSortIcon("status")}
                 </div>
@@ -191,14 +193,14 @@ const ContactTable = ({
               >
                 <div className="flex items-center space-x-2">
                   <span className="text-sm font-medium text-muted-foreground">
-                    Lead Score
+                    {t("contacts.leadScore")}
                   </span>
                   {getSortIcon("lead_score")}
                 </div>
               </th>
               <th className="text-right px-4 py-3">
                 <span className="text-sm font-medium text-muted-foreground">
-                  Actions
+                  {t("common.actions")}
                 </span>
               </th>
             </tr>
@@ -289,7 +291,7 @@ const ContactTable = ({
                       size="icon"
                       onClick={() => window.open(`mailto:${contact.email}`)}
                       className="h-8 w-8"
-                      title="Email"
+                      title={t("common.email")}
                     >
                       <Icon name="Mail" size={14} />
                     </Button>
@@ -298,7 +300,7 @@ const ContactTable = ({
                       size="icon"
                       onClick={() => window.open(`tel:${contact.phone}`)}
                       className="h-8 w-8"
-                      title="Call"
+                      title={t("common.phone")}
                       disabled={!contact.phone}
                     >
                       <Icon name="Phone" size={14} />
@@ -308,7 +310,7 @@ const ContactTable = ({
                       size="icon"
                       onClick={() => onEdit(contact)}
                       className="h-8 w-8"
-                      title="Edit"
+                      title={t("common.edit")}
                     >
                       <Icon name="Edit" size={14} />
                       <Edit2Icon size={14} />
@@ -327,7 +329,7 @@ const ContactTable = ({
             size={48}
             className="text-muted-foreground mx-auto mb-4"
           />
-          <p className="text-muted-foreground">No clients found</p>
+          <p className="text-muted-foreground">{t("contacts.noClientsFound")}</p>
         </div>
       )}
     </div>

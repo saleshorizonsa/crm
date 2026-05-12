@@ -17,9 +17,11 @@ import {
   userService,
   activityService,
 } from "../../services/supabaseService";
+import { useLanguage } from "../../i18n";
 
 const TaskManagement = () => {
   const { user, company } = useAuth();
+  const { t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [tasks, setTasks] = useState([]);
@@ -220,7 +222,7 @@ const TaskManagement = () => {
   };
 
   const handleDeleteTask = async (taskId) => {
-    if (!window.confirm("Are you sure you want to delete this task?")) {
+    if (!window.confirm(t("messages.confirmDeleteTask"))) {
       return;
     }
 
@@ -266,7 +268,7 @@ const TaskManagement = () => {
   }, [tasks, filters]);
 
   if (!user) {
-    return <div>Loading...</div>;
+    return <div>{t("common.loading")}</div>;
   }
 
   return (
@@ -278,12 +280,12 @@ const TaskManagement = () => {
           <div>
             <NavigationBreadcrumbs
               items={[
-                { label: "Dashboard", href: "/company-dashboard" },
-                { label: "Tasks", href: "/tasks" },
+                { label: t("nav.dashboard"), href: "/company-dashboard" },
+                { label: t("nav.tasks"), href: "/tasks" },
               ]}
             />
             <h1 className="text-2xl font-semibold text-gray-900 mt-2">
-              Task Management
+              {t("tasks.title")}
             </h1>
           </div>
 
@@ -297,7 +299,7 @@ const TaskManagement = () => {
                 className="flex items-center gap-2"
               >
                 <Icon name="Kanban" size={16} />
-                Kanban
+                {t("tasks.kanban")}
               </Button>
               <Button
                 variant={viewMode === "list" ? "default" : "ghost"}
@@ -306,13 +308,13 @@ const TaskManagement = () => {
                 className="flex items-center gap-2"
               >
                 <Icon name="Table" size={16} />
-                Table
+                {t("pipeline.table")}
               </Button>
             </div>
 
             <Button variant="primary" onClick={handleCreateTask}>
               <Icon name="Plus" className="w-4 h-4 mr-2" />
-              New Task
+              {t("tasks.addTask")}
             </Button>
           </div>
         </div>

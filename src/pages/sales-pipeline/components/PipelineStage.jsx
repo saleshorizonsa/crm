@@ -3,6 +3,7 @@ import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import DealCard from "./DealCard";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { useLanguage } from "../../../i18n";
 
 const PipelineStage = ({
   stage,
@@ -15,6 +16,7 @@ const PipelineStage = ({
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
+  const { t } = useLanguage();
 
   const getStageColor = (stageId) => {
     const map = {
@@ -78,7 +80,7 @@ const PipelineStage = ({
               {stage?.name?.replace("_", " ")}
             </h3>
             <p className="text-xs text-gray-500">
-              {deals.length} deal{deals.length !== 1 ? "s" : ""}
+              {deals.length} {t("common.deals").toLowerCase()}
             </p>
           </div>
         </div>
@@ -110,19 +112,19 @@ const PipelineStage = ({
       {!isCollapsed && (
         <div className="px-4 py-2 border-b border-gray-100 text-xs bg-white">
           <div className="flex justify-between py-0.5">
-            <span className="text-gray-500">Total Value</span>
+            <span className="text-gray-500">{t("pipeline.totalValue")}</span>
             <span className="font-medium text-gray-800">
               {formatCurrency(totalValue, preferredCurrency)}
             </span>
           </div>
           <div className="flex justify-between py-0.5">
-            <span className="text-gray-500">Weighted</span>
+            <span className="text-gray-500">{t("pipeline.weighted")}</span>
             <span className="font-semibold text-blue-600">
               {formatCurrency(weightedValue, preferredCurrency)}
             </span>
           </div>
           <div className="flex justify-between py-0.5">
-            <span className="text-gray-500">Avg. Deal</span>
+            <span className="text-gray-500">{t("pipeline.avgDeal")}</span>
             <span className="font-medium text-gray-800">
               {deals.length
                 ? formatCurrency(totalValue / deals.length, preferredCurrency)
@@ -138,7 +140,7 @@ const PipelineStage = ({
           {deals.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center py-10 text-gray-400">
               <Icon name="Inbox" size={32} className="mb-2" />
-              <p className="text-sm mb-1">No deals in this stage</p>
+              <p className="text-sm mb-1">{t("deals.emptyPipeline")}</p>
             </div>
           ) : (
             deals.map((deal) => (

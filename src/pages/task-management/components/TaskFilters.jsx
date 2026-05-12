@@ -5,9 +5,11 @@ import Input from "../../../components/ui/Input";
 import Select from "../../../components/ui/Select";
 import { useAuth } from "../../../contexts/AuthContext";
 import { userService } from "../../../services/supabaseService";
+import { useLanguage } from "../../../i18n";
 
 const TaskFilters = ({ filters, onFilterChange }) => {
   const { company, userProfile } = useAuth();
+  const { t } = useLanguage();
   const [isExpanded, setIsExpanded] = useState(false);
   const [members, setMembers] = useState([]);
 
@@ -61,7 +63,7 @@ const TaskFilters = ({ filters, onFilterChange }) => {
       }
 
       setMembers([
-        { value: "", label: "All Members" },
+        { value: "", label: t("pipeline.allMembers") },
         {
           value: userProfile.id,
           label: `${userProfile.full_name || userProfile.email} (${formatRole(
@@ -77,11 +79,11 @@ const TaskFilters = ({ filters, onFilterChange }) => {
   };
 
   const dateRanges = [
-    { value: "", label: "All Time" },
-    { value: "today", label: "Today" },
-    { value: "this-week", label: "This Week" },
-    { value: "this-month", label: "This Month" },
-    { value: "this-quarter", label: "This Quarter" },
+    { value: "", label: t("contacts.allTime") },
+    { value: "today", label: t("contacts.today") },
+    { value: "this-week", label: t("tasks.thisWeek") },
+    { value: "this-month", label: t("tasks.thisMonth") },
+    { value: "this-quarter", label: t("tasks.thisQuarter") },
   ];
 
   const getActiveFilterCount = () => {
@@ -112,7 +114,7 @@ const TaskFilters = ({ filters, onFilterChange }) => {
         <div className="flex-1">
           <Input
             type="search"
-            placeholder="Search tasks by title or description..."
+            placeholder={t("tasks.searchTasksPlaceholder")}
             value={filters?.search || ""}
             onChange={(e) =>
               onFilterChange({ ...filters, search: e.target.value })
@@ -127,7 +129,7 @@ const TaskFilters = ({ filters, onFilterChange }) => {
           className="flex items-center space-x-2"
         >
           <Icon name="Filter" size={16} />
-          <span>Filters</span>
+          <span>{t("common.filter")}</span>
           {activeFilterCount > 0 && (
             <span className="bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full">
               {activeFilterCount}
@@ -143,7 +145,7 @@ const TaskFilters = ({ filters, onFilterChange }) => {
             className="text-muted-foreground hover:text-foreground"
           >
             <Icon name="X" size={16} className="mr-1" />
-            Clear
+            {t("common.clear")}
           </Button>
         )}
       </div>
@@ -154,7 +156,7 @@ const TaskFilters = ({ filters, onFilterChange }) => {
           {/* Priority Filter */}
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-2">
-              Priority
+              {t("tasks.priority")}
             </label>
             <select
               value={filters?.priority || ""}
@@ -163,19 +165,17 @@ const TaskFilters = ({ filters, onFilterChange }) => {
               }
               className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
-              <option value="">All Priorities</option>
-              {priorities.map((priority) => (
-                <option key={priority} value={priority}>
-                  {priority.charAt(0).toUpperCase() + priority.slice(1)}
-                </option>
-              ))}
+              <option value="">{t("tasks.allPriorities")}</option>
+              <option value="low">{t("tasks.low")}</option>
+              <option value="medium">{t("tasks.medium")}</option>
+              <option value="high">{t("tasks.high")}</option>
             </select>
           </div>
 
           {/* Status Filter */}
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-2">
-              Status
+              {t("common.status")}
             </label>
             <select
               value={filters?.status || ""}
@@ -184,16 +184,11 @@ const TaskFilters = ({ filters, onFilterChange }) => {
               }
               className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
-              <option value="">All Statuses</option>
-              {statuses.map((status) => (
-                <option key={status} value={status}>
-                  {status
-                    .replace("_", " ")
-                    .split(" ")
-                    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                    .join(" ")}
-                </option>
-              ))}
+              <option value="">{t("tasks.allStatuses")}</option>
+              <option value="pending">{t("tasks.pending")}</option>
+              <option value="in_progress">{t("tasks.inProgress")}</option>
+              <option value="completed">{t("tasks.completed")}</option>
+              <option value="cancelled">{t("tasks.cancelled")}</option>
             </select>
           </div>
 
@@ -201,10 +196,10 @@ const TaskFilters = ({ filters, onFilterChange }) => {
           {canFilterByMember && (
             <div>
               <label className="block text-sm font-medium text-card-foreground mb-2">
-                Assigned To
+                {t("tasks.assignedTo")}
               </label>
               <Select
-                placeholder="All Members"
+                placeholder={t("pipeline.allMembers")}
                 options={members}
                 value={filters?.assignedTo || ""}
                 onChange={(value) =>
@@ -217,10 +212,10 @@ const TaskFilters = ({ filters, onFilterChange }) => {
           {/* Date Range Filter */}
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-2">
-              Date Range
+              {t("tasks.dateRange")}
             </label>
             <Select
-              placeholder="All Time"
+              placeholder={t("contacts.allTime")}
               options={dateRanges}
               value={filters?.dateRange || ""}
               onChange={(value) =>
@@ -244,7 +239,7 @@ const TaskFilters = ({ filters, onFilterChange }) => {
           }
         >
           <Icon name="AlertCircle" size={14} className="mr-1" />
-          High Priority
+          {t("tasks.highPriority")}
         </Button>
 
         <Button
@@ -258,7 +253,7 @@ const TaskFilters = ({ filters, onFilterChange }) => {
           }
         >
           <Icon name="Clock" size={14} className="mr-1" />
-          Pending
+          {t("tasks.pending")}
         </Button>
 
         <Button
@@ -272,7 +267,7 @@ const TaskFilters = ({ filters, onFilterChange }) => {
           }
         >
           <Icon name="PlayCircle" size={14} className="mr-1" />
-          In Progress
+          {t("tasks.inProgress")}
         </Button>
       </div>
     </div>

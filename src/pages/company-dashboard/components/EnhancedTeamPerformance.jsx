@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import Button from "../../../components/ui/Button";
 import Icon from "../../../components/AppIcon";
+import { useLanguage } from "../../../i18n";
 
 const EnhancedTeamPerformance = ({
   teamData,
@@ -12,6 +13,7 @@ const EnhancedTeamPerformance = ({
   onViewDetails,
 }) => {
   const { formatCurrency } = useCurrency();
+  const { t } = useLanguage();
   const [sortBy, setSortBy] = useState("totalValue");
   const [sortOrder, setSortOrder] = useState("desc");
   const [filterBy, setFilterBy] = useState("all");
@@ -85,18 +87,18 @@ const EnhancedTeamPerformance = ({
       excellent: {
         color: "text-green-600",
         bg: "bg-green-100",
-        label: "Excellent",
+        label: t("dashboard.excellentStatus"),
       },
-      good: { color: "text-blue-600", bg: "bg-blue-100", label: "Good" },
+      good: { color: "text-blue-600", bg: "bg-blue-100", label: t("dashboard.goodStatus") },
       average: {
         color: "text-yellow-600",
         bg: "bg-yellow-100",
-        label: "Average",
+        label: t("dashboard.averageStatus"),
       },
       "needs-attention": {
         color: "text-red-600",
         bg: "bg-red-100",
-        label: "Needs Attention",
+        label: t("dashboard.needsAttentionStatus"),
       },
     };
     return configs[status] || configs["average"];
@@ -165,15 +167,15 @@ const EnhancedTeamPerformance = ({
             onChange={(e) => setFilterBy(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-md text-sm"
           >
-            <option value="all">All Team Members</option>
-            <option value="no-targets">No Targets Assigned</option>
-            <option value="underperforming">Under-performing (&lt;70%)</option>
-            <option value="top-performers">Top Performers (≥80%)</option>
+            <option value="all">{t("dashboard.allTeamMembers")}</option>
+            <option value="no-targets">{t("dashboard.noTargetsAssigned")}</option>
+            <option value="underperforming">{t("dashboard.underperforming")}</option>
+            <option value="top-performers">{t("dashboard.topPerformers")}</option>
           </select>
         </div>
         <Button variant="primary" onClick={onAssignTarget}>
           <Icon name="target" className="w-4 h-4 mr-2" />
-          Assign Targets
+          {t("dashboard.assignSalesTargets")}
         </Button>
       </div>
 
@@ -205,7 +207,7 @@ const EnhancedTeamPerformance = ({
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900">
-            Team Performance Dashboard
+            {t("dashboard.teamPerformanceDashboard")}
           </h3>
         </div>
 
@@ -218,7 +220,7 @@ const EnhancedTeamPerformance = ({
                   onClick={() => handleSort("name")}
                 >
                   <div className="flex items-center space-x-1">
-                    <span>Team Member</span>
+                    <span>{t("dashboard.teamMemberCol")}</span>
                     {sortBy === "name" && (
                       <Icon
                         name={
@@ -230,14 +232,14 @@ const EnhancedTeamPerformance = ({
                   </div>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
+                  {t("dashboard.statusCol")}
                 </th>
                 <th
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort("totalTarget")}
                 >
                   <div className="flex items-center space-x-1">
-                    <span>Target</span>
+                    <span>{t("dashboard.forecastTarget")}</span>
                     {sortBy === "totalTarget" && (
                       <Icon
                         name={
@@ -253,7 +255,7 @@ const EnhancedTeamPerformance = ({
                   onClick={() => handleSort("targetAchievement")}
                 >
                   <div className="flex items-center space-x-1">
-                    <span>Achievement</span>
+                    <span>{t("dashboard.achievementCol")}</span>
                     {sortBy === "targetAchievement" && (
                       <Icon
                         name={
@@ -269,7 +271,7 @@ const EnhancedTeamPerformance = ({
                   onClick={() => handleSort("totalValue")}
                 >
                   <div className="flex items-center space-x-1">
-                    <span>Revenue</span>
+                    <span>{t("dashboard.revenueCol")}</span>
                     {sortBy === "totalValue" && (
                       <Icon
                         name={
@@ -285,7 +287,7 @@ const EnhancedTeamPerformance = ({
                   onClick={() => handleSort("conversionRate")}
                 >
                   <div className="flex items-center space-x-1">
-                    <span>Conversion</span>
+                    <span>{t("dashboard.conversionCol")}</span>
                     {sortBy === "conversionRate" && (
                       <Icon
                         name={
@@ -297,10 +299,10 @@ const EnhancedTeamPerformance = ({
                   </div>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Pipeline
+                  {t("dashboard.pipelineCol")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
+                  {t("dashboard.actionsCol")}
                 </th>
               </tr>
             </thead>
@@ -329,7 +331,7 @@ const EnhancedTeamPerformance = ({
                           <div className="text-sm font-medium text-gray-900">
                             {member.name}
                             {member.isManager && (
-                              <span className="ml-2 text-blue-600">(You)</span>
+                              <span className="ml-2 text-blue-600">({t("common.you")})</span>
                             )}
                           </div>
                           <div className="text-sm text-gray-500 capitalize">
@@ -351,7 +353,7 @@ const EnhancedTeamPerformance = ({
                       {member.hasTarget ? (
                         formatCurrency(member.totalTarget)
                       ) : (
-                        <span className="text-gray-400">No target</span>
+                        <span className="text-gray-400">{t("dashboard.noTarget")}</span>
                       )}
                     </td>
 
@@ -371,7 +373,7 @@ const EnhancedTeamPerformance = ({
                           >
                             {member.hasTarget
                               ? `${member.targetAchievement.toFixed(1)}%`
-                              : "N/A"}
+                              : t("dashboard.noTargetNA")}
                           </div>
                           {member.hasTarget && (
                             <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
@@ -421,7 +423,7 @@ const EnhancedTeamPerformance = ({
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <div>
                         <div className="font-medium">
-                          {member.activeDealsCount} active
+                          {member.activeDealsCount} {t("dashboard.activeLabel2")}
                         </div>
                         <div className="text-gray-500">
                           {formatCurrency(member.activePipelineValue)}
@@ -435,14 +437,14 @@ const EnhancedTeamPerformance = ({
                           onClick={() => onViewDetails(member)}
                           className="text-blue-600 hover:text-blue-900"
                         >
-                          View Details
+                          {t("dashboard.viewDetailsAction2")}
                         </button>
                         {!member.hasTarget && (
                           <button
                             onClick={() => onAssignTarget(member)}
                             className="text-green-600 hover:text-green-900"
                           >
-                            Assign Target
+                            {t("dashboard.assignTargetAction")}
                           </button>
                         )}
                       </div>
@@ -457,7 +459,7 @@ const EnhancedTeamPerformance = ({
 
       {enhancedData.length === 0 && (
         <div className="text-center py-8 text-gray-500">
-          No team members match the current filter.
+          {t("dashboard.noTeamMembersMatch")}
         </div>
       )}
     </div>

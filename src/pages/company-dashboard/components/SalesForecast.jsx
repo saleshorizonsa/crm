@@ -10,6 +10,7 @@ import {
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useDateRange } from "../../../contexts/DateRangeContext";
+import { useLanguage } from "../../../i18n";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -19,44 +20,6 @@ const toYMD = (d) => {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 };
-
-// ── Scenario card config ──────────────────────────────────────────────────────
-
-const SCENARIOS = [
-  {
-    key:        "committed",
-    label:      "Committed",
-    subtitle:   "Won deals only",
-    icon:       "CheckCircle",
-    bg:         "bg-emerald-50",
-    ring:       "ring-1 ring-emerald-200",
-    iconBg:     "bg-emerald-100",
-    iconColor:  "text-emerald-600",
-    valueColor: "text-emerald-700",
-  },
-  {
-    key:        "weighted",
-    label:      "Weighted",
-    subtitle:   "Probability adjusted",
-    icon:       "TrendingUp",
-    bg:         "bg-blue-50",
-    ring:       "ring-1 ring-blue-200",
-    iconBg:     "bg-blue-100",
-    iconColor:  "text-blue-600",
-    valueColor: "text-blue-700",
-  },
-  {
-    key:        "bestCase",
-    label:      "Best Case",
-    subtitle:   "All open deals close",
-    icon:       "Star",
-    bg:         "bg-amber-50",
-    ring:       "ring-1 ring-amber-200",
-    iconBg:     "bg-amber-100",
-    iconColor:  "text-amber-600",
-    valueColor: "text-amber-700",
-  },
-];
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +42,44 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
   const { formatCurrency } = useCurrency();
   const { user, company, userProfile } = useAuth();
   const { dateRange } = useDateRange();
+  const { t } = useLanguage();
+
+  // ── Scenario card config (inside component to access t) ──────────────────────
+  const SCENARIOS = [
+    {
+      key:        "committed",
+      label:      t("dashboard.committed"),
+      subtitle:   t("dashboard.committedSubtitle"),
+      icon:       "CheckCircle",
+      bg:         "bg-emerald-50",
+      ring:       "ring-1 ring-emerald-200",
+      iconBg:     "bg-emerald-100",
+      iconColor:  "text-emerald-600",
+      valueColor: "text-emerald-700",
+    },
+    {
+      key:        "weighted",
+      label:      t("dashboard.weighted"),
+      subtitle:   t("dashboard.weightedSubtitle"),
+      icon:       "TrendingUp",
+      bg:         "bg-blue-50",
+      ring:       "ring-1 ring-blue-200",
+      iconBg:     "bg-blue-100",
+      iconColor:  "text-blue-600",
+      valueColor: "text-blue-700",
+    },
+    {
+      key:        "bestCase",
+      label:      t("dashboard.bestCase"),
+      subtitle:   t("dashboard.bestCaseSubtitle"),
+      icon:       "Star",
+      bg:         "bg-amber-50",
+      ring:       "ring-1 ring-amber-200",
+      iconBg:     "bg-amber-100",
+      iconColor:  "text-amber-600",
+      valueColor: "text-amber-700",
+    },
+  ];
 
   const userId    = user?.id;
   const companyId = company?.id;
@@ -186,11 +187,11 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
       <div className="flex items-start justify-between mb-5">
         <div>
           <h3 className="text-lg font-semibold text-card-foreground">
-            Sales Forecast
+            {t("dashboard.salesForecast")}
           </h3>
           {hasTarget && (
             <p className="text-xs text-muted-foreground mt-0.5">
-              Target&nbsp;
+              {t("dashboard.forecastTarget")}&nbsp;
               <span className="font-medium text-card-foreground">
                 {formatCurrency(targetAmount)}
               </span>
@@ -202,14 +203,14 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
             onClick={handleRecalculate}
             disabled={isRecalculating}
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-            title="Recalculate win rates from historical data"
+            title={t("dashboard.recalculateRates")}
           >
             <Icon
               name="RefreshCw"
               size={13}
               className={isRecalculating ? "animate-spin" : ""}
             />
-            {isRecalculating ? "Calculating…" : "Recalculate rates"}
+            {isRecalculating ? t("dashboard.calculating") : t("dashboard.recalculateRates")}
           </button>
         )}
       </div>
@@ -221,7 +222,7 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
       {fetchError && !showLoading && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
           <Icon name="AlertCircle" size={16} className="flex-shrink-0" />
-          <span>Failed to load forecast data. Try refreshing.</span>
+          <span>{t("dashboard.failedToLoadForecast")}</span>
         </div>
       )}
 
@@ -233,7 +234,7 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
             <div className="p-3 rounded-lg bg-muted/40 border border-border">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Target Attainment
+                  {t("dashboard.targetAttainment")}
                 </span>
                 <span className={`text-sm font-bold tabular-nums ${attainmentTextColor}`}>
                   {forecast.attainment}%
@@ -249,25 +250,25 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
 
               <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
                 <span>
-                  Weighted&nbsp;
+                  {t("dashboard.weightedForecast")}&nbsp;
                   <span className="font-medium text-card-foreground tabular-nums">
                     {formatCurrency(forecast.weighted)}
                   </span>
                 </span>
                 {forecast.gap > 0 ? (
                   <span className="text-red-500 tabular-nums">
-                    {formatCurrency(forecast.gap)}&nbsp;to go
+                    {formatCurrency(forecast.gap)}&nbsp;{t("dashboard.toGo")}
                   </span>
                 ) : (
                   <span className="text-emerald-600 font-medium">
-                    Target exceeded ✓
+                    {t("dashboard.targetExceeded")} ✓
                   </span>
                 )}
               </div>
             </div>
           ) : (
             <p className="text-xs text-muted-foreground italic">
-              No active target for this period
+              {t("dashboard.noActivePeriodTarget")}
             </p>
           )}
 
@@ -307,14 +308,14 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
               >
                 <span className="flex items-center gap-1.5">
                   <Icon name="BarChart2" size={13} />
-                  Stage Win Rates
+                  {t("dashboard.stageWinRates")}
                   {hasHistoricalRates ? (
                     <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">
-                      {historicalStageCount} historical
+                      {historicalStageCount} {t("dashboard.historical")}
                     </span>
                   ) : (
                     <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-muted text-muted-foreground">
-                      defaults
+                      {t("dashboard.defaults")}
                     </span>
                   )}
                 </span>
@@ -326,7 +327,7 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
                   {!hasHistoricalRates && (
                     <p className="px-3 py-2 text-[11px] text-amber-600 bg-amber-50 flex items-center gap-1.5">
                       <Icon name="Info" size={12} />
-                      Using default weights — need {5} or more closed deals per stage for historical rates.
+                      {t("dashboard.usingDefaultWeights").replace("{min}", "5")}
                     </p>
                   )}
                   {forecast.byStage
@@ -370,7 +371,7 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
             <div className="border border-border rounded-lg overflow-hidden">
               <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border-b border-border">
                 <Icon name="Users" size={13} className="text-muted-foreground" />
-                <span className="text-xs font-semibold text-muted-foreground">Rep Win Rates (90 days)</span>
+                <span className="text-xs font-semibold text-muted-foreground">{t("dashboard.repWinRates")}</span>
               </div>
               <div className="divide-y divide-border">
                 {repRatesList.map((rep, idx) => (
@@ -406,18 +407,18 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
             <div className="flex items-center justify-center gap-4 pt-3 border-t border-border text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />
-                {openCount}&nbsp;open&nbsp;{openCount === 1 ? "deal" : "deals"}
+                {openCount}&nbsp;{openCount === 1 ? t("dashboard.openDealsCount") : t("dashboard.openDealsCountPlural")}
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
-                {wonCount}&nbsp;won
+                {wonCount}&nbsp;{t("dashboard.wonDealsCount")}
               </span>
-              <span>{formatCurrency(forecast.bestCase)}&nbsp;pipeline</span>
+              <span>{formatCurrency(forecast.bestCase)}&nbsp;{t("dashboard.pipelineLabel")}</span>
             </div>
           ) : (
             <div className="text-center pt-3 border-t border-border">
               <p className="text-sm text-muted-foreground">
-                No deals found for this period
+                {t("dashboard.noDealsThisPeriod")}
               </p>
             </div>
           )}

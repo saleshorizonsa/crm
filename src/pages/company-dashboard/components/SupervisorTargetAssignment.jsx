@@ -5,6 +5,7 @@ import Button from "../../../components/ui/Button";
 import Icon from "../../../components/AppIcon";
 import { salesTargetService } from "../../../services/supabaseService";
 import { formatLocalDateYMD } from "utils/dateFormat";
+import { useLanguage } from "../../../i18n";
 
 const SupervisorTargetAssignment = ({
   isOpen,
@@ -16,6 +17,7 @@ const SupervisorTargetAssignment = ({
 }) => {
   const { formatCurrency } = useCurrency();
   const { userProfile } = useAuth();
+  const { t } = useLanguage();
 
   const [assignments, setAssignments] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -305,7 +307,7 @@ const SupervisorTargetAssignment = ({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-900">
-            Assign Sales Targets to Salesmen
+            {t("dashboard.assignSalesTargetsToSalesmen")}
           </h2>
           <button
             onClick={onClose}
@@ -319,39 +321,39 @@ const SupervisorTargetAssignment = ({
           {/* Available Budget Summary */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
             <h3 className="text-sm font-medium text-blue-800 mb-2">
-              Available Budget Summary
+              {t("dashboard.availableBudgetSummary")}
             </h3>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="text-blue-600">Total Allocated:</span>
+                <span className="text-blue-600">{t("dashboard.totalAllocatedLabel")}</span>
                 <span className="ml-2 font-semibold">
                   {formatCurrency(
                     supervisorTargets?.reduce(
-                      (sum, t) => sum + (parseFloat(t.target_amount) || 0),
+                      (sum, tgt) => sum + (parseFloat(tgt.target_amount) || 0),
                       0
                     ) || 0
                   )}
                 </span>
               </div>
               <div>
-                <span className="text-blue-600">Already Assigned:</span>
+                <span className="text-blue-600">{t("dashboard.alreadyAssigned")}</span>
                 <span className="ml-2 font-semibold">
                   {formatCurrency(
                     salesTargets?.reduce(
-                      (sum, t) => sum + (parseFloat(t.target_amount) || 0),
+                      (sum, tgt) => sum + (parseFloat(tgt.target_amount) || 0),
                       0
                     ) || 0
                   )}
                 </span>
               </div>
               <div>
-                <span className="text-blue-600">Available Amount:</span>
+                <span className="text-blue-600">{t("dashboard.availableAmountLabel")}</span>
                 <span className="ml-2 font-bold text-green-600">
                   {formatCurrency(calculateAvailableAmount)}
                 </span>
               </div>
               <div>
-                <span className="text-blue-600">Current Assignments:</span>
+                <span className="text-blue-600">{t("dashboard.currentAssignmentsLabel")}</span>
                 <span className="ml-2 font-semibold">
                   {formatCurrency(
                     assignments.reduce(
@@ -372,27 +374,26 @@ const SupervisorTargetAssignment = ({
                 />
                 <div className="text-xs text-yellow-800">
                   <div className="font-medium mb-1">
-                    ⚠️ Critical: Assignment Period Requirements
+                    ⚠️ {t("dashboard.criticalPeriodRequirements")}
                   </div>
                   <div className="space-y-1">
                     <div>
-                      • Target assignments must fall within your allocated
-                      budget periods
+                      • {t("dashboard.periodRequirementsRule")}
                     </div>
                     <div>
-                      • Available periods:{" "}
+                      • {t("dashboard.availablePeriodsLabel")}{" "}
                       {supervisorTargets
-                        ?.map((t) => {
-                          const start = new Date(t.period_start);
-                          const end = new Date(t.period_end);
+                        ?.map((tgt) => {
+                          const start = new Date(tgt.period_start);
+                          const end = new Date(tgt.period_end);
                           const now = new Date();
                           const status =
                             start > now
-                              ? "FUTURE"
+                              ? t("dashboard.futurePeriodStatus")
                               : end < now
-                              ? "PAST"
-                              : "ACTIVE";
-                          return `${t.period_start} to ${t.period_end} (${status})`;
+                              ? t("dashboard.pastPeriodStatus")
+                              : t("dashboard.activePeriodStatus");
+                          return `${tgt.period_start} ${t("dashboard.toLabel")} ${tgt.period_end} (${status})`;
                         })
                         .join(", ")}
                     </div>
@@ -406,7 +407,7 @@ const SupervisorTargetAssignment = ({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-medium text-gray-900">
-                Target Assignments
+                {t("dashboard.targetAssignmentsHeading")}
               </h3>
               <Button
                 variant="primary"
@@ -414,7 +415,7 @@ const SupervisorTargetAssignment = ({
                 disabled={calculateAvailableAmount <= 0}
               >
                 <Icon name="plus" className="w-4 h-4 mr-2" />
-                Add Assignment
+                {t("dashboard.addAssignment")}
               </Button>
             </div>
 
@@ -425,11 +426,10 @@ const SupervisorTargetAssignment = ({
                   className="w-12 h-12 text-gray-400 mx-auto mb-4"
                 />
                 <h3 className="text-sm font-medium text-gray-900">
-                  No assignments created
+                  {t("dashboard.noAssignmentsCreated")}
                 </h3>
                 <p className="text-sm text-gray-500">
-                  Click "Add Assignment" to start assigning targets to your
-                  salesmen.
+                  {t("dashboard.clickAddAssignmentDesc")}
                 </p>
               </div>
             ) : (
@@ -441,7 +441,7 @@ const SupervisorTargetAssignment = ({
                   >
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="text-sm font-medium text-gray-900">
-                        Assignment #{index + 1}
+                        {t("dashboard.assignmentNumber")}{index + 1}
                       </h4>
                       <button
                         onClick={() => handleRemoveAssignment(assignment.id)}
@@ -455,7 +455,7 @@ const SupervisorTargetAssignment = ({
                       {/* Salesman Selection */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Salesman *
+                          {t("dashboard.salesmanFieldLabel")}
                         </label>
                         <select
                           value={assignment.subordinateId}
@@ -468,7 +468,7 @@ const SupervisorTargetAssignment = ({
                           }
                           className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                         >
-                          <option value="">Select a salesman</option>
+                          <option value="">{t("dashboard.selectSalesmanPlaceholder")}</option>
                           {salesmen?.map((salesman) => (
                             <option key={salesman.id} value={salesman.id}>
                               {salesman.full_name || salesman.email}
@@ -480,7 +480,7 @@ const SupervisorTargetAssignment = ({
                       {/* Amount */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Target Amount *
+                          {t("dashboard.targetAmountFieldLabel")}
                         </label>
                         <input
                           type="number"
@@ -493,7 +493,7 @@ const SupervisorTargetAssignment = ({
                             )
                           }
                           className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                          placeholder="Enter amount"
+                          placeholder={t("dashboard.enterAmountPlaceholder")}
                           min="0"
                           step="0.01"
                         />
@@ -502,7 +502,7 @@ const SupervisorTargetAssignment = ({
                       {/* Period Type */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Period Type *
+                          {t("dashboard.periodTypeFieldLabel")}
                         </label>
                         <select
                           value={assignment.periodType}
@@ -515,17 +515,17 @@ const SupervisorTargetAssignment = ({
                           }
                           className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                         >
-                          <option value="weekly">Weekly</option>
-                          <option value="monthly">Monthly</option>
-                          <option value="quarterly">Quarterly</option>
-                          <option value="yearly">Yearly</option>
+                          <option value="weekly">{t("dashboard.weekly")}</option>
+                          <option value="monthly">{t("dashboard.monthly")}</option>
+                          <option value="quarterly">{t("dashboard.quarterly")}</option>
+                          <option value="yearly">{t("dashboard.yearly")}</option>
                         </select>
                       </div>
 
                       {/* Start Date */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Start Date *
+                          {t("dashboard.startDateFieldLabel")}
                         </label>
                         <input
                           type="date"
@@ -544,7 +544,7 @@ const SupervisorTargetAssignment = ({
                       {/* End Date (Auto-calculated) */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          End Date
+                          {t("dashboard.endDateFieldLabel")}
                         </label>
                         <input
                           type="date"
@@ -557,7 +557,7 @@ const SupervisorTargetAssignment = ({
                       {/* Notes */}
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Notes
+                          {t("common.notes")}
                         </label>
                         <textarea
                           value={assignment.notes}
@@ -570,7 +570,7 @@ const SupervisorTargetAssignment = ({
                           }
                           className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                           rows="2"
-                          placeholder="Optional notes for this assignment"
+                          placeholder={t("dashboard.optionalNotesPlaceholder")}
                         />
                       </div>
                     </div>
@@ -585,14 +585,13 @@ const SupervisorTargetAssignment = ({
                           );
                           return validation.hasOverlap ? (
                             <div className="text-xs text-green-600 bg-green-50 p-2 rounded">
-                              ✅ Valid period - overlaps with allocated budget (
+                              ✅ {t("dashboard.validPeriodMsg")} (
                               {formatCurrency(validation.availableAmount)}{" "}
-                              available)
+                              {t("dashboard.availableLabel")})
                             </div>
                           ) : (
                             <div className="text-xs text-red-600 bg-red-50 p-2 rounded">
-                              ❌ Invalid period - no overlap with allocated
-                              budget periods
+                              ❌ {t("dashboard.invalidPeriodMsg")}
                             </div>
                           );
                         })()}
@@ -608,18 +607,18 @@ const SupervisorTargetAssignment = ({
         {/* Footer */}
         <div className="flex items-center justify-between p-6 border-t border-gray-200">
           <div className="text-sm text-gray-500">
-            Total:{" "}
+            {t("dashboard.footerTotal")}{" "}
             {formatCurrency(
               assignments.reduce(
                 (sum, a) => sum + (parseFloat(a.amount) || 0),
                 0
               )
             )}{" "}
-            / Available: {formatCurrency(calculateAvailableAmount)}
+            {t("dashboard.footerAvailable")} {formatCurrency(calculateAvailableAmount)}
           </div>
           <div className="flex space-x-3">
             <Button variant="secondary" onClick={onClose}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               variant="primary"
@@ -627,8 +626,8 @@ const SupervisorTargetAssignment = ({
               disabled={assignments.length === 0 || isLoading}
             >
               {isLoading
-                ? "Assigning Targets..."
-                : `Assign ${assignments.length} Target(s)`}
+                ? t("dashboard.assigningTargets")
+                : `${t("dashboard.assignTargetsCount")} (${assignments.length})`}
             </Button>
           </div>
         </div>

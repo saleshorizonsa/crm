@@ -7,6 +7,7 @@ import DateRangePicker from "../../../components/ui/DateRangePicker";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { userService } from "../../../services/supabaseService";
+import { useLanguage } from "../../../i18n";
 
 const PipelineFilters = ({
   onFiltersChange,
@@ -17,6 +18,7 @@ const PipelineFilters = ({
 }) => {
   const { company, userProfile } = useAuth();
   const { getCurrencySymbol } = useCurrency();
+  const { t } = useLanguage();
   const [members, setMembers] = useState([]);
   const [localFilters, setLocalFilters] = useState(
     initialFilters || {
@@ -92,7 +94,7 @@ const PipelineFilters = ({
       }
 
       setMembers([
-        { value: "", label: "All Members" },
+        { value: "", label: t("pipeline.allMembers") },
         // Add current user first
         {
           value: userProfile.id,
@@ -110,13 +112,13 @@ const PipelineFilters = ({
   };
 
   const stages = [
-    { value: "", label: "All Stages" },
-    { value: "lead", label: "Lead" },
-    { value: "contact_made", label: "Qualified" },
-    { value: "proposal_sent", label: "Proposal" },
-    { value: "negotiation", label: "Negotiation" },
-    { value: "won", label: "Won" },
-    { value: "lost", label: "Lost" },
+    { value: "", label: t("pipeline.allStages") },
+    { value: "lead", label: t("deals.lead") },
+    { value: "contact_made", label: t("deals.qualified") },
+    { value: "proposal_sent", label: t("deals.proposal") },
+    { value: "negotiation", label: t("deals.negotiation") },
+    { value: "won", label: t("deals.won") },
+    { value: "lost", label: t("deals.lost") },
   ];
 
   const handleFilterChange = (key, value) => {
@@ -165,10 +167,10 @@ const PipelineFilters = ({
         <div className="flex items-center space-x-3">
           <Icon name="Filter" size={20} className="text-muted-foreground" />
           <h3 className="text-lg font-semibold text-card-foreground">
-            Funnel Filters
+            {t("pipeline.funnelFilters")}
           </h3>
           <div className="text-sm text-muted-foreground">
-            Showing {filteredDeals} of {totalDeals} deals
+            {t("pipeline.showing")} {filteredDeals} {t("common.of")} {totalDeals} {t("common.deals").toLowerCase()}
           </div>
         </div>
 
@@ -180,7 +182,7 @@ const PipelineFilters = ({
             iconName="X"
             iconPosition="left"
           >
-            Clear Filters
+            {t("pipeline.clearFilters")}
           </Button>
         )}
       </div>
@@ -189,7 +191,7 @@ const PipelineFilters = ({
         <div className="lg:col-span-2">
           <Input
             type="search"
-            placeholder="Search deals, companies, contacts..."
+            placeholder={t("pipeline.searchPlaceholder")}
             value={localFilters?.search}
             onChange={(e) => handleFilterChange("search", e?.target?.value)}
             className="w-full"
@@ -199,7 +201,7 @@ const PipelineFilters = ({
         {/* Member - Only show for supervisors, managers, and directors */}
         {canFilterByMember && (
           <Select
-            placeholder="Member"
+            placeholder={t("pipeline.allMembers")}
             options={members}
             value={localFilters?.owner_id}
             onChange={(value) => handleFilterChange("owner_id", value)}
@@ -211,12 +213,12 @@ const PipelineFilters = ({
           value={localFilters?.dateRange}
           customRange={localFilters?.customDateRange}
           onChange={handleDateRangeChange}
-          placeholder="Date Range"
+          placeholder={t("pipeline.closeDate")}
         />
 
         {/* Stage */}
         <Select
-          placeholder="Stage"
+          placeholder={t("pipeline.stage")}
           options={stages}
           value={localFilters?.stage}
           onChange={(value) => handleFilterChange("stage", value)}
@@ -237,14 +239,14 @@ const PipelineFilters = ({
             htmlFor="showOverdue"
             className="text-sm text-card-foreground cursor-pointer"
           >
-            Overdue Only
+            {t("pipeline.overdueOnly")}
           </label>
         </div>
       </div>
       {/* Value Range */}
       <div className="flex items-center space-x-4 mt-4">
         <div className="flex items-center space-x-2">
-          <span className="text-sm text-muted-foreground">Deal Value:</span>
+          <span className="text-sm text-muted-foreground">{t("pipeline.dealValue")}:</span>
           <Input
             type="number"
             placeholder={`Min (${getCurrencySymbol()})`}
@@ -270,7 +272,7 @@ const PipelineFilters = ({
             iconPosition="left"
             onClick={onExport}
           >
-            Export
+            {t("common.export")}
           </Button>
           <Button
             variant="outline"
@@ -278,7 +280,7 @@ const PipelineFilters = ({
             iconName="RefreshCw"
             iconPosition="left"
           >
-            Refresh
+            {t("common.refresh")}
           </Button>
         </div>
       </div>

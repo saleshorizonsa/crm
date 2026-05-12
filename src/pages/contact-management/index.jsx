@@ -11,9 +11,11 @@ import ContactStats from "./components/ContactStats";
 import ContactMobileView from "./components/ContactMobileView";
 import { useAuth } from "../../contexts/AuthContext";
 import { contactService, activityService } from "../../services/supabaseService";
+import { useLanguage } from "../../i18n";
 
 const ContactManagement = () => {
   const { company, user } = useAuth();
+  const { t } = useLanguage();
   const [isLoading, setIsLoading] = useState(true);
   const [contacts, setContacts] = useState([]);
   const [stats, setStats] = useState(null);
@@ -137,7 +139,7 @@ const ContactManagement = () => {
   const handleDeleteContacts = async (contactIds) => {
     if (
       !window.confirm(
-        `Are you sure you want to delete ${contactIds.length} contact(s)?`
+        `${t("contacts.deleteContactsConfirm")} ${contactIds.length} ${t("contacts.contacts_plural")}`
       )
     ) {
       return;
@@ -186,7 +188,7 @@ const ContactManagement = () => {
   }, [contacts, filters]);
 
   if (!user) {
-    return <div>Loading...</div>;
+    return <div>{t("common.loading")}</div>;
   }
 
   return (
@@ -198,12 +200,12 @@ const ContactManagement = () => {
           <div>
             <NavigationBreadcrumbs
               items={[
-                { label: "Dashboard", href: "/company-dashboard" },
-                { label: "Clients", href: "/contact-management" },
+                { label: t("nav.dashboard"), href: "/company-dashboard" },
+                { label: t("nav.clients"), href: "/contact-management" },
               ]}
             />
             <h1 className="text-2xl font-semibold text-gray-900 mt-2">
-              Client Management
+              {t("contacts.clientManagement")}
             </h1>
           </div>
 
@@ -213,7 +215,7 @@ const ContactManagement = () => {
             iconName="Plus"
             iconPosition="left"
           >
-            Add Client
+            {t("contacts.addClient")}
           </Button>
         </div>
 

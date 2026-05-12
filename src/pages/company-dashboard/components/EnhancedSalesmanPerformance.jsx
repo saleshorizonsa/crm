@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import Button from "../../../components/ui/Button";
 import Icon from "../../../components/AppIcon";
+import { useLanguage } from "../../../i18n";
 
 const EnhancedSalesmanPerformance = ({
   teamData,
@@ -13,6 +14,7 @@ const EnhancedSalesmanPerformance = ({
   isLoading,
 }) => {
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
+  const { t } = useLanguage();
 
   // Helper to convert deal amount to user's preferred currency
   const getConvertedAmount = (deal) => {
@@ -112,15 +114,15 @@ const EnhancedSalesmanPerformance = ({
   const getStatusText = (status) => {
     switch (status) {
       case "excellent":
-        return "Excellent";
+        return t("dashboard.excellentStatus");
       case "good":
-        return "Good";
+        return t("dashboard.goodStatus");
       case "average":
-        return "Average";
+        return t("dashboard.averageStatus");
       case "needs-attention":
-        return "Needs Attention";
+        return t("dashboard.needsAttentionStatus");
       default:
-        return "Unknown";
+        return t("dashboard.unknownStatus");
     }
   };
 
@@ -191,7 +193,7 @@ const EnhancedSalesmanPerformance = ({
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900">
-            Sales Team Performance
+            {t("dashboard.salesTeamPerformance")}
           </h3>
           <div className="flex items-center space-x-2">
             <select
@@ -199,10 +201,10 @@ const EnhancedSalesmanPerformance = ({
               onChange={(e) => setFilterBy(e.target.value)}
               className="text-sm border border-gray-300 rounded px-3 py-1"
             >
-              <option value="all">All Salesmen</option>
-              <option value="high-performers">High Performers</option>
-              <option value="needs-attention">Needs Attention</option>
-              <option value="no-targets">No Targets</option>
+              <option value="all">{t("dashboard.allSalesmenFilter")}</option>
+              <option value="high-performers">{t("dashboard.highPerformersFilter")}</option>
+              <option value="needs-attention">{t("dashboard.needsAttentionFilter")}</option>
+              <option value="no-targets">{t("dashboard.noTargetsFilter")}</option>
             </select>
           </div>
         </div>
@@ -213,7 +215,7 @@ const EnhancedSalesmanPerformance = ({
             <div className="text-2xl font-bold text-gray-900">
               {salesmen.length}
             </div>
-            <div className="text-xs text-gray-500">Total Salesmen</div>
+            <div className="text-xs text-gray-500">{t("dashboard.totalSalesmen")}</div>
           </div>
           <div>
             <div className="text-2xl font-bold text-green-600">
@@ -223,19 +225,19 @@ const EnhancedSalesmanPerformance = ({
                 ).length
               }
             </div>
-            <div className="text-xs text-gray-500">High Performers</div>
+            <div className="text-xs text-gray-500">{t("dashboard.highPerformers")}</div>
           </div>
           <div>
             <div className="text-2xl font-bold text-red-600">
               {salesmen.filter((s) => s.status === "needs-attention").length}
             </div>
-            <div className="text-xs text-gray-500">Need Attention</div>
+            <div className="text-xs text-gray-500">{t("dashboard.needAttention")}</div>
           </div>
           <div>
             <div className="text-2xl font-bold text-yellow-600">
               {salesmen.filter((s) => s.assignedTargets === 0).length}
             </div>
-            <div className="text-xs text-gray-500">No Targets</div>
+            <div className="text-xs text-gray-500">{t("dashboard.noTargetsLabel")}</div>
           </div>
         </div>
       </div>
@@ -250,19 +252,19 @@ const EnhancedSalesmanPerformance = ({
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
               >
                 <div className="flex items-center space-x-1">
-                  <span>Salesman</span>
+                  <span>{t("dashboard.salesmanCol")}</span>
                   <Icon name="chevron-up-down" className="w-3 h-3" />
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
+                {t("dashboard.statusCol")}
               </th>
               <th
                 onClick={() => handleSort("totalValue")}
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
               >
                 <div className="flex items-center space-x-1">
-                  <span>Revenue</span>
+                  <span>{t("dashboard.revenueCol")}</span>
                   <Icon name="chevron-up-down" className="w-3 h-3" />
                 </div>
               </th>
@@ -271,7 +273,7 @@ const EnhancedSalesmanPerformance = ({
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
               >
                 <div className="flex items-center space-x-1">
-                  <span>Target Progress</span>
+                  <span>{t("dashboard.targetProgressCol")}</span>
                   <Icon name="chevron-up-down" className="w-3 h-3" />
                 </div>
               </th>
@@ -280,7 +282,7 @@ const EnhancedSalesmanPerformance = ({
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
               >
                 <div className="flex items-center space-x-1">
-                  <span>Conversion</span>
+                  <span>{t("dashboard.conversionCol")}</span>
                   <Icon name="chevron-up-down" className="w-3 h-3" />
                 </div>
               </th>
@@ -289,12 +291,12 @@ const EnhancedSalesmanPerformance = ({
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
               >
                 <div className="flex items-center space-x-1">
-                  <span>Pipeline</span>
+                  <span>{t("dashboard.pipelineCol")}</span>
                   <Icon name="chevron-up-down" className="w-3 h-3" />
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
+                {t("dashboard.actionsCol")}
               </th>
             </tr>
           </thead>
@@ -315,7 +317,7 @@ const EnhancedSalesmanPerformance = ({
                           {member.name}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {member.dealsCount} total deals
+                          {member.dealsCount} {t("dashboard.totalDealsLabel")}
                         </div>
                       </div>
                     </div>
@@ -334,7 +336,7 @@ const EnhancedSalesmanPerformance = ({
                       {formatCurrency(member.totalValue)}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {member.wonDeals} deals won
+                      {member.wonDeals} {t("dashboard.dealsWonLabel")}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -361,7 +363,7 @@ const EnhancedSalesmanPerformance = ({
                       </div>
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
-                      Target: {formatCurrency(member.currentTarget)}
+                      {t("dashboard.targetLabel")}: {formatCurrency(member.currentTarget)}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -369,7 +371,7 @@ const EnhancedSalesmanPerformance = ({
                       {member.conversionRate}%
                     </div>
                     <div className="text-xs text-gray-500">
-                      {member.wonDeals}/{member.dealsCount} deals
+                      {member.wonDeals}/{member.dealsCount} {t("dashboard.dealsLabel")}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -377,7 +379,7 @@ const EnhancedSalesmanPerformance = ({
                       {formatCurrency(member.pipelineValue)}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {member.activeDealsCount} active deals
+                      {member.activeDealsCount} {t("dashboard.activeDealsLabel")}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -386,7 +388,7 @@ const EnhancedSalesmanPerformance = ({
                         onClick={() => onEditSalesman && onEditSalesman(member)}
                         className="text-blue-600 hover:text-blue-900"
                       >
-                        Edit
+                        {t("dashboard.editAction")}
                       </button>
                       <button
                         onClick={() =>
@@ -394,13 +396,13 @@ const EnhancedSalesmanPerformance = ({
                         }
                         className="text-green-600 hover:text-green-900"
                       >
-                        Coach
+                        {t("dashboard.coachAction")}
                       </button>
                       <button
                         onClick={() => onAssignTarget && onAssignTarget(member)}
                         className="text-purple-600 hover:text-purple-900"
                       >
-                        Target
+                        {t("dashboard.targetAction")}
                       </button>
                     </div>
                   </td>
@@ -415,12 +417,12 @@ const EnhancedSalesmanPerformance = ({
         <div className="text-center py-12">
           <Icon name="users" className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h3 className="text-sm font-medium text-gray-900">
-            No salesmen found
+            {t("dashboard.noSalesmenFound")}
           </h3>
           <p className="text-sm text-gray-500">
             {filterBy === "all"
-              ? "Add salesmen to your team to start tracking performance."
-              : "No salesmen match the selected filter."}
+              ? t("dashboard.addSalesmenToTeam")
+              : t("dashboard.noSalesmenMatchFilter")}
           </p>
         </div>
       )}

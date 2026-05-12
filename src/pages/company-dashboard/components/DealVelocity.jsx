@@ -1,7 +1,9 @@
 import React from "react";
 import Icon from "../../../components/AppIcon";
+import { useLanguage } from "../../../i18n";
 
 const DealVelocity = ({ deals = [], isLoading = false }) => {
+  const { t } = useLanguage();
   const calculateVelocity = () => {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -114,7 +116,7 @@ const DealVelocity = ({ deals = [], isLoading = false }) => {
     <div className="bg-card border border-border rounded-lg p-6 enterprise-shadow">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-card-foreground">
-          Deal Velocity
+          {t("dashboard.dealVelocity")}
         </h3>
         <Icon name="Zap" size={20} className="text-accent" />
       </div>
@@ -125,14 +127,14 @@ const DealVelocity = ({ deals = [], isLoading = false }) => {
           <div className="text-2xl font-bold text-success">
             {velocity.newDeals}
           </div>
-          <div className="text-xs text-muted-foreground">New Deals (30d)</div>
+          <div className="text-xs text-muted-foreground">{t("dashboard.newDeals30d")}</div>
         </div>
         <div className="text-center p-3 bg-primary/10 rounded-lg">
           <div className="text-2xl font-bold text-primary">
             {velocity.avgTimeToClose}
           </div>
           <div className="text-xs text-muted-foreground">
-            Avg. Days to Close
+            {t("dashboard.avgDaysToClose")}
           </div>
         </div>
       </div>
@@ -140,7 +142,7 @@ const DealVelocity = ({ deals = [], isLoading = false }) => {
       {/* Stage Breakdown */}
       <div className="space-y-3">
         <h4 className="text-sm font-medium text-card-foreground mb-3">
-          Pipeline Stages
+          {t("dashboard.pipelineStages")}
         </h4>
 
         {Object.entries(velocity.stageVelocity).map(([stage, data]) => (
@@ -159,16 +161,16 @@ const DealVelocity = ({ deals = [], isLoading = false }) => {
                   {stage}
                 </span>
                 <div className="text-xs text-muted-foreground">
-                  {data.count} deals
+                  {data.count} {t("dashboard.dealsCount")}
                 </div>
               </div>
             </div>
 
             <div className="text-right">
               <div className="text-sm font-medium text-card-foreground">
-                {data.avgDays} days
+                {data.avgDays} {t("dashboard.daysCount")}
               </div>
-              <div className="text-xs text-muted-foreground">avg. age</div>
+              <div className="text-xs text-muted-foreground">{t("dashboard.avgAge")}</div>
             </div>
           </div>
         ))}
@@ -178,7 +180,7 @@ const DealVelocity = ({ deals = [], isLoading = false }) => {
       <div className="mt-4 pt-4 border-t border-border">
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">
-            Conversion Rate (30d)
+            {t("dashboard.conversionRate30d")}
           </span>
           <div className="flex items-center space-x-2">
             <span className="text-lg font-semibold text-card-foreground">

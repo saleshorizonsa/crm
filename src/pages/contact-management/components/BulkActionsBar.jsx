@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
+import { useLanguage } from "../../../i18n";
 
 const BulkActionsBar = ({ selectedCount, onDelete }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const { t } = useLanguage();
 
   if (selectedCount === 0) return null;
 
@@ -27,11 +29,10 @@ const BulkActionsBar = ({ selectedCount, onDelete }) => {
               </div>
               <div>
                 <p className="text-sm font-medium text-card-foreground">
-                  {selectedCount} client{selectedCount !== 1 ? "s" : ""}{" "}
-                  selected
+                  {selectedCount} {selectedCount !== 1 ? t("contacts.clientsSelected") : t("contacts.clientSelected")}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Choose an action to apply to selected clients
+                  {t("contacts.bulkActionsDesc")}
                 </p>
               </div>
             </div>
@@ -45,7 +46,7 @@ const BulkActionsBar = ({ selectedCount, onDelete }) => {
               className="transition-enterprise"
             >
               <Icon name="Trash2" size={14} className="mr-2" />
-              Delete
+              {t("common.delete")}
             </Button>
           </div>
         </div>
@@ -70,18 +71,16 @@ const BulkActionsBar = ({ selectedCount, onDelete }) => {
                   </div>
                   <div>
                     <h3 className="text-lg font-medium text-card-foreground">
-                      Delete Clients
+                      {t("contacts.deleteClients")}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Are you sure you want to delete {selectedCount} client
-                      {selectedCount !== 1 ? "s" : ""}?
+                      {t("contacts.deleteBulkConfirm")} {selectedCount} {selectedCount !== 1 ? t("contacts.clientsSelected") : t("contacts.clientSelected")}?
                     </p>
                   </div>
                 </div>
                 <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-3 mb-4">
                   <p className="text-sm text-destructive">
-                    This action cannot be undone. All associated data will be
-                    permanently removed.
+                    {t("contacts.permanentlyRemoved")}
                   </p>
                 </div>
                 <div className="flex justify-end space-x-3">
@@ -89,12 +88,11 @@ const BulkActionsBar = ({ selectedCount, onDelete }) => {
                     variant="outline"
                     onClick={() => setShowDeleteConfirm(false)}
                   >
-                    Cancel
+                    {t("common.cancel")}
                   </Button>
                   <Button variant="destructive" onClick={confirmDelete}>
                     <Icon name="Trash2" size={16} className="mr-2" />
-                    Delete {selectedCount} Client
-                    {selectedCount !== 1 ? "s" : ""}
+                    {t("contacts.deleteClientCount")} {selectedCount} {selectedCount !== 1 ? t("contacts.clientsSelected") : t("contacts.clientSelected")}
                   </Button>
                 </div>
               </div>

@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import LeadScoreBadge from "../../../components/ui/LeadScoreBadge";
 import Icon from "../../../components/AppIcon";
+import { useLanguage } from "../../../i18n";
 
 const HotLeadsWidget = ({ companyId }) => {
   const [leads, setLeads] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   useEffect(() => {
     const fetchHotLeads = async () => {
@@ -51,13 +53,13 @@ const HotLeadsWidget = ({ companyId }) => {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
           <Icon name="TrendingUp" size={18} className="text-red-500" />
-          Hot Leads
+          {t("dashboard.hotLeads")}
         </h3>
         <button
           onClick={() => navigate("/sales-pipeline?stage=lead", { state: { activeStage: "lead" } })}
           className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
         >
-          View Pipeline
+          {t("dashboard.viewPipeline")}
           <Icon name="ArrowRight" size={12} />
         </button>
       </div>
@@ -69,7 +71,7 @@ const HotLeadsWidget = ({ companyId }) => {
       ) : leads.length === 0 ? (
         <div className="text-center py-8 text-gray-400">
           <Icon name="Users" size={32} className="mx-auto mb-2" />
-          <p className="text-sm">No hot or warm leads yet</p>
+          <p className="text-sm">{t("dashboard.noHotLeads")}</p>
         </div>
       ) : (
         <ul className="space-y-3">

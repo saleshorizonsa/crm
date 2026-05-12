@@ -1,9 +1,11 @@
 import React from "react";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { useLanguage } from "../../../i18n";
 
 const LeadSources = ({ deals = [], contacts = [], isLoading = false }) => {
   const { formatCurrency } = useCurrency();
+  const { t } = useLanguage();
 
   const analyzeLeadSources = () => {
     // Analyze actual lead sources from deals and contacts
@@ -114,7 +116,7 @@ const LeadSources = ({ deals = [], contacts = [], isLoading = false }) => {
     <div className="bg-card border border-border rounded-lg p-6 enterprise-shadow">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-card-foreground">
-          Lead Sources
+          {t("dashboard.leadSources")}
         </h3>
         <Icon name="PieChart" size={20} className="text-accent" />
       </div>
@@ -123,13 +125,13 @@ const LeadSources = ({ deals = [], contacts = [], isLoading = false }) => {
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="text-center p-3 bg-primary/10 rounded-lg">
           <div className="text-xl font-bold text-primary">{totalDeals}</div>
-          <div className="text-xs text-muted-foreground">Total Deals</div>
+          <div className="text-xs text-muted-foreground">{t("dashboard.totalDeals")}</div>
         </div>
         <div className="text-center p-3 bg-success/10 rounded-lg">
           <div className="text-xl font-bold text-success">
             {formatCurrency(totalValue)}
           </div>
-          <div className="text-xs text-muted-foreground">Total Value</div>
+          <div className="text-xs text-muted-foreground">{t("dashboard.totalValue")}</div>
         </div>
       </div>
 
@@ -150,7 +152,7 @@ const LeadSources = ({ deals = [], contacts = [], isLoading = false }) => {
                   {formatCurrency(source.value)}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {source.deals} deals
+                  {source.deals} {t("dashboard.dealsCount")}
                 </div>
               </div>
             </div>
@@ -160,7 +162,7 @@ const LeadSources = ({ deals = [], contacts = [], isLoading = false }) => {
               {/* Deals Progress */}
               <div>
                 <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                  <span>Deals</span>
+                  <span>{t("common.deals")}</span>
                   <span>{source.dealPercentage}%</span>
                 </div>
                 <div className="w-full bg-muted rounded-full h-1.5">
@@ -177,7 +179,7 @@ const LeadSources = ({ deals = [], contacts = [], isLoading = false }) => {
               {/* Value Progress */}
               <div>
                 <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                  <span>Value</span>
+                  <span>{t("common.value")}</span>
                   <span>{source.valuePercentage}%</span>
                 </div>
                 <div className="w-full bg-muted rounded-full h-1.5">
@@ -198,7 +200,7 @@ const LeadSources = ({ deals = [], contacts = [], isLoading = false }) => {
       {/* Top Performer */}
       <div className="mt-4 pt-4 border-t border-border">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Top Performer</span>
+          <span className="text-muted-foreground">{t("dashboard.topPerformer")}</span>
           <div className="flex items-center space-x-2">
             <Icon
               name={leadSources[0]?.icon}

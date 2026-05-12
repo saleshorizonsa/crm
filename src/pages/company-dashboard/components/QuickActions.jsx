@@ -13,10 +13,12 @@ import {
   taskService,
   userService,
 } from "../../../services/supabaseService";
+import { useLanguage } from "../../../i18n";
 
 const QuickActions = ({ onActionClick }) => {
   const { user, userProfile, company } = useAuth();
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [isDealModalOpen, setIsDealModalOpen] = useState(false);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -53,29 +55,29 @@ const QuickActions = ({ onActionClick }) => {
   const quickActions = [
     {
       id: "new-deal",
-      label: "New Deal",
+      label: t("dashboard.newDealAction"),
       icon: "Plus",
       color: "bg-primary",
       textColor: "text-primary-foreground",
-      description: "Create a new sales opportunity",
+      description: t("dashboard.newDealDesc"),
       path: "/sales-pipeline",
     },
     {
       id: "add-contact",
-      label: "Add Contact",
+      label: t("dashboard.addContactAction"),
       icon: "UserPlus",
       color: "bg-accent",
       textColor: "text-accent-foreground",
-      description: "Add new customer or lead",
+      description: t("dashboard.addContactDesc"),
       path: "/contact-management",
     },
     {
       id: "create-task",
-      label: "Create Task",
+      label: t("dashboard.createTaskAction"),
       icon: "CheckSquare",
       color: "bg-secondary",
       textColor: "text-secondary-foreground",
-      description: "Assign new task to team",
+      description: t("dashboard.createTaskDesc"),
       path: "/task-management",
     },
     // {
@@ -364,7 +366,7 @@ const QuickActions = ({ onActionClick }) => {
     <div className="bg-card border border-border rounded-lg p-6 enterprise-shadow">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-card-foreground">
-          Quick Actions
+          {t("dashboard.quickActions")}
         </h3>
         <Icon name="Zap" size={20} className="text-accent" />
       </div>

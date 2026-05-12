@@ -1,6 +1,7 @@
 import React from "react";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import Icon from "../../../components/AppIcon";
+import { useLanguage } from "../../../i18n";
 
 const ManagerSummaryCards = ({
   teamData,
@@ -11,6 +12,7 @@ const ManagerSummaryCards = ({
   upcomingTasks,
 }) => {
   const { formatCurrency } = useCurrency();
+  const { t } = useLanguage();
 
   const calculateSummaryMetrics = () => {
     // Team revenue calculation
@@ -91,16 +93,16 @@ const ManagerSummaryCards = ({
 
   const summaryCards = [
     {
-      title: "Team Revenue",
+      title: t("dashboard.teamRevenue"),
       value: formatCurrency(metrics.totalTeamRevenue),
-      subtitle: "Total closed deals",
+      subtitle: t("dashboard.closedDeals"),
       icon: "trending-up",
       color: "bg-gradient-to-r from-green-500 to-emerald-600",
       textColor: "text-green-100",
       trend: metrics.totalTeamRevenue > 0 ? "positive" : "neutral",
     },
     {
-      title: "Target Progress",
+      title: t("dashboard.targetAchievement"),
       value: `${metrics.targetAchievement.toFixed(1)}%`,
       subtitle: `${formatCurrency(
         metrics.totalProgressAmount
@@ -126,7 +128,7 @@ const ManagerSummaryCards = ({
           : "negative",
     },
     {
-      title: "Active Pipeline",
+      title: t("dashboard.activePipeline"),
       value: metrics.activeDealsCount.toString(),
       subtitle: formatCurrency(metrics.activePipelineValue),
       icon: "pipeline",
@@ -135,9 +137,9 @@ const ManagerSummaryCards = ({
       trend: metrics.activeDealsCount > 5 ? "positive" : "neutral",
     },
     {
-      title: "Team Performance",
+      title: t("dashboard.teamPerformance"),
       value: `${metrics.avgTeamConversion.toFixed(1)}%`,
-      subtitle: `Avg conversion rate (${metrics.teamSize} members)`,
+      subtitle: `${t("dashboard.conversionRate")} (${metrics.teamSize} ${t("dashboard.teamSize")})`,
       icon: "users",
       color:
         metrics.avgTeamConversion >= 25
@@ -165,9 +167,9 @@ const ManagerSummaryCards = ({
   // Add alert cards for important metrics
   if (metrics.overdueTasksCount > 0) {
     alertCards.push({
-      title: "Overdue Tasks",
+      title: t("dashboard.overdueTasks"),
       value: metrics.overdueTasksCount.toString(),
-      subtitle: "Need immediate attention",
+      subtitle: t("dashboard.highPriorityItemsRequiringAttention"),
       icon: "alert-triangle",
       color: "bg-gradient-to-r from-red-500 to-red-600",
       textColor: "text-red-100",
@@ -177,9 +179,9 @@ const ManagerSummaryCards = ({
 
   if (metrics.recentActivitiesCount === 0) {
     alertCards.push({
-      title: "Low Activity",
+      title: t("dashboard.noRecentActivity"),
       value: "0",
-      subtitle: "No activities this week",
+      subtitle: t("dashboard.activitySummary"),
       icon: "activity",
       color: "bg-gradient-to-r from-gray-500 to-gray-600",
       textColor: "text-gray-100",

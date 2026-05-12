@@ -12,9 +12,11 @@ import {
 } from "recharts";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { useLanguage } from "../../../i18n";
 
 const RevenueTrends = ({ deals = [], isLoading = false }) => {
   const { formatCurrency } = useCurrency();
+  const { t } = useLanguage();
 
   const generateTrendsData = () => {
     const now = new Date();
@@ -92,25 +94,25 @@ const RevenueTrends = ({ deals = [], isLoading = false }) => {
           </p>
           <div className="space-y-1 text-sm">
             <div className="flex justify-between items-center">
-              <span className="text-success">Revenue:</span>
+              <span className="text-success">{t("dashboard.totalRevenue")}:</span>
               <span className="font-medium">
                 {formatCurrency(data.revenue)}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-primary">Pipeline:</span>
+              <span className="text-primary">{t("dashboard.activePipeline")}:</span>
               <span className="font-medium">
                 {formatCurrency(data.pipeline)}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Deals:</span>
+              <span className="text-muted-foreground">{t("common.deals")}:</span>
               <span>
-                {data.deals} ({data.wonDeals} won)
+                {data.deals} ({data.wonDeals} {t("dashboard.wonDealsCount")})
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Conversion:</span>
+              <span className="text-muted-foreground">{t("dashboard.conversionRate")}:</span>
               <span>{data.conversion}%</span>
             </div>
           </div>
@@ -134,10 +136,10 @@ const RevenueTrends = ({ deals = [], isLoading = false }) => {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-card-foreground">
-            Revenue Trends
+            {t("dashboard.salesTrend")}
           </h3>
           <p className="text-sm text-muted-foreground">
-            6-month performance overview
+            {t("dashboard.monthlySummary")}
           </p>
         </div>
         <Icon name="TrendingUp" size={20} className="text-accent" />
@@ -149,15 +151,15 @@ const RevenueTrends = ({ deals = [], isLoading = false }) => {
           <div className="text-lg font-bold text-success">
             {formatCurrency(totalRevenue)}
           </div>
-          <div className="text-xs text-muted-foreground">Total Revenue</div>
+          <div className="text-xs text-muted-foreground">{t("dashboard.totalRevenue")}</div>
         </div>
         <div className="text-center p-3 bg-primary/10 rounded-lg">
           <div className="text-lg font-bold text-primary">{totalDeals}</div>
-          <div className="text-xs text-muted-foreground">Total Deals</div>
+          <div className="text-xs text-muted-foreground">{t("dashboard.totalDeals")}</div>
         </div>
         <div className="text-center p-3 bg-warning/10 rounded-lg">
           <div className="text-lg font-bold text-warning">{avgConversion}%</div>
-          <div className="text-xs text-muted-foreground">Avg. Conversion</div>
+          <div className="text-xs text-muted-foreground">{t("dashboard.conversionRate")}</div>
         </div>
       </div>
 
@@ -248,14 +250,14 @@ const RevenueTrends = ({ deals = [], isLoading = false }) => {
               <span className="text-error font-medium">{growthRate}%</span>
             </>
           )}
-          <span className="text-muted-foreground">vs. last month</span>
+          <span className="text-muted-foreground">{t("dashboard.vsLastMonth")}</span>
         </div>
 
         <div className="flex items-center space-x-1 text-xs text-muted-foreground">
           <div className="w-3 h-3 bg-success rounded-sm"></div>
-          <span>Revenue</span>
+          <span>{t("dashboard.totalRevenue")}</span>
           <div className="w-3 h-3 bg-primary rounded-sm ml-3"></div>
-          <span>Pipeline</span>
+          <span>{t("dashboard.activePipeline")}</span>
         </div>
       </div>
     </div>

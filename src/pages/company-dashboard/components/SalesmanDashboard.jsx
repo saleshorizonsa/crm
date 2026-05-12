@@ -16,6 +16,7 @@ import {
   contactService,
   salesTargetService,
 } from "../../../services/supabaseService";
+import { useLanguage } from "../../../i18n";
 
 const SalesmanDashboard = ({
   viewAsUser = null,
@@ -26,6 +27,7 @@ const SalesmanDashboard = ({
 }) => {
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
+  const { t } = useLanguage();
 
   // Helper to convert deal amount to user's preferred currency
   const getConvertedAmount = (deal) => {
@@ -297,28 +299,28 @@ const SalesmanDashboard = ({
       {/* Personal Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <MetricsCard
-          title="My Revenue"
+          title={t("dashboard.myRevenue")}
           value={formatCurrency(filteredRevenue)}
           change="+15.2%"
           trend="up"
           icon="💰"
         />
         <MetricsCard
-          title="My Deals"
+          title={t("dashboard.myDeals")}
           value={filteredDeals.length.toString()}
           change="+5.8%"
           trend="up"
           icon="🤝"
         />
         <MetricsCard
-          title="My Contacts"
+          title={t("dashboard.myContacts")}
           value={myContacts.length.toString()}
           change="+12.1%"
           trend="up"
           icon="👥"
         />
         <MetricsCard
-          title="My Tasks"
+          title={t("dashboard.myTasks")}
           value={upcomingTasks.length.toString()}
           change="-8.3%"
           trend="down"
@@ -329,13 +331,13 @@ const SalesmanDashboard = ({
       {/* Performance Goals */}
       {performanceGoals && (
         <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <h3 className="text-lg font-semibold mb-4">Monthly Goals Progress</h3>
+          <h3 className="text-lg font-semibold mb-4">{t("dashboard.monthlyGoalsProgress")}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-green-600">
                 {performanceGoals.revenue.percentage}%
               </div>
-              <div className="text-sm text-gray-500">Revenue Goal</div>
+              <div className="text-sm text-gray-500">{t("dashboard.revenueGoal")}</div>
               <div className="text-xs text-gray-400">
                 {formatCurrency(performanceGoals.revenue.current)} /{" "}
                 {formatCurrency(performanceGoals.revenue.target)}
@@ -345,7 +347,7 @@ const SalesmanDashboard = ({
               <div className="text-2xl font-bold text-blue-600">
                 {performanceGoals.deals.percentage}%
               </div>
-              <div className="text-sm text-gray-500">Deals Goal</div>
+              <div className="text-sm text-gray-500">{t("dashboard.dealsGoal")}</div>
               <div className="text-xs text-gray-400">
                 {performanceGoals.deals.current} /{" "}
                 {performanceGoals.deals.target}
@@ -355,7 +357,7 @@ const SalesmanDashboard = ({
               <div className="text-2xl font-bold text-purple-600">
                 {performanceGoals.calls.percentage}%
               </div>
-              <div className="text-sm text-gray-500">Calls Goal</div>
+              <div className="text-sm text-gray-500">{t("dashboard.callsGoal")}</div>
               <div className="text-xs text-gray-400">
                 {performanceGoals.calls.current} /{" "}
                 {performanceGoals.calls.target}
@@ -365,7 +367,7 @@ const SalesmanDashboard = ({
               <div className="text-2xl font-bold text-orange-600">
                 {performanceGoals.meetings.percentage}%
               </div>
-              <div className="text-sm text-gray-500">Meetings Goal</div>
+              <div className="text-sm text-gray-500">{t("dashboard.meetingsGoal")}</div>
               <div className="text-xs text-gray-400">
                 {performanceGoals.meetings.current} /{" "}
                 {performanceGoals.meetings.target}
@@ -380,13 +382,13 @@ const SalesmanDashboard = ({
         <div className="bg-white rounded-lg shadow p-6">
           <SalesChart
             data={salesData}
-            title="My Sales Performance"
+            title={t("dashboard.mySalesPerformance")}
             showTypeSelector={true}
             readOnly={readOnly}
           />
         </div>
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold mb-4">Deal Pipeline</h3>
+          <h3 className="text-lg font-semibold mb-4">{t("dashboard.dealPipeline")}</h3>
           <div className="space-y-3">
             {[
               "lead",
@@ -413,7 +415,7 @@ const SalesmanDashboard = ({
                       {stage.replace("_", " ")}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {stageDeals.length} deals
+                      {stageDeals.length} {t("dashboard.dealsLabel")}
                     </div>
                   </div>
                   <div className="text-right">
@@ -433,7 +435,7 @@ const SalesmanDashboard = ({
         <div className="bg-white rounded-lg shadow">
           <ActivityFeed
             activities={activities}
-            title="My Recent Activities"
+            title={t("dashboard.myRecentActivities")}
             companyId={company?.id}
             users={[]}
           />
@@ -453,10 +455,10 @@ const SalesmanDashboard = ({
   const renderMyDeals = () => (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">My Deals</h2>
+        <h2 className="text-lg font-semibold text-gray-900">{t("dashboard.myDeals")}</h2>
         <Button variant="primary">
           <Icon name="plus" className="w-4 h-4 mr-2" />
-          Add Deal
+          {t("dashboard.addDeal")}
         </Button>
       </div>
 
@@ -498,7 +500,7 @@ const SalesmanDashboard = ({
 
             <div className="mt-4 flex items-center text-xs text-gray-500">
               <Icon name="calendar" className="w-3 h-3 mr-1" />
-              Expected:{" "}
+              {t("dashboard.expectedLabel")}:{" "}
               {new Date(deal.expected_close_date).toLocaleDateString()}
             </div>
           </div>
@@ -511,9 +513,9 @@ const SalesmanDashboard = ({
             name="briefcase"
             className="w-12 h-12 mx-auto text-gray-400 mb-4"
           />
-          <h3 className="text-lg font-medium text-gray-900">No deals yet</h3>
+          <h3 className="text-lg font-medium text-gray-900">{t("dashboard.noDealsYet")}</h3>
           <p className="text-gray-500">
-            Start by creating your first deal to track your sales pipeline.
+            {t("dashboard.noDealsYetDesc")}
           </p>
         </div>
       )}
@@ -543,11 +545,11 @@ const SalesmanDashboard = ({
       {filterMonth === undefined && (
         <div className="flex items-center gap-4 flex-wrap mb-6">
           <label className="text-sm font-medium text-gray-700">
-            Filter by:
+            {t("dashboard.filterBy")}:
           </label>
 
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">Month:</label>
+            <label className="text-sm text-gray-600">{t("dashboard.monthLabel")}:</label>
             <select
               value={selectedMonth !== null ? selectedMonth : ""}
               onChange={(e) => {
@@ -558,7 +560,7 @@ const SalesmanDashboard = ({
               }}
               className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[140px]"
             >
-              <option value="">All Months</option>
+              <option value="">{t("dashboard.allMonths")}</option>
               {monthOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -568,7 +570,7 @@ const SalesmanDashboard = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">Quarter:</label>
+            <label className="text-sm text-gray-600">{t("dashboard.quarterLabel")}:</label>
             <select
               value={selectedQuarter !== null ? selectedQuarter : ""}
               onChange={(e) => {
@@ -584,7 +586,7 @@ const SalesmanDashboard = ({
               }}
               className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[120px]"
             >
-              <option value="">All Quarters</option>
+              <option value="">{t("dashboard.allQuarters")}</option>
               {quarterOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -594,7 +596,7 @@ const SalesmanDashboard = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">Year:</label>
+            <label className="text-sm text-gray-600">{t("dashboard.yearLabel")}:</label>
             <select
               value={selectedYear !== null ? selectedYear : ""}
               onChange={(e) =>
@@ -604,7 +606,7 @@ const SalesmanDashboard = ({
               }
               className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[100px]"
             >
-              <option value="">All Years</option>
+              <option value="">{t("dashboard.allYears")}</option>
               {yearOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -625,7 +627,7 @@ const SalesmanDashboard = ({
               className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
             >
               <Icon name="X" size={14} />
-              Clear filters
+              {t("errors.clearFilters")}
             </button>
           )}
         </div>
@@ -641,7 +643,7 @@ const SalesmanDashboard = ({
               : "text-gray-500 hover:text-gray-700"
           }`}
         >
-          My Dashboard
+          {t("dashboard.myDashboard")}
         </button>
         <button
           onClick={() => setActiveView("deals")}
@@ -651,7 +653,7 @@ const SalesmanDashboard = ({
               : "text-gray-500 hover:text-gray-700"
           }`}
         >
-          My Deals
+          {t("dashboard.myDeals")}
         </button>
       </div>
 

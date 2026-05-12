@@ -1,5 +1,6 @@
 import React from "react";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { useLanguage } from "../../../i18n";
 import {
   BarChart,
   Bar,
@@ -24,6 +25,7 @@ const ManagerPipelineCharts = ({
   subordinates,
 }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
+  const { t } = useLanguage();
 
   // Pipeline stage distribution
   const getPipelineStageData = () => {
@@ -133,11 +135,9 @@ const ManagerPipelineCharts = ({
           {payload.map((entry, index) => (
             <p key={index} className="text-sm" style={{ color: entry.color }}>
               {entry.name}:{" "}
-              {entry.name.includes("Revenue") ||
-              entry.name.includes("Target") ||
-              entry.name.includes("Achieved")
+              {["revenue", "target", "achieved"].includes(entry.dataKey)
                 ? formatCurrency(entry.value)
-                : entry.name.includes("Conversion")
+                : entry.dataKey === "conversion"
                 ? `${entry.value.toFixed(1)}%`
                 : entry.value}
             </p>
@@ -153,13 +153,13 @@ const ManagerPipelineCharts = ({
       {/* Pipeline Distribution */}
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Pipeline Distribution
+          {t("dashboard.pipelineDistribution")}
         </h3>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Pie Chart */}
           <div>
             <h4 className="text-sm font-medium text-gray-700 mb-3">
-              By Deal Count
+              {t("dashboard.byDealCount")}
             </h4>
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
@@ -185,7 +185,7 @@ const ManagerPipelineCharts = ({
 
           {/* Bar Chart */}
           <div>
-            <h4 className="text-sm font-medium text-gray-700 mb-3">By Value</h4>
+            <h4 className="text-sm font-medium text-gray-700 mb-3">{t("pipeline.byValue")}</h4>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={pipelineData}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -194,7 +194,7 @@ const ManagerPipelineCharts = ({
                   tickFormatter={(value) => formatCurrency(value)}
                 />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="value" name="Revenue" fill="#3B82F6" />
+                <Bar dataKey="value" name={t("dashboard.revenueCol")} fill="#3B82F6" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -204,7 +204,7 @@ const ManagerPipelineCharts = ({
       {/* Team Performance Comparison */}
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Team Performance vs Targets
+          {t("dashboard.teamPerformanceVsTargets")}
         </h3>
         <ResponsiveContainer width="100%" height={350}>
           <ComposedChart data={teamPerformanceData}>
@@ -221,18 +221,18 @@ const ManagerPipelineCharts = ({
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend />
-            <Bar yAxisId="left" dataKey="target" name="Target" fill="#E5E7EB" />
+            <Bar yAxisId="left" dataKey="target" name={t("dashboard.targetLabel")} fill="#E5E7EB" />
             <Bar
               yAxisId="left"
               dataKey="revenue"
-              name="Achieved Revenue"
+              name={t("dashboard.achievedRevenue")}
               fill="#10B981"
             />
             <Line
               yAxisId="right"
               type="monotone"
               dataKey="conversion"
-              name="Conversion Rate"
+              name={t("dashboard.conversionRate")}
               stroke="#F59E0B"
               strokeWidth={2}
             />
@@ -243,7 +243,7 @@ const ManagerPipelineCharts = ({
       {/* Monthly Trend */}
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          6-Month Performance Trend
+          {t("dashboard.sixMonthTrend")}
         </h3>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={monthlyTrendData}>
@@ -263,20 +263,20 @@ const ManagerPipelineCharts = ({
             <Bar
               yAxisId="left"
               dataKey="revenue"
-              name="Revenue"
+              name={t("dashboard.revenueCol")}
               fill="#3B82F6"
             />
             <Bar
               yAxisId="left"
               dataKey="deals"
-              name="Total Deals"
+              name={t("dashboard.totalDeals")}
               fill="#8B5CF6"
             />
             <Line
               yAxisId="right"
               type="monotone"
               dataKey="conversion"
-              name="Conversion Rate"
+              name={t("dashboard.conversionRate")}
               stroke="#EF4444"
               strokeWidth={2}
             />
@@ -288,7 +288,7 @@ const ManagerPipelineCharts = ({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-6 rounded-lg text-white">
           <h4 className="text-sm font-medium text-indigo-100">
-            Pipeline Health
+            {t("dashboard.pipelineHealth")}
           </h4>
           <p className="text-2xl font-bold mt-2">
             {pipelineData
@@ -297,11 +297,11 @@ const ManagerPipelineCharts = ({
               )
               .reduce((sum, stage) => sum + stage.count, 0)}
           </p>
-          <p className="text-indigo-100 text-sm">Active opportunities</p>
+          <p className="text-indigo-100 text-sm">{t("dashboard.activeOpportunities")}</p>
         </div>
 
         <div className="bg-gradient-to-r from-green-500 to-emerald-600 p-6 rounded-lg text-white">
-          <h4 className="text-sm font-medium text-green-100">Win Rate</h4>
+          <h4 className="text-sm font-medium text-green-100">{t("dashboard.winRate")}</h4>
           <p className="text-2xl font-bold mt-2">
             {deals?.length > 0
               ? (
@@ -312,11 +312,11 @@ const ManagerPipelineCharts = ({
               : 0}
             %
           </p>
-          <p className="text-green-100 text-sm">Overall conversion</p>
+          <p className="text-green-100 text-sm">{t("dashboard.overallConversion")}</p>
         </div>
 
         <div className="bg-gradient-to-r from-orange-500 to-red-600 p-6 rounded-lg text-white">
-          <h4 className="text-sm font-medium text-orange-100">Avg Deal Size</h4>
+          <h4 className="text-sm font-medium text-orange-100">{t("deals.avgDealSize")}</h4>
           <p className="text-2xl font-bold mt-2">
             {formatCurrency(
               deals?.length > 0
@@ -328,7 +328,7 @@ const ManagerPipelineCharts = ({
               preferredCurrency
             )}
           </p>
-          <p className="text-orange-100 text-sm">Per opportunity</p>
+          <p className="text-orange-100 text-sm">{t("dashboard.perOpportunity")}</p>
         </div>
       </div>
     </div>

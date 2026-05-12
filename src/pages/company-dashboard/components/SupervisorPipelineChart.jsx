@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { useLanguage } from "../../../i18n";
 
 // Map supervisor chart stage keys → DB stage keys
 const toDbStage = (key) => ({ qualified: "contact_made", proposal: "proposal_sent" }[key] ?? key);
@@ -8,6 +9,7 @@ const toDbStage = (key) => ({ qualified: "contact_made", proposal: "proposal_sen
 const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   // Helper to convert deal amount to user's preferred currency
   const getConvertedAmount = (deal) => {
@@ -21,12 +23,12 @@ const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
     if (!deals || !Array.isArray(deals)) return [];
 
     const stages = [
-      { key: "lead", name: "Lead", color: "bg-gray-400" },
-      { key: "qualified", name: "Qualified", color: "bg-blue-400" },
-      { key: "proposal", name: "Proposal", color: "bg-yellow-400" },
-      { key: "negotiation", name: "Negotiation", color: "bg-orange-400" },
-      { key: "won", name: "Won", color: "bg-green-400" },
-      { key: "lost", name: "Lost", color: "bg-red-400" },
+      { key: "lead", name: t("pipeline.stages.lead"), color: "bg-gray-400" },
+      { key: "qualified", name: t("pipeline.stages.qualified"), color: "bg-blue-400" },
+      { key: "proposal", name: t("pipeline.stages.proposals"), color: "bg-yellow-400" },
+      { key: "negotiation", name: t("pipeline.stages.negotiation"), color: "bg-orange-400" },
+      { key: "won", name: t("pipeline.stages.won"), color: "bg-green-400" },
+      { key: "lost", name: t("pipeline.stages.lost"), color: "bg-red-400" },
     ];
 
     return stages.map((stage) => {
@@ -102,9 +104,9 @@ const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold text-gray-900">Sales Pipeline</h3>
+        <h3 className="text-lg font-semibold text-gray-900">{t("dashboard.pipeline")}</h3>
         <div className="text-right">
-          <div className="text-sm text-gray-500">Total Pipeline</div>
+          <div className="text-sm text-gray-500">{t("dashboard.pipelineValue")}</div>
           <div className="text-lg font-semibold text-gray-900">
             {formatCurrency(totalPipelineValue)}
           </div>
@@ -124,7 +126,7 @@ const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
               key={stage.key}
               className="relative cursor-pointer hover:bg-gray-50 rounded-lg transition-colors -mx-2 px-2 group"
               onClick={() => navigate(`/sales-pipeline?stage=${toDbStage(stage.key)}`, { state: { activeStage: toDbStage(stage.key) } })}
-              title={`View ${stage.name} deals`}
+              title={stage.name}
             >
               <div className="flex items-center justify-between text-sm mb-2">
                 <div className="flex items-center space-x-2">
@@ -145,7 +147,7 @@ const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
                 ></div>
               </div>
               <div className="text-xs text-gray-500 mt-1">
-                {percentage.toFixed(1)}% of pipeline
+                {percentage.toFixed(1)}% {t("dashboard.ofTotalValue")}
               </div>
             </div>
           );
@@ -155,24 +157,24 @@ const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
       {/* Pipeline Analytics */}
       <div className="border-t pt-6">
         <h4 className="text-sm font-medium text-gray-900 mb-4">
-          Conversion Analytics
+          {t("dashboard.stageConversionRates")}
         </h4>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Lead → Qualified</span>
+              <span className="text-gray-600">{t("pipeline.leadToContact")}</span>
               <span className="font-medium">
                 {conversionRates.leadToQualified}%
               </span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Qualified → Proposal</span>
+              <span className="text-gray-600">{t("pipeline.contactToProposal")}</span>
               <span className="font-medium">
                 {conversionRates.qualifiedToProposal}%
               </span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Proposal → Negotiation</span>
+              <span className="text-gray-600">{t("pipeline.proposalToNegotiation")}</span>
               <span className="font-medium">
                 {conversionRates.proposalToNegotiation}%
               </span>
@@ -180,21 +182,21 @@ const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
           </div>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Negotiation → Won</span>
+              <span className="text-gray-600">{t("pipeline.negotiationToWon")}</span>
               <span className="font-medium">
                 {conversionRates.negotiationToWon}%
               </span>
             </div>
             <div className="flex justify-between text-sm border-t pt-2">
               <span className="text-gray-900 font-medium">
-                Overall Conversion
+                {t("dashboard.overallWinRate")}
               </span>
               <span className="font-bold text-green-600">
                 {conversionRates.overallConversion}%
               </span>
             </div>
             <div className="text-xs text-gray-500">
-              {totalDeals} total deals in pipeline
+              {totalDeals} {t("dashboard.dealsCount")} {t("dashboard.pipelineLabel")}
             </div>
           </div>
         </div>
@@ -204,7 +206,7 @@ const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
       {teamData && teamData.length > 0 && (
         <div className="border-t pt-6 mt-6">
           <h4 className="text-sm font-medium text-gray-900 mb-4">
-            Team Pipeline Breakdown
+            {t("dashboard.teamPerformanceBreakdown")}
           </h4>
           <div className="space-y-2">
             {teamData
@@ -220,11 +222,11 @@ const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
                     <div className="text-sm font-medium text-gray-900">
                       {member.name}
                       {member.isSupervisor && (
-                        <span className="text-green-600 ml-1">(You)</span>
+                        <span className="text-green-600 ml-1">{t("dashboard.youLabel")}</span>
                       )}
                     </div>
                     <span className="text-xs text-gray-500">
-                      {member.dealsCount} deals
+                      {member.dealsCount} {t("dashboard.dealsCount")}
                     </span>
                   </div>
                   <div className="text-right">

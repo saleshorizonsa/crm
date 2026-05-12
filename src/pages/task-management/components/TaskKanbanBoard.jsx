@@ -1,30 +1,32 @@
 import React, { useState } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
+import { useLanguage } from "../../../i18n";
 
 const TaskKanbanBoard = ({ tasks, onTaskClick, onTaskUpdate, isLoading }) => {
+  const { t } = useLanguage();
   const [draggedTask, setDraggedTask] = useState(null);
   const [dragOverColumn, setDragOverColumn] = useState(null);
 
   const columns = [
     {
       id: "pending",
-      title: "Pending",
+      title: t("tasks.pending"),
       icon: "Clock",
     },
     {
       id: "in_progress",
-      title: "In Progress",
+      title: t("tasks.inProgress"),
       icon: "PlayCircle",
     },
     {
       id: "completed",
-      title: "Completed",
+      title: t("tasks.completed"),
       icon: "CheckCircle",
     },
     {
       id: "cancelled",
-      title: "Cancelled",
+      title: t("tasks.cancelled"),
       icon: "XCircle",
     },
   ];
@@ -54,11 +56,11 @@ const TaskKanbanBoard = ({ tasks, onTaskClick, onTaskUpdate, isLoading }) => {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     if (date.toDateString() === today.toDateString()) {
-      return "Today";
+      return t("contacts.today");
     } else if (date.toDateString() === tomorrow.toDateString()) {
-      return "Tomorrow";
+      return t("messages.tomorrow");
     } else if (date < today) {
-      return "Overdue";
+      return t("tasks.overdue");
     }
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
@@ -188,7 +190,7 @@ const TaskKanbanBoard = ({ tasks, onTaskClick, onTaskUpdate, isLoading }) => {
                 <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
                   <Icon name="Inbox" size={32} className="mb-2 opacity-50" />
                   <p className="text-sm">
-                    {dragOverColumn === column.id ? "Drop here" : "No tasks"}
+                    {dragOverColumn === column.id ? t("pipeline.dropHere") : t("tasks.noTasks")}
                   </p>
                 </div>
               ) : (
@@ -325,7 +327,7 @@ const TaskKanbanBoard = ({ tasks, onTaskClick, onTaskUpdate, isLoading }) => {
                             : "bg-green-100 text-green-700"
                         }`}
                       >
-                        {task.priority}
+                        {task.priority === "high" ? t("tasks.high") : task.priority === "medium" ? t("tasks.medium") : t("tasks.low")}
                       </span>
                     </div>
                   </div>

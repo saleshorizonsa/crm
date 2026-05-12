@@ -1941,7 +1941,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                 size={48}
                 className="mx-auto mb-2 text-gray-300"
               />
-              <p>No performance data available</p>
+              <p>{t("dashboard.noRevenueData")}</p>
             </div>
           </div>
         )}
@@ -1953,13 +1953,13 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                   performanceTrendData.reduce((sum, d) => sum + d.revenue, 0),
                 )}
               </div>
-              <div className="text-sm text-gray-500">Total Revenue</div>
+              <div className="text-sm text-gray-500">{t("dashboard.totalRevenueSummary")}</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-green-600">
                 {performanceTrendData.reduce((sum, d) => sum + d.deals, 0)}
               </div>
-              <div className="text-sm text-gray-500">Deals Closed</div>
+              <div className="text-sm text-gray-500">{t("dashboard.dealsClosedSummary")}</div>
             </div>
           </div>
         )}
@@ -1971,7 +1971,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           <SalesChart
             data={salesData}
             allDeals={allDealsData}
-            title="Sales Overview"
+            title={t("dashboard.salesOverview")}
             showTypeSelector={true}
           />
         </div>
@@ -1984,7 +1984,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       <div className="bg-white rounded-lg shadow">
         <ActivityFeed
           activities={filteredActivities}
-          title="All Activities"
+          title={t("activities.allActivities")}
           companyId={selectedCompany?.id}
           users={allEmployees}
         />
@@ -2141,7 +2141,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
               {/* Month Filter */}
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">Month:</label>
+                <label className="text-sm text-gray-600">{t("dashboard.monthLabel")}:</label>
                 <select
                   value={selectedMonth !== null ? selectedMonth : ""}
                   onChange={(e) => {
@@ -2155,7 +2155,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                   }}
                   className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[140px]"
                 >
-                  <option value="">All Months</option>
+                  <option value="">{t("dashboard.allMonths")}</option>
                   {monthOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -2166,7 +2166,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
               {/* Quarter Filter */}
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">Quarter:</label>
+                <label className="text-sm text-gray-600">{t("dashboard.quarterLabel")}:</label>
                 <select
                   value={selectedQuarter !== null ? selectedQuarter : ""}
                   onChange={(e) => {
@@ -2183,7 +2183,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                   }}
                   className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[120px]"
                 >
-                  <option value="">All Quarters</option>
+                  <option value="">{t("dashboard.allQuarters")}</option>
                   {quarterOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -2194,7 +2194,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
               {/* Year Filter */}
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">Year:</label>
+                <label className="text-sm text-gray-600">{t("dashboard.yearLabel")}:</label>
                 <select
                   value={selectedYear !== null ? selectedYear : ""}
                   onChange={(e) => {
@@ -2204,7 +2204,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                   }}
                   className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[100px]"
                 >
-                  <option value="">All Years</option>
+                  <option value="">{t("dashboard.allYears")}</option>
                   {yearOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -2224,7 +2224,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                   className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
                 >
                   <Icon name="X" size={14} />
-                  Clear filters
+                  {t("messages.clearFilters")}
                 </button>
               )}
             </div>
@@ -2356,7 +2356,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
             <div className="flex items-center justify-between mb-5">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Edit Sales Target</h3>
+                <h3 className="text-lg font-semibold text-gray-900">{t("dashboard.editSalesTarget")}</h3>
                 <p className="text-sm text-gray-500">
                   {editingTarget.assignee?.full_name || editingTarget.assignee?.email}
                   {editingTarget.assignee?.role && ` · ${capitalize(editingTarget.assignee.role)}`}
@@ -2370,7 +2370,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Target Amount ({editingTarget.currency || preferredCurrency})
+                  {t("dashboard.targetAmountLabel")} ({editingTarget.currency || preferredCurrency})
                 </label>
                 <input
                   type="number"
@@ -2384,20 +2384,20 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Period Type</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t("dashboard.periodType")}</label>
                   <select
                     value={editForm.periodType}
                     onChange={(e) => setEditForm((prev) => ({ ...prev, periodType: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="yearly">Yearly</option>
+                    <option value="weekly">{t("dashboard.weekly")}</option>
+                    <option value="monthly">{t("dashboard.monthly")}</option>
+                    <option value="quarterly">{t("dashboard.quarterly")}</option>
+                    <option value="yearly">{t("dashboard.yearly")}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t("tasks.startDate")}</label>
                   <input
                     type="date"
                     value={editForm.periodStart}
@@ -2408,7 +2408,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t("tasks.endDate")}</label>
                 <input
                   type="date"
                   value={editForm.periodEnd}
@@ -2419,13 +2419,13 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t("common.notes")}</label>
                 <textarea
                   value={editForm.notes}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, notes: e.target.value }))}
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  placeholder="Optional notes..."
+                  placeholder={t("dashboard.optionalNotesPlaceholder")}
                 />
               </div>
 
@@ -2443,7 +2443,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                 disabled={editSaving}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={handleSaveEditedTarget}
@@ -2453,12 +2453,12 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                 {editSaving ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Saving...
+                    {t("settings.saving")}
                   </>
                 ) : (
                   <>
                     <Icon name="Save" size={14} />
-                    Save Changes
+                    {t("settings.saveChanges")}
                   </>
                 )}
               </button>

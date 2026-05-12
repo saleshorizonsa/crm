@@ -16,6 +16,7 @@ import {
   uomService,
   salesTargetService,
 } from "../../../services/supabaseService";
+import { useLanguage } from "../../../i18n";
 
 function ProductSearchDropdown({ results, onSelect, onClose, formatCurrency }) {
   return (
@@ -66,6 +67,7 @@ const DealModal = ({
 }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
   const { user, userProfile, company } = useAuth();
+  const { t } = useLanguage();
   const [formData, setFormData] = useState({
     title: deal?.title || "",
     description: deal?.description || "",
@@ -405,7 +407,7 @@ const DealModal = ({
   const handleRemoveProduct = async (indexOrId) => {
     // If editing existing deal, remove from database
     if (deal?.id) {
-      if (!confirm("Remove this product from the deal?")) return;
+      if (!confirm(t("deals.removeProductConfirm"))) return;
 
       setIsLoadingProducts(true);
       try {
@@ -440,25 +442,25 @@ const DealModal = ({
   };
 
   const stages = [
-    { value: "lead", label: "Lead" },
-    { value: "contact_made", label: "Qualified" },
-    { value: "proposal_sent", label: "Proposal" },
-    { value: "negotiation", label: "Negotiation" },
-    { value: "won", label: "Won" },
-    { value: "lost", label: "Lost" },
+    { value: "lead", label: t("deals.lead") },
+    { value: "contact_made", label: t("deals.qualified") },
+    { value: "proposal_sent", label: t("deals.proposal") },
+    { value: "negotiation", label: t("deals.negotiation") },
+    { value: "won", label: t("deals.won") },
+    { value: "lost", label: t("deals.lost") },
   ];
 
   const priorities = [
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" },
-    { value: "high", label: "High" },
+    { value: "low", label: t("tasks.low") },
+    { value: "medium", label: t("tasks.medium") },
+    { value: "high", label: t("tasks.high") },
   ];
 
   // Convert contacts to dropdown options
   const contactOptions = contacts.map((contact) => ({
     value: contact.id,
     label: `${contact.first_name} ${contact.last_name} - ${
-      contact.company_name || "No Company"
+      contact.company_name || t("deals.noCompany")
     }`,
   }));
 
@@ -549,9 +551,9 @@ const DealModal = ({
     e.preventDefault();
 
     const newErrors = {};
-    if (!formData.title?.trim())       newErrors.title         = "Deal title is required";
-    if (!formData.description?.trim()) newErrors.description   = "Description is required";
-    if (!formData.creation_date)       newErrors.creation_date = "Creation date is required";
+    if (!formData.title?.trim())       newErrors.title         = t("deals.dealTitleRequired");
+    if (!formData.description?.trim()) newErrors.description   = t("deals.descriptionRequired");
+    if (!formData.creation_date)       newErrors.creation_date = t("deals.creationDateRequired");
     if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
     setErrors({});
 
@@ -651,10 +653,10 @@ const DealModal = ({
             </div>
             <div>
               <h2 className="text-xl font-semibold text-card-foreground">
-                {deal ? "Edit Deal" : "New Deal"}
+                {deal ? t("deals.editDeal") : t("deals.newDeal")}
               </h2>
               <p className="text-sm text-muted-foreground">
-                {!deal && "Create a new sales opportunity"}
+                {!deal && t("deals.createNewOpportunity")}
               </p>
             </div>
           </div>
@@ -677,7 +679,7 @@ const DealModal = ({
                       />
                       <span className="text-sm font-medium text-blue-700">
                         {dealProducts.length}{" "}
-                        {dealProducts.length === 1 ? "product" : "products"}
+                        {dealProducts.length === 1 ? t("common.product") : t("common.products")}
                       </span>
                     </div>
                   </div>
@@ -696,9 +698,9 @@ const DealModal = ({
             {/* Title */}
             <div>
               <Input
-                label="Deal Title"
+                label={t("deals.dealTitle")}
                 type="text"
-                placeholder="Enter deal title"
+                placeholder={t("deals.enterDealTitle")}
                 value={formData?.title}
                 onChange={(e) => {
                   handleInputChange("title", e?.target?.value);
@@ -716,7 +718,7 @@ const DealModal = ({
 
             {/* Deal Type Toggle */}
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-2">Deal Type</p>
+              <p className="text-xs font-medium text-muted-foreground mb-2">{t("deals.dealType")}</p>
               <div className="flex items-center gap-1 p-1 bg-muted rounded-lg w-fit">
                 <button
                   type="button"
@@ -731,7 +733,7 @@ const DealModal = ({
                   }`}
                 >
                   <Icon name="DollarSign" size={14} />
-                  By Value
+                  {t("pipeline.byValue")}
                 </button>
                 <button
                   type="button"
@@ -746,7 +748,7 @@ const DealModal = ({
                   }`}
                 >
                   <Icon name="Package" size={14} />
-                  By Product
+                  {t("deals.byProduct")}
                 </button>
               </div>
             </div>
@@ -754,9 +756,9 @@ const DealModal = ({
             {/* Contact */}
             <div>
               <Select
-                label="Client"
+                label={t("common.client")}
                 options={[
-                  { value: "", label: "Select a client..." },
+                  { value: "", label: t("deals.selectClient") },
                   ...contactOptions,
                 ]}
                 value={formData?.contact_id || ""}
@@ -777,7 +779,7 @@ const DealModal = ({
             {dealType === "value" ? (
               <div>
                 <Input
-                  label={`Deal Value (${preferredCurrency})`}
+                  label={`${t("deals.dealValue")} (${preferredCurrency})`}
                   type="number"
                   placeholder="0"
                   value={formData?.amount}
@@ -790,7 +792,7 @@ const DealModal = ({
               <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 flex items-center justify-between">
                 <span className="text-sm text-muted-foreground flex items-center gap-1.5">
                   <Icon name="Calculator" size={14} />
-                  Deal Value (auto-calculated)
+                  {t("deals.autoCalculated")}
                 </span>
                 <span className="text-lg font-bold text-card-foreground">
                   {formatCurrency(formData?.amount || 0, preferredCurrency)}
@@ -801,7 +803,7 @@ const DealModal = ({
             {/* Stage, Priority, Creation Date, Close Date */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               <Select
-                label="Stage"
+                label={t("deals.dealStage")}
                 options={stages}
                 value={formData?.stage}
                 onChange={(value) => {
@@ -812,7 +814,7 @@ const DealModal = ({
               />
 
               <Select
-                label="Priority"
+                label={t("tasks.priority")}
                 options={priorities}
                 value={formData?.priority}
                 onChange={(value) => handleInputChange("priority", value)}
@@ -820,7 +822,7 @@ const DealModal = ({
 
               <div>
                 <label className="block text-sm font-medium text-card-foreground mb-2">
-                  Creation Date <span className="text-destructive">*</span>
+                  {t("deals.creationDate")} <span className="text-destructive">*</span>
                 </label>
                 <input
                   type="date"
@@ -842,7 +844,7 @@ const DealModal = ({
               </div>
 
               <Input
-                label="Expected Close Date"
+                label={t("deals.expectedCloseDate")}
                 type="date"
                 value={formData?.expected_close_date}
                 onChange={(e) =>
@@ -856,7 +858,7 @@ const DealModal = ({
               <div className="flex items-center gap-3 px-3 py-2.5 rounded-md bg-red-50 border border-red-200 text-sm text-red-800">
                 <Icon name="XCircle" size={15} className="flex-shrink-0" />
                 <div className="flex-1">
-                  <span className="font-medium">Lost reason recorded: </span>
+                  <span className="font-medium">{t("deals.lostReasonRecorded")}: </span>
                   {formData.lost_reason_code}
                   {formData.lost_reason_notes && (
                     <span className="text-red-600 ml-1">— {formData.lost_reason_notes}</span>
@@ -870,7 +872,7 @@ const DealModal = ({
                     handleInputChange("lost_reason_notes", "");
                   }}
                 >
-                  Change
+                  {t("deals.changeLostReason")}
                 </button>
               </div>
             )}
@@ -878,14 +880,14 @@ const DealModal = ({
             {/* Description */}
             <div>
               <label className="block text-sm font-medium text-card-foreground mb-2">
-                Description <span className="text-destructive">*</span>
+                {t("common.description")} <span className="text-destructive">*</span>
               </label>
               <textarea
                 className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none ${
                   errors.description ? "border-destructive" : "border-border"
                 }`}
                 rows={3}
-                placeholder="Brief description of the deal..."
+                placeholder={t("deals.addNotes")}
                 value={formData?.description}
                 onChange={(e) => {
                   handleInputChange("description", e?.target?.value);
@@ -906,7 +908,7 @@ const DealModal = ({
               <div className="bg-muted/30 px-4 py-3 border-b border-border">
                 <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
                   <Icon name="Package" size={16} />
-                  Deal Products
+                  {t("deals.dealProductsSection")}
                 </h3>
               </div>
 
@@ -916,12 +918,12 @@ const DealModal = ({
                   {/* Unified product search */}
                   <div>
                     <label className="block text-xs font-medium text-muted-foreground mb-1">
-                      Search Product
+                      {t("deals.searchProduct")}
                     </label>
                     <div className="product-search-container relative">
                       <input
                         type="text"
-                        placeholder="Search by name, description or group..."
+                        placeholder={t("deals.searchByNameOrGroup")}
                         value={productSearch}
                         onChange={e => {
                           setProductSearch(e.target.value);
@@ -976,18 +978,18 @@ const DealModal = ({
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-muted-foreground mb-1">
-                          UOM Type
+                          {t("deals.uomType")}
                         </label>
                         <Select
                           options={uomTypeOptions}
                           value={uomType}
                           onChange={(value) => setUomType(value)}
-                          placeholder="Select UOM..."
+                          placeholder={t("deals.selectUom")}
                         />
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-muted-foreground mb-1">
-                          UOM Value
+                          {t("deals.uomValue")}
                         </label>
                         <Input
                           type="number"
@@ -1000,7 +1002,7 @@ const DealModal = ({
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-muted-foreground mb-1">
-                          Unit Rate ({preferredCurrency})
+                          {t("deals.unitRate")} ({preferredCurrency})
                         </label>
                         <Input
                           type="number"
@@ -1019,7 +1021,7 @@ const DealModal = ({
                     <div className="bg-primary/5 border border-primary/20 rounded-md p-3">
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">
-                          Line Total:
+                          {t("deals.lineTotal")}:
                         </span>
                         <span className="font-bold text-primary text-lg">
                           {formatCurrency(
@@ -1046,7 +1048,7 @@ const DealModal = ({
                     className="w-full"
                   >
                     <Icon name="Plus" size={16} className="mr-2" />
-                    {isLoadingProducts ? "Adding..." : "Add Product"}
+                    {isLoadingProducts ? t("deals.adding") : t("deals.addProduct")}
                   </Button>
                 </div>
 
@@ -1065,7 +1067,7 @@ const DealModal = ({
                       <div className="border-t border-border pt-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <h4 className="text-sm font-medium text-card-foreground">
-                            Products Added ({productsToShow.length})
+                            {t("deals.productsAdded")} ({productsToShow.length})
                           </h4>
                         </div>
 
@@ -1081,7 +1083,7 @@ const DealModal = ({
                           return hasLowMargin ? (
                             <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-md text-xs text-red-700">
                               <Icon name="AlertTriangle" size={13} className="flex-shrink-0" />
-                              <span>One or more products have margin below 10% — review pricing before closing.</span>
+                              <span>{t("deals.lowMarginWarning")}</span>
                             </div>
                           ) : null;
                         })()}
@@ -1132,7 +1134,7 @@ const DealModal = ({
                                         </span>
                                       </span>
                                       <span className="text-muted-foreground">
-                                        Rate:{" "}
+                                        {t("deals.rate")}:{" "}
                                         <span className="font-semibold text-card-foreground">
                                           {formatCurrency(
                                             displayProduct.unit_price || 0,
@@ -1157,7 +1159,7 @@ const DealModal = ({
                                         );
                                       })()}
                                       <span className="text-primary font-semibold">
-                                        Total:{" "}
+                                        {t("common.total")}:{" "}
                                         {formatCurrency(
                                           parseFloat(displayProduct.line_total) ||
                                           (parseFloat(displayProduct.uom_value || displayProduct.quantity || 0) *
@@ -1169,7 +1171,7 @@ const DealModal = ({
                                   ) : (
                                     <>
                                       <span className="text-muted-foreground">
-                                        Qty:{" "}
+                                        {t("common.quantity")}:{" "}
                                         <span className="font-semibold text-card-foreground">
                                           {parseFloat(
                                             displayProduct.quantity || 0,
@@ -1206,7 +1208,7 @@ const DealModal = ({
                                     }
                                     disabled={isLoadingProducts}
                                     className="text-destructive hover:text-destructive/80 disabled:opacity-50 ml-2"
-                                    title="Remove product"
+                                    title={t("deals.removeProduct")}
                                   >
                                     <Icon name="Trash2" size={14} />
                                   </button>
@@ -1235,7 +1237,7 @@ const DealModal = ({
                               : mp >= 10 ? "bg-amber-50 border border-amber-200 text-amber-800"
                               : "bg-red-50 border border-red-200 text-red-800"
                             }`}>
-                              <span>Deal Gross Margin</span>
+                              <span>{t("deals.dealGrossMargin")}</span>
                               <div className="flex items-center gap-3">
                                 <span>{formatCurrency(gm, preferredCurrency)}</span>
                                 <span className="font-bold">{mp.toFixed(1)}%</span>
@@ -1255,9 +1257,9 @@ const DealModal = ({
                       size={24}
                       className="mx-auto mb-2 opacity-50"
                     />
-                    <p className="text-sm">No products added yet</p>
+                    <p className="text-sm">{t("deals.noProductsYet")}</p>
                     <p className="text-xs">
-                      Search and add products to include them with the deal
+                      {t("deals.addProductsDescription")}
                     </p>
                   </div>
                 )}
@@ -1279,48 +1281,42 @@ const DealModal = ({
                   />
                 </div>
                 <h3 className="text-lg font-semibold text-card-foreground">
-                  Delete Deal
+                  {t("deals.deleteDeal")}
                 </h3>
               </div>
 
               {deleteReferences?.totalReferences > 0 ? (
                 <div className="mb-4">
                   <p className="text-sm text-muted-foreground mb-3">
-                    This deal has the following references that will be
-                    affected:
+                    {t("deals.deleteReferencesAffected")}
                   </p>
                   <ul className="space-y-2 text-sm">
                     {deleteReferences.references.deal_products > 0 && (
                       <li className="flex items-center text-amber-600">
                         <Icon name="Package" size={16} className="mr-2" />
-                        {deleteReferences.references.deal_products} product(s)
-                        will be removed
+                        {deleteReferences.references.deal_products} {t("deals.productsWillBeRemoved")}
                       </li>
                     )}
                     {deleteReferences.references.activities > 0 && (
                       <li className="flex items-center text-amber-600">
                         <Icon name="Activity" size={16} className="mr-2" />
-                        {deleteReferences.references.activities} activity(ies)
-                        will be deleted
+                        {deleteReferences.references.activities} {t("deals.activitiesWillBeDeleted")}
                       </li>
                     )}
                     {deleteReferences.references.tasks > 0 && (
                       <li className="flex items-center text-amber-600">
                         <Icon name="CheckSquare" size={16} className="mr-2" />
-                        {deleteReferences.references.tasks} task(s) will be
-                        unlinked
+                        {deleteReferences.references.tasks} {t("deals.tasksWillBeUnlinked")}
                       </li>
                     )}
                   </ul>
                   <p className="text-sm text-destructive mt-3 font-medium">
-                    Are you sure you want to delete this deal and all related
-                    data?
+                    {t("deals.deleteWithReferences")}
                   </p>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground mb-4">
-                  Are you sure you want to delete this deal? This action cannot
-                  be undone.
+                  {t("deals.cannotUndone")}
                 </p>
               )}
 
@@ -1330,14 +1326,14 @@ const DealModal = ({
                   onClick={() => setShowDeleteConfirm(false)}
                   disabled={isDeleting}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
                 <Button
                   variant="destructive"
                   onClick={handleDeleteConfirm}
                   loading={isDeleting}
                 >
-                  {isDeleting ? "Deleting..." : "Delete Deal"}
+                  {isDeleting ? t("deals.deleting") : t("deals.deleteDeal")}
                 </Button>
               </div>
             </div>
@@ -1355,7 +1351,7 @@ const DealModal = ({
                 className="text-destructive hover:text-destructive hover:bg-destructive/10"
               >
                 <Icon name="Trash2" size={16} className="mr-2" />
-                Delete
+                {t("common.delete")}
               </Button>
             )}
             <Button
@@ -1366,7 +1362,7 @@ const DealModal = ({
               className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
             >
               <Icon name="CalendarPlus" size={16} className="mr-2" />
-              Schedule Meeting
+              {t("dashboard.scheduleMeeting")}
             </Button>
             {userProfile?.role === 'admin' && deal?.id && (
               <button
@@ -1394,7 +1390,7 @@ const DealModal = ({
               onClick={onClose}
               disabled={isSaving || isDeleting}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               variant="default"
@@ -1405,12 +1401,12 @@ const DealModal = ({
               iconPosition="left"
             >
               {isSaving
-                ? "Saving..."
+                ? t("deals.saving")
                 : deal
-                  ? "Save Deal"
-                  : `Create Deal${
+                  ? t("deals.saveDeal")
+                  : `${t("deals.createDeal")}${
                       selectedProducts.length > 0
-                        ? ` (${selectedProducts.length} products)`
+                        ? ` (${selectedProducts.length} ${t("common.products")})`
                         : ""
                     }`}
             </Button>

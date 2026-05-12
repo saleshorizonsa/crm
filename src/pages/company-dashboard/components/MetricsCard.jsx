@@ -1,5 +1,6 @@
 import React from "react";
 import Icon from "../../../components/AppIcon";
+import { useLanguage } from "../../../i18n";
 
 const MetricsCard = ({
   title,
@@ -15,6 +16,8 @@ const MetricsCard = ({
   subtitle,
   onClick,
 }) => {
+  const { t } = useLanguage();
+
   const formatValue = (val) => {
     if (typeof val === "number") {
       return val?.toLocaleString("en-US", {
@@ -104,7 +107,7 @@ const MetricsCard = ({
             ) : (
               <>
                 <span>{Math.abs(change || trend)}%</span>
-                <span className="text-muted-foreground">vs last month</span>
+                <span className="text-muted-foreground">{t("dashboard.vsLastMonth")}</span>
               </>
             )}
           </div>

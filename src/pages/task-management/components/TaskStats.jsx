@@ -1,7 +1,9 @@
 import React from "react";
 import Icon from "../../../components/AppIcon";
+import { useLanguage } from "../../../i18n";
 
 const TaskStats = ({ stats }) => {
+  const { t } = useLanguage();
   if (!stats) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -21,28 +23,28 @@ const TaskStats = ({ stats }) => {
 
   const statCards = [
     {
-      title: "Total Tasks",
+      title: t("tasks.totalTasks"),
       value: stats.total || 0,
       icon: "CheckSquare",
       color: "text-primary",
       bgColor: "bg-primary/10",
     },
     {
-      title: "Pending",
+      title: t("tasks.pending"),
       value: stats.byStatus?.pending || 0,
       icon: "Clock",
       color: "text-orange-600",
       bgColor: "bg-orange-100",
     },
     {
-      title: "In Progress",
+      title: t("tasks.inProgress"),
       value: stats.byStatus?.in_progress || 0,
       icon: "PlayCircle",
       color: "text-blue-600",
       bgColor: "bg-blue-100",
     },
     {
-      title: "Completed",
+      title: t("tasks.completed"),
       value: stats.byStatus?.completed || 0,
       icon: "CheckCircle2",
       color: "text-green-600",

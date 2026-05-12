@@ -22,6 +22,7 @@ import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import FunnelChart from "./FunnelChart";
+import { useLanguage } from "../../../i18n";
 
 const LOST_CODE_LABELS = {
   PRICE_HIGH:        "Price too high",
@@ -51,6 +52,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
   const [collapseToggle, setCollapseToggle] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
   const { company, userProfile } = useAuth();
+  const { t } = useLanguage();
   const canSeeLostReasons = userProfile?.role !== "salesman";
   const [lostChartData, setLostChartData] = useState([]);
 
@@ -154,7 +156,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
   // Chart data
   const stageData = [
     {
-      name: "Lead",
+      name: t("deals.lead"),
       deals: deals?.filter((d) => d?.stage === "lead")?.length || 0,
       value:
         deals
@@ -162,7 +164,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
           ?.reduce((sum, d) => sum + (d?.amount || 0), 0) || 0,
     },
     {
-      name: "Qualified",
+      name: t("deals.qualified"),
       deals: deals?.filter((d) => d?.stage === "contact_made")?.length || 0,
       value:
         deals
@@ -170,7 +172,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
           ?.reduce((sum, d) => sum + (d?.amount || 0), 0) || 0,
     },
     {
-      name: "Proposal",
+      name: t("deals.proposal"),
       deals: deals?.filter((d) => d?.stage === "proposal_sent")?.length || 0,
       value:
         deals
@@ -178,7 +180,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
           ?.reduce((sum, d) => sum + (d?.amount || 0), 0) || 0,
     },
     {
-      name: "Negotiation",
+      name: t("deals.negotiation"),
       deals: deals?.filter((d) => d?.stage === "negotiation")?.length || 0,
       value:
         deals
@@ -186,7 +188,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
           ?.reduce((sum, d) => sum + (d?.amount || 0), 0) || 0,
     },
     {
-      name: "Won",
+      name: t("deals.won"),
       deals: deals?.filter((d) => d?.stage === "won")?.length || 0,
       value:
         deals
@@ -198,7 +200,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
   // Funnel data - only active stages (excluding lost)
   const funnelData = [
     {
-      stage: "Lead",
+      stage: t("deals.lead"),
       stageKey: "lead",
       count: deals?.filter((d) => d?.stage === "lead")?.length || 0,
       value:
@@ -208,7 +210,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
       fill: "#64748b",
     },
     {
-      stage: "Qualified",
+      stage: t("deals.qualified"),
       stageKey: "contact_made",
       count: deals?.filter((d) => d?.stage === "contact_made")?.length || 0,
       value:
@@ -218,7 +220,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
       fill: "#3b82f6",
     },
     {
-      stage: "Proposal",
+      stage: t("deals.proposal"),
       stageKey: "proposal_sent",
       count: deals?.filter((d) => d?.stage === "proposal_sent")?.length || 0,
       value:
@@ -228,7 +230,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
       fill: "#f59e0b",
     },
     {
-      stage: "Negotiation",
+      stage: t("deals.negotiation"),
       stageKey: "negotiation",
       count: deals?.filter((d) => d?.stage === "negotiation")?.length || 0,
       value:
@@ -238,7 +240,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
       fill: "#f97316",
     },
     {
-      stage: "Won",
+      stage: t("deals.won"),
       stageKey: "won",
       count: deals?.filter((d) => d?.stage === "won")?.length || 0,
       value:
@@ -251,28 +253,28 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
 
   const priorityData = [
     {
-      name: "High",
+      name: t("dashboard.high"),
       value: deals?.filter((d) => d?.priority === "high")?.length || 0,
       color: "#dc2626",
     },
     {
-      name: "Medium",
+      name: t("dashboard.medium"),
       value: deals?.filter((d) => d?.priority === "medium")?.length || 0,
       color: "#d97706",
     },
     {
-      name: "Low",
+      name: t("dashboard.low"),
       value: deals?.filter((d) => d?.priority === "low")?.length || 0,
       color: "#059669",
     },
   ].filter((item) => item.value > 0);
 
   const tabs = [
-    { id: "overview",  label: "Overview",    icon: "BarChart3"  },
-    { id: "funnel",    label: "Funnel",       icon: "Filter"     },
-    { id: "trends",    label: "Trends",       icon: "TrendingUp" },
-    { id: "forecast",  label: "Forecast",     icon: "Calendar"   },
-    ...(canSeeLostReasons ? [{ id: "lost", label: "Lost Reasons", icon: "XCircle" }] : []),
+    { id: "overview",  label: t("dashboard.overview"),    icon: "BarChart3"  },
+    { id: "funnel",    label: t("dashboard.funnel"),       icon: "Filter"     },
+    { id: "trends",    label: t("pipeline.trends"),       icon: "TrendingUp" },
+    { id: "forecast",  label: t("nav.forecast"),     icon: "Calendar"   },
+    ...(canSeeLostReasons ? [{ id: "lost", label: t("pipeline.lostReasons"), icon: "XCircle" }] : []),
   ];
 
   if (collapseToggle) {
@@ -283,7 +285,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
             <Icon name="BarChart3" size={20} className="text-primary" />
             <div>
               <h3 className="text-lg font-semibold text-card-foreground">
-                Funnel Analytics
+                {t("pipeline.funnelAnalytics")}
               </h3>
             </div>
           </div>
@@ -306,7 +308,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
         <div className="flex items-center space-x-3">
           <Icon name="BarChart3" size={20} className="text-primary" />
           <h3 className="text-lg font-semibold text-card-foreground">
-            Funnel Analytics
+            {t("pipeline.funnelAnalytics")}
           </h3>
         </div>
         <Button
@@ -342,14 +344,14 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                 <div className="flex items-center space-x-2 mb-1">
                   <Icon name="DollarSign" size={16} className="text-primary" />
                   <span className="text-xs text-muted-foreground">
-                    Total Funnel
+                    {t("pipeline.totalFunnel")}
                   </span>
                 </div>
                 <p className="text-lg font-bold text-card-foreground">
                   {formatCurrency(getTotalPipelineValue(), preferredCurrency)}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {getTotalDeals()} deals
+                  {getTotalDeals()} {t("pipeline.deals")}
                 </p>
               </div>
 
@@ -357,7 +359,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                 <div className="flex items-center space-x-2 mb-1">
                   <Icon name="TrendingUp" size={16} className="text-success" />
                   <span className="text-xs text-muted-foreground">
-                    Weighted Value
+                    {t("pipeline.weightedValue")}
                   </span>
                 </div>
                 <p className="text-lg font-bold text-success">
@@ -367,7 +369,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                   )}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Stage-weighted
+                  {t("pipeline.stageWeighted")}
                 </p>
               </div>
 
@@ -375,33 +377,33 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                 <div className="flex items-center space-x-2 mb-1">
                   <Icon name="Award" size={16} className="text-warning" />
                   <span className="text-xs text-muted-foreground">
-                    Avg. Deal Size
+                    {t("pipeline.avgDeal")}
                   </span>
                 </div>
                 <p className="text-lg font-bold text-warning">
                   {formatCurrency(getAverageDealSize(), preferredCurrency)}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">Per deal</p>
+                <p className="text-xs text-muted-foreground mt-1">{t("pipeline.perDeal")}</p>
               </div>
 
               <div className="bg-muted/30 rounded-lg p-3">
                 <div className="flex items-center space-x-2 mb-1">
                   <Icon name="Clock" size={16} className="text-accent" />
                   <span className="text-xs text-muted-foreground">
-                    Avg. Cycle
+                    {t("pipeline.avgCycle")}
                   </span>
                 </div>
                 <p className="text-lg font-bold text-accent">
                   {getAverageDealCycle()} days
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">To close</p>
+                <p className="text-xs text-muted-foreground mt-1">{t("pipeline.toClose")}</p>
               </div>
             </div>
 
             {/* Stage Distribution Chart */}
             <div>
               <h4 className="text-sm font-semibold text-card-foreground mb-3">
-                Funnel Value by Stage
+                {t("pipeline.funnelValueByStage")}
               </h4>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
@@ -465,16 +467,16 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
             {/* Multi-type funnel chart */}
             <div>
               <h4 className="text-sm font-semibold text-card-foreground mb-1">
-                Sales Funnel — Deal Progression
+                {t("pipeline.salesFunnelTitle")}
               </h4>
               <p className="text-xs text-muted-foreground mb-4">
-                Switch between visualization styles using the buttons below
+                {t("pipeline.switchVisualization")}
               </p>
               <FunnelChart funnelData={funnelData} showSwitcher onStageClick={onStageFilter} />
               {onStageFilter && (
                 <p className="text-xs text-muted-foreground text-center mt-3 flex items-center justify-center gap-1">
                   <Icon name="MousePointerClick" size={11} />
-                  Click any stage to jump to that view in the pipeline above
+                  {t("pipeline.clickStageToFilter")}
                 </p>
               )}
             </div>
@@ -485,14 +487,14 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                 <div className="flex items-center space-x-2 mb-1">
                   <Icon name="Users" size={16} className="text-primary" />
                   <span className="text-xs text-muted-foreground">
-                    Top of Funnel
+                    {t("pipeline.topOfFunnel")}
                   </span>
                 </div>
                 <p className="text-lg font-bold text-card-foreground">
                   {funnelData[0]?.count || 0}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Leads entered
+                  {t("pipeline.leadsEntered")}
                 </p>
               </div>
 
@@ -500,7 +502,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                 <div className="flex items-center space-x-2 mb-1">
                   <Icon name="Target" size={16} className="text-success" />
                   <span className="text-xs text-muted-foreground">
-                    Lead → Won
+                    {t("deals.leadToContact")}
                   </span>
                 </div>
                 <p className="text-lg font-bold text-success">
@@ -509,7 +511,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                     : 0}%
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Conversion rate
+                  {t("dashboard.conversionRate")}
                 </p>
               </div>
 
@@ -517,7 +519,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                 <div className="flex items-center space-x-2 mb-1">
                   <Icon name="TrendingUp" size={16} className="text-warning" />
                   <span className="text-xs text-muted-foreground">
-                    Win Rate
+                    {t("deals.winRate")}
                   </span>
                 </div>
                 <p className="text-lg font-bold text-warning">
@@ -525,7 +527,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                     ? ((getWonDeals() / getTotalDeals()) * 100).toFixed(1)
                     : 0}%
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">Overall</p>
+                <p className="text-xs text-muted-foreground mt-1">{t("pipeline.overall")}</p>
               </div>
             </div>
           </div>
@@ -536,7 +538,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
             {/* Priority Distribution */}
             <div>
               <h4 className="text-sm font-semibold text-card-foreground mb-3">
-                Deal Priority Distribution
+                {t("pipeline.dealPriorityDistribution")}
               </h4>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
@@ -571,13 +573,13 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                       style={{ backgroundColor: item?.color }}
                     />
                     <span className="text-xs text-muted-foreground">
-                      {item?.name} Priority
+                      {item?.name} {t("tasks.priority")}
                     </span>
                   </div>
                   <p className="text-lg font-bold text-card-foreground">
                     {item?.value}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">deals</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t("pipeline.deals")}</p>
                 </div>
               ))}
             </div>
@@ -585,7 +587,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
             {/* Stage Velocity Chart */}
             <div>
               <h4 className="text-sm font-semibold text-card-foreground mb-3">
-                Funnel Stage Values
+                {t("pipeline.funnelStageValues")}
               </h4>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
@@ -649,9 +651,9 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
             {lostChartData.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <Icon name="XCircle" size={48} className="text-muted-foreground opacity-30 mb-3" />
-                <p className="text-base font-medium text-card-foreground">No lost deal data yet</p>
+                <p className="text-base font-medium text-card-foreground">{t("pipeline.noLostData")}</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Lost reasons will appear here once deals are marked lost with a reason code.
+                  {t("pipeline.noLostDataDesc")}
                 </p>
               </div>
             ) : (
@@ -661,39 +663,39 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                     <div className="flex items-center gap-2 mb-1">
                       <Icon name="XCircle" size={15} className="text-red-500" />
-                      <span className="text-xs text-red-700">Total Lost</span>
+                      <span className="text-xs text-red-700">{t("pipeline.totalLost")}</span>
                     </div>
                     <p className="text-xl font-bold text-red-700">
                       {lostChartData.reduce((s, r) => s + r.count, 0)}
                     </p>
-                    <p className="text-xs text-red-500 mt-1">deals</p>
+                    <p className="text-xs text-red-500 mt-1">{t("pipeline.deals")}</p>
                   </div>
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                     <div className="flex items-center gap-2 mb-1">
                       <Icon name="DollarSign" size={15} className="text-red-500" />
-                      <span className="text-xs text-red-700">Lost Value</span>
+                      <span className="text-xs text-red-700">{t("pipeline.lostValue")}</span>
                     </div>
                     <p className="text-xl font-bold text-red-700">
                       {formatCurrency(lostChartData.reduce((s, r) => s + r.value, 0), preferredCurrency)}
                     </p>
-                    <p className="text-xs text-red-500 mt-1">total</p>
+                    <p className="text-xs text-red-500 mt-1">{t("common.total")}</p>
                   </div>
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                     <div className="flex items-center gap-2 mb-1">
                       <Icon name="AlertCircle" size={15} className="text-red-500" />
-                      <span className="text-xs text-red-700">Top Reason</span>
+                      <span className="text-xs text-red-700">{t("pipeline.topReason")}</span>
                     </div>
                     <p className="text-sm font-bold text-red-700 leading-tight">
                       {lostChartData[0]?.label || "—"}
                     </p>
-                    <p className="text-xs text-red-500 mt-1">{lostChartData[0]?.count} deals</p>
+                    <p className="text-xs text-red-500 mt-1">{lostChartData[0]?.count} {t("pipeline.deals")}</p>
                   </div>
                 </div>
 
                 {/* Horizontal bar chart — count */}
                 <div>
                   <h4 className="text-sm font-semibold text-card-foreground mb-3">
-                    Why deals are lost — deal count
+                    {t("pipeline.whyDealsLost")}
                   </h4>
                   <div style={{ height: Math.max(200, lostChartData.length * 40) }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -722,7 +724,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                 {/* Lost value by reason */}
                 <div>
                   <h4 className="text-sm font-semibold text-card-foreground mb-3">
-                    Total lost value by reason
+                    {t("pipeline.totalLostValueByReason")}
                   </h4>
                   <div className="space-y-2">
                     {lostChartData.map((row) => {
@@ -762,17 +764,15 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                 className="mx-auto mb-4 text-muted-foreground opacity-50"
               />
               <h4 className="text-lg font-semibold text-card-foreground mb-2">
-                Forecast Data Not Available
+                {t("pipeline.forecastNotAvailable")}
               </h4>
               <p className="text-sm text-muted-foreground mb-4">
-                Revenue forecasting requires historical data and trend analysis.
-                Keep closing deals and check back soon!
+                {t("pipeline.forecastDesc")}
               </p>
               <div className="inline-flex items-center gap-2 text-xs text-muted-foreground bg-background px-3 py-2 rounded-md">
                 <Icon name="Info" size={14} />
                 <span>
-                  Forecast will be available once you have sufficient deal
-                  history
+                  {t("pipeline.forecastNote")}
                 </span>
               </div>
             </div>
@@ -780,7 +780,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
             {/* Current Funnel Summary */}
             <div>
               <h4 className="text-sm font-semibold text-card-foreground mb-3">
-                Current Funnel Snapshot
+                {t("pipeline.currentFunnelSnapshot")}
               </h4>
               <div className="grid grid-cols-3 gap-4">
                 <div className="bg-muted/30 rounded-lg p-4">
@@ -791,21 +791,21 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                       className="text-primary"
                     />
                     <span className="text-xs text-muted-foreground">
-                      Active Funnel
+                      {t("pipeline.activeFunnel")}
                     </span>
                   </div>
                   <p className="text-xl font-bold text-card-foreground">
                     {formatCurrency(getTotalPipelineValue(), preferredCurrency)}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Total value
+                    {t("pipeline.totalValue")}
                   </p>
                 </div>
                 <div className="bg-muted/30 rounded-lg p-4">
                   <div className="flex items-center space-x-2 mb-2">
                     <Icon name="Target" size={16} className="text-success" />
                     <span className="text-xs text-muted-foreground">
-                      Expected Close
+                      {t("deals.forecastedClose")}
                     </span>
                   </div>
                   <p className="text-xl font-bold text-success">
@@ -815,21 +815,21 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                     )}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Weighted by stage
+                    {t("pipeline.weightedByStage")}
                   </p>
                 </div>
                 <div className="bg-muted/30 rounded-lg p-4">
                   <div className="flex items-center space-x-2 mb-2">
                     <Icon name="Award" size={16} className="text-warning" />
                     <span className="text-xs text-muted-foreground">
-                      Won This Period
+                      {t("pipeline.wonThisPeriod")}
                     </span>
                   </div>
                   <p className="text-xl font-bold text-warning">
                     {getWonDeals()}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Closed deals
+                    {t("dashboard.closedDeals")}
                   </p>
                 </div>
               </div>

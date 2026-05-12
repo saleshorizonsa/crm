@@ -5,9 +5,11 @@ import Input from "../../../components/ui/Input";
 import Select from "../../../components/ui/Select";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { activityService } from "../../../services/supabaseService";
+import { useLanguage } from "../../../i18n";
 
 const ActivityModal = ({ isOpen, onClose, companyId, currentUserId }) => {
   const { formatCurrency } = useCurrency();
+  const { t } = useLanguage();
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
@@ -96,7 +98,7 @@ const ActivityModal = ({ isOpen, onClose, companyId, currentUserId }) => {
   };
 
   const formatDate = (timestamp) => {
-    if (!timestamp) return "Unknown";
+    if (!timestamp) return t("activities.unknown");
     const date = new Date(timestamp);
     return date.toLocaleDateString("en-US", {
       year: "numeric",
@@ -121,9 +123,9 @@ const ActivityModal = ({ isOpen, onClose, companyId, currentUserId }) => {
               <Icon name="Activity" className="text-primary" size={20} />
             </div>
             <div>
-              <h2 className="text-xl font-bold">All Activities</h2>
+              <h2 className="text-xl font-bold">{t("activities.allActivities")}</h2>
               <p className="text-sm text-muted-foreground">
-                {totalCount} total activities
+                {totalCount} {t("activities.totalActivities").toLowerCase()}
               </p>
             </div>
           </div>
@@ -140,7 +142,7 @@ const ActivityModal = ({ isOpen, onClose, companyId, currentUserId }) => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <Input
-                placeholder="Search activities..."
+                placeholder={t("activities.searchActivities")}
                 value={filters.searchQuery}
                 onChange={(e) =>
                   handleFilterChange("searchQuery", e.target.value)
@@ -153,7 +155,7 @@ const ActivityModal = ({ isOpen, onClose, companyId, currentUserId }) => {
                 type="date"
                 value={filters.dateFrom}
                 onChange={(e) => handleFilterChange("dateFrom", e.target.value)}
-                placeholder="From Date"
+                placeholder={t("activities.fromDate")}
                 className="w-full"
               />
             </div>
@@ -162,7 +164,7 @@ const ActivityModal = ({ isOpen, onClose, companyId, currentUserId }) => {
                 type="date"
                 value={filters.dateTo}
                 onChange={(e) => handleFilterChange("dateTo", e.target.value)}
-                placeholder="To Date"
+                placeholder={t("activities.toDate")}
                 className="w-full"
               />
               {hasActiveFilters && (
@@ -171,7 +173,7 @@ const ActivityModal = ({ isOpen, onClose, companyId, currentUserId }) => {
                   size="sm"
                   onClick={clearFilters}
                   className="px-2"
-                  title="Clear filters"
+                  title={t("common.clear")}
                 >
                   <Icon name="X" size={16} />
                 </Button>
@@ -204,11 +206,11 @@ const ActivityModal = ({ isOpen, onClose, companyId, currentUserId }) => {
                 size={48}
                 className="text-muted-foreground mx-auto mb-4"
               />
-              <h3 className="text-lg font-medium mb-2">No activities found</h3>
+              <h3 className="text-lg font-medium mb-2">{t("activities.noActivitiesFound")}</h3>
               <p className="text-sm text-muted-foreground">
                 {hasActiveFilters
-                  ? "Try adjusting your filters"
-                  : "Activities will appear here as they are logged"}
+                  ? t("activities.adjustFilters")
+                  : t("activities.activitiesWillAppear")}
               </p>
             </div>
           ) : (
@@ -238,7 +240,7 @@ const ActivityModal = ({ isOpen, onClose, companyId, currentUserId }) => {
                               <Icon name="User" size={12} />
                               {activity.owner?.full_name ||
                                 activity.user?.full_name ||
-                                "Unknown"}
+                                t("activities.unknown")}
                             </span>
                           )}
                           {activity.contact && (
@@ -298,7 +300,7 @@ const ActivityModal = ({ isOpen, onClose, companyId, currentUserId }) => {
         {totalPages > 1 && (
           <div className="flex items-center justify-between p-4 border-t border-border">
             <p className="text-sm text-muted-foreground">
-              Page {currentPage} of {totalPages}
+              {t("tables.page")} {currentPage} {t("common.of")} {totalPages}
             </p>
             <div className="flex gap-2">
               <Button
@@ -308,7 +310,7 @@ const ActivityModal = ({ isOpen, onClose, companyId, currentUserId }) => {
                 disabled={currentPage === 1 || loading}
               >
                 <Icon name="ChevronLeft" size={16} />
-                Previous
+                {t("common.previous")}
               </Button>
               <Button
                 variant="outline"
@@ -318,7 +320,7 @@ const ActivityModal = ({ isOpen, onClose, companyId, currentUserId }) => {
                 }
                 disabled={currentPage === totalPages || loading}
               >
-                Next
+                {t("common.next")}
                 <Icon name="ChevronRight" size={16} />
               </Button>
             </div>

@@ -29,6 +29,7 @@ import MarginSummaryWidget from "./MarginSummaryWidget";
 import ForecastAISummary from "./forecast/ForecastAISummary";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
+import { useLanguage } from "../../../i18n";
 import { Edit2 } from "lucide-react";
 import SalesTargetTable from "../../../components/SalesTargetTable";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
@@ -49,6 +50,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { dateRange } = useDateRange();
+  const { t } = useLanguage();
 
   // If viewing as another user (director view), use that user's data
   const effectiveUser = viewAsUser || { id: user?.id };
@@ -469,7 +471,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     } else if (selectedYear !== null) {
       return `${selectedYear}`;
     }
-    return "Current";
+    return t("dashboard.currentPeriod");
   };
 
   const targetsWithRecalculatedProgress = useMemo(() => {
@@ -1376,10 +1378,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
-            Manager Dashboard
+            {t("roles.manager")} {t("nav.dashboard")}
           </h1>
           <p className="text-gray-600 mt-1">
-            Welcome back, {userProfile?.full_name || user?.email}
+            {t("dashboard.welcomeBack")}, {userProfile?.full_name || user?.email}
           </p>
         </div>
       </div>
@@ -1390,7 +1392,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
           <div className="flex items-center gap-4">
             <div className="flex-1 max-w-md">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                View Dashboard As
+                {t("dashboard.viewDashboardAs")}
               </label>
               <EmployeeSelector
                 employees={allSubordinates}
@@ -1404,7 +1406,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-800">
                   <Icon name="Eye" size={14} className="inline mr-1" />
-                  Viewing as:{" "}
+                  {t("dashboard.viewingAs")}:{" "}
                   <span className="font-semibold">
                     {selectedEmployee.full_name || selectedEmployee.email}
                   </span>
@@ -1417,11 +1419,11 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
       {/* Time Filter Dropdowns (always visible) */}
       <div className="flex items-center gap-4 flex-wrap">
-        <label className="text-sm font-medium text-gray-700">Filter by:</label>
+        <label className="text-sm font-medium text-gray-700">{t("reports.filterBy")}:</label>
 
         {/* Month Filter */}
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">Month:</label>
+          <label className="text-sm text-gray-600">{t("dashboard.month")}:</label>
           <select
             value={selectedMonth !== null ? selectedMonth : ""}
             onChange={(e) => {
@@ -1435,7 +1437,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
             }}
             className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[140px]"
           >
-            <option value="">All Months</option>
+            <option value="">{t("pipeline.allMonths")}</option>
             {monthOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -1446,7 +1448,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
         {/* Quarter Filter */}
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">Quarter:</label>
+          <label className="text-sm text-gray-600">{t("dashboard.quarter")}:</label>
           <select
             value={selectedQuarter !== null ? selectedQuarter : ""}
             onChange={(e) => {
@@ -1463,7 +1465,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
             }}
             className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[120px]"
           >
-            <option value="">All Quarters</option>
+            <option value="">{t("pipeline.allQuarters")}</option>
             {quarterOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -1474,7 +1476,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
         {/* Year Filter */}
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">Year:</label>
+          <label className="text-sm text-gray-600">{t("dashboard.year")}:</label>
           <select
             value={selectedYear !== null ? selectedYear : ""}
             onChange={(e) => {
@@ -1484,7 +1486,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
             }}
             className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[100px]"
           >
-            <option value="">All Years</option>
+            <option value="">{t("pipeline.allYears")}</option>
             {yearOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -1504,7 +1506,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
             className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
           >
             <Icon name="X" size={14} />
-            Clear filters
+            {t("pipeline.clearFilters")}
           </button>
         )}
       </div>
@@ -1538,9 +1540,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
           <div className="border-b border-gray-200">
             <nav className="flex space-x-8">
               {[
-                { id: "overview", label: "Overview", icon: "LayoutDashboard" },
-                { id: "team", label: "Team Management", icon: "Users" },
-                { id: "targets", label: "Sales Targets", icon: "Target" },
+                { id: "overview", label: t("dashboard.overview"), icon: "LayoutDashboard" },
+                { id: "team", label: t("dashboard.teamManagement"), icon: "Users" },
+                { id: "targets", label: t("dashboard.salesTargets"), icon: "Target" },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -1573,10 +1575,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     </div>
                     <div className="flex-1">
                       <h3 className="text-lg font-semibold text-gray-900">
-                        Your {getPeriodLabel()} Targets
+                        {t("dashboard.myData")} {getPeriodLabel()} {t("common.targets")}
                       </h3>
                       <p className="text-sm text-gray-500">
-                        Assigned by Director
+                        {t("dashboard.assignedBy")} {t("roles.director")}
                       </p>
                     </div>
                     <Button
@@ -1584,7 +1586,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       size="sm"
                       onClick={() => setActiveView("targets")}
                     >
-                      View Details
+                      {t("common.details")}
                     </Button>
                   </div>
 
@@ -1592,7 +1594,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
                     <div className="p-3 bg-blue-50 rounded-lg">
                       <p className="text-xs text-blue-600 font-medium">
-                        Total Target
+                        {t("dashboard.totalTarget")}
                       </p>
                       <p className="text-xl font-bold text-blue-700">
                         {formatCurrency(
@@ -1606,7 +1608,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     </div>
                     <div className="p-3 bg-green-50 rounded-lg">
                       <p className="text-xs text-green-600 font-medium">
-                        Achieved
+                        {t("dashboard.achieved")}
                       </p>
                       <p className="text-xl font-bold text-green-700">
                         {formatCurrency(
@@ -1623,7 +1625,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     </div>
                     <div className="p-3 bg-purple-50 rounded-lg">
                       <p className="text-xs text-purple-600 font-medium">
-                        Your Revenue
+                        {t("dashboard.yourRevenue")}
                       </p>
                       <p className="text-xl font-bold text-purple-700">
                         {formatCurrency(
@@ -1637,7 +1639,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     </div>
                     <div className="p-3 bg-amber-50 rounded-lg">
                       <p className="text-xs text-amber-600 font-medium">
-                        Team Revenue
+                        {t("dashboard.teamRevenue")}
                       </p>
                       <p className="text-xl font-bold text-amber-700">
                         {formatCurrency(
@@ -1652,7 +1654,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     </div>
                     <div className="p-3 bg-red-500 rounded-lg">
                       <p className="text-xs text-white font-medium">
-                        Remaining Targets
+                        {t("dashboard.remainingRevenue")}
                       </p>
                       <p className="text-xl font-bold text-white">
                         {formatCurrency(
@@ -1698,7 +1700,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           >
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-sm font-medium text-gray-900">
-                                {getPeriodLabel()} Target
+                                {getPeriodLabel()} {t("dashboard.periodTarget")}
                               </span>
                               <span
                                 className={`text-xs px-2 py-1 rounded-full ${
@@ -1758,8 +1760,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                       <p className="text-sm text-blue-800">
                         <Icon name="Info" size={16} className="inline mr-2" />
-                        No targets assigned for this period, showing revenue
-                        only.
+                        {t("dashboard.noTargetsForPeriod")}
                       </p>
                     </div>
                   )}
@@ -1778,10 +1779,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             className="text-blue-600"
                           />
                           <span className="text-sm font-medium text-gray-900">
-                            Team Achievement Breakdown
+                            {t("dashboard.teamPerformanceBreakdown")}
                           </span>
                           <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                            {allSubordinates.length} members
+                            {allSubordinates.length} {t("common.members")}
                           </span>
                         </div>
                         <Icon
@@ -1841,7 +1842,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                                       ? `of ${formatCurrency(
                                           totalTarget,
                                         )} (${memberProgress.toFixed(0)}%)`
-                                      : "No target"}
+                                      : t("dashboard.noTarget")}
                                   </p>
                                 </div>
                               </div>
@@ -1868,10 +1869,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             className="text-purple-600"
                           />
                           <span className="text-sm font-medium text-gray-900">
-                            Client Achievement Breakdown
+                            {t("dashboard.clientAchievementBreakdown")}
                           </span>
                           <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                            {clientTargetsData.length} clients
+                            {clientTargetsData.length} {t("common.clients")}
                           </span>
                         </div>
                         <Icon
@@ -1935,7 +1936,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                                       ? `of ${formatCurrency(
                                           target,
                                         )} (${progress.toFixed(0)}%)`
-                                      : "No target"}
+                                      : t("dashboard.noTarget")}
                                   </p>
                                 </div>
                               </div>
@@ -1951,7 +1952,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               {/* Metrics Cards - First Row */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <MetricsCard
-                  title="Total Revenue"
+                  title={t("dashboard.totalRevenue")}
                   value={formatCurrency(executiveMetrics?.totalRevenue || 0)}
                   change="+12.5%"
                   trend="up"
@@ -1959,7 +1960,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   onClick={() => handleMetricClick("totalRevenue")}
                 />
                 <MetricsCard
-                  title="Active Deals"
+                  title={t("dashboard.activeDeals")}
                   value={`${metrics?.totalDeals || 0}`}
                   change="+8.2%"
                   trend="up"
@@ -1967,14 +1968,14 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   onClick={() => handleMetricClick("activePipeline")}
                 />
                 <MetricsCard
-                  title="Contacts"
+                  title={t("dashboard.totalContacts")}
                   value={`${metrics?.totalContacts || 0}`}
                   change="+5.4%"
                   trend="up"
                   icon="👥"
                 />
                 <MetricsCard
-                  title="Tasks"
+                  title={t("nav.tasks")}
                   value={`${metrics?.totalTasks || 0}`}
                   change="-2.1%"
                   trend="down"
@@ -1986,7 +1987,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               {executiveMetrics && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <MetricsCard
-                    title="Pipeline Value"
+                    title={t("dashboard.pipelineValue")}
                     value={formatCurrency(executiveMetrics.activePipeline)}
                     icon="TrendingUp"
                     trend={8}
@@ -1995,7 +1996,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     onClick={() => handleMetricClick("activePipeline")}
                   />
                   <MetricsCard
-                    title="Win Rate"
+                    title={t("dashboard.winRate")}
                     value={`${executiveMetrics.winRate.toFixed(1)}%`}
                     icon="Target"
                     trend={5}
@@ -2004,7 +2005,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     onClick={() => handleMetricClick("winRate")}
                   />
                   <MetricsCard
-                    title="Won Deals"
+                    title={t("dashboard.wonDeals")}
                     value={`${executiveMetrics.wonDeals}`}
                     subtitle={`of ${executiveMetrics.totalDeals} total`}
                     icon="Briefcase"
@@ -2013,9 +2014,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     onClick={() => handleMetricClick("dealsClosed")}
                   />
                   <MetricsCard
-                    title="Team Members"
+                    title={t("dashboard.teamMembers")}
                     value={`${subordinates.length + 1}`}
-                    subtitle="including you"
+                    subtitle={t("dashboard.includingYou")}
                     icon="Users"
                     iconColor="text-orange-600"
                     iconBgColor="bg-orange-100"
@@ -2028,7 +2029,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-gray-900">
-                    Performance Trend
+                    {t("dashboard.performanceTrend")}
                   </h3>
                   {/* Trend Period Toggle */}
                   <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
@@ -2040,7 +2041,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           : "text-gray-600 hover:text-gray-800"
                       }`}
                     >
-                      Monthly
+                      {t("dashboard.monthly")}
                     </button>
                     <button
                       onClick={() => setTrendPeriod("quarter")}
@@ -2050,7 +2051,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           : "text-gray-600 hover:text-gray-800"
                       }`}
                     >
-                      Quarterly
+                      {t("dashboard.quarterly")}
                     </button>
                     <button
                       onClick={() => setTrendPeriod("year")}
@@ -2060,7 +2061,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           : "text-gray-600 hover:text-gray-800"
                       }`}
                     >
-                      Yearly
+                      {t("dashboard.yearly")}
                     </button>
                   </div>
                 </div>
@@ -2081,7 +2082,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       <Tooltip
                         formatter={(value, name) => [
                           name === "revenue" ? formatCurrency(value) : value,
-                          name === "revenue" ? "Revenue" : "Deals",
+                          name === "revenue" ? t("dashboard.totalRevenue") : t("common.deals"),
                         ]}
                       />
                       <Bar
@@ -2100,7 +2101,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                         size={48}
                         className="mx-auto mb-2 text-gray-300"
                       />
-                      <p>No performance data available</p>
+                      <p>{t("dashboard.noRevenueData")}</p>
                     </div>
                   </div>
                 )}
@@ -2115,7 +2116,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           ),
                         )}
                       </div>
-                      <div className="text-sm text-gray-500">Total Revenue</div>
+                      <div className="text-sm text-gray-500">{t("dashboard.totalRevenueSummary")}</div>
                     </div>
                     <div className="text-center">
                       <div className="text-2xl font-bold text-green-600">
@@ -2124,7 +2125,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           0,
                         )}
                       </div>
-                      <div className="text-sm text-gray-500">Deals Closed</div>
+                      <div className="text-sm text-gray-500">{t("dashboard.dealsClosedSummary")}</div>
                     </div>
                   </div>
                 )}
@@ -2137,7 +2138,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     data={salesData}
                     pipelineData={pipelineData}
                     allDeals={allDeals}
-                    title="Sales Performance"
+                    title={t("dashboard.salesPerformance")}
                     showTypeSelector={true}
                   />
                 </div>
@@ -2164,7 +2165,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               <div>
                 <h3 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
                   <Icon name="TrendingUp" size={18} />
-                  Gross Margin Overview
+                  {t("dashboard.grossMarginOverview")}
                 </h3>
                 <MarginSummaryWidget deals={filteredDeals} />
               </div>
@@ -2173,7 +2174,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               <div className="bg-white rounded-lg shadow">
                 <ActivityFeed
                   activities={filteredActivities}
-                  title="Recent Activity"
+                  title={t("dashboard.recentActivity")}
                   companyId={company?.id}
                   users={allSubordinates}
                   currentUserId={user?.id}
@@ -2186,10 +2187,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
           {activeView === "team" && (
             <div className="space-y-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-gray-900">My Team</h2>
+                <h2 className="text-lg font-semibold text-gray-900">{t("dashboard.myTeam")}</h2>
                 <div className="text-sm text-gray-600">
                   {allSubordinates.length}{" "}
-                  {allSubordinates.length === 1 ? "member" : "members"}
+                  {allSubordinates.length === 1 ? t("common.member") : t("common.members")}
                 </div>
               </div>
 
@@ -2198,19 +2199,19 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Member
+                        {t("common.member")}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Role
+                        {t("common.role")}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Deals
+                        {t("common.deals")}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Revenue
+                        {t("common.revenue")}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Conversion Rate
+                        {t("dashboard.conversionRate")}
                       </th>
                     </tr>
                   </thead>
@@ -2249,7 +2250,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                                 {member.name}
                                 {member.id === user.id && (
                                   <span className="text-xs text-gray-500">
-                                    (You)
+                                    {t("dashboard.youLabel")}
                                   </span>
                                 )}
                                 {member.id !== user.id && (
@@ -2274,7 +2275,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             {member.deals}
                           </div>
                           <div className="text-xs text-gray-500">
-                            {member.wonDeals} won, {member.activeDeals} active
+                            {member.wonDeals} {t("common.won")}, {member.activeDeals} {t("common.active")}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -2322,10 +2323,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       className="mx-auto text-gray-400 mb-4"
                     />
                     <h3 className="text-sm font-medium text-gray-900 mb-1">
-                      No team members yet
+                      {t("dashboard.noTeamMembersYet")}
                     </h3>
                     <p className="text-sm text-gray-500">
-                      Supervisors will appear here once assigned to your team.
+                      {t("dashboard.teamMembersWillAppear")}
                     </p>
                   </div>
                 )}
@@ -2344,10 +2345,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   </div>
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900">
-                      Your {getPeriodLabel()} Targets
+                      {t("dashboard.myData")} {getPeriodLabel()} {t("common.targets")}
                     </h3>
                     <p className="text-sm text-gray-500">
-                      Assigned by Director
+                      {t("dashboard.assignedBy")} {t("roles.director")}
                     </p>
                   </div>
                 </div>
@@ -2358,7 +2359,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
                         <p className="text-sm text-blue-600 font-medium">
-                          Total Allocated
+                          {t("dashboard.totalAllocated")}
                         </p>
                         <p className="text-2xl font-bold text-blue-700">
                           {formatCurrency(
@@ -2372,7 +2373,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       </div>
                       <div className="p-4 bg-green-50 rounded-lg border border-green-100">
                         <p className="text-sm text-green-600 font-medium">
-                          Assigned to Team
+                          {t("dashboard.assignedToTeam")}
                         </p>
                         <p className="text-2xl font-bold text-green-700">
                           {formatCurrency(
@@ -2386,7 +2387,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       </div>
                       <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
                         <p className="text-sm text-amber-600 font-medium">
-                          Available Budget
+                          {t("dashboard.availableBudget")}
                         </p>
                         <p className="text-2xl font-bold text-amber-700">
                           {formatCurrency(
@@ -2429,7 +2430,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           >
                             <div className="flex items-center justify-between mb-3">
                               <span className="text-sm font-medium text-gray-900 capitalize">
-                                {target.period_type} Target
+                                {target.period_type} {t("dashboard.periodTarget")}
                               </span>
                               <span
                                 className={`px-2 py-1 text-xs rounded-full ${
@@ -2447,7 +2448,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                                 {formatCurrency(target.target_amount)}
                               </div>
                               <div className="text-sm text-gray-600">
-                                Progress:{" "}
+                                {t("common.progress")}:{" "}
                                 {formatCurrency(
                                   target.calculated_progress ||
                                     target.progress_amount ||
@@ -2486,10 +2487,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
                             {target.assigner && (
                               <div className="border-t border-gray-100 pt-3 text-xs text-gray-500">
-                                Assigned by:{" "}
+                                {t("dashboard.assignedBy")}:{" "}
                                 {target.assigner?.full_name ||
                                   target.assigner?.email ||
-                                  "Director"}
+                                  t("roles.director")}
                               </div>
                             )}
                           </div>
@@ -2507,7 +2508,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                               size={18}
                               className="text-gray-600"
                             />
-                            Team Achievement Breakdown
+                            {t("dashboard.teamPerformanceBreakdown")}
                           </h4>
                           <div className="space-y-3">
                             {allSubordinates
@@ -2594,7 +2595,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             size={18}
                             className="text-purple-600"
                           />
-                          Client Achievement Breakdown
+                          {t("dashboard.clientAchievementBreakdown")}
                         </h4>
                         <div className="space-y-3">
                           {clientTargetsData.map((clientTarget) => {
@@ -2638,7 +2639,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                                     {formatCurrency(target)}
                                   </div>
                                   <div className="text-xs text-gray-500">
-                                    {progress.toFixed(1)}% achieved
+                                    {progress.toFixed(1)}{t("dashboard.percentAchieved")}
                                   </div>
                                 </div>
                                 <div className="w-16">
@@ -2673,7 +2674,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       size={48}
                       className="mx-auto text-gray-300 mb-4"
                     />
-                    <p>No targets assigned by director yet.</p>
+                    <p>{t("dashboard.noTargetsAssignedByDirector")}</p>
                     <p className="text-sm mt-2">
                       Contact your director to get sales targets assigned.
                     </p>
@@ -2692,7 +2693,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       size={20}
                       className="text-blue-600"
                     />
-                    Targets Breakdown
+                    {t("dashboard.targetsBreakdown")}
                   </h3>
 
                   <div className="space-y-6">
@@ -2708,7 +2709,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                               size={18}
                               className="text-green-600"
                             />
-                            Targets by Total Value
+                            {t("dashboard.targetsByTotalValue")}
                           </h4>
                           <button
                             onClick={() =>
@@ -2717,8 +2718,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
                           >
                             {showTeamBreakdown
-                              ? "Hide Details"
-                              : "Show Details"}
+                              ? t("dashboard.hideDetails")
+                              : t("dashboard.showDetails")}
                             <Icon
                               name={
                                 showTeamBreakdown ? "ChevronUp" : "ChevronDown"
@@ -2794,7 +2795,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                                       />
                                     </div>
                                     <div className="text-sm text-gray-600">
-                                      {progress.toFixed(1)}% achieved
+                                      {progress.toFixed(1)}{t("dashboard.percentAchieved")}
                                     </div>
                                   </div>
                                 );
@@ -2814,7 +2815,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                               size={18}
                               className="text-purple-600"
                             />
-                            Targets by Clients
+                            {t("dashboard.targetsByClients")}
                             <span className="text-sm font-normal text-gray-500">
                               ({clientTargetsData.length} clients)
                             </span>
@@ -2826,8 +2827,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
                           >
                             {showClientBreakdown
-                              ? "Hide Details"
-                              : "Show Details"}
+                              ? t("dashboard.hideDetails")
+                              : t("dashboard.showDetails")}
                             <Icon
                               name={
                                 showClientBreakdown
@@ -2897,7 +2898,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                                     />
                                   </div>
                                   <div className="text-sm text-gray-600">
-                                    {progress.toFixed(1)}% achieved
+                                    {progress.toFixed(1)}{t("dashboard.percentAchieved")}
                                   </div>
                                 </div>
                               );
@@ -2917,7 +2918,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                               size={18}
                               className="text-orange-600"
                             />
-                            Targets by Products
+                            {t("dashboard.targetsByProducts")}
                             <span className="text-sm font-normal text-gray-500">
                               ({productTargetsData.length} products)
                             </span>
@@ -2929,8 +2930,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
                           >
                             {showProductBreakdown
-                              ? "Hide Details"
-                              : "Show Details"}
+                              ? t("dashboard.hideDetails")
+                              : t("dashboard.showDetails")}
                             <Icon
                               name={
                                 showProductBreakdown
@@ -2989,7 +2990,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                                     />
                                   </div>
                                   <div className="text-sm text-gray-600">
-                                    {progress.toFixed(1)}% achieved
+                                    {progress.toFixed(1)}{t("dashboard.percentAchieved")}
                                   </div>
                                 </div>
                               );
@@ -3003,7 +3004,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               )}
 
               <ProductTargetReport
-                title="Team Performance by Product"
+                title={t("dashboard.teamPerformanceBreakdown")}
                 productTargets={periodFilteredProductTargets}
                 formatCurrency={formatCurrency}
                 showUser
@@ -3015,7 +3016,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-white rounded-lg border border-gray-200 p-4">
                     <h3 className="text-md font-semibold text-gray-900 mb-3">
-                      Top Performing Products
+                      {t("dashboard.topPerformingProducts")}
                     </h3>
                     <div className="space-y-2">
                       {topProductPerformance.map((product) => (
@@ -3041,7 +3042,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
                   <div className="bg-white rounded-lg border border-gray-200 p-4">
                     <h3 className="text-md font-semibold text-gray-900 mb-3">
-                      Underperforming Products
+                      {t("dashboard.underperformingProducts")}
                     </h3>
                     <div className="space-y-2">
                       {underperformingProducts.map((product) => (
@@ -3090,9 +3091,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   />
                   {showAssignmentCard
                     ? editingTarget
-                      ? "Cancel Editing"
-                      : "Hide Assignment Form"
-                    : "Assign New Target"}
+                      ? t("dashboard.cancelEditing")
+                      : t("dashboard.hideAssignmentForm")
+                    : t("dashboard.assignNewTarget")}
                 </button>
               </div>
 
@@ -3118,7 +3119,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               {/* Team Targets Table */}
               {assignedTargets.length > 0 && (
                 <SalesTargetTable
-                  title="Team Targets Assigned"
+                  title={t("dashboard.teamTargetsAssigned")}
                   targets={assignedTargetsWithProgress.filter((target) => {
                     if (tableTypeFilter !== "all" && target.target_type !== tableTypeFilter) return false;
                     if (tableStatusFilter !== "all" && target.status !== tableStatusFilter) return false;
@@ -3132,21 +3133,21 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     <>
                       <select value={tableTypeFilter} onChange={(e) => setTableTypeFilter(e.target.value)}
                         className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
-                        <option value="all">All Types</option>
-                        <option value="by_value">By Value</option>
-                        <option value="by_clients">By Clients</option>
-                        <option value="by_products">By Products</option>
+                        <option value="all">{t("pipeline.allTypes")}</option>
+                        <option value="by_value">{t("pipeline.byValue")}</option>
+                        <option value="by_clients">{t("pipeline.byClients")}</option>
+                        <option value="by_products">{t("pipeline.byProducts")}</option>
                       </select>
                       <select value={tableStatusFilter} onChange={(e) => setTableStatusFilter(e.target.value)}
                         className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
-                        <option value="all">All Status</option>
-                        <option value="active">Active</option>
-                        <option value="completed">Completed</option>
-                        <option value="expired">Expired</option>
+                        <option value="all">{t("pipeline.allStatus")}</option>
+                        <option value="active">{t("common.active")}</option>
+                        <option value="completed">{t("common.completed")}</option>
+                        <option value="expired">{t("pipeline.expired")}</option>
                       </select>
                       <select value={tableMemberFilter} onChange={(e) => setTableMemberFilter(e.target.value)}
                         className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
-                        <option value="all">All Members</option>
+                        <option value="all">{t("pipeline.allMembers")}</option>
                         {allSubordinates.map((member) => (
                           <option key={member.id} value={member.id}>{member.full_name || member.email}</option>
                         ))}
@@ -3164,7 +3165,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               {pipelineData.length > 0 && (
                 <div className="bg-white rounded-lg shadow p-6">
                   <h2 className="text-lg font-semibold text-gray-900 mb-6">
-                    Pipeline Analytics
+                    {t("dashboard.pipelineAnalytics")}
                   </h2>
                   <PipelineChart data={pipelineData} />
                 </div>
@@ -3173,7 +3174,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               {actionItems.length > 0 && (
                 <div className="bg-white rounded-lg shadow p-6">
                   <h2 className="text-lg font-semibold text-gray-900 mb-6">
-                    Action Items
+                    {t("dashboard.actionItems")}
                   </h2>
                   <ActionableDashboard actions={actionItems} />
                 </div>

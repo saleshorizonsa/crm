@@ -3,9 +3,11 @@ import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import { useAuth } from "../../../contexts/AuthContext";
 import { meetingService } from "../../../services/meetingService";
+import { useLanguage } from "../../../i18n";
 
 const CalendarSettings = () => {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [connection,    setConnection]   = useState(null);
   const [loading,       setLoading]      = useState(true);
   const [connecting,    setConnecting]   = useState(false);
@@ -28,7 +30,7 @@ const CalendarSettings = () => {
   const handleConnectGoogle = () => {
     const url = meetingService.getGoogleAuthUrl(redirectUri);
     if (!url) {
-      setMsg({ ok: false, text: "VITE_GOOGLE_CLIENT_ID is not set. Add it to your .env file." });
+      setMsg({ ok: false, text: t("settings.googleClientIdMissing") });
       return;
     }
     // Add state param to URL for security
@@ -39,22 +41,22 @@ const CalendarSettings = () => {
   const handleConnectOutlook = () => {
     const url = meetingService.getMicrosoftAuthUrl(redirectUri);
     if (!url) {
-      setMsg({ ok: false, text: "VITE_MICROSOFT_CLIENT_ID is not set. Add it to your .env file." });
+      setMsg({ ok: false, text: t("settings.microsoftClientIdMissing") });
       return;
     }
     window.location.href = url + "&state=outlook_calendar";
   };
 
   const handleDisconnect = async () => {
-    if (!window.confirm("Disconnect your calendar? Existing meetings won't be affected.")) return;
+    if (!window.confirm(t("settings.disconnectCalendarConfirm"))) return;
     setDisconnecting(true);
     const { error } = await meetingService.disconnectCalendar(user.id);
     setDisconnecting(false);
     if (error) {
-      setMsg({ ok: false, text: "Failed to disconnect: " + error.message });
+      setMsg({ ok: false, text: t("settings.disconnectCalendarFailed") + error.message });
     } else {
       setConnection(null);
-      setMsg({ ok: true, text: "Calendar disconnected." });
+      setMsg({ ok: true, text: t("settings.calendarDisconnected") });
       setTimeout(() => setMsg(null), 3000);
     }
   };
@@ -62,7 +64,7 @@ const CalendarSettings = () => {
   if (loading) {
     return (
       <div className="flex items-center gap-2 py-8 text-muted-foreground">
-        <Icon name="Loader2" size={16} className="animate-spin" />Loading…
+        <Icon name="Loader2" size={16} className="animate-spin" />{t("common.loading")}
       </div>
     );
   }
@@ -70,9 +72,9 @@ const CalendarSettings = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-base font-semibold text-gray-900">Calendar Integration</h3>
+        <h3 className="text-base font-semibold text-gray-900">{t("settings.calendarIntegration")}</h3>
         <p className="text-sm text-gray-500 mt-0.5">
-          Connect your Google or Outlook calendar to sync meetings automatically.
+          {t("settings.calendarIntegrationDesc")}
         </p>
       </div>
 
@@ -94,13 +96,13 @@ const CalendarSettings = () => {
             </div>
             <div>
               <p className="text-sm font-semibold text-green-800 capitalize">
-                {connection.provider} Calendar connected
+                {connection.provider} {t("settings.calendarConnected")}
               </p>
               {connection.email && (
                 <p className="text-xs text-green-600 mt-0.5">{connection.email}</p>
               )}
               <p className="text-xs text-green-600 mt-0.5">
-                Connected {new Date(connection.connected_at).toLocaleDateString()}
+                {t("settings.calendarConnectedAt")} {new Date(connection.connected_at).toLocaleDateString()}
               </p>
             </div>
           </div>
@@ -114,7 +116,7 @@ const CalendarSettings = () => {
             {disconnecting
               ? <Icon name="Loader2" size={13} className="animate-spin mr-1" />
               : <Icon name="Unlink" size={13} className="mr-1" />}
-            Disconnect
+            {disconnecting ? t("settings.disconnecting") : t("settings.disconnect")}
           </Button>
         </div>
       ) : (
@@ -127,14 +129,14 @@ const CalendarSettings = () => {
                 <Icon name="Calendar" size={18} className="text-blue-500" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-gray-900">Google Calendar</p>
+                <p className="text-sm font-semibold text-gray-900">{t("settings.googleCalendar")}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Sync meetings to your Google Calendar. Requires Google Cloud OAuth credentials.
+                  {t("settings.googleCalendarDesc")}
                 </p>
               </div>
             </div>
             <Button size="sm" onClick={handleConnectGoogle} disabled={connecting} className="flex-shrink-0 gap-1.5">
-              <Icon name="Link" size={13} />Connect
+              <Icon name="Link" size={13} />{t("settings.connectGoogle")}
             </Button>
           </div>
 
@@ -145,14 +147,14 @@ const CalendarSettings = () => {
                 <Icon name="Mail" size={18} className="text-blue-700" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-gray-900">Outlook / Microsoft 365</p>
+                <p className="text-sm font-semibold text-gray-900">{t("settings.outlookCalendar")}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Sync meetings via Microsoft Graph API. Requires Azure AD app registration.
+                  {t("settings.outlookCalendarDesc")}
                 </p>
               </div>
             </div>
             <Button size="sm" variant="outline" onClick={handleConnectOutlook} disabled={connecting} className="flex-shrink-0 gap-1.5">
-              <Icon name="Link" size={13} />Connect
+              <Icon name="Link" size={13} />{t("settings.connectOutlook")}
             </Button>
           </div>
         </div>
@@ -162,7 +164,7 @@ const CalendarSettings = () => {
       {!connection && (
         <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 space-y-3">
           <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
-            <Icon name="Info" size={13} />Setup required before connecting
+            <Icon name="Info" size={13} />{t("settings.calendarSetupRequired")}
           </p>
           <div className="text-xs text-amber-700 space-y-2">
             <p><strong>Google Calendar:</strong></p>

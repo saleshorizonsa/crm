@@ -35,6 +35,7 @@ import {
 } from "recharts";
 import { useNavigate } from "react-router-dom";
 import { useDateRange } from "../../../contexts/DateRangeContext";
+import { useLanguage } from "../../../i18n";
 
 const EnhancedSalesmanDashboard = ({
   viewAsUser = null,
@@ -47,6 +48,7 @@ const EnhancedSalesmanDashboard = ({
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { dateRange } = useDateRange();
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   // When viewing as another user (manager "view as"), use their identity for all queries
   const effectiveUser = viewAsUser || { id: user?.id };
@@ -614,19 +616,19 @@ const EnhancedSalesmanDashboard = ({
 
         if (isOverdue) {
           priority += 4;
-          reason.push("Overdue");
+          reason.push(t("pipeline.overdue"));
         }
         if (isHighValue && deal.stage === "negotiation") {
           priority += 3;
-          reason.push("High Value");
+          reason.push(t("dashboard.highValueLabel"));
         }
         if (isClosingSoon) {
           priority += 2;
-          reason.push("Closing Soon");
+          reason.push(t("dashboard.closingSoonLabel"));
         }
         if (isStale) {
           priority += 1;
-          reason.push("Stale");
+          reason.push(t("dashboard.staleLabel"));
         }
 
         // Get product names
@@ -1167,9 +1169,9 @@ const EnhancedSalesmanDashboard = ({
       <div className="border-b border-gray-200">
         <nav className="flex space-x-8">
           {[
-            { id: "overview", label: "Overview", icon: "LayoutDashboard" },
-            { id: "deals", label: "Deals", icon: "Briefcase" },
-            { id: "targets", label: "My Targets", icon: "Target" },
+            { id: "overview", label: t("dashboard.overview"), icon: "LayoutDashboard" },
+            { id: "deals", label: t("common.deals"), icon: "Briefcase" },
+            { id: "targets", label: t("dashboard.myPerformance"), icon: "Target" },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -1194,7 +1196,7 @@ const EnhancedSalesmanDashboard = ({
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Revenue Overview
+                {t("dashboard.totalRevenue")}
               </h3>
               {targetMetrics?.hasActiveTarget && (
                 <span
@@ -1204,7 +1206,7 @@ const EnhancedSalesmanDashboard = ({
                       : "bg-red-100 text-red-700"
                   }`}
                 >
-                  {targetMetrics.isOnTrack ? "On Track" : "Behind Target"}
+                  {targetMetrics.isOnTrack ? t("dashboard.onTrack") : t("dashboard.salesTargetBehindSchedule")}
                 </span>
               )}
             </div>
@@ -1219,7 +1221,7 @@ const EnhancedSalesmanDashboard = ({
                       0,
                   )}
                 </div>
-                <div className="text-sm text-gray-600 mt-1">Total Revenue</div>
+                <div className="text-sm text-gray-600 mt-1">{t("dashboard.totalRevenue")}</div>
               </div>
 
               {/* Target Assigned */}
@@ -1230,7 +1232,7 @@ const EnhancedSalesmanDashboard = ({
                     : "—"}
                 </div>
                 <div className="text-sm text-gray-600 mt-1">
-                  Target Assigned
+                  {t("dashboard.target")}
                 </div>
               </div>
 
@@ -1241,7 +1243,7 @@ const EnhancedSalesmanDashboard = ({
                     ? `${targetMetrics.progressPercent.toFixed(1)}%`
                     : "—"}
                 </div>
-                <div className="text-sm text-gray-600 mt-1">Progress</div>
+                <div className="text-sm text-gray-600 mt-1">{t("common.progress")}</div>
                 {targetMetrics?.hasActiveTarget && (
                   <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
                     <div
@@ -1272,14 +1274,14 @@ const EnhancedSalesmanDashboard = ({
                       )
                     : "—"}
                 </div>
-                <div className="text-sm text-white mt-1">Remaining Revenue</div>
+                <div className="text-sm text-white mt-1">{t("dashboard.remaining")}</div>
               </div>
             </div>
 
             {!targetMetrics?.hasActiveTarget && (
               <div className="mt-4 pt-4 border-t text-center text-gray-500">
                 <Icon name="Info" size={20} className="inline mr-2" />
-                No active target assigned for this period
+                {t("dashboard.noActiveTarget")}
               </div>
             )}
           </div>
@@ -1295,7 +1297,7 @@ const EnhancedSalesmanDashboard = ({
                   <div className="text-lg font-bold text-gray-900">
                     {formatCurrency(executiveMetrics.activePipeline)}
                   </div>
-                  <div className="text-sm text-gray-500">Active Pipeline</div>
+                  <div className="text-sm text-gray-500">{t("dashboard.activePipeline")}</div>
                 </div>
               </div>
               <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
@@ -1306,7 +1308,7 @@ const EnhancedSalesmanDashboard = ({
                   <div className="text-lg font-bold text-gray-900">
                     {executiveMetrics.winRate.toFixed(1)}%
                   </div>
-                  <div className="text-sm text-gray-500">Win Rate</div>
+                  <div className="text-sm text-gray-500">{t("dashboard.winRate")}</div>
                 </div>
               </div>
               <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
@@ -1321,7 +1323,7 @@ const EnhancedSalesmanDashboard = ({
                   <div className="text-lg font-bold text-gray-900">
                     {executiveMetrics.wonDeals}
                   </div>
-                  <div className="text-sm text-gray-500">Deals Won</div>
+                  <div className="text-sm text-gray-500">{t("dashboard.wonDeals")}</div>
                 </div>
               </div>
               <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
@@ -1336,7 +1338,7 @@ const EnhancedSalesmanDashboard = ({
                   <div className="text-lg font-bold text-gray-900">
                     {executiveMetrics.totalDeals}
                   </div>
-                  <div className="text-sm text-gray-500">Total Deals</div>
+                  <div className="text-sm text-gray-500">{t("dashboard.totalDeals")}</div>
                 </div>
               </div>
             </div>
@@ -1346,7 +1348,7 @@ const EnhancedSalesmanDashboard = ({
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Performance Trend
+                {t("dashboard.salesTrend")}
               </h3>
               {/* Trend Period Toggle */}
               <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
@@ -1358,7 +1360,7 @@ const EnhancedSalesmanDashboard = ({
                       : "text-gray-600 hover:text-gray-800"
                   }`}
                 >
-                  Monthly
+                  {t("dashboard.monthly")}
                 </button>
                 <button
                   onClick={() => setTrendPeriod("quarter")}
@@ -1368,7 +1370,7 @@ const EnhancedSalesmanDashboard = ({
                       : "text-gray-600 hover:text-gray-800"
                   }`}
                 >
-                  Quarterly
+                  {t("dashboard.quarterly")}
                 </button>
                 <button
                   onClick={() => setTrendPeriod("year")}
@@ -1378,7 +1380,7 @@ const EnhancedSalesmanDashboard = ({
                       : "text-gray-600 hover:text-gray-800"
                   }`}
                 >
-                  Yearly
+                  {t("dashboard.yearly")}
                 </button>
               </div>
             </div>
@@ -1398,7 +1400,7 @@ const EnhancedSalesmanDashboard = ({
                   <Tooltip
                     formatter={(value, name) => [
                       name === "revenue" ? formatCurrency(value) : value,
-                      name === "revenue" ? "Revenue" : "Deals",
+                      name === "revenue" ? t("dashboard.totalRevenue") : t("common.deals"),
                     ]}
                   />
                   <Bar
@@ -1417,7 +1419,7 @@ const EnhancedSalesmanDashboard = ({
                     size={48}
                     className="mx-auto mb-2 text-gray-300"
                   />
-                  <p>No performance data available</p>
+                  <p>{t("common.noData")}</p>
                 </div>
               </div>
             )}
@@ -1432,13 +1434,13 @@ const EnhancedSalesmanDashboard = ({
                       ),
                     )}
                   </div>
-                  <div className="text-sm text-gray-500">Total Revenue</div>
+                  <div className="text-sm text-gray-500">{t("dashboard.totalRevenue")}</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">
                     {performanceTrendData.reduce((sum, d) => sum + d.deals, 0)}
                   </div>
-                  <div className="text-sm text-gray-500">Deals Closed</div>
+                  <div className="text-sm text-gray-500">{t("dashboard.dealsClosed")}</div>
                 </div>
               </div>
             )}
@@ -1459,13 +1461,13 @@ const EnhancedSalesmanDashboard = ({
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Upcoming Tasks
+                {t("tasks.upcomingTasks")}
               </h3>
               <button
                 onClick={() => navigate("/task-management")}
                 className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
               >
-                View All
+                {t("common.viewAll")}
                 <Icon name="ArrowRight" size={16} />
               </button>
             </div>
@@ -1476,25 +1478,25 @@ const EnhancedSalesmanDashboard = ({
                 <div className="text-lg font-bold text-gray-900">
                   {taskMetrics.total}
                 </div>
-                <div className="text-xs text-gray-500">Total</div>
+                <div className="text-xs text-gray-500">{t("common.total")}</div>
               </div>
               <div className="text-center">
                 <div className="text-lg font-bold text-yellow-600">
                   {taskMetrics.pending}
                 </div>
-                <div className="text-xs text-gray-500">Pending</div>
+                <div className="text-xs text-gray-500">{t("tasks.pending")}</div>
               </div>
               <div className="text-center">
                 <div className="text-lg font-bold text-blue-600">
                   {taskMetrics.inProgress}
                 </div>
-                <div className="text-xs text-gray-500">In Progress</div>
+                <div className="text-xs text-gray-500">{t("common.inProgress")}</div>
               </div>
               <div className="text-center">
                 <div className="text-lg font-bold text-green-600">
                   {taskMetrics.completed}
                 </div>
-                <div className="text-xs text-gray-500">Completed</div>
+                <div className="text-xs text-gray-500">{t("tasks.completed")}</div>
               </div>
             </div>
 
@@ -1533,10 +1535,10 @@ const EnhancedSalesmanDashboard = ({
                           </p>
                           <p className="text-sm text-gray-500 truncate">
                             {task.status === "in_progress"
-                              ? "In Progress"
-                              : "Pending"}
+                              ? t("common.inProgress")
+                              : t("tasks.pending")}
                             {task.due_date &&
-                              ` • Due ${new Date(
+                              ` • ${t("tasks.dueDate")} ${new Date(
                                 task.due_date,
                               ).toLocaleDateString()}`}
                           </p>
@@ -1545,12 +1547,12 @@ const EnhancedSalesmanDashboard = ({
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {isOverdue && (
                           <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full">
-                            Overdue
+                            {t("tasks.overdue")}
                           </span>
                         )}
                         {isDueSoon && !isOverdue && (
                           <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full">
-                            Due Soon
+                            {t("dashboard.dueSoon")}
                           </span>
                         )}
                         <Icon
@@ -1570,8 +1572,8 @@ const EnhancedSalesmanDashboard = ({
                   size={40}
                   className="mx-auto mb-2 text-green-400"
                 />
-                <p>No pending tasks</p>
-                <p className="text-sm">You're all caught up!</p>
+                <p>{t("dashboard.pendingTasks")}</p>
+                <p className="text-sm">{t("notifications.allCaughtUp")}</p>
               </div>
             )}
           </div>
@@ -1580,7 +1582,7 @@ const EnhancedSalesmanDashboard = ({
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                Top 10 Clients by Revenue
+                {t("dashboard.topClientsRevenue")}
               </h3>
               <div className="text-sm text-gray-500">
                 {clientInsights.length} clients
@@ -1641,13 +1643,13 @@ const EnhancedSalesmanDashboard = ({
                           #
                         </th>
                         <th className="text-left p-3 font-medium text-gray-600">
-                          Client
+                          {t("common.client")}
                         </th>
                         <th className="text-right p-3 font-medium text-gray-600">
-                          Revenue
+                          {t("dashboard.totalRevenue")}
                         </th>
                         <th className="text-right p-3 font-medium text-gray-600">
-                          Deals
+                          {t("common.deals")}
                         </th>
                       </tr>
                     </thead>
@@ -1683,8 +1685,8 @@ const EnhancedSalesmanDashboard = ({
                   size={40}
                   className="mx-auto mb-2 text-gray-300"
                 />
-                <p>No client data available</p>
-                <p className="text-sm">Close some deals to see insights</p>
+                <p>{t("common.noData")}</p>
+                <p className="text-sm">{t("dashboard.closeDealsToSeeInsights")}</p>
               </div>
             )}
           </div>
@@ -1714,7 +1716,7 @@ const EnhancedSalesmanDashboard = ({
           {/* Pipeline Summary */}
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Pipeline Summary
+              {t("deals.pipelineSummary")}
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <div
@@ -1725,7 +1727,7 @@ const EnhancedSalesmanDashboard = ({
                 <div className="text-2xl font-bold text-gray-600">
                   {pipelineSummary.lead || 0}
                 </div>
-                <div className="text-sm text-gray-500">Leads</div>
+                <div className="text-sm text-gray-500">{t("deals.lead")}</div>
               </div>
               <div
                 className="text-center p-4 bg-blue-50 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors"
@@ -1735,7 +1737,7 @@ const EnhancedSalesmanDashboard = ({
                 <div className="text-2xl font-bold text-blue-600">
                   {pipelineSummary.contact_made || 0}
                 </div>
-                <div className="text-sm text-gray-500">Contacted</div>
+                <div className="text-sm text-gray-500">{t("deals.qualified")}</div>
               </div>
               <div
                 className="text-center p-4 bg-yellow-50 rounded-lg cursor-pointer hover:bg-yellow-100 transition-colors"
@@ -1745,7 +1747,7 @@ const EnhancedSalesmanDashboard = ({
                 <div className="text-2xl font-bold text-yellow-600">
                   {pipelineSummary.proposal_sent || 0}
                 </div>
-                <div className="text-sm text-gray-500">Proposal</div>
+                <div className="text-sm text-gray-500">{t("deals.proposal")}</div>
               </div>
               <div
                 className="text-center p-4 bg-orange-50 rounded-lg cursor-pointer hover:bg-orange-100 transition-colors"
@@ -1755,7 +1757,7 @@ const EnhancedSalesmanDashboard = ({
                 <div className="text-2xl font-bold text-orange-600">
                   {pipelineSummary.negotiation || 0}
                 </div>
-                <div className="text-sm text-gray-500">Negotiation</div>
+                <div className="text-sm text-gray-500">{t("deals.negotiation")}</div>
               </div>
               <div
                 className="text-center p-4 bg-green-50 rounded-lg cursor-pointer hover:bg-green-100 transition-colors"
@@ -1765,7 +1767,7 @@ const EnhancedSalesmanDashboard = ({
                 <div className="text-2xl font-bold text-green-600">
                   {pipelineSummary.won || 0}
                 </div>
-                <div className="text-sm text-gray-500">Won</div>
+                <div className="text-sm text-gray-500">{t("deals.won")}</div>
               </div>
               <div
                 className="text-center p-4 bg-red-50 rounded-lg cursor-pointer hover:bg-red-100 transition-colors"
@@ -1775,7 +1777,7 @@ const EnhancedSalesmanDashboard = ({
                 <div className="text-2xl font-bold text-red-600">
                   {pipelineSummary.lost || 0}
                 </div>
-                <div className="text-sm text-gray-500">Lost</div>
+                <div className="text-sm text-gray-500">{t("deals.lost")}</div>
               </div>
             </div>
           </div>
@@ -1785,17 +1787,17 @@ const EnhancedSalesmanDashboard = ({
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">
-                  Deals Needing Attention
+                  {t("dashboard.dealsNeedingAttention")}
                 </h3>
                 <p className="text-sm text-gray-500">
-                  High-value, stale, or closing soon deals
+                  {t("dashboard.dealsNeedingAttentionDesc")}
                 </p>
               </div>
               <button
                 onClick={() => navigate("/sales-pipeline")}
                 className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
               >
-                View Pipeline
+                {t("dashboard.viewPipeline")}
                 <Icon name="ArrowRight" size={16} />
               </button>
             </div>
@@ -1806,25 +1808,25 @@ const EnhancedSalesmanDashboard = ({
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="text-left p-3 font-medium text-gray-600">
-                        Status
+                        {t("common.status")}
                       </th>
                       <th className="text-left p-3 font-medium text-gray-600">
-                        Deal
+                        {t("common.deal")}
                       </th>
                       <th className="text-left p-3 font-medium text-gray-600">
-                        Client
+                        {t("common.client")}
                       </th>
                       <th className="text-right p-3 font-medium text-gray-600">
-                        Value
+                        {t("common.value")}
                       </th>
                       <th className="text-left p-3 font-medium text-gray-600">
-                        Products
+                        {t("common.products")}
                       </th>
                       <th className="text-left p-3 font-medium text-gray-600">
-                        Stage
+                        {t("common.stage")}
                       </th>
                       <th className="text-left p-3 font-medium text-gray-600">
-                        Close Date
+                        {t("deals.closeDate")}
                       </th>
                     </tr>
                   </thead>
@@ -1843,11 +1845,11 @@ const EnhancedSalesmanDashboard = ({
                               <span
                                 key={idx}
                                 className={`text-xs px-2 py-1 rounded-full font-medium ${
-                                  r === "Overdue"
+                                  r === t("pipeline.overdue")
                                     ? "bg-orange-100 text-orange-700"
-                                    : r === "High Value"
+                                    : r === t("dashboard.highValueLabel")
                                       ? "bg-purple-100 text-purple-700"
-                                      : r === "Closing Soon"
+                                      : r === t("dashboard.closingSoonLabel")
                                         ? "bg-yellow-100 text-yellow-700"
                                         : "bg-gray-100 text-gray-700"
                                 }`}
@@ -1862,7 +1864,7 @@ const EnhancedSalesmanDashboard = ({
                             {deal.title}
                           </div>
                           <div className="text-xs text-gray-500">
-                            Updated {deal.daysSinceUpdate}d ago
+                            {t("dashboard.lastUpdated")} {deal.daysSinceUpdate}{t("dashboard.daysCount")} {t("common.old")}
                           </div>
                         </td>
                         <td className="p-3 text-gray-700">{deal.clientName}</td>
@@ -1913,7 +1915,7 @@ const EnhancedSalesmanDashboard = ({
                               </div>
                             </div>
                           ) : (
-                            <span className="text-gray-400">Not set</span>
+                            <span className="text-gray-400">{t("common.none")}</span>
                           )}
                         </td>
                       </tr>
@@ -1929,7 +1931,7 @@ const EnhancedSalesmanDashboard = ({
                   className="mx-auto mb-3 text-green-400"
                 />
                 <p className="font-medium">All deals are on track!</p>
-                <p className="text-sm">No deals require immediate attention</p>
+                <p className="text-sm">{t("dashboard.dealsNeedingAttentionDesc")}</p>
               </div>
             )}
           </div>
