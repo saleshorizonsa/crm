@@ -237,15 +237,9 @@ const SalesTargetTable = ({
                     {/* Period + Status badge */}
                     <td className="px-4 py-3 w-[160px]">
                       <div className="flex items-center gap-1 flex-wrap">
-                        {periodType && (
-                          <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded-full capitalize ${
-                            periodType === 'monthly' ? 'bg-blue-100 text-blue-700'
-                            : periodType === 'quarterly' ? 'bg-purple-100 text-purple-700'
-                            : 'bg-gray-100 text-gray-600'
-                          }`}>
-                            {periodType}
-                          </span>
-                        )}
+                        <span className="text-xs font-medium text-gray-700 capitalize">
+                          {periodType}
+                        </span>
                         {status && (
                           <span
                             className={`px-1.5 py-0.5 text-[10px] rounded-full ${

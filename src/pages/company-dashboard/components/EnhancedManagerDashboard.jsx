@@ -95,8 +95,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   const [showProductBreakdown, setShowProductBreakdown] = useState(false);
   const [editingTarget, setEditingTarget] = useState(null); // Target being edited in modal
   const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [teamTargets, setTeamTargets] = useState(null); // result of getTeamTargetsForPeriod
-  const [periodTableFilter, setPeriodTableFilter] = useState("period"); // "period" | "all"
 
   // Table filter states
   const [tableTypeFilter, setTableTypeFilter] = useState("all"); // all, by_value, by_clients, by_products
@@ -448,72 +446,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         .slice(0, 3),
     [aggregatedProductPerformance],
   );
-
-  // ── DateRange-driven computed values ──────────────────────────────────────
-
-  const dateRangePeriodType = useMemo(() => {
-    if (!dateRange || dateRange.isAllTime) return 'yearly';
-    const diffDays = Math.round((new Date(dateRange.to) - new Date(dateRange.from)) / (1000 * 60 * 60 * 24));
-    return diffDays <= 31 ? 'monthly' : diffDays <= 92 ? 'quarterly' : 'yearly';
-  }, [dateRange]);
-
-  const dateRangePeriodLabel = useMemo(() => {
-    if (!dateRange || dateRange.isAllTime) return 'Annual';
-    const from = new Date(dateRange.from);
-    const diffDays = Math.round((new Date(dateRange.to) - from) / (1000 * 60 * 60 * 24));
-    if (diffDays <= 31) return from.toLocaleString('default', { month: 'long', year: 'numeric' });
-    if (diffDays <= 92) return `Q${Math.floor(from.getMonth() / 3) + 1} ${from.getFullYear()}`;
-    return from.getFullYear().toString();
-  }, [dateRange]);
-
-  // Won revenue per member within the current dateRange
-  const memberAchievedInPeriod = useMemo(() => {
-    const result = {};
-    if (!allDeals?.length) return result;
-    const from = dateRange?.isAllTime ? null : (dateRange?.from ? new Date(dateRange.from) : null);
-    const to = dateRange?.isAllTime ? null : (dateRange?.to ? new Date(dateRange.to) : null);
-    if (to) to.setHours(23, 59, 59, 999);
-    allDeals.forEach((deal) => {
-      if (deal.stage !== 'won') return;
-      const d = new Date(deal.closed_at || deal.created_at);
-      if (from && d < from) return;
-      if (to && d > to) return;
-      result[deal.owner_id] = (result[deal.owner_id] || 0) + (parseFloat(deal.amount) || 0);
-    });
-    return result;
-  }, [allDeals, dateRange]);
-
-  const totalTeamAchievedInPeriod = useMemo(() =>
-    Object.values(memberAchievedInPeriod).reduce((s, v) => s + v, 0),
-    [memberAchievedInPeriod]
-  );
-
-  // Assigned targets whose period overlaps the current dateRange
-  const dateRangeFilteredAssigned = useMemo(() => {
-    if (!assignedTargets?.length) return [];
-    if (!dateRange || dateRange.isAllTime) return assignedTargets;
-    const from = new Date(dateRange.from);
-    const to = new Date(dateRange.to);
-    to.setHours(23, 59, 59, 999);
-    return assignedTargets.filter((t) => {
-      const tStart = new Date(t.period_start);
-      const tEnd = new Date(t.period_end);
-      tEnd.setHours(23, 59, 59, 999);
-      return tStart <= to && tEnd >= from;
-    });
-  }, [assignedTargets, dateRange]);
-
-  // Map member.id → their period-specific target info (from getTeamTargetsForPeriod result)
-  const memberPeriodTargetMap = useMemo(() => {
-    if (!teamTargets?.byMember || !allSubordinates?.length) return {};
-    const result = {};
-    allSubordinates.forEach((member, idx) => {
-      result[member.id] = teamTargets.byMember[idx] || null;
-    });
-    return result;
-  }, [teamTargets, allSubordinates]);
-
-  // ── end DateRange-driven computed values ──────────────────────────────────
 
   // Recalculate target progress based on filtered deals for the selected period
   // Helper function to get dynamic period label
@@ -1371,31 +1303,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     }
   };
 
-  const loadTeamTargets = async (subs, dr) => {
-    const members = subs || allSubordinates;
-    const range = dr || dateRange;
-    if (!members?.length || !range || range.isAllTime) return;
-    try {
-      const memberIds = members.map((s) => s.id);
-      const result = await salesTargetService.getTeamTargetsForPeriod({
-        memberIds,
-        companyId: company?.id,
-        dateFrom: range.from,
-        dateTo: range.to,
-      });
-      setTeamTargets(result);
-    } catch (err) {
-      console.error('Error loading team targets:', err);
-    }
-  };
-
-  // Reload team targets when subordinates or dateRange changes
-  useEffect(() => {
-    if (allSubordinates?.length && dateRange && !dateRange.isAllTime) {
-      loadTeamTargets(allSubordinates, dateRange);
-    }
-  }, [allSubordinates.length, dateRange]);
-
   const handleEditTarget = (target) => {
     // Set the editing target and show the assignment form
     setEditingTarget(target);
@@ -1681,55 +1588,95 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     </Button>
                   </div>
 
-                  {/* Two-card summary: Annual + Period */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    {/* Card 1 — Annual Team Target */}
-                    <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl">
-                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Annual Team Target</p>
-                      <p className="text-2xl font-bold text-gray-800">
-                        {formatCurrency(teamTargets?.totalYearly ?? 0)}
+                  {/* Summary Stats */}
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+                    <div className="p-3 bg-blue-50 rounded-lg">
+                      <p className="text-xs text-blue-600 font-medium">
+                        Total Target
                       </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {allSubordinates.length} team member{allSubordinates.length !== 1 ? 's' : ''} total
+                      <p className="text-xl font-bold text-blue-700">
+                        {formatCurrency(
+                          targetsWithRecalculatedProgress.reduce(
+                            (sum, t) =>
+                              sum + (parseFloat(t.target_amount) || 0),
+                            0,
+                          ),
+                        )}
                       </p>
                     </div>
-
-                    {/* Card 2 — Period Target */}
-                    {(() => {
-                      const periodTarget = teamTargets?.totalPeriod ?? 0;
-                      const achieved = totalTeamAchievedInPeriod;
-                      const pct = periodTarget > 0 ? Math.min((achieved / periodTarget) * 100, 100) : 0;
-                      const withTarget = teamTargets?.membersWithPeriodTarget ?? 0;
-                      const total = teamTargets?.totalMembers ?? allSubordinates.length;
-                      return (
-                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                          <p className="text-xs text-blue-600 font-medium uppercase tracking-wide mb-1">
-                            {dateRangePeriodLabel} Target
-                          </p>
-                          <p className="text-2xl font-bold text-blue-700">
-                            {formatCurrency(periodTarget)}
-                          </p>
-                          {periodTarget > 0 ? (
-                            <>
-                              <div className="w-full bg-blue-200 rounded-full h-1.5 my-2">
-                                <div
-                                  className="h-1.5 rounded-full bg-blue-500"
-                                  style={{ width: `${pct}%` }}
-                                />
-                              </div>
-                              <p className="text-xs text-blue-600">
-                                {formatCurrency(achieved)} achieved · {pct.toFixed(0)}%
-                              </p>
-                            </>
-                          ) : (
-                            <p className="text-xs text-blue-400 mt-1">No targets set for this period</p>
-                          )}
-                          <p className="text-xs text-blue-400 mt-1">
-                            {withTarget} of {total} members have a {dateRangePeriodType} target
-                          </p>
-                        </div>
-                      );
-                    })()}
+                    <div className="p-3 bg-green-50 rounded-lg">
+                      <p className="text-xs text-green-600 font-medium">
+                        Achieved
+                      </p>
+                      <p className="text-xl font-bold text-green-700">
+                        {formatCurrency(
+                          targetsWithRecalculatedProgress.reduce(
+                            (sum, t) =>
+                              sum +
+                              parseFloat(
+                                t.calculated_progress || t.progress_amount || 0,
+                              ),
+                            0,
+                          ),
+                        )}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-purple-50 rounded-lg">
+                      <p className="text-xs text-purple-600 font-medium">
+                        Your Revenue
+                      </p>
+                      <p className="text-xl font-bold text-purple-700">
+                        {formatCurrency(
+                          targetsWithRecalculatedProgress.reduce(
+                            (sum, t) =>
+                              sum + parseFloat(t.manager_revenue || 0),
+                            0,
+                          ),
+                        )}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-amber-50 rounded-lg">
+                      <p className="text-xs text-amber-600 font-medium">
+                        Team Revenue
+                      </p>
+                      <p className="text-xl font-bold text-amber-700">
+                        {formatCurrency(
+                          targetsWithRecalculatedProgress.reduce(
+                            (sum, t) =>
+                              sum +
+                              parseFloat(t.subordinates_contribution || 0),
+                            0,
+                          ),
+                        )}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-red-500 rounded-lg">
+                      <p className="text-xs text-white font-medium">
+                        Remaining Targets
+                      </p>
+                      <p className="text-xl font-bold text-white">
+                        {formatCurrency(
+                          Math.max(
+                            0,
+                            targetsWithRecalculatedProgress.reduce(
+                              (sum, t) =>
+                                sum + (parseFloat(t.target_amount) || 0),
+                              0,
+                            ) -
+                              targetsWithRecalculatedProgress.reduce(
+                                (sum, t) =>
+                                  sum +
+                                  parseFloat(
+                                    t.calculated_progress ||
+                                      t.progress_amount ||
+                                      0,
+                                  ),
+                                0,
+                              ),
+                          ),
+                        )}
+                      </p>
+                    </div>
                   </div>
 
                   {/* Target Cards with Progress - Only show if not synthetic */}
@@ -1843,10 +1790,23 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       {showTeamBreakdown && (
                         <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                           {allSubordinates.map((member) => {
-                            const achieved = memberAchievedInPeriod[member.id] || 0;
-                            const periodInfo = memberPeriodTargetMap[member.id];
-                            const periodTarget = parseFloat(periodInfo?.forPeriod?.target_amount || 0);
-                            const memberProgress = periodTarget > 0 ? (achieved / periodTarget) * 100 : 0;
+                            const memberTargets =
+                              filteredAssignedTargets.filter(
+                                (t) => t.assigned_to === member.id,
+                              );
+                            const totalTarget = memberTargets.reduce(
+                              (sum, t) =>
+                                sum + (parseFloat(t.target_amount) || 0),
+                              0,
+                            );
+                            const memberPerformance = teamData.find(
+                              (t) => t.id === member.id,
+                            );
+                            const achieved = memberPerformance?.wonAmount || 0;
+                            const memberProgress =
+                              totalTarget > 0
+                                ? (achieved / totalTarget) * 100
+                                : 0;
 
                             return (
                               <div
@@ -1873,8 +1833,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                                     {formatCurrency(achieved)}
                                   </p>
                                   <p className="text-xs text-gray-500">
-                                    {periodTarget > 0
-                                      ? `of ${formatCurrency(periodTarget)} (${memberProgress.toFixed(0)}%)`
+                                    {totalTarget > 0
+                                      ? `of ${formatCurrency(
+                                          totalTarget,
+                                        )} (${memberProgress.toFixed(0)}%)`
                                       : "No target"}
                                   </p>
                                 </div>
@@ -2546,10 +2508,25 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           <div className="space-y-3">
                             {allSubordinates
                               .map((member) => {
-                                const achieved = memberAchievedInPeriod[member.id] || 0;
-                                const periodInfo = memberPeriodTargetMap[member.id];
-                                const totalTarget = parseFloat(periodInfo?.forPeriod?.target_amount || 0);
-                                const memberProgress = totalTarget > 0 ? (achieved / totalTarget) * 100 : 0;
+                                const memberTargets =
+                                  filteredAssignedTargets.filter(
+                                    (t) => t.assigned_to === member.id,
+                                  );
+                                const totalTarget = memberTargets.reduce(
+                                  (sum, t) =>
+                                    sum + (parseFloat(t.target_amount) || 0),
+                                  0,
+                                );
+                                if (totalTarget === 0) return null;
+                                const memberPerformance = teamData.find(
+                                  (t) => t.id === member.id,
+                                );
+                                const achieved =
+                                  memberPerformance?.wonAmount || 0;
+                                const memberProgress =
+                                  totalTarget > 0
+                                    ? (achieved / totalTarget) * 100
+                                    : 0;
 
                                 return (
                                   <div
@@ -3135,88 +3112,45 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               )}
 
               {/* Team Targets Table */}
-              {assignedTargets.length > 0 && (() => {
-                // Base pool: either period-overlapping or all active targets
-                const baseTargets = periodTableFilter === "period"
-                  ? dateRangeFilteredAssigned
-                  : assignedTargetsWithProgress;
-
-                // Re-derive calculated_progress for the base set using dateRange achievement
-                const tableTargets = baseTargets
-                  .map((target) => ({
-                    ...target,
-                    calculated_progress: memberAchievedInPeriod[target.assigned_to] ?? target.calculated_progress ?? target.progress_amount ?? 0,
-                  }))
-                  .filter((target) => {
+              {assignedTargets.length > 0 && (
+                <SalesTargetTable
+                  title="Team Targets Assigned"
+                  targets={assignedTargetsWithProgress.filter((target) => {
                     if (tableTypeFilter !== "all" && target.target_type !== tableTypeFilter) return false;
                     if (tableStatusFilter !== "all" && target.status !== tableStatusFilter) return false;
                     if (tableMemberFilter !== "all" && target.assigned_to !== tableMemberFilter) return false;
                     return true;
-                  });
-
-                const periodCount = dateRangeFilteredAssigned.length;
-                const allCount = assignedTargets.length;
-
-                return (
-                  <>
-                    {/* Period summary + toggle */}
-                    <div className="flex items-center justify-between px-1 mb-2">
-                      <p className="text-sm text-gray-500">
-                        {periodTableFilter === "period"
-                          ? `Showing ${periodCount} target${periodCount !== 1 ? 's' : ''} matching ${dateRangePeriodLabel}`
-                          : `Showing all ${allCount} active target${allCount !== 1 ? 's' : ''}`}
-                      </p>
-                      <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
-                        <button
-                          onClick={() => setPeriodTableFilter("period")}
-                          className={`text-xs px-3 py-1 rounded-md transition-colors ${periodTableFilter === "period" ? "bg-white text-blue-600 shadow-sm font-medium" : "text-gray-500 hover:text-gray-700"}`}
-                        >
-                          This Period
-                        </button>
-                        <button
-                          onClick={() => setPeriodTableFilter("all")}
-                          className={`text-xs px-3 py-1 rounded-md transition-colors ${periodTableFilter === "all" ? "bg-white text-blue-600 shadow-sm font-medium" : "text-gray-500 hover:text-gray-700"}`}
-                        >
-                          All Active
-                        </button>
-                      </div>
-                    </div>
-
-                    <SalesTargetTable
-                      title="Team Targets Assigned"
-                      targets={tableTargets}
-                      role="manager"
-                      onEdit={handleEditTarget}
-                      onDelete={handleDeleteTargetDirect}
-                      headerControls={
-                        <>
-                          <select value={tableTypeFilter} onChange={(e) => setTableTypeFilter(e.target.value)}
-                            className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
-                            <option value="all">All Types</option>
-                            <option value="by_value">By Value</option>
-                            <option value="by_clients">By Clients</option>
-                            <option value="by_products">By Products</option>
-                          </select>
-                          <select value={tableStatusFilter} onChange={(e) => setTableStatusFilter(e.target.value)}
-                            className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
-                            <option value="all">All Status</option>
-                            <option value="active">Active</option>
-                            <option value="completed">Completed</option>
-                            <option value="expired">Expired</option>
-                          </select>
-                          <select value={tableMemberFilter} onChange={(e) => setTableMemberFilter(e.target.value)}
-                            className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
-                            <option value="all">All Members</option>
-                            {allSubordinates.map((member) => (
-                              <option key={member.id} value={member.id}>{member.full_name || member.email}</option>
-                            ))}
-                          </select>
-                        </>
-                      }
-                    />
-                  </>
-                );
-              })()}
+                  })}
+                  role="manager"
+                  onEdit={handleEditTarget}
+                  onDelete={handleDeleteTargetDirect}
+                  headerControls={
+                    <>
+                      <select value={tableTypeFilter} onChange={(e) => setTableTypeFilter(e.target.value)}
+                        className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
+                        <option value="all">All Types</option>
+                        <option value="by_value">By Value</option>
+                        <option value="by_clients">By Clients</option>
+                        <option value="by_products">By Products</option>
+                      </select>
+                      <select value={tableStatusFilter} onChange={(e) => setTableStatusFilter(e.target.value)}
+                        className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
+                        <option value="all">All Status</option>
+                        <option value="active">Active</option>
+                        <option value="completed">Completed</option>
+                        <option value="expired">Expired</option>
+                      </select>
+                      <select value={tableMemberFilter} onChange={(e) => setTableMemberFilter(e.target.value)}
+                        className="text-xs border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500">
+                        <option value="all">All Members</option>
+                        {allSubordinates.map((member) => (
+                          <option key={member.id} value={member.id}>{member.full_name || member.email}</option>
+                        ))}
+                      </select>
+                    </>
+                  }
+                />
+              )}
             </div>
           )}
 
