@@ -3580,6 +3580,66 @@ export const salesTargetService = {
     }
   },
 
+  // Get target matching a date range period for a single user
+  async getTargetForPeriod({ userId, companyId, dateFrom, dateTo }) {
+    try {
+      const from = new Date(dateFrom);
+      const to   = new Date(dateTo);
+      const diffDays = Math.round((to - from) / (1000 * 60 * 60 * 24));
+
+      let preferredType = 'monthly';
+      if (diffDays <= 31)      preferredType = 'monthly';
+      else if (diffDays <= 92) preferredType = 'quarterly';
+      else                     preferredType = 'yearly';
+
+      let query = supabase
+        .from('sales_targets')
+        .select('id, target_amount, period_type, period_start, period_end, status, target_type, assigned_to, assigned_by')
+        .eq('assigned_to', userId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+
+      if (companyId) query = query.eq('company_id', companyId);
+
+      const { data: targets } = await query;
+
+      if (!targets?.length) return { monthly: null, yearly: null, forPeriod: null, allTargets: [], preferredType };
+
+      const forPeriod = targets.find(t =>
+        t.period_type === preferredType &&
+        t.period_start <= dateTo &&
+        t.period_end   >= dateFrom
+      ) || null;
+
+      const monthly = targets.find(t => t.period_type === 'monthly') || null;
+      const yearly  = targets.find(t => t.period_type === 'yearly')  || null;
+
+      return { monthly, yearly, forPeriod, allTargets: targets, preferredType };
+    } catch (err) {
+      console.error('Error in getTargetForPeriod:', err);
+      return { monthly: null, yearly: null, forPeriod: null, allTargets: [], preferredType: 'monthly' };
+    }
+  },
+
+  // Get aggregate team targets for a period
+  async getTeamTargetsForPeriod({ memberIds, companyId, dateFrom, dateTo }) {
+    if (!memberIds?.length) return { byMember: [], totalYearly: 0, totalPeriod: 0, membersWithPeriodTarget: 0, totalMembers: 0 };
+    try {
+      const results = await Promise.all(
+        memberIds.map(userId => this.getTargetForPeriod({ userId, companyId, dateFrom, dateTo }))
+      );
+
+      const totalYearly  = results.reduce((s, r) => s + parseFloat(r.yearly?.target_amount  || 0), 0);
+      const totalPeriod  = results.reduce((s, r) => s + parseFloat(r.forPeriod?.target_amount || 0), 0);
+      const membersWithPeriodTarget = results.filter(r => r.forPeriod !== null).length;
+
+      return { byMember: results, totalYearly, totalPeriod, membersWithPeriodTarget, totalMembers: memberIds.length };
+    } catch (err) {
+      console.error('Error in getTeamTargetsForPeriod:', err);
+      return { byMember: [], totalYearly: 0, totalPeriod: 0, membersWithPeriodTarget: 0, totalMembers: memberIds.length };
+    }
+  },
+
   calculateProductTargetProgress(productTargets = [], deals = [], ownerIds = null) {
     const ownerSet = ownerIds?.length ? new Set(ownerIds) : null;
 
