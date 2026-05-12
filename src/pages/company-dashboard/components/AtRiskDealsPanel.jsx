@@ -59,6 +59,7 @@ const AtRiskDealsPanel = ({ companyId }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [expanded, setExpanded] = useState(null);
+  const [showAll, setShowAll] = useState(false);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -78,8 +79,9 @@ const AtRiskDealsPanel = ({ companyId }) => {
     watch: deals.filter((d) => d.risk_level === "watch").length,
   };
 
-  const visible =
+  const filtered =
     filter === "all" ? deals : deals.filter((d) => d.risk_level === filter);
+  const visible = showAll ? filtered : filtered.slice(0, 8);
 
   const totalRisk = counts.critical + counts.warning + counts.watch;
 
@@ -278,6 +280,21 @@ const AtRiskDealsPanel = ({ companyId }) => {
           })
         )}
       </div>
+
+      {/* Show more / less */}
+      {!isLoading && filtered.length > 8 && (
+        <div className="border-t border-border">
+          <button
+            onClick={() => setShowAll((p) => !p)}
+            className="w-full py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors flex items-center justify-center gap-1.5"
+          >
+            <Icon name={showAll ? "ChevronUp" : "ChevronDown"} size={13} />
+            {showAll
+              ? t("common.showLess")
+              : `+${filtered.length - 8} ${t("atRisk.more")}`}
+          </button>
+        </div>
+      )}
 
       {/* Footer summary */}
       {!isLoading && totalRisk > 0 && (

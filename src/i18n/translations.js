@@ -2515,7 +2515,8 @@ export const translations = {
     // At-Risk Deals Panel
     atRisk: {
       title: "At-Risk Deals",
-      subtitle: "Deals needing your attention",
+      subtitle: "Action required",
+      more: "more",
       critical: "Critical",
       warning: "Warning",
       watch: "Watch",
@@ -5194,7 +5195,8 @@ export const translations = {
     // At-Risk Deals Panel
     atRisk: {
       title: "الصفقات المهددة",
-      subtitle: "الصفقات التي تحتاج انتباهك",
+      subtitle: "إجراء مطلوب",
+      more: "أكثر",
       critical: "حرج",
       warning: "تحذير",
       watch: "مراقبة",
