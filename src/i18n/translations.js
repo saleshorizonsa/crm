@@ -186,6 +186,9 @@ export const translations = {
       contactManagement: "Contact Management",
       teamManagement: "Team Management",
       adminDashboard: "Admin Dashboard",
+      leads: "Leads",
+      calendar: "Calendar",
+      forecast: "Forecast",
     },
 
     // Auth
@@ -1893,6 +1896,9 @@ export const translations = {
       contactManagement: "إدارة جهات الاتصال",
       teamManagement: "إدارة الفريق",
       adminDashboard: "لوحة الإدارة",
+      leads: "العملاء المحتملون",
+      calendar: "التقويم",
+      forecast: "التوقعات",
     },
 
     // Auth

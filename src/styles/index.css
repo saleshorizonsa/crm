@@ -1,7 +1,13 @@
 body {
   margin: 0;
   padding: 0;
-  font-family: Inter;
+  font-family: Inter, sans-serif;
+}
+
+/* Arabic font class — applied by LanguageContext when language = 'ar' */
+.font-arabic,
+[dir="rtl"] {
+  font-family: 'Cairo', sans-serif;
 }
 
 * {

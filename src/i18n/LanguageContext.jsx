@@ -11,38 +11,31 @@ export const useLanguage = () => {
   return context;
 };
 
+// Short alias used by components added after initial build
+export const useLang = useLanguage;
+
+const STORAGE_KEY = "jasco_language";
+
 export const LanguageProvider = ({ children }) => {
-  const [language, setLanguage] = useState(() => {
-    // Check localStorage first, then default to 'en'
-    return localStorage.getItem("language") || "en";
+  const [language, setLanguageState] = useState(() => {
+    return localStorage.getItem(STORAGE_KEY) || "en";
   });
 
-  const [direction, setDirection] = useState(() => {
-    const savedLang = localStorage.getItem("language") || "en";
-    return savedLang === "ar" ? "rtl" : "ltr";
-  });
+  const isRTL = language === "ar";
+  const direction = isRTL ? "rtl" : "ltr";
 
   useEffect(() => {
-    // Update localStorage when language changes
-    localStorage.setItem("language", language);
-
-    // Update direction
-    const newDirection = language === "ar" ? "rtl" : "ltr";
-    setDirection(newDirection);
-
-    // Update HTML attributes for RTL support
-    document.documentElement.setAttribute("dir", newDirection);
+    localStorage.setItem(STORAGE_KEY, language);
+    document.documentElement.setAttribute("dir", direction);
     document.documentElement.setAttribute("lang", language);
 
-    // Add/remove RTL class for styling
-    if (language === "ar") {
-      document.body.classList.add("rtl");
+    if (isRTL) {
+      document.body.classList.add("rtl", "font-arabic");
     } else {
-      document.body.classList.remove("rtl");
+      document.body.classList.remove("rtl", "font-arabic");
     }
-  }, [language]);
+  }, [language, isRTL, direction]);
 
-  // Get translation by key path (e.g., "common.save" or "dashboard.title")
   const t = (keyPath, params = {}) => {
     const keys = keyPath.split(".");
     let value = translations[language];
@@ -51,20 +44,19 @@ export const LanguageProvider = ({ children }) => {
       if (value && typeof value === "object" && key in value) {
         value = value[key];
       } else {
-        // Fallback to English if key not found
+        // Fallback to English
         value = translations["en"];
         for (const k of keys) {
           if (value && typeof value === "object" && k in value) {
             value = value[k];
           } else {
-            return keyPath; // Return key path if translation not found
+            return keyPath;
           }
         }
         break;
       }
     }
 
-    // Replace parameters like {count}
     if (typeof value === "string" && Object.keys(params).length > 0) {
       Object.entries(params).forEach(([param, paramValue]) => {
         value = value.replace(new RegExp(`\\{${param}\\}`, "g"), paramValue);
@@ -74,13 +66,14 @@ export const LanguageProvider = ({ children }) => {
     return value || keyPath;
   };
 
-  const changeLanguage = (newLanguage) => {
+  const setLanguage = (newLanguage) => {
     if (translations[newLanguage]) {
-      setLanguage(newLanguage);
+      setLanguageState(newLanguage);
     }
   };
 
-  const isRTL = direction === "rtl";
+  // Backward-compatible alias
+  const changeLanguage = setLanguage;
 
   return (
     <LanguageContext.Provider
@@ -89,6 +82,7 @@ export const LanguageProvider = ({ children }) => {
         direction,
         isRTL,
         t,
+        setLanguage,
         changeLanguage,
         availableLanguages: Object.keys(translations),
       }}

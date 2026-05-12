@@ -15,7 +15,7 @@ const Header = ({
   selectedCompany: propSelectedCompany,
 }) => {
   const { user, userProfile, company, signOut, changeCompany } = useAuth();
-  const { t } = useLanguage();
+  const { t, language, setLanguage, isRTL } = useLanguage();
   const navigate = useNavigate();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -67,10 +67,10 @@ const Header = ({
       icon: "LayoutDashboard",
     },
     { label: t("nav.pipeline"), path: "/sales-pipeline", icon: "TrendingUp" },
-    { label: "Leads",    path: "/lead-management", icon: "UserPlus"   },
-    { label: "Calendar", path: "/calendar",        icon: "CalendarDays"},
-    { label: "Forecast", path: "/forecast",        icon: "LineChart"   },
-    { label: "Reports",  path: "/reports",  icon: "FileBarChart" },
+    { label: t("nav.leads"),    path: "/lead-management", icon: "UserPlus"   },
+    { label: t("nav.calendar"), path: "/calendar",        icon: "CalendarDays"},
+    { label: t("nav.forecast"), path: "/forecast",        icon: "LineChart"   },
+    { label: t("nav.reports"),  path: "/reports",  icon: "FileBarChart" },
     { label: t("nav.clients"), path: "/contact-management", icon: "Users" },
     { label: t("nav.tasks"), path: "/task-management", icon: "ListTodo" },
   ];
@@ -217,7 +217,7 @@ const Header = ({
           </div>
 
           {/* Desktop Navigation */}
-          <nav className="hidden lg:flex items-center space-x-1 ml-8">
+          <nav className={`hidden lg:flex items-center space-x-1 ${isRTL ? "mr-8" : "ml-8"}`}>
             {navigationItems?.map((item) => (
               <Button
                 key={item?.path}
@@ -226,7 +226,7 @@ const Header = ({
                 onClick={() => handleNavigation(item?.path)}
                 className="transition-enterprise"
               >
-                <Icon name={item?.icon} size={16} className="mr-2" />
+                <Icon name={item?.icon} size={16} className={isRTL ? "ml-2" : "mr-2"} />
                 {item?.label}
               </Button>
             ))}
@@ -239,12 +239,12 @@ const Header = ({
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                 className="transition-enterprise"
               >
-                <Icon name="CircleEllipsis" size={16} className="mr-2" />
-                More
+                <Icon name="CircleEllipsis" size={16} className={isRTL ? "ml-2" : "mr-2"} />
+                {t("common.more") || "More"}
               </Button>
 
               {isMobileMenuOpen && (
-                <div className="absolute top-full left-0 mt-1 w-48 bg-popover border border-border rounded-md shadow-enterprise-md animate-slide-down z-200">
+                <div className={`absolute top-full mt-1 w-48 bg-popover border border-border rounded-md shadow-enterprise-md animate-slide-down z-200 ${isRTL ? "right-0" : "left-0"}`}>
                   <div className="py-1">
                     {secondaryItems?.map((item) => (
                       <button
@@ -252,7 +252,7 @@ const Header = ({
                         onClick={() => handleNavigation(item?.path)}
                         className="flex items-center w-full px-3 py-2 text-sm text-popover-foreground hover:bg-muted transition-enterprise"
                       >
-                        <Icon name={item?.icon} size={16} className="mr-3" />
+                        <Icon name={item?.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
                         {item?.label}
                       </button>
                     ))}
@@ -287,6 +287,25 @@ const Header = ({
             </div>
           )}
 
+          {/* Language Toggle */}
+          <button
+            onClick={() => setLanguage(language === "en" ? "ar" : "en")}
+            className="flex items-center gap-1.5 px-3 py-1.5 mr-2 rounded-lg border border-border text-xs font-medium hover:bg-muted transition-colors"
+            title={language === "en" ? "Switch to Arabic" : "Switch to English"}
+          >
+            {language === "en" ? (
+              <>
+                <span className="font-arabic">العربية</span>
+                <span className="text-muted-foreground">AR</span>
+              </>
+            ) : (
+              <>
+                <span>English</span>
+                <span className="text-muted-foreground">EN</span>
+              </>
+            )}
+          </button>
+
           {/* Notifications Icon */}
           <div className="relative mr-2">
             <Button
@@ -318,7 +337,7 @@ const Header = ({
             </Button>
 
             {isUserMenuOpen && (
-              <div className="absolute top-full right-0 mt-1 w-56 bg-popover border border-border rounded-md shadow-enterprise-md animate-slide-down z-200">
+              <div className={`absolute top-full mt-1 w-56 bg-popover border border-border rounded-md shadow-enterprise-md animate-slide-down z-200 ${isRTL ? "left-0" : "right-0"}`}>
                 <div className="px-3 py-2 border-b border-border">
                   <p className="text-sm font-medium text-popover-foreground">
                     {userProfile?.full_name || "Loading..."}
@@ -338,16 +357,16 @@ const Header = ({
                     onClick={handleAccountSettings}
                     className="flex items-center w-full px-3 py-2 text-sm text-popover-foreground hover:bg-muted transition-enterprise"
                   >
-                    <Icon name="Settings" size={16} className="mr-3" />
-                    Account Settings
+                    <Icon name="Settings" size={16} className={isRTL ? "ml-3" : "mr-3"} />
+                    {t("nav.settings") || "Account Settings"}
                   </button>
                   <div className="border-t border-border my-1"></div>
                   <button
                     onClick={handleSignOut}
                     className="flex items-center w-full px-3 py-2 text-sm text-popover-foreground hover:bg-muted transition-enterprise"
                   >
-                    <Icon name="LogOut" size={16} className="mr-3" />
-                    Sign Out
+                    <Icon name="LogOut" size={16} className={isRTL ? "ml-3" : "mr-3"} />
+                    {t("auth.signOut") || "Sign Out"}
                   </button>
                 </div>
               </div>
@@ -363,18 +382,18 @@ const Header = ({
             onClick={() => setIsMobileMenuOpen(false)}
           />
           <div className="fixed top-16 left-0 right-0 bg-background border-b border-border shadow-enterprise-lg animate-slide-down">
-            <nav className="px-4 py-4 space-y-2">
+            <nav className={`px-4 py-4 space-y-2 ${isRTL ? "text-right" : "text-left"}`}>
               {navigationItems?.map((item) => (
                 <button
                   key={item?.path}
                   onClick={() => handleNavigation(item?.path)}
-                  className={`flex items-center w-full px-3 py-2 text-sm rounded-md transition-enterprise ${
+                  className={`flex items-center w-full px-3 py-2 text-sm rounded-md transition-enterprise ${isRTL ? "flex-row-reverse" : ""} ${
                     currentPath === item?.path
                       ? "bg-primary text-primary-foreground"
                       : "text-foreground hover:bg-muted"
                   }`}
                 >
-                  <Icon name={item?.icon} size={16} className="mr-3" />
+                  <Icon name={item?.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
                   {item?.label}
                 </button>
               ))}
@@ -384,9 +403,9 @@ const Header = ({
                   <button
                     key={item?.path}
                     onClick={() => handleNavigation(item?.path)}
-                    className="flex items-center w-full px-3 py-2 text-sm text-muted-foreground hover:bg-muted rounded-md transition-enterprise"
+                    className={`flex items-center w-full px-3 py-2 text-sm text-muted-foreground hover:bg-muted rounded-md transition-enterprise ${isRTL ? "flex-row-reverse" : ""}`}
                   >
-                    <Icon name={item?.icon} size={16} className="mr-3" />
+                    <Icon name={item?.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
                     {item?.label}
                   </button>
                 ))}
