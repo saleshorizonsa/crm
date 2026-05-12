@@ -2493,6 +2493,25 @@ export const translations = {
       seeding: "Seeding…",
     },
 
+    // Sales Leaderboard
+    leaderboard: {
+      title: "Sales Leaderboard",
+      reps: "reps",
+      wonThisPeriod: "won this period",
+      teamTarget: "Team Target",
+      salesperson: "Salesperson",
+      revenue: "Revenue",
+      deals: "Deals",
+      rate: "Win Rate",
+      won: "won",
+      active: "active",
+      total: "total",
+      ofTarget: "of target",
+      noData: "No sales data yet",
+      noDataHint: "Deals will appear here once the team starts closing.",
+      showMore: "+{count} more",
+    },
+
     // At-Risk Deals Panel
     atRisk: {
       title: "At-Risk Deals",
@@ -5151,6 +5170,25 @@ export const translations = {
       deactivate: "تعطيل",
       activate: "تفعيل",
       seeding: "جار التحميل...",
+    },
+
+    // Sales Leaderboard
+    leaderboard: {
+      title: "لوحة المتصدرين",
+      reps: "مندوب",
+      wonThisPeriod: "تم الفوز في هذه الفترة",
+      teamTarget: "هدف الفريق",
+      salesperson: "مندوب المبيعات",
+      revenue: "الإيرادات",
+      deals: "الصفقات",
+      rate: "معدل الفوز",
+      won: "فاز",
+      active: "نشط",
+      total: "إجمالي",
+      ofTarget: "من الهدف",
+      noData: "لا توجد بيانات مبيعات بعد",
+      noDataHint: "ستظهر الصفقات هنا بمجرد أن يبدأ الفريق في الإغلاق.",
+      showMore: "+{count} أكثر",
     },
 
     // At-Risk Deals Panel

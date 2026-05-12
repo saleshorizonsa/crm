@@ -36,6 +36,7 @@ import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
 import ForecastAISummary from "./forecast/ForecastAISummary";
 import AtRiskDealsPanel from "./AtRiskDealsPanel";
+import SalesLeaderboard from "./SalesLeaderboard";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 
 // Employee-specific dashboards - use Enhanced versions for full features
@@ -1721,10 +1722,18 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         timePeriod={timePeriod}
       />
 
-      {/* At-Risk Deals */}
-      {selectedCompany?.id && (
-        <AtRiskDealsPanel companyId={selectedCompany.id} />
-      )}
+      {/* At-Risk Deals + Leaderboard */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        {selectedCompany?.id && (
+          <AtRiskDealsPanel companyId={selectedCompany.id} />
+        )}
+        <SalesLeaderboard
+          deals={filteredDeals}
+          employees={allEmployees}
+          targets={assignedTargetsWithProgress}
+          isLoading={isLoading}
+        />
+      </div>
 
       {/* Pipeline and Action Items */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
