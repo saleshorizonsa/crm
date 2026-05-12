@@ -1697,8 +1697,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             className="border border-gray-200 rounded-lg p-4"
                           >
                             <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm font-medium text-gray-900 capitalize">
-                                {target.period_type} Target
+                              <span className="text-sm font-medium text-gray-900">
+                                {getPeriodLabel()} Target
                               </span>
                               <span
                                 className={`text-xs px-2 py-1 rounded-full ${
@@ -1736,13 +1736,17 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                                 style={{ width: `${Math.min(progress, 100)}%` }}
                               />
                             </div>
-                            <div className="text-xs text-gray-500">
-                              {new Date(
-                                target.period_start,
-                              ).toLocaleDateString()}{" "}
-                              -{" "}
-                              {new Date(target.period_end).toLocaleDateString()}
-                            </div>
+                            {(selectedMonth !== null || selectedQuarter !== null) ? (
+                              <div className="text-xs text-gray-400 mt-1">
+                                Yearly target: {new Date(target.period_start).toLocaleDateString()} – {new Date(target.period_end).toLocaleDateString()} · {formatCurrency(target.target_amount)}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-500">
+                                {new Date(target.period_start).toLocaleDateString()}{" "}
+                                –{" "}
+                                {new Date(target.period_end).toLocaleDateString()}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
