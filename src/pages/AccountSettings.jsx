@@ -8,8 +8,10 @@ import NavigationBreadcrumbs from "./../components/ui/NavigationBreadcrumbs";
 import Icon from "./../components/AppIcon";
 import { settingsService } from "./../services/supabaseService";
 import { capitalize } from "utils/helper";
+import { useLanguage } from "./../i18n";
 
 const AccountSettings = () => {
+  const { t } = useLanguage();
   const { user, userProfile, refetchProfile } = useAuth();
   const { preferredCurrency, setPreferredCurrency } = useCurrency();
   const [isLoading, setIsLoading] = useState(false);
@@ -63,7 +65,7 @@ const AccountSettings = () => {
       }
     } catch (error) {
       console.error("Error loading settings:", error);
-      setMessage({ type: "error", text: "Failed to load settings." });
+      setMessage({ type: "error", text: t("settings.saveFailed") + "." });
     } finally {
       setIsLoading(false);
     }
@@ -115,10 +117,10 @@ const AccountSettings = () => {
       // Refresh profile
       await refetchProfile();
 
-      setMessage({ type: "success", text: "Settings saved successfully!" });
+      setMessage({ type: "success", text: t("settings.savedSuccess") });
     } catch (error) {
       console.error("Error saving settings:", error);
-      setMessage({ type: "error", text: "Failed to save settings." });
+      setMessage({ type: "error", text: t("settings.saveFailed") + "." });
     } finally {
       setIsSaving(false);
     }
@@ -144,18 +146,18 @@ const AccountSettings = () => {
             <div className="max-w-4xl mx-auto px-4 sm:px-6 md:px-8">
               <NavigationBreadcrumbs
                 items={[
-                  { label: "Dashboard", href: "/company-dashboard" },
-                  { label: "Account Settings", href: "/account-settings" },
+                  { label: t("nav.companyDashboard"), href: "/company-dashboard" },
+                  { label: t("settings.accountSettings"), href: "/account-settings" },
                 ]}
               />
 
               <div className="mt-6 bg-white shadow rounded-lg">
                 <div className="px-6 py-4 border-b border-gray-200">
                   <h1 className="text-xl font-semibold text-gray-900">
-                    Account Settings
+                    {t("settings.accountSettings")}
                   </h1>
                   <p className="text-sm text-gray-500 mt-1">
-                    Manage your account preferences and settings
+                    {t("dashboard.manageAccountSettings")}
                   </p>
                 </div>
 
@@ -186,28 +188,28 @@ const AccountSettings = () => {
                   {/* Profile Information */}
                   <div>
                     <h3 className="text-lg font-medium text-gray-900 mb-4">
-                      Profile Information
+                      {t("settings.profileSettings")}
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
                         <Input
-                          label="Full Name"
+                          label={t("settings.displayName")}
                           value={settings.full_name}
                           onChange={(e) =>
                             handleInputChange("full_name", e.target.value)
                           }
-                          placeholder="Enter your full name"
+                          placeholder={t("settings.displayName")}
                         />
                       </div>
                       <div>
                         <Input
-                          label="Email Address"
+                          label={t("common.email")}
                           value={settings.email}
                           disabled
-                          placeholder="Your email address"
+                          placeholder={t("common.email")}
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                          Email cannot be changed from here
+                          {t("accountSettings.emailCannotChange")}
                         </p>
                       </div>
                     </div>
@@ -216,16 +218,16 @@ const AccountSettings = () => {
                   {/* Notifications */}
                   <div>
                     <h3 className="text-lg font-medium text-gray-900 mb-4">
-                      Notifications
+                      {t("settings.notifications")}
                     </h3>
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="font-medium text-gray-900">
-                            Push Notifications
+                            {t("settings.pushNotifications")}
                           </div>
                           <div className="text-sm text-gray-500">
-                            Receive notifications in the app
+                            {t("settings.inAppNotificationsNote")}
                           </div>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer">
@@ -246,10 +248,10 @@ const AccountSettings = () => {
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="font-medium text-gray-900">
-                            Email Notifications
+                            {t("settings.emailNotifications")}
                           </div>
                           <div className="text-sm text-gray-500">
-                            Receive notifications via email
+                            {t("settings.emailNotificationsNote")}
                           </div>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer">
@@ -273,21 +275,21 @@ const AccountSettings = () => {
                   {/* Company Information (Read Only) */}
                   <div>
                     <h3 className="text-lg font-medium text-gray-900 mb-4">
-                      Company Information
+                      {t("accountSettings.companyInfo")}
                     </h3>
                     <div className="bg-gray-50 rounded-lg p-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <div className="text-sm font-medium text-gray-500">
-                            Company
+                            {t("common.company")}
                           </div>
                           <div className="text-sm text-gray-900">
-                            {userProfile.company?.name || "N/A"}
+                            {userProfile.company?.name || t("common.notAvailable")}
                           </div>
                         </div>
                         <div>
                           <div className="text-sm font-medium text-gray-500">
-                            Role
+                            {t("common.role")}
                           </div>
                           <div className="text-sm text-gray-900 capitalize">
                             {capitalize(userProfile.role)}
@@ -295,18 +297,18 @@ const AccountSettings = () => {
                         </div>
                         <div>
                           <div className="text-sm font-medium text-gray-500">
-                            Department
+                            {t("settings.department")}
                           </div>
                           <div className="text-sm text-gray-900">
-                            {userProfile.department || "N/A"}
+                            {userProfile.department || t("common.notAvailable")}
                           </div>
                         </div>
                         <div>
                           <div className="text-sm font-medium text-gray-500">
-                            Territory
+                            {t("accountSettings.territory")}
                           </div>
                           <div className="text-sm text-gray-900">
-                            {userProfile.territory || "N/A"}
+                            {userProfile.territory || t("common.notAvailable")}
                           </div>
                         </div>
                       </div>
@@ -327,12 +329,12 @@ const AccountSettings = () => {
                           size={16}
                           className="mr-2 animate-spin"
                         />
-                        Saving...
+                        {t("common.saving")}
                       </>
                     ) : (
                       <>
                         <Icon name="Save" size={16} className="mr-2" />
-                        Save Settings
+                        {t("settings.saveChanges")}
                       </>
                     )}
                   </Button>

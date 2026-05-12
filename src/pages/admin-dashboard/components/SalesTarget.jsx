@@ -3,6 +3,7 @@ import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
 import Select from "../../../components/ui/Select";
+import { useLanguage } from "../../../i18n";
 import ProductTargetReport from "../../../components/ProductTargetReport";
 import SalesTargetTable from "../../../components/SalesTargetTable";
 import {
@@ -21,6 +22,7 @@ import {
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
 
 const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
+  const { t } = useLanguage();
   const { company: authCompany } = useAuth();
   const company = propCompanyId ? { id: propCompanyId } : authCompany;
   const [targets, setTargets] = useState([]);
@@ -243,7 +245,7 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
       }
     } catch (error) {
       console.error("❌ Error loading sales targets:", error);
-      alert("Failed to load sales targets: " + (error.message || error));
+      alert(t("adminSalesTarget.loadFailed") + ": " + (error.message || error));
     } finally {
       setIsLoading(false);
     }
@@ -282,18 +284,14 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
       loadData();
     } catch (error) {
       console.error("❌ Error updating target:", error);
-      alert("Failed to update target: " + (error.message || error));
+      alert(t("adminSalesTarget.updateFailed") + ": " + (error.message || error));
     }
   };
 
   const handleDeleteTarget = async () => {
     if (!editingTarget?.id) return;
 
-    if (
-      !window.confirm(
-        "Are you sure you want to delete this sales target? This action cannot be undone."
-      )
-    ) {
+    if (!window.confirm(t("adminSalesTarget.deleteConfirm"))) {
       return;
     }
 
@@ -310,7 +308,7 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
       loadData();
     } catch (error) {
       console.error("❌ Error deleting target:", error);
-      alert("Failed to delete target: " + (error.message || error));
+      alert(t("adminSalesTarget.deleteFailed") + ": " + (error.message || error));
     }
   };
 
@@ -382,7 +380,7 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
 
   // Generate month options (current month and next 11 months)
   const monthOptions = [
-    { value: "all", label: "All Months" },
+    { value: "all", label: t("adminSalesTarget.allMonths") },
     ...Array.from({ length: 12 }, (_, i) => {
       const date = new Date();
       date.setMonth(date.getMonth() + i - 6); // 6 months back to 5 months forward
@@ -409,18 +407,18 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-card-foreground">
-            Sales Targets
+            {t("adminSalesTarget.title")}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            View and manage sales targets for all users
+            {t("adminSalesTarget.subtitle")}
           </p>
         </div>
         <div className="flex gap-3">
           <div className="w-56">
             <Select
-              label="Company"
+              label={t("common.company")}
               options={[
-                { value: "all", label: "All Companies" },
+                { value: "all", label: t("adminCompanyMgmt.allCompanies") },
                 ...companies.map((c) => ({ value: c.id, label: c.name })),
               ]}
               value={selectedCompany}
@@ -429,7 +427,7 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
           </div>
           <div className="w-56">
             <Select
-              label="Month"
+              label={t("dashboard.month")}
               options={monthOptions}
               value={selectedMonth}
               onChange={(value) => setSelectedMonth(value)}
@@ -439,7 +437,7 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
       </div>
 
       <ProductTargetReport
-        title="Product-wise Revenue Contribution and Target Achievement"
+        title={t("adminSalesTarget.productWiseTitle")}
         productTargets={companyProductPerformance}
         formatCurrency={(amount) =>
           `${targets[0]?.currency || ""} ${Number(amount || 0).toLocaleString()}`
@@ -448,7 +446,7 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
 
       {/* Targets Table */}
       <SalesTargetTable
-        title="User-wise Sales Target Progress"
+        title={t("adminSalesTarget.userWiseTitle")}
         targets={targets}
         quantityRows={aggregatedQuantityRows}
         role="admin"
@@ -461,7 +459,7 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
           <div className="bg-card border border-border rounded-lg shadow-lg w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b border-border">
               <h3 className="text-lg font-semibold text-card-foreground">
-                Edit Sales Target
+                {t("adminSalesTarget.editTitle")}
               </h3>
               <button
                 onClick={() => setShowEditModal(false)}
@@ -473,7 +471,7 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
 
             <div className="p-6 space-y-4">
               <Input
-                label="Target Amount"
+                label={t("adminSalesTarget.targetAmount")}
                 type="number"
                 min="0"
                 step="0.01"
@@ -503,7 +501,7 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
 
               <div>
                 <label className="block text-sm font-medium text-card-foreground mb-2">
-                  Notes
+                  {t("common.notes")}
                 </label>
                 <textarea
                   className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
@@ -522,7 +520,7 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
             <div className="flex justify-between gap-3 p-6 border-t border-border">
               <Button variant="destructive" onClick={handleDeleteTarget}>
                 <Icon name="Trash2" size={16} className="mr-2" />
-                Delete Target
+                {t("adminSalesTarget.deleteTarget")}
               </Button>
               <div className="flex gap-3">
                 <Button
@@ -531,7 +529,7 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
                 >
                   Cancel
                 </Button>
-                <Button onClick={handleSaveTarget}>Save Changes</Button>
+                <Button onClick={handleSaveTarget}>{t("adminSalesTarget.saveChanges")}</Button>
               </div>
             </div>
           </div>

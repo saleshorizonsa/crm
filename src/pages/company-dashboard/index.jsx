@@ -6,14 +6,16 @@ import { useAuth } from "../../contexts/AuthContext";
 import DateRangePicker from "../../components/ui/DateRangePicker";
 import { useDateRange } from "../../contexts/DateRangeContext";
 import { format, parseISO } from "date-fns";
+import { useLanguage } from "../../i18n";
 
 const CompanyDashboard = () => {
+  const { t } = useLanguage();
   const { company, user, userProfile } = useAuth();
   const { dateRange, setRange } = useDateRange();
   const [selectedCompany, setSelectedCompany] = useState(company);
 
   const periodLabel = (() => {
-    if (dateRange.isAllTime || (!dateRange.from && !dateRange.to)) return "All time";
+    if (dateRange.isAllTime || (!dateRange.from && !dateRange.to)) return t("dashboard.allTime");
     try {
       const from = format(parseISO(dateRange.from), "d MMM yyyy");
       const to   = format(parseISO(dateRange.to),   "d MMM yyyy");
@@ -50,10 +52,10 @@ const CompanyDashboard = () => {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-semibold text-gray-900 mb-2">
-            No Company Found
+            {t("dashboard.noCompanyFound")}
           </h2>
           <p className="text-gray-600">
-            Please contact your administrator to assign you to a company.
+            {t("dashboard.contactAdminForCompany")}
           </p>
         </div>
       </div>
@@ -76,11 +78,10 @@ const CompanyDashboard = () => {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <h2 className="text-xl font-semibold text-gray-900 mb-2">
-              No Companies Available
+              {t("dashboard.noCompaniesAvailable")}
             </h2>
             <p className="text-gray-600">
-              Please create a company first or select one from the dropdown
-              above.
+              {t("dashboard.createCompanyFirst")}
             </p>
           </div>
         </div>
@@ -99,13 +100,13 @@ const CompanyDashboard = () => {
           <div className="py-6">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
               <NavigationBreadcrumbs
-                items={[{ label: "Dashboard", href: "/company-dashboard" }]}
+                items={[{ label: t("nav.companyDashboard"), href: "/company-dashboard" }]}
               />
 
               {/* Period selector bar */}
               <div className="flex items-center justify-between mt-4 mb-6 px-1">
                 <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <span className="font-medium text-gray-700">Viewing:</span>
+                  <span className="font-medium text-gray-700">{t("dashboard.viewing")}:</span>
                   <span>{periodLabel}</span>
                 </div>
                 <DateRangePicker onChange={setRange} />

@@ -4982,19 +4982,22 @@ export const forecastService = {
       let dealsQuery = supabase
         .from("deals")
         .select(
-          `id, title, stage, amount, expected_close_date, owner_id, company_id,
+          `id, title, stage, amount, expected_close_date, closed_at, owner_id, company_id,
            contact:contacts!contact_id(id, first_name, last_name, company_name),
            owner:users!owner_id(id, full_name)`,
         )
         .neq("stage", "lost");
 
       // Scope to period when one is set:
-      //   • Won deals  → only those closing within [periodStart, periodEnd] (for accurate KPI attainment)
+      //   • Won deals  → only those whose closed_at falls within [periodStart, periodEnd].
+      //                  We use closed_at (the actual close timestamp) rather than
+      //                  expected_close_date because deals are often won without ever
+      //                  setting an expected close date, or with a date in a different month.
       //   • Open deals → ALL of them regardless of close date (needed for the 12-week projection)
       // When isAllTime (no period), the outer .neq("stage","lost") already returns every non-lost deal.
       if (periodStart && periodEnd) {
         dealsQuery = dealsQuery.or(
-          `and(stage.eq.won,expected_close_date.gte.${periodStart},expected_close_date.lte.${periodEnd}),` +
+          `and(stage.eq.won,closed_at.gte.${periodStart},closed_at.lte.${periodEnd}),` +
             `stage.neq.won`,
         );
       }
@@ -5008,6 +5011,8 @@ export const forecastService = {
       // ── 3. Fetch active sales target overlapping this period ───────────
       // Overlap condition: target.period_start <= periodEnd
       //               AND target.period_end   >= periodStart
+      // When isAllTime (periodStart/periodEnd are null) we skip the overlap
+      // filter and just return the most recent active target.
       let targetQuery = supabase
         .from("sales_targets")
         .select(
@@ -5015,10 +5020,14 @@ export const forecastService = {
         )
         .eq("assigned_to", userId)
         .eq("status", "active")
-        .lte("period_start", periodEnd)
-        .gte("period_end", periodStart)
         .order("period_start", { ascending: false })
         .limit(1);
+
+      if (periodStart && periodEnd) {
+        targetQuery = targetQuery
+          .lte("period_start", periodEnd)
+          .gte("period_end", periodStart);
+      }
 
       if (companyId) targetQuery = targetQuery.eq("company_id", companyId);
 

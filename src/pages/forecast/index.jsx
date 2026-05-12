@@ -15,6 +15,7 @@ import ForecastDealTable  from "./components/ForecastDealTable";
 import ProjectionChart    from "../company-dashboard/components/forecast/ProjectionChart";
 import ForecastAISummary  from "../company-dashboard/components/forecast/ForecastAISummary";
 import { useCurrency }    from "../../contexts/CurrencyContext";
+import { useLanguage }   from "../../i18n";
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ const PageSkeleton = () => (
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const ForecastPage = () => {
+  const { t } = useLanguage();
   const { user, userProfile, company } = useAuth();
   const { preferredCurrency } = useCurrency();
 
@@ -88,8 +90,8 @@ const ForecastPage = () => {
   const targetAmount = rawData.target?.target_amount ?? 0;
 
   const breadcrumbs = [
-    { label: "Dashboard", path: "/company-dashboard" },
-    { label: "Forecast" },
+    { label: t("forecastPage.breadcrumbDashboard"), path: "/company-dashboard" },
+    { label: t("forecastPage.breadcrumbForecast") },
   ];
 
   return (
@@ -103,9 +105,9 @@ const ForecastPage = () => {
 
           <div className="flex flex-wrap items-start justify-between gap-4 mt-3">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Sales Forecast</h1>
+              <h1 className="text-2xl font-bold text-foreground">{t("forecastPage.title")}</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Advanced pipeline analytics, AI predictions &amp; insights
+                {t("forecastPage.subtitle")}
               </p>
             </div>
 
@@ -114,7 +116,7 @@ const ForecastPage = () => {
               {targetAmount > 0 && (
                 <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 border border-violet-200 text-xs font-medium text-violet-700">
                   <Icon name="Target" size={12} />
-                  Target active
+                  {t("forecastPage.targetActive")}
                 </div>
               )}
 
@@ -126,9 +128,9 @@ const ForecastPage = () => {
         {!dateRange.from && !dateRange.isAllTime && !isLoading && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Icon name="Calendar" size={48} className="text-muted-foreground mb-3" />
-            <p className="text-lg font-medium text-card-foreground mb-1">Select a period</p>
+            <p className="text-lg font-medium text-card-foreground mb-1">{t("forecastPage.selectPeriod")}</p>
             <p className="text-sm text-muted-foreground">
-              Choose a date range above to view your forecast
+              {t("forecastPage.selectPeriodHint")}
             </p>
           </div>
         )}
@@ -141,9 +143,9 @@ const ForecastPage = () => {
           <div className="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
             <Icon name="AlertCircle" size={20} className="flex-shrink-0" />
             <div>
-              <p className="font-medium">Failed to load forecast data</p>
+              <p className="font-medium">{t("forecastPage.loadFailed")}</p>
               <p className="text-sm opacity-80">
-                {typeof fetchError === "string" ? fetchError : "Please try refreshing the page."}
+                {typeof fetchError === "string" ? fetchError : t("forecastPage.tryRefreshing")}
               </p>
             </div>
           </div>

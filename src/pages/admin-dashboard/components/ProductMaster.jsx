@@ -5,8 +5,10 @@ import Input from "components/ui/Input";
 import { adminService } from "../../../services/supabaseService";
 import ProductModal from "./ProductModal";
 import ProductUploadModal from "./ProductUploadModal";
+import { useLanguage } from "../../../i18n";
 
 const ProductMaster = () => {
+  const { t } = useLanguage();
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -67,11 +69,11 @@ const ProductMaster = () => {
   };
 
   const handleDelete = async (productId) => {
-    if (!confirm("Are you sure you want to delete this product?")) return;
+    if (!confirm(t("adminProductMaster.deleteConfirm"))) return;
 
     const { error } = await adminService.deleteProduct(productId);
     if (error) {
-      alert("Failed to delete product: " + error.message);
+      alert(t("adminProductMaster.deleteFailed") + ": " + error.message);
     } else {
       loadProducts();
     }
@@ -114,7 +116,7 @@ const ProductMaster = () => {
             />
             <Input
               type="text"
-              placeholder="Search products by material, description, or group..."
+              placeholder={t("adminProductMaster.searchPlaceholder")}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -125,11 +127,11 @@ const ProductMaster = () => {
         <div className="flex gap-2">
           <Button onClick={() => setShowUploadModal(true)} variant="outline">
             <Icon name="Upload" size={16} />
-            Upload CSV
+            {t("adminProductMaster.uploadCSV")}
           </Button>
           <Button onClick={handleAdd}>
             <Icon name="Plus" size={16} />
-            Add Product
+            {t("adminProductMaster.addProduct")}
           </Button>
         </div>
       </div>
@@ -143,7 +145,7 @@ const ProductMaster = () => {
             </div>
             <div>
               <p className="text-2xl font-bold">{products.length}</p>
-              <p className="text-sm text-muted-foreground">Total Products</p>
+              <p className="text-sm text-muted-foreground">{t("adminProductMaster.totalProducts")}</p>
             </div>
           </div>
         </div>
@@ -157,7 +159,7 @@ const ProductMaster = () => {
               <p className="text-2xl font-bold">
                 {products.filter((p) => p.is_active).length}
               </p>
-              <p className="text-sm text-muted-foreground">Active Products</p>
+              <p className="text-sm text-muted-foreground">{t("adminProductMaster.activeProducts")}</p>
             </div>
           </div>
         </div>
@@ -171,7 +173,7 @@ const ProductMaster = () => {
               <p className="text-2xl font-bold">
                 {products.filter((p) => !p.is_active).length}
               </p>
-              <p className="text-sm text-muted-foreground">Inactive Products</p>
+              <p className="text-sm text-muted-foreground">{t("adminProductMaster.inactiveProducts")}</p>
             </div>
           </div>
         </div>
@@ -184,31 +186,31 @@ const ProductMaster = () => {
             <thead className="bg-muted">
               <tr>
                 <th className="text-left px-4 py-3 text-sm font-medium">
-                  Material
+                  {t("adminProductMaster.material")}
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-medium">
-                  Description
+                  {t("common.description")}
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-medium">
-                  Material Group
+                  {t("adminProductMaster.materialGroup")}
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-medium">
-                  Base UOM
+                  {t("adminProductMaster.baseUOM")}
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-medium">
-                  Price/TON
+                  {t("adminProductMaster.pricePerTon")}
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-medium">
-                  Price/PC
+                  {t("adminProductMaster.pricePerPC")}
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-medium">
-                  Price/Meter
+                  {t("adminProductMaster.pricePerMeter")}
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-medium">
-                  Status
+                  {t("common.status")}
                 </th>
                 <th className="text-left px-4 py-3 text-sm font-medium">
-                  Actions
+                  {t("common.actions")}
                 </th>
               </tr>
             </thead>
@@ -222,7 +224,7 @@ const ProductMaster = () => {
                       className="mx-auto text-muted-foreground mb-4"
                     />
                     <p className="text-muted-foreground">
-                      {searchTerm ? "No products found" : "No products yet"}
+                      {searchTerm ? t("adminProductMaster.noProductsFound") : t("adminProductMaster.noProductsFound")}
                     </p>
                   </td>
                 </tr>
@@ -262,12 +264,12 @@ const ProductMaster = () => {
                         {product.is_active ? (
                           <>
                             <Icon name="CheckCircle" size={12} />
-                            Active
+                            {t("common.active")}
                           </>
                         ) : (
                           <>
                             <Icon name="XCircle" size={12} />
-                            Inactive
+                            {t("common.inactive")}
                           </>
                         )}
                       </span>
@@ -278,7 +280,7 @@ const ProductMaster = () => {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleView(product)}
-                          title="View Product"
+                          title={t("adminProductMaster.viewProduct")}
                         >
                           <Icon name="Eye" size={16} className="text-blue-500" />
                         </Button>
@@ -286,7 +288,7 @@ const ProductMaster = () => {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleEdit(product)}
-                          title="Edit Product"
+                          title={t("adminProductMaster.editProduct")}
                         >
                           <Icon name="Pencil" size={16} className="text-amber-500" />
                         </Button>
@@ -294,7 +296,7 @@ const ProductMaster = () => {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleDelete(product.id)}
-                          title="Delete Product"
+                          title={t("adminProductMaster.deleteProduct")}
                         >
                           <Icon
                             name="Trash2"

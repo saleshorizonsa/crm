@@ -10,13 +10,10 @@ import MeetingModal from "./components/MeetingModal";
 import { useAuth } from "../../contexts/AuthContext";
 import { meetingService } from "../../services/meetingService";
 import { supabase } from "../../lib/supabase";
-
-const MONTHS = [
-  "January","February","March","April","May","June",
-  "July","August","September","October","November","December",
-];
+import { useLanguage } from "../../i18n";
 
 const CalendarPage = () => {
+  const { t } = useLanguage();
   const { user, userProfile, company } = useAuth();
   const location = useLocation();
 
@@ -188,9 +185,13 @@ const CalendarPage = () => {
     }
   };
 
-  if (!user) return <div>Loading…</div>;
+  if (!user) return <div>{t("common.loading")}</div>;
 
-  const monthLabel = `${MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+  const MONTH_KEYS = [
+    "january","february","march","april","may","june",
+    "july","august","september","october","november","december",
+  ];
+  const monthLabel = `${t(`time.${MONTH_KEYS[currentDate.getMonth()]}`)} ${currentDate.getFullYear()}`;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -203,25 +204,25 @@ const CalendarPage = () => {
           <div>
             <NavigationBreadcrumbs
               items={[
-                { label: "Dashboard", href: "/company-dashboard" },
-                { label: "Calendar",  href: "/calendar" },
+                { label: t("calendarPage.breadcrumbDashboard"), href: "/company-dashboard" },
+                { label: t("calendarPage.breadcrumbCalendar"),  href: "/calendar" },
               ]}
             />
-            <h1 className="text-2xl font-semibold text-gray-900 mt-1">Calendar</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Meetings and scheduling</p>
+            <h1 className="text-2xl font-semibold text-gray-900 mt-1">{t("calendarPage.title")}</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">{t("calendarPage.subtitle")}</p>
           </div>
           <Button onClick={() => handleNewMeeting()} className="gap-2 flex-shrink-0">
-            <Icon name="Plus" size={15} />Schedule Meeting
+            <Icon name="Plus" size={15} />{t("calendarPage.scheduleMeeting")}
           </Button>
         </div>
 
         {/* Stats bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: "Today",     value: stats.today,     icon: "CalendarCheck", color: "text-blue-600",   bg: "bg-blue-50"  },
-            { label: "This week", value: stats.upcoming,  icon: "Clock",         color: "text-amber-600",  bg: "bg-amber-50" },
-            { label: "Scheduled", value: stats.total,     icon: "Calendar",      color: "text-primary",    bg: "bg-primary/10"},
-            { label: "Completed", value: stats.completed, icon: "CheckCircle2",  color: "text-green-600",  bg: "bg-green-50" },
+            { label: t("calendarPage.today"),     value: stats.today,     icon: "CalendarCheck", color: "text-blue-600",   bg: "bg-blue-50"  },
+            { label: t("calendarPage.thisWeek"),  value: stats.upcoming,  icon: "Clock",         color: "text-amber-600",  bg: "bg-amber-50" },
+            { label: t("calendarPage.scheduled"), value: stats.total,     icon: "Calendar",      color: "text-primary",    bg: "bg-primary/10"},
+            { label: t("calendarPage.completed"), value: stats.completed, icon: "CheckCircle2",  color: "text-green-600",  bg: "bg-green-50" },
           ].map(({ label, value, icon, color, bg }) => (
             <div key={label} className="bg-card border border-border rounded-lg p-4 flex items-center gap-3">
               <div className={`w-10 h-10 ${bg} rounded-lg flex items-center justify-center flex-shrink-0`}>
@@ -250,7 +251,7 @@ const CalendarPage = () => {
               className="p-1.5 rounded-md hover:bg-accent border border-border text-muted-foreground hover:text-foreground transition-colors">
               <Icon name="ChevronRight" size={16} />
             </button>
-            <Button variant="outline" size="sm" onClick={handleToday} className="ml-1">Today</Button>
+            <Button variant="outline" size="sm" onClick={handleToday} className="ml-1">{t("calendarPage.today")}</Button>
           </div>
 
           {/* View + filter */}
@@ -260,10 +261,10 @@ const CalendarPage = () => {
               onChange={(e) => setStatusFilter(e.target.value)}
               className="px-3 py-1.5 border border-border rounded-md bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary h-9"
             >
-              <option value="">All statuses</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="">{t("calendarPage.allStatuses")}</option>
+              <option value="scheduled">{t("calendarPage.scheduled")}</option>
+              <option value="completed">{t("calendarPage.completed")}</option>
+              <option value="cancelled">{t("calendarPage.cancelled")}</option>
             </select>
             <div className="flex border border-border rounded-md overflow-hidden">
               {[
@@ -290,10 +291,10 @@ const CalendarPage = () => {
         {selectedDate && (
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">
-              Showing: <strong>{new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric" })}</strong>
+              {t("calendarPage.showing")} <strong>{new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric" })}</strong>
             </span>
             <button onClick={() => setSelectedDate(null)}
-              className="text-xs text-primary underline">Clear</button>
+              className="text-xs text-primary underline">{t("calendarPage.clearDate")}</button>
           </div>
         )}
 
@@ -320,14 +321,14 @@ const CalendarPage = () => {
               <div className="bg-card border border-border rounded-xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-border flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-foreground">
-                    {selectedDate ? "Day meetings" : "Upcoming"}
+                    {selectedDate ? t("calendarPage.dayMeetings") : t("calendarPage.upcoming")}
                   </h3>
                   {selectedDate && (
                     <button
                       onClick={() => handleNewMeeting(selectedDate)}
                       className="text-xs text-primary hover:underline flex items-center gap-1"
                     >
-                      <Icon name="Plus" size={11} />Add
+                      <Icon name="Plus" size={11} />{t("calendarPage.add")}
                     </button>
                   )}
                 </div>
@@ -335,21 +336,21 @@ const CalendarPage = () => {
                   <MeetingList
                     meetings={selectedDate ? visibleMeetings : upcomingMeetings}
                     onMeetingClick={handleMeetingClick}
-                    emptyMessage={selectedDate ? "No meetings on this day" : "No upcoming meetings"}
+                    emptyMessage={selectedDate ? t("calendarPage.noMeetingsDay") : t("calendarPage.noUpcomingMeetings")}
                   />
                 </div>
               </div>
 
               {/* Legend */}
               <div className="bg-card border border-border rounded-xl p-4">
-                <p className="text-xs font-semibold text-muted-foreground mb-2.5 uppercase tracking-wider">Legend</p>
+                <p className="text-xs font-semibold text-muted-foreground mb-2.5 uppercase tracking-wider">{t("calendarPage.legend")}</p>
                 <div className="space-y-1.5">
                   {[
-                    { color: "bg-blue-500",   label: "Meeting"   },
-                    { color: "bg-green-500",  label: "Call"      },
-                    { color: "bg-purple-500", label: "Demo"      },
-                    { color: "bg-orange-500", label: "Follow-up" },
-                    { color: "bg-gray-400",   label: "Other"     },
+                    { color: "bg-blue-500",   label: t("calendarPage.meeting")  },
+                    { color: "bg-green-500",  label: t("calendarPage.call")     },
+                    { color: "bg-purple-500", label: t("calendarPage.demo")     },
+                    { color: "bg-orange-500", label: t("calendarPage.followUp") },
+                    { color: "bg-gray-400",   label: t("calendarPage.other")    },
                   ].map((item) => (
                     <div key={item.label} className="flex items-center gap-2">
                       <div className={`w-2.5 h-2.5 rounded-full ${item.color}`} />
@@ -366,7 +367,7 @@ const CalendarPage = () => {
             <MeetingList
               meetings={selectedDate ? visibleMeetings : upcomingMeetings}
               onMeetingClick={handleMeetingClick}
-              emptyMessage="No meetings match current filters"
+              emptyMessage={t("calendarPage.noMeetingsFilter")}
             />
           </div>
         )}

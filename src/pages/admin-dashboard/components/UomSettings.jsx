@@ -3,8 +3,10 @@ import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
 import Input from "components/ui/Input";
 import { uomService } from "services/supabaseService";
+import { useLanguage } from "../../../i18n";
 
 const UomSettings = () => {
+  const { t } = useLanguage();
   const [uomTypes, setUomTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -44,7 +46,7 @@ const UomSettings = () => {
 
   const handleAddUom = async () => {
     if (!newUom.value.trim() || !newUom.label.trim()) {
-      alert("Please fill in both Value and Label fields");
+      alert(t("adminUomSettings.fillRequired"));
       return;
     }
 
@@ -61,9 +63,9 @@ const UomSettings = () => {
 
     if (createError) {
       if (createError.code === "23505") {
-        alert("This UOM value already exists");
+        alert(t("adminUomSettings.alreadyExists"));
       } else {
-        alert("Failed to create UOM type: " + createError.message);
+        alert(t("adminUomSettings.createFailed") + ": " + createError.message);
       }
     } else {
       setUomTypes([...uomTypes, data]);
@@ -86,7 +88,7 @@ const UomSettings = () => {
 
   const handleSaveEdit = async (uom) => {
     if (!editForm.label.trim()) {
-      alert("Label cannot be empty");
+      alert(t("adminUomSettings.labelRequired"));
       return;
     }
 
@@ -99,7 +101,7 @@ const UomSettings = () => {
     );
 
     if (updateError) {
-      alert("Failed to update UOM type: " + updateError.message);
+      alert(t("adminUomSettings.updateFailed") + ": " + updateError.message);
     } else {
       setUomTypes(
         uomTypes.map((u) =>
@@ -120,7 +122,7 @@ const UomSettings = () => {
     });
 
     if (updateError) {
-      alert("Failed to update UOM status: " + updateError.message);
+      alert(t("adminUomSettings.updateFailed") + ": " + updateError.message);
     } else {
       setUomTypes(
         uomTypes.map((u) =>
@@ -155,7 +157,7 @@ const UomSettings = () => {
     const { error: deleteError } = await uomService.deleteUomType(uom.id);
 
     if (deleteError) {
-      alert("Failed to delete UOM type: " + deleteError.message);
+      alert(t("adminUomSettings.deleteFailed") + ": " + deleteError.message);
     } else {
       setUomTypes(uomTypes.filter((u) => u.id !== uom.id));
     }
@@ -211,7 +213,7 @@ const UomSettings = () => {
     return (
       <div className="p-6 flex items-center justify-center">
         <Icon name="Loader2" className="animate-spin text-primary" size={24} />
-        <span className="ml-2">Loading UOM settings...</span>
+        <span className="ml-2">{t("adminUomSettings.loading")}</span>
       </div>
     );
   }
@@ -221,10 +223,9 @@ const UomSettings = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold">Unit of Measure (UOM) Types</h2>
+          <h2 className="text-xl font-semibold">{t("adminUomSettings.title")}</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage the unit of measure options available when adding products to
-            deals
+            {t("adminUomSettings.subtitle")}
           </p>
         </div>
         <Button
@@ -233,7 +234,7 @@ const UomSettings = () => {
           className="gap-2"
         >
           <Icon name="Plus" size={16} />
-          Add UOM
+          {t("adminUomSettings.addButton")}
         </Button>
       </div>
 
@@ -247,11 +248,11 @@ const UomSettings = () => {
       {/* Add New UOM Form */}
       {showAddForm && (
         <div className="bg-card border border-border rounded-lg p-4">
-          <h3 className="font-medium mb-4">Add New UOM Type</h3>
+          <h3 className="font-medium mb-4">{t("adminUomSettings.addFormTitle")}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium mb-1 block">
-                Value (Code)
+                {t("adminUomSettings.valueLabel")}
               </label>
               <Input
                 placeholder="e.g., ltr, kg, m"
@@ -262,12 +263,12 @@ const UomSettings = () => {
                 className="w-full"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Lowercase, no spaces. Used internally.
+                {t("adminUomSettings.valueHint")}
               </p>
             </div>
             <div>
               <label className="text-sm font-medium mb-1 block">
-                Label (Display Name)
+                {t("adminUomSettings.labelLabel")}
               </label>
               <Input
                 placeholder="e.g., LTR (Litres)"
@@ -278,7 +279,7 @@ const UomSettings = () => {
                 className="w-full"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Shown to users in dropdowns.
+                {t("adminUomSettings.labelHint")}
               </p>
             </div>
           </div>
@@ -300,10 +301,10 @@ const UomSettings = () => {
                     className="animate-spin mr-2"
                     size={16}
                   />
-                  Adding...
+                  {t("adminUomSettings.adding")}
                 </>
               ) : (
-                "Add UOM"
+                t("adminUomSettings.addButton")
               )}
             </Button>
           </div>
@@ -316,11 +317,11 @@ const UomSettings = () => {
           <thead>
             <tr className="bg-muted/50 border-b border-border">
               <th className="text-left p-4 font-medium text-sm w-12">#</th>
-              <th className="text-left p-4 font-medium text-sm">Value</th>
-              <th className="text-left p-4 font-medium text-sm">Label</th>
-              <th className="text-left p-4 font-medium text-sm">Status</th>
-              <th className="text-left p-4 font-medium text-sm">Usage</th>
-              <th className="text-right p-4 font-medium text-sm">Actions</th>
+              <th className="text-left p-4 font-medium text-sm">{t("adminUomSettings.valueHeader")}</th>
+              <th className="text-left p-4 font-medium text-sm">{t("adminUomSettings.labelHeader")}</th>
+              <th className="text-left p-4 font-medium text-sm">{t("common.status")}</th>
+              <th className="text-left p-4 font-medium text-sm">{t("adminUomSettings.usageHeader")}</th>
+              <th className="text-right p-4 font-medium text-sm">{t("common.actions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -380,11 +381,11 @@ const UomSettings = () => {
                         : "bg-muted text-muted-foreground hover:bg-muted/80"
                     }`}
                   >
-                    {uom.is_active ? "Active" : "Inactive"}
+                    {uom.is_active ? t("common.active") : t("common.inactive")}
                   </button>
                 </td>
                 <td className="p-4 text-sm text-muted-foreground">
-                  {usageCount[uom.value] || 0} products
+                  {usageCount[uom.value] || 0} {t("adminUomSettings.productsUsage")}
                 </td>
                 <td className="p-4">
                   <div className="flex items-center justify-end gap-2">
@@ -410,7 +411,7 @@ const UomSettings = () => {
                               size={14}
                             />
                           ) : (
-                            "Save"
+                            t("common.save")
                           )}
                         </Button>
                       </>
@@ -432,8 +433,8 @@ const UomSettings = () => {
                           className="text-error hover:text-error hover:bg-error/10"
                           title={
                             (usageCount[uom.value] || 0) > 0
-                              ? "Cannot delete - in use"
-                              : "Delete UOM"
+                              ? t("adminUomSettings.cannotDeleteInUse")
+                              : t("common.delete")
                           }
                         >
                           <Icon name="Trash2" size={14} />
@@ -450,7 +451,7 @@ const UomSettings = () => {
                   colSpan={6}
                   className="p-8 text-center text-muted-foreground"
                 >
-                  No UOM types defined. Click "Add UOM" to create one.
+                  {t("adminUomSettings.noUOMDefined")}
                 </td>
               </tr>
             )}
@@ -462,12 +463,9 @@ const UomSettings = () => {
       <div className="bg-info/10 p-4 rounded-lg flex items-start gap-3">
         <Icon name="Info" className="text-info mt-0.5" size={20} />
         <div className="text-sm">
-          <p className="font-medium text-info">About UOM Types</p>
+          <p className="font-medium text-info">{t("adminUomSettings.aboutTitle")}</p>
           <p className="text-muted-foreground mt-1">
-            UOM types are used when adding products to deals. Inactive types
-            won't appear in the selection dropdown but existing products using
-            them will still display correctly. You cannot delete a UOM type that
-            is in use - deactivate it instead.
+            {t("adminUomSettings.aboutInfo")}
           </p>
         </div>
       </div>

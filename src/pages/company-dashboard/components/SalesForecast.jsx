@@ -98,7 +98,8 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
 
   // Fetch deals and win rates in parallel
   useEffect(() => {
-    if (!userId || !dateRange.from || !dateRange.to) return;
+    // Require a user. Require either a concrete date range OR explicit isAllTime.
+    if (!userId || (!dateRange.from && !dateRange.isAllTime)) return;
 
     let cancelled = false;
 
@@ -111,8 +112,9 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
           companyId,
           userId,
           role,
-          periodStart: dateRange.from,
-          periodEnd:   dateRange.to,
+          // Pass null dates for isAllTime so getForecastData returns all deals
+          periodStart: dateRange.isAllTime ? null : dateRange.from,
+          periodEnd:   dateRange.isAllTime ? null : dateRange.to,
         }),
         companyId ? getOrCalculateWinRates(companyId) : Promise.resolve({ stageRates: null, repRates: {}, sampleCounts: {} }),
       ]);
@@ -131,7 +133,7 @@ const SalesForecast = ({ deals: dealsProp, isLoading: isLoadingProp } = {}) => {
     load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId, userId, role, dateRange.from, dateRange.to]);
+  }, [companyId, userId, role, dateRange.from, dateRange.to, dateRange.isAllTime]);
 
   const handleRecalculate = async () => {
     if (!companyId || isRecalculating) return;

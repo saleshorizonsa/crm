@@ -7,32 +7,34 @@ import ByProduct  from "./components/ByProduct";
 import ByClient   from "./components/ByClient";
 import ByLocation from "./components/ByLocation";
 import BySalesman from "./components/BySalesman";
-
-const TABS = [
-  { id: "value",    label: "By Value",    icon: "💰" },
-  { id: "product",  label: "By Product",  icon: "📦" },
-  { id: "client",   label: "By Client",   icon: "🤝" },
-  { id: "location", label: "By Company",  icon: "🏢" },
-  { id: "salesman", label: "By Salesman", icon: "👤" },
-];
-
-const PRESETS = [
-  { value: "this_month",   label: "This Month"   },
-  { value: "last_month",   label: "Last Month"   },
-  { value: "this_quarter", label: "This Quarter" },
-  { value: "last_quarter", label: "Last Quarter" },
-  { value: "this_year",    label: "This Year"    },
-  { value: "last_year",    label: "Last Year"    },
-  { value: "all",          label: "All Time"     },
-  { value: "custom",       label: "Custom"       },
-];
+import { useLanguage } from "../../i18n";
 
 const today = () => new Date().toISOString().split("T")[0];
 const firstOfYear = () => `${new Date().getFullYear()}-01-01`;
 
 const ReportsPage = () => {
+  const { t } = useLanguage();
   const { userProfile, company } = useAuth();
   const { formatCurrency } = useCurrency();
+
+  const TABS = [
+    { id: "value",    label: t("reportsPage.byValue"),    icon: "💰" },
+    { id: "product",  label: t("reportsPage.byProduct"),  icon: "📦" },
+    { id: "client",   label: t("reportsPage.byClient"),   icon: "🤝" },
+    { id: "location", label: t("reportsPage.byCompany"),  icon: "🏢" },
+    { id: "salesman", label: t("reportsPage.bySalesman"), icon: "👤" },
+  ];
+
+  const PRESETS = [
+    { value: "this_month",   label: t("reportsPage.thisMonth")   },
+    { value: "last_month",   label: t("reportsPage.lastMonth")   },
+    { value: "this_quarter", label: t("reportsPage.thisQuarter") },
+    { value: "last_quarter", label: t("reportsPage.lastQuarter") },
+    { value: "this_year",    label: t("reportsPage.thisYear")    },
+    { value: "last_year",    label: t("reportsPage.lastYear")    },
+    { value: "all",          label: t("reportsPage.allTime")     },
+    { value: "custom",       label: t("reportsPage.custom")      },
+  ];
 
   const [activeTab, setActiveTab] = useState("value");
   const [period, setPeriod]       = useState("this_year");
@@ -81,17 +83,17 @@ const ReportsPage = () => {
 
   const roleLabel = () => {
     const role = userProfile?.role;
-    if (["director", "admin", "ceo"].includes(role)) return "All company deals";
-    if (role === "salesman") return "Your deals only";
-    return "Your team's deals";
+    if (["director", "admin", "ceo"].includes(role)) return t("reportsPage.allCompanyDeals");
+    if (role === "salesman") return t("reportsPage.yourDealsOnly");
+    return t("reportsPage.yourTeamDeals");
   };
 
   const activePeriodLabel = () => {
     if (period === "custom") {
       if (customFrom && customTo) return `${customFrom} → ${customTo}`;
-      if (customFrom) return `From ${customFrom}`;
-      if (customTo)   return `Until ${customTo}`;
-      return "All time";
+      if (customFrom) return `${t("common.from")} ${customFrom}`;
+      if (customTo)   return `${t("common.to")} ${customTo}`;
+      return t("reportsPage.allTime");
     }
     return PRESETS.find((p) => p.value === period)?.label || "";
   };
@@ -105,7 +107,7 @@ const ReportsPage = () => {
           {/* Title row */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Reports</h1>
+              <h1 className="text-xl font-bold text-gray-900">{t("reportsPage.title")}</h1>
               <p className="text-xs text-gray-400 mt-0.5">{roleLabel()}</p>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
@@ -148,9 +150,9 @@ const ReportsPage = () => {
           {/* Custom date range inputs — shown only when Custom is active */}
           {period === "custom" && (
             <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-blue-50 rounded-xl border border-blue-100">
-              <span className="text-xs font-medium text-blue-700">Custom range:</span>
+              <span className="text-xs font-medium text-blue-700">{t("reportsPage.customRange")}</span>
               <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-500">From</label>
+                <label className="text-xs text-gray-500">{t("common.from")}</label>
                 <input
                   type="date"
                   value={customFrom}
@@ -160,7 +162,7 @@ const ReportsPage = () => {
                 />
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-500">To</label>
+                <label className="text-xs text-gray-500">{t("common.to")}</label>
                 <input
                   type="date"
                   value={customTo}
@@ -174,7 +176,7 @@ const ReportsPage = () => {
                 disabled={!customFrom && !customTo}
                 className="px-4 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                Apply
+                {t("common.apply")}
               </button>
             </div>
           )}
@@ -207,13 +209,13 @@ const ReportsPage = () => {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
             </svg>
-            <p className="text-sm">Loading report data…</p>
+            <p className="text-sm">{t("reportsPage.loadingReport")}</p>
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center py-24 text-red-400">
             <span className="text-4xl mb-3">⚠️</span>
             <p className="text-sm font-medium text-red-600">{error}</p>
-            <button onClick={fetchDeals} className="mt-3 text-xs text-blue-500 hover:underline">Try again</button>
+            <button onClick={fetchDeals} className="mt-3 text-xs text-blue-500 hover:underline">{t("reportsPage.tryAgain")}</button>
           </div>
         ) : (
           <>

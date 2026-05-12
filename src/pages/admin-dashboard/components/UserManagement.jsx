@@ -9,8 +9,10 @@ import InviteUserModal from "./InviteUserModal";
 import UserHierarchyTree from "./UserHierarchyTree";
 import PendingInvitations from "./PendingInvitations";
 import UserDetailModal from "./UserDetailModal";
+import { useLanguage } from "../../../i18n";
 
 const UserManagement = () => {
+  const { t } = useLanguage();
   const [users, setUsers] = useState([]);
   const [hierarchyData, setHierarchyData] = useState([]);
   const [pendingInvitations, setPendingInvitations] = useState([]);
@@ -63,7 +65,7 @@ const UserManagement = () => {
   };
 
   const handleCancelInvitation = async (invitationId) => {
-    if (!confirm("Are you sure you want to cancel this invitation?")) return;
+    if (!confirm(t("adminUserMgmt.cancelInvitationConfirm"))) return;
 
     const { error } = await adminService.cancelInvitation(invitationId);
     if (error) {
@@ -74,8 +76,7 @@ const UserManagement = () => {
   };
 
   const handleToggleUserStatus = async (userId, currentStatus) => {
-    const action = currentStatus ? "deactivate" : "reactivate";
-    if (!confirm(`Are you sure you want to ${action} this user?`)) return;
+    if (!confirm(t("adminUserMgmt.toggleUserStatusConfirm"))) return;
 
     const { error } = currentStatus
       ? await adminService.deactivateUser(userId)
@@ -107,7 +108,7 @@ const UserManagement = () => {
             size="sm"
           >
             <Icon name="Network" size={16} />
-            Hierarchy
+            {t("adminUserMgmt.viewHierarchy")}
           </Button>
           <Button
             onClick={() => setView("list")}
@@ -115,7 +116,7 @@ const UserManagement = () => {
             size="sm"
           >
             <Icon name="List" size={16} />
-            List View
+            {t("adminUserMgmt.viewList")}
           </Button>
           <Button
             onClick={() => setView("invitations")}
@@ -123,7 +124,7 @@ const UserManagement = () => {
             size="sm"
           >
             <Icon name="Mail" size={16} />
-            Invitations ({pendingInvitations.length})
+            {t("adminUserMgmt.invitations")} ({pendingInvitations.length})
           </Button>
         </div>
 
@@ -136,7 +137,7 @@ const UserManagement = () => {
       {/* Content */}
       {view === "hierarchy" && (
         <div className="bg-card border border-border rounded-lg p-6">
-          <h2 className="text-lg font-semibold mb-4">Organization Hierarchy</h2>
+          <h2 className="text-lg font-semibold mb-4">{t("adminUserMgmt.hierarchyTitle")}</h2>
           <UserHierarchyTree
             data={hierarchyData}
             onToggleStatus={handleToggleUserStatus}
@@ -152,25 +153,25 @@ const UserManagement = () => {
               <thead className="bg-muted">
                 <tr>
                   <th className="text-left px-4 py-3 text-sm font-medium">
-                    Name
+                    {t("common.name")}
                   </th>
                   <th className="text-left px-4 py-3 text-sm font-medium">
-                    Email
+                    {t("common.email")}
                   </th>
                   <th className="text-left px-4 py-3 text-sm font-medium">
-                    Role
+                    {t("common.role")}
                   </th>
                   <th className="text-left px-4 py-3 text-sm font-medium">
-                    Company
+                    {t("common.company")}
                   </th>
                   <th className="text-left px-4 py-3 text-sm font-medium">
-                    Superior
+                    {t("adminUserMgmt.supervisor")}
                   </th>
                   <th className="text-left px-4 py-3 text-sm font-medium">
-                    Status
+                    {t("common.status")}
                   </th>
                   <th className="text-left px-4 py-3 text-sm font-medium">
-                    Actions
+                    {t("common.actions")}
                   </th>
                 </tr>
               </thead>
@@ -183,7 +184,7 @@ const UserManagement = () => {
                   >
                     <td className="px-4 py-3">
                       <div className="font-medium">
-                        {user.full_name || "N/A"}
+                        {user.full_name || t("common.notAvailable") || "N/A"}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-muted-foreground">
@@ -198,17 +199,17 @@ const UserManagement = () => {
                     <td className="px-4 py-3 text-sm">
                       {user.role === "admin" || user.role === "director" ? (
                         <span className="text-muted-foreground italic">
-                          All Companies
+                          {t("adminUserMgmt.allCompanies")}
                         </span>
                       ) : (
                         user.company?.name || (
-                          <span className="text-muted-foreground">N/A</span>
+                          <span className="text-muted-foreground">{t("common.notAvailable") || "N/A"}</span>
                         )
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       {user.supervisor?.full_name || (
-                        <span className="text-muted-foreground">None</span>
+                        <span className="text-muted-foreground">{t("adminUserMgmt.none")}</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -222,12 +223,12 @@ const UserManagement = () => {
                         {user.is_active ? (
                           <>
                             <Icon name="CheckCircle" size={12} />
-                            Active
+                            {t("common.active")}
                           </>
                         ) : (
                           <>
                             <Icon name="XCircle" size={12} />
-                            Inactive
+                            {t("common.inactive")}
                           </>
                         )}
                       </span>

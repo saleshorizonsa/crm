@@ -45,10 +45,10 @@ const Settings = () => {
       );
       if (error) throw error;
       setSettings(data);
-      alert("Settings saved successfully!");
+      alert(t("settings.savedSuccess"));
     } catch (error) {
       console.error("Error saving settings:", error);
-      alert(`Failed to save settings: ${error.message}`);
+      alert(`${t("settings.saveFailed")}: ${error.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -62,7 +62,7 @@ const Settings = () => {
       icon: "DollarSign",
     },
     { id: "notifications", label: t("dashboard.notifications"), icon: "Bell"     },
-    { id: "calendar",      label: "Calendar",                   icon: "Calendar"  },
+    { id: "calendar",      label: t("nav.calendar"),            icon: "Calendar"  },
   ];
 
   if (!user) {

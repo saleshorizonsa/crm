@@ -3,6 +3,7 @@ import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
 import { adminService, permissionsService } from "../../../services/supabaseService";
 import { useAuth } from "contexts/AuthContext";
+import { useLanguage } from "../../../i18n";
 
 // ── Pages available for permission management ─────────────────────────────────
 
@@ -45,6 +46,7 @@ const rowsToMap = (rows) => {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const UserAuthorization = () => {
+  const { t } = useLanguage();
   const { company } = useAuth();
 
   const [users,           setUsers]           = useState([]);
@@ -122,12 +124,12 @@ const UserAuthorization = () => {
     if (error) {
       if (error.code === "42P01" || error.message?.includes("does not exist")) {
         setDbError(true);
-        setSaveMsg({ ok: false, text: "Table not created yet — see setup instructions below." });
+        setSaveMsg({ ok: false, text: t("adminAuthorization.tableNotCreated") });
       } else {
-        setSaveMsg({ ok: false, text: "Failed to save: " + error.message });
+        setSaveMsg({ ok: false, text: t("adminAuthorization.saveFailed") + ": " + error.message });
       }
     } else {
-      setSaveMsg({ ok: true, text: "Permissions saved successfully." });
+      setSaveMsg({ ok: true, text: t("adminAuthorization.saveSuccess") });
       setTimeout(() => setSaveMsg(null), 3000);
     }
     setSaving(false);
@@ -145,7 +147,7 @@ const UserAuthorization = () => {
         <div className="p-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 space-y-2">
           <div className="flex items-center gap-2 font-semibold">
             <Icon name="AlertTriangle" size={16} />
-            One-time setup required
+            {t("adminAuthorization.setupRequired")}
           </div>
           <p className="text-sm">
             Run the following SQL in your Supabase SQL editor to create the permissions table,
@@ -170,20 +172,20 @@ CREATE POLICY "Admins manage permissions" ON user_page_permissions
 
       {/* Header */}
       <div>
-        <h2 className="text-lg font-semibold">User Authorization</h2>
+        <h2 className="text-lg font-semibold">{t("adminAuthorization.title")}</h2>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Assign per-page access rights to each user. Changes take effect on the user's next page load.
+          {t("adminAuthorization.subtitle")}
         </p>
       </div>
 
       {/* User Selector */}
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex-1 min-w-[240px] max-w-sm">
-          <label className="block text-sm font-medium mb-1">Select User</label>
+          <label className="block text-sm font-medium mb-1">{t("adminAuthorization.selectUser")}</label>
           {loadingUsers ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Icon name="Loader2" size={14} className="animate-spin" />
-              Loading users…
+              {t("adminAuthorization.loadingUsers")}
             </div>
           ) : (
             <select
@@ -191,7 +193,7 @@ CREATE POLICY "Admins manage permissions" ON user_page_permissions
               value={selectedUserId}
               onChange={(e) => setSelectedUserId(e.target.value)}
             >
-              <option value="">— Choose a user —</option>
+              <option value="">{t("adminAuthorization.chooseUser")}</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.full_name || u.email} ({ROLE_LABELS[u.role] || u.role})
@@ -217,7 +219,7 @@ CREATE POLICY "Admins manage permissions" ON user_page_permissions
           {loadingPerms ? (
             <div className="flex items-center justify-center h-40 gap-2 text-muted-foreground">
               <Icon name="Loader2" size={18} className="animate-spin" />
-              Loading permissions…
+              {t("adminAuthorization.loadingPermissions")}
             </div>
           ) : (
             <>
@@ -226,7 +228,7 @@ CREATE POLICY "Admins manage permissions" ON user_page_permissions
                   <thead className="bg-muted/60 border-b border-border">
                     <tr>
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground w-1/2">
-                        Page
+                        {t("adminAuthorization.page")}
                       </th>
                       {[
                         { field: "can_view",   label: "View"   },
@@ -249,9 +251,9 @@ CREATE POLICY "Admins manage permissions" ON user_page_permissions
                                     ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
                                     : "bg-muted text-muted-foreground hover:bg-accent"
                                 }`}
-                                title={allOn ? "Uncheck all" : "Check all"}
+                                title={allOn ? t("adminAuthorization.uncheckAll") : t("adminAuthorization.checkAll")}
                               >
-                                {allOn ? "All On" : someOn ? "Mixed" : "All Off"}
+                                {allOn ? t("adminAuthorization.allOn") : someOn ? t("adminAuthorization.mixed") : t("adminAuthorization.allOff")}
                               </button>
                             </div>
                           </th>
@@ -337,8 +339,8 @@ CREATE POLICY "Admins manage permissions" ON user_page_permissions
                   )}
                   <Button onClick={handleSave} disabled={saving} className="gap-2">
                     {saving
-                      ? <><Icon name="Loader2" size={14} className="animate-spin" /> Saving…</>
-                      : <><Icon name="Save" size={14} /> Save Permissions</>}
+                      ? <><Icon name="Loader2" size={14} className="animate-spin" /> {t("common.saving")}</>
+                      : <><Icon name="Save" size={14} /> {t("adminAuthorization.saveButton")}</>}
                   </Button>
                 </div>
               </div>
@@ -350,7 +352,7 @@ CREATE POLICY "Admins manage permissions" ON user_page_permissions
       {!selectedUserId && !loadingUsers && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <Icon name="ShieldCheck" size={48} className="text-muted-foreground mb-3" />
-          <p className="text-base font-medium text-card-foreground">Select a user to manage their permissions</p>
+          <p className="text-base font-medium text-card-foreground">{t("adminAuthorization.selectUserHint")}</p>
           <p className="text-sm text-muted-foreground mt-1">
             You can grant or revoke view, create, and edit access per page
           </p>

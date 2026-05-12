@@ -8,6 +8,7 @@ import ApolloSearchPanel from "./components/ApolloSearchPanel";
 import LeadDetailModal from "./components/LeadDetailModal";
 import { useAuth } from "../../contexts/AuthContext";
 import { leadService } from "../../services/leadService";
+import { useLanguage } from "../../i18n";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,7 @@ const fmtDate = (d) => {
 
 // ── Three-dot row menu ─────────────────────────────────────────────────────────
 const RowMenu = ({ lead, onView, onStatus, onConvert, onDelete }) => {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -72,27 +74,27 @@ const RowMenu = ({ lead, onView, onStatus, onConvert, onDelete }) => {
         <div className="absolute right-0 top-8 z-30 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 text-sm">
           <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
             onClick={() => { setOpen(false); onView(lead); }}>
-            <Icon name="Eye" size={13} className="text-gray-500" />View details
+            <Icon name="Eye" size={13} className="text-gray-500" />{t("leadsPage.viewDetails")}
           </button>
           {lead.status !== "converted" && (
             <>
               <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
                 onClick={() => { setOpen(false); onStatus(lead.id, "contacted"); }}>
-                <Icon name="Phone" size={13} className="text-amber-500" />Mark as contacted
+                <Icon name="Phone" size={13} className="text-amber-500" />{t("leadsPage.markAsContacted")}
               </button>
               <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
                 onClick={() => { setOpen(false); onStatus(lead.id, "qualified"); }}>
-                <Icon name="CheckCircle" size={13} className="text-green-500" />Mark as qualified
+                <Icon name="CheckCircle" size={13} className="text-green-500" />{t("leadsPage.markAsQualified")}
               </button>
               <div className="border-t border-gray-100 my-1" />
               <button className="w-full text-left px-3 py-2 hover:bg-emerald-50 flex items-center gap-2 text-emerald-700 font-medium"
                 onClick={() => { setOpen(false); onConvert(lead.id); }}>
-                <Icon name="UserCheck" size={13} />Convert to contact
+                <Icon name="UserCheck" size={13} />{t("leadsPage.convertToContact")}
               </button>
               <div className="border-t border-gray-100 my-1" />
               <button className="w-full text-left px-3 py-2 hover:bg-red-50 flex items-center gap-2 text-red-600"
                 onClick={() => { setOpen(false); onDelete([lead.id]); }}>
-                <Icon name="Trash2" size={13} />Delete
+                <Icon name="Trash2" size={13} />{t("common.delete")}
               </button>
             </>
           )}
@@ -104,8 +106,18 @@ const RowMenu = ({ lead, onView, onStatus, onConvert, onDelete }) => {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 const LeadManagement = () => {
+  const { t } = useLanguage();
   const { user, userProfile, company } = useAuth();
   const role = userProfile?.role;
+
+  // Status labels (reactive to language)
+  const STATUS_LABELS = {
+    new:         t("leadsPage.statusNew"),
+    contacted:   t("leadsPage.statusContacted"),
+    qualified:   t("leadsPage.statusQualified"),
+    unqualified: t("leadsPage.statusUnqualified"),
+    converted:   t("leadsPage.statusConverted"),
+  };
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [leads,           setLeads]           = useState([]);
@@ -273,7 +285,7 @@ const LeadManagement = () => {
 
   const handleConvertLead = async (leadId) => {
     const { contact, error } = await leadService.convertLeadToContact(leadId, user.id);
-    if (error) { alert("Conversion failed: " + error.message); return; }
+    if (error) { alert(t("leadsPage.conversionFailed") + ": " + error.message); return; }
     setLeads((prev) =>
       prev.map((l) => l.id === leadId ? { ...l, status: "converted", converted_to: contact.id } : l)
     );
@@ -295,7 +307,7 @@ const LeadManagement = () => {
 
   const handleDeleteSelected = async () => {
     const ids = [...selectedLeads];
-    if (!window.confirm(`Delete ${ids.length} lead(s)?`)) return;
+    if (!window.confirm(`${t("leadsPage.deleteConfirm")} ${ids.length} ${ids.length !== 1 ? t("leadsPage.leads") : t("leadsPage.lead")}?`)) return;
     const { error } = await leadService.deleteLeads(ids);
     if (!error) {
       setLeads((prev) => prev.filter((l) => !ids.includes(l.id)));
@@ -335,7 +347,7 @@ const LeadManagement = () => {
     setFilter("status", filters.status === status ? "" : status);
   };
 
-  if (!user) return <div>Loading…</div>;
+  if (!user) return <div>{t("common.loading")}</div>;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -348,13 +360,13 @@ const LeadManagement = () => {
           <div>
             <NavigationBreadcrumbs
               items={[
-                { label: "Dashboard", href: "/company-dashboard" },
-                { label: "Lead Management", href: "/lead-management" },
+                { label: t("nav.dashboard"), href: "/company-dashboard" },
+                { label: t("leadsPage.title"), href: "/lead-management" },
               ]}
             />
-            <h1 className="text-2xl font-semibold text-gray-900 mt-1">Lead Management</h1>
+            <h1 className="text-2xl font-semibold text-gray-900 mt-1">{t("leadsPage.title")}</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Prospect pipeline powered by Apollo.io
+              {t("leadsPage.subtitle")}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -365,10 +377,10 @@ const LeadManagement = () => {
               </span>
             )}
             <Button variant="outline" size="sm" onClick={handleAddManually} className="gap-2">
-              <Icon name="Plus" size={14} />Add manually
+              <Icon name="Plus" size={14} />{t("leadsPage.addManually")}
             </Button>
             <Button size="sm" onClick={() => setShowApolloPanel(true)} className="gap-2">
-              <Icon name="Zap" size={14} />Search Apollo
+              <Icon name="Zap" size={14} />{t("leadsPage.searchApollo")}
             </Button>
           </div>
         </div>
@@ -376,10 +388,10 @@ const LeadManagement = () => {
         {/* Stats bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { key: "new",       label: "New",       icon: "UserPlus",    color: "text-blue-600",    bg: "bg-blue-50"   },
-            { key: "contacted", label: "Contacted", icon: "Phone",       color: "text-amber-600",   bg: "bg-amber-50"  },
-            { key: "qualified", label: "Qualified", icon: "CheckCircle", color: "text-green-600",   bg: "bg-green-50"  },
-            { key: "converted", label: "Converted", icon: "UserCheck",   color: "text-teal-600",    bg: "bg-teal-50"   },
+            { key: "new",       label: t("leadsPage.statusNew"),       icon: "UserPlus",    color: "text-blue-600",    bg: "bg-blue-50"   },
+            { key: "contacted", label: t("leadsPage.statusContacted"), icon: "Phone",       color: "text-amber-600",   bg: "bg-amber-50"  },
+            { key: "qualified", label: t("leadsPage.statusQualified"), icon: "CheckCircle", color: "text-green-600",   bg: "bg-green-50"  },
+            { key: "converted", label: t("leadsPage.statusConverted"), icon: "UserCheck",   color: "text-teal-600",    bg: "bg-teal-50"   },
           ].map(({ key, label, icon, color, bg }) => (
             <button
               key={key}
@@ -405,7 +417,7 @@ const LeadManagement = () => {
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex-1 min-w-[200px]">
               <Input
-                placeholder="Search name or company…"
+                placeholder={t("leadsPage.searchPlaceholder")}
                 value={filters.search}
                 onChange={(e) => setFilter("search", e.target.value)}
                 className="h-9 text-sm"
@@ -416,9 +428,9 @@ const LeadManagement = () => {
               onChange={(e) => setFilter("status", e.target.value)}
               className="px-3 py-2 border border-border rounded-md bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary h-9"
             >
-              <option value="">All statuses</option>
-              {Object.entries(STATUS_CONFIG).map(([k, v]) => (
-                <option key={k} value={k}>{v.label}</option>
+              <option value="">{t("leadsPage.allStatuses")}</option>
+              {Object.entries(STATUS_CONFIG).map(([k]) => (
+                <option key={k} value={k}>{STATUS_LABELS[k] || k}</option>
               ))}
             </select>
             <select
@@ -426,7 +438,7 @@ const LeadManagement = () => {
               onChange={(e) => setFilter("region", e.target.value)}
               className="px-3 py-2 border border-border rounded-md bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary h-9"
             >
-              <option value="">All regions</option>
+              <option value="">{t("leadsPage.allRegions")}</option>
               {Object.entries(REGION_LABELS).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
@@ -436,7 +448,7 @@ const LeadManagement = () => {
               onChange={(e) => setFilter("product", e.target.value)}
               className="px-3 py-2 border border-border rounded-md bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary h-9"
             >
-              <option value="">All products</option>
+              <option value="">{t("leadsPage.allProducts")}</option>
               <option value="steel">Steel</option>
               <option value="pvc">PVC</option>
               <option value="trading">Trading</option>
@@ -446,7 +458,7 @@ const LeadManagement = () => {
               onChange={(e) => setFilter("source", e.target.value)}
               className="px-3 py-2 border border-border rounded-md bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary h-9"
             >
-              <option value="">All sources</option>
+              <option value="">{t("leadsPage.allSources")}</option>
               <option value="apollo">Apollo</option>
               <option value="manual">Manual</option>
               <option value="import">Import</option>
@@ -458,7 +470,7 @@ const LeadManagement = () => {
                 onChange={(e) => setFilter("assigned_to", e.target.value)}
                 className="px-3 py-2 border border-border rounded-md bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary h-9"
               >
-                <option value="">All owners</option>
+                <option value="">{t("leadsPage.allOwners")}</option>
                 {companyUsers.map((u) => (
                   <option key={u.id} value={u.id}>{u.full_name}</option>
                 ))}
@@ -470,7 +482,7 @@ const LeadManagement = () => {
                 onClick={() => setFilters({ status:"", region:"", product:"", search: filters.search, assigned_to:"", source:"" })}
                 className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1 underline"
               >
-                <Icon name="X" size={11} />Clear
+                <Icon name="X" size={11} />{t("leadsPage.clearFilters")}
               </button>
             )}
           </div>
@@ -480,7 +492,7 @@ const LeadManagement = () => {
         {selectedLeads.size > 0 && (
           <div className="bg-primary/5 border border-primary/20 rounded-lg px-4 py-3 flex items-center gap-3 flex-wrap">
             <span className="text-sm font-medium text-primary">
-              {selectedLeads.size} lead{selectedLeads.size !== 1 ? "s" : ""} selected
+              {selectedLeads.size} {selectedLeads.size !== 1 ? t("leadsPage.leads") : t("leadsPage.lead")} {t("leadsPage.selected")}
             </span>
             {role !== "salesman" && companyUsers.length > 0 && (
               <div className="flex items-center gap-2">
@@ -489,33 +501,33 @@ const LeadManagement = () => {
                   onChange={(e) => setBulkAssignTo(e.target.value)}
                   className="px-2 py-1.5 border border-border rounded-md bg-background text-sm focus:outline-none h-8"
                 >
-                  <option value="">Assign to…</option>
+                  <option value="">{t("leadsPage.assignTo")}</option>
                   {companyUsers.map((u) => (
                     <option key={u.id} value={u.id}>{u.full_name}</option>
                   ))}
                 </select>
                 {bulkAssignTo && (
                   <Button size="sm" variant="outline" onClick={handleBulkAssign} className="h-8 text-xs gap-1">
-                    <Icon name="UserCheck" size={12} />Assign
+                    <Icon name="UserCheck" size={12} />{t("leadsPage.assign")}
                   </Button>
                 )}
               </div>
             )}
             <Button size="sm" variant="outline" onClick={() => handleBulkStatus("contacted")} className="h-8 text-xs gap-1">
-              <Icon name="Phone" size={12} className="text-amber-500" />Mark contacted
+              <Icon name="Phone" size={12} className="text-amber-500" />{t("leadsPage.markContacted")}
             </Button>
             <Button size="sm" variant="outline" onClick={() => handleBulkStatus("qualified")} className="h-8 text-xs gap-1">
-              <Icon name="CheckCircle" size={12} className="text-green-500" />Mark qualified
+              <Icon name="CheckCircle" size={12} className="text-green-500" />{t("leadsPage.markQualified")}
             </Button>
             <Button size="sm" variant="outline" onClick={handleDeleteSelected} className="h-8 text-xs gap-1 text-red-600 border-red-200 hover:bg-red-50">
-              <Icon name="Trash2" size={12} />Delete
+              <Icon name="Trash2" size={12} />{t("common.delete")}
             </Button>
             <button
               type="button"
               onClick={() => setSelectedLeads(new Set())}
               className="text-xs text-gray-400 hover:text-gray-600 ml-auto"
             >
-              Clear selection
+              {t("leadsPage.clearSelection")}
             </button>
           </div>
         )}
@@ -528,15 +540,15 @@ const LeadManagement = () => {
         ) : filteredLeads.length === 0 ? (
           <div className="bg-card border border-border rounded-xl p-16 text-center">
             <Icon name="UserPlus" size={48} className="mx-auto text-gray-200 mb-4" />
-            <p className="text-lg font-medium text-foreground">No leads yet</p>
+            <p className="text-lg font-medium text-foreground">{t("leadsPage.noLeads")}</p>
             <p className="text-sm text-muted-foreground mt-1 mb-6">
               {filters.status || filters.region || filters.product || filters.search
-                ? "No leads match the current filters."
-                : "Search Apollo to find prospects or add one manually."}
+                ? t("leadsPage.noLeadsFilter")
+                : t("leadsPage.noLeadsHint")}
             </p>
             {!filters.status && !filters.region && !filters.product && !filters.search && (
               <Button onClick={() => setShowApolloPanel(true)} className="gap-2">
-                <Icon name="Zap" size={15} />Search Apollo
+                <Icon name="Zap" size={15} />{t("leadsPage.searchApollo")}
               </Button>
             )}
           </div>
@@ -554,15 +566,15 @@ const LeadManagement = () => {
                         className="rounded border-gray-300"
                       />
                     </th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Name</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Company</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Region</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Products</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Score</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Assigned</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Source</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Added</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t("leadsPage.nameCol")}</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t("leadsPage.companyCol")}</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t("leadsPage.regionCol")}</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t("leadsPage.productsCol")}</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t("leadsPage.statusCol")}</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t("leadsPage.scoreCol")}</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t("leadsPage.assignedCol")}</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t("leadsPage.sourceCol")}</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">{t("leadsPage.addedCol")}</th>
                     <th className="px-4 py-3 w-10" />
                   </tr>
                 </thead>
@@ -643,7 +655,7 @@ const LeadManagement = () => {
                         {/* Status */}
                         <td className="px-4 py-3">
                           <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${sc.bg} ${sc.text}`}>
-                            {sc.label}
+                            {STATUS_LABELS[lead.status] || sc.label}
                           </span>
                         </td>
 
@@ -661,7 +673,7 @@ const LeadManagement = () => {
                               <Icon name="User" size={10} className="text-primary" />
                             </div>
                             <span className="text-xs text-muted-foreground truncate max-w-[100px]">
-                              {lead.assigned_user?.full_name || "Unassigned"}
+                              {lead.assigned_user?.full_name || t("leadsPage.unassigned")}
                             </span>
                           </div>
                         </td>
@@ -693,7 +705,7 @@ const LeadManagement = () => {
                               className="mt-0.5 flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 hover:underline"
                             >
                               <Icon name="Clock" size={10} />
-                              {histCount} change{histCount !== 1 ? "s" : ""}
+                              {histCount} {histCount !== 1 ? t("leadsPage.changes") : t("leadsPage.change")}
                             </button>
                           )}
                         </td>
@@ -717,7 +729,7 @@ const LeadManagement = () => {
 
             {/* Table footer */}
             <div className="px-4 py-2.5 border-t border-border bg-muted/20 text-xs text-muted-foreground flex items-center justify-between">
-              <span>{filteredLeads.length} lead{filteredLeads.length !== 1 ? "s" : ""}</span>
+              <span>{filteredLeads.length} {filteredLeads.length !== 1 ? t("leadsPage.leads") : t("leadsPage.lead")}</span>
               <span>{stats.total} total</span>
             </div>
           </div>
