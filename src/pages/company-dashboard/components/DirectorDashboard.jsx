@@ -38,6 +38,10 @@ import ForecastAISummary from "./forecast/ForecastAISummary";
 import AtRiskDealsPanel from "./AtRiskDealsPanel";
 import SalesLeaderboard from "./SalesLeaderboard";
 import { useDateRange } from "../../../contexts/DateRangeContext";
+import {
+  buildDateRange,
+  syncDropdownsFromRange,
+} from "../../../utils/dashboardDateUtils";
 
 // Employee-specific dashboards - use Enhanced versions for full features
 import EnhancedManagerDashboard from "./EnhancedManagerDashboard";
@@ -65,7 +69,7 @@ import {
 const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const { user, userProfile } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
-  const { dateRange } = useDateRange();
+  const { dateRange, setRange } = useDateRange();
   const { t } = useLanguage();
   const navigate = useNavigate();
 
@@ -88,6 +92,35 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedQuarter, setSelectedQuarter] = useState(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  // Single source of truth for the active date range
+  const [activeDateRange, setActiveDateRange] = useState(() =>
+    buildDateRange(new Date().getMonth(), null, new Date().getFullYear())
+  );
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Sync from top-right DateRangePicker (via context) → local dropdowns
+  const activeDateRangeRef = React.useRef(activeDateRange);
+  activeDateRangeRef.current = activeDateRange;
+  useEffect(() => {
+    if (!dateRange?.from || !dateRange?.to) return;
+    if (
+      dateRange.from === activeDateRangeRef.current.from &&
+      dateRange.to   === activeDateRangeRef.current.to
+    ) return;
+    const synced = syncDropdownsFromRange(dateRange.from, dateRange.to);
+    setActiveDateRange({ from: dateRange.from, to: dateRange.to });
+    setSelectedMonth(synced.selectedMonth);
+    setSelectedQuarter(synced.selectedQuarter);
+    setSelectedYear(synced.selectedYear);
+  }, [dateRange?.from, dateRange?.to]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Brief opacity flash when date range changes
+  useEffect(() => {
+    setRefreshing(true);
+    const timer = setTimeout(() => setRefreshing(false), 200);
+    return () => clearTimeout(timer);
+  }, [activeDateRange.from, activeDateRange.to]);
 
   // Time period for charts and metrics (month, quarter, year)
   const [timePeriod, setTimePeriod] = useState("month");
@@ -164,39 +197,13 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     }
   }, [selectedEmployee]);
 
-  // Helper function to check if a date falls within selected filters
-  // All three filters work together: year + quarter + month
+  // Check if a date falls within activeDateRange
   const isInSelectedPeriod = (date) => {
     if (!date) return false;
-
     const itemDate = new Date(date);
-    const now = new Date();
-
-    // Don't include future dates
-    if (itemDate > now) {
-      return false;
-    }
-
-    const itemYear = itemDate.getFullYear();
-    const itemMonth = itemDate.getMonth();
-    const itemQuarter = Math.floor(itemMonth / 3);
-
-    // Check year filter (required if set)
-    if (selectedYear !== null && itemYear !== selectedYear) {
-      return false;
-    }
-
-    // Check quarter filter (required if set)
-    if (selectedQuarter !== null && itemQuarter !== selectedQuarter) {
-      return false;
-    }
-
-    // Check month filter (required if set)
-    if (selectedMonth !== null && itemMonth !== selectedMonth) {
-      return false;
-    }
-
-    return true;
+    const from = new Date(activeDateRange.from + 'T00:00:00');
+    const to   = new Date(activeDateRange.to   + 'T23:59:59');
+    return itemDate >= from && itemDate <= to;
   };
 
   // Filter all data based on selected filters
@@ -207,7 +214,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         return isInSelectedPeriod(dateToCheck);
       }) || []
     );
-  }, [allDealsData, selectedMonth, selectedQuarter, selectedYear]);
+  }, [allDealsData, activeDateRange.from, activeDateRange.to]);
 
   const filteredActivities = useMemo(() => {
     return (
@@ -215,7 +222,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         isInSelectedPeriod(activity.created_at),
       ) || []
     );
-  }, [activities, selectedMonth, selectedQuarter, selectedYear]);
+  }, [activities, activeDateRange.from, activeDateRange.to]);
 
   const filteredContacts = useMemo(() => {
     return (
@@ -223,59 +230,25 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         isInSelectedPeriod(contact.created_at || contact.updated_at),
       ) || []
     );
-  }, [allContacts, selectedMonth, selectedQuarter, selectedYear]);
+  }, [allContacts, activeDateRange.from, activeDateRange.to]);
 
   const filteredTasks = useMemo(() => {
     return (
       allTasks?.filter((task) => isInSelectedPeriod(task.created_at)) || []
     );
-  }, [allTasks, selectedMonth, selectedQuarter, selectedYear]);
+  }, [allTasks, activeDateRange.from, activeDateRange.to]);
 
-  // Filter assigned targets (targets assigned BY the director) based on selected time period
+  // Filter assigned targets whose period overlaps with activeDateRange
   const filteredAssignedTargets = useMemo(() => {
     if (!assignedTargets) return assignedTargets;
-    if (
-      selectedMonth === null &&
-      selectedQuarter === null &&
-      selectedYear === null
-    )
-      return assignedTargets;
-
+    const from = new Date(activeDateRange.from + 'T00:00:00');
+    const to   = new Date(activeDateRange.to   + 'T23:59:59');
     return assignedTargets.filter((target) => {
       const targetStart = new Date(target.period_start);
-      const targetEnd = new Date(target.period_end);
-
-      // Build the filter period based on selected filters
-      let periodStart, periodEnd;
-
-      if (selectedMonth !== null && selectedYear !== null) {
-        // Specific month in a year
-        periodStart = new Date(selectedYear, selectedMonth, 1);
-        periodEnd = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59);
-      } else if (selectedQuarter !== null && selectedYear !== null) {
-        // Specific quarter in a year
-        const quarterMonth = selectedQuarter * 3;
-        periodStart = new Date(selectedYear, quarterMonth, 1);
-        periodEnd = new Date(selectedYear, quarterMonth + 3, 0, 23, 59, 59);
-      } else if (selectedYear !== null) {
-        // Entire year
-        periodStart = new Date(selectedYear, 0, 1);
-        periodEnd = new Date(selectedYear, 11, 31, 23, 59, 59);
-      } else if (selectedMonth !== null) {
-        // Same month across all years - check if target period includes this month
-        const targetMonth = targetStart.getMonth();
-        return targetMonth === selectedMonth;
-      } else if (selectedQuarter !== null) {
-        // Same quarter across all years - check if target period includes this quarter
-        const targetMonth = targetStart.getMonth();
-        const targetQuarter = Math.floor(targetMonth / 3);
-        return targetQuarter === selectedQuarter;
-      }
-
-      // Check if target overlaps with the filter period
-      return targetStart <= periodEnd && targetEnd >= periodStart;
+      const targetEnd   = new Date(target.period_end);
+      return targetStart <= to && targetEnd >= from;
     });
-  }, [assignedTargets, selectedMonth, selectedQuarter, selectedYear]);
+  }, [assignedTargets, activeDateRange.from, activeDateRange.to]);
 
   // Recalculate per-assignee target progress from deals.
   // The DB column `progress_amount` is not auto-updated when deals close,
@@ -639,7 +612,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     if (companies.length > 0) {
       loadCompaniesWithMetrics();
     }
-  }, [companies, selectedMonth, selectedQuarter, selectedYear]);
+  }, [companies, activeDateRange.from, activeDateRange.to]);
 
   // Recalculate companiesWithMetrics when filters change
   useEffect(() => {
@@ -836,7 +809,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         };
       });
     }
-  }, [filteredDeals, trendPeriod, preferredCurrency, selectedYear]);
+  }, [filteredDeals, trendPeriod, preferredCurrency, selectedYear, activeDateRange.from, activeDateRange.to]);
 
   const loadAllCompanies = async () => {
     try {
@@ -2129,7 +2102,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   }
 
   return (
-    <div className="director-dashboard">
+    <div className={`director-dashboard transition-opacity duration-200 ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
       {/* Employee Selector and Filter Dropdowns */}
       <div className="mb-6">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
@@ -2162,11 +2135,13 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                   onChange={(e) => {
                     const newMonth =
                       e.target.value === "" ? null : parseInt(e.target.value);
+                    const newQuarter =
+                      newMonth !== null ? Math.floor(newMonth / 3) : selectedQuarter;
                     setSelectedMonth(newMonth);
-                    if (newMonth !== null) {
-                      const monthQuarter = Math.floor(newMonth / 3);
-                      setSelectedQuarter(monthQuarter);
-                    }
+                    setSelectedQuarter(newQuarter);
+                    const range = buildDateRange(newMonth, newMonth !== null ? newQuarter : selectedQuarter, selectedYear);
+                    setActiveDateRange(range);
+                    setRange({ from: range.from, to: range.to });
                   }}
                   className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[140px]"
                 >
@@ -2187,14 +2162,17 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                   onChange={(e) => {
                     const newQuarter =
                       e.target.value === "" ? null : parseInt(e.target.value);
-                    setSelectedQuarter(newQuarter);
-                    // Clear month if it's outside the selected quarter
+                    let newMonth = selectedMonth;
                     if (newQuarter !== null && selectedMonth !== null) {
-                      const monthQuarter = Math.floor(selectedMonth / 3);
-                      if (monthQuarter !== newQuarter) {
-                        setSelectedMonth(null);
+                      if (Math.floor(selectedMonth / 3) !== newQuarter) {
+                        newMonth = null;
                       }
                     }
+                    setSelectedQuarter(newQuarter);
+                    setSelectedMonth(newMonth);
+                    const range = buildDateRange(newMonth, newQuarter, selectedYear);
+                    setActiveDateRange(range);
+                    setRange({ from: range.from, to: range.to });
                   }}
                   className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[120px]"
                 >
@@ -2216,6 +2194,9 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                     const newYear =
                       e.target.value === "" ? null : parseInt(e.target.value);
                     setSelectedYear(newYear);
+                    const range = buildDateRange(selectedMonth, selectedQuarter, newYear);
+                    setActiveDateRange(range);
+                    setRange({ from: range.from, to: range.to });
                   }}
                   className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[100px]"
                 >
@@ -2229,12 +2210,18 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               </div>
 
               {/* Clear Filter Button */}
-              {(selectedMonth || selectedQuarter || selectedYear) && (
+              {(selectedMonth !== null || selectedQuarter !== null || selectedYear !== null) && (
                 <button
                   onClick={() => {
-                    setSelectedMonth(null);
+                    const now = new Date();
+                    const m = now.getMonth();
+                    const y = now.getFullYear();
+                    setSelectedMonth(m);
                     setSelectedQuarter(null);
-                    setSelectedYear(null);
+                    setSelectedYear(y);
+                    const range = buildDateRange(m, null, y);
+                    setActiveDateRange(range);
+                    setRange({ from: range.from, to: range.to });
                   }}
                   className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
                 >

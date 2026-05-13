@@ -30,6 +30,10 @@ import ForecastAISummary from "./forecast/ForecastAISummary";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
 import { useLanguage } from "../../../i18n";
+import {
+  buildDateRange,
+  syncDropdownsFromRange,
+} from "../../../utils/dashboardDateUtils";
 import { Edit2 } from "lucide-react";
 import SalesTargetTable from "../../../components/SalesTargetTable";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
@@ -49,7 +53,7 @@ import {
 const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
-  const { dateRange } = useDateRange();
+  const { dateRange, setRange } = useDateRange();
   const { t } = useLanguage();
 
   // If viewing as another user (director view), use that user's data
@@ -70,6 +74,35 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedQuarter, setSelectedQuarter] = useState(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  // Single source of truth for the active date range
+  const [activeDateRange, setActiveDateRange] = useState(() =>
+    buildDateRange(new Date().getMonth(), null, new Date().getFullYear())
+  );
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Sync from top-right DateRangePicker (via context) → local dropdowns
+  const activeDateRangeRef = React.useRef(activeDateRange);
+  activeDateRangeRef.current = activeDateRange;
+  useEffect(() => {
+    if (!dateRange?.from || !dateRange?.to) return;
+    if (
+      dateRange.from === activeDateRangeRef.current.from &&
+      dateRange.to   === activeDateRangeRef.current.to
+    ) return;
+    const synced = syncDropdownsFromRange(dateRange.from, dateRange.to);
+    setActiveDateRange({ from: dateRange.from, to: dateRange.to });
+    setSelectedMonth(synced.selectedMonth);
+    setSelectedQuarter(synced.selectedQuarter);
+    setSelectedYear(synced.selectedYear);
+  }, [dateRange?.from, dateRange?.to]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Brief opacity flash when date range changes
+  useEffect(() => {
+    setRefreshing(true);
+    const timer = setTimeout(() => setRefreshing(false), 200);
+    return () => clearTimeout(timer);
+  }, [activeDateRange.from, activeDateRange.to]);
 
   // Performance Trend toggle (separate from main filters)
   const [trendPeriod, setTrendPeriod] = useState("month"); // month, quarter, year
@@ -176,39 +209,13 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     return years;
   }, []);
 
-  // Helper function to check if a date falls within selected filters
-  // All three filters work together: year + quarter + month
+  // Check if a date falls within activeDateRange
   const isInSelectedPeriod = (date) => {
     if (!date) return false;
-
     const itemDate = new Date(date);
-    const now = new Date();
-
-    // Don't include future dates
-    if (itemDate > now) {
-      return false;
-    }
-
-    const itemYear = itemDate.getFullYear();
-    const itemMonth = itemDate.getMonth();
-    const itemQuarter = Math.floor(itemMonth / 3);
-
-    // Check year filter (required if set)
-    if (selectedYear !== null && itemYear !== selectedYear) {
-      return false;
-    }
-
-    // Check quarter filter (required if set)
-    if (selectedQuarter !== null && itemQuarter !== selectedQuarter) {
-      return false;
-    }
-
-    // Check month filter (required if set)
-    if (selectedMonth !== null && itemMonth !== selectedMonth) {
-      return false;
-    }
-
-    return true;
+    const from = new Date(activeDateRange.from + 'T00:00:00');
+    const to   = new Date(activeDateRange.to   + 'T23:59:59');
+    return itemDate >= from && itemDate <= to;
   };
 
   const filteredDeals = useMemo(() => {
@@ -218,7 +225,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         return isInSelectedPeriod(dateToCheck);
       }) || []
     );
-  }, [allDeals, selectedMonth, selectedQuarter, selectedYear]);
+  }, [allDeals, activeDateRange.from, activeDateRange.to]);
 
   const filteredActivities = useMemo(() => {
     return (
@@ -226,7 +233,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         isInSelectedPeriod(activity.created_at),
       ) || []
     );
-  }, [activities, selectedMonth, selectedQuarter, selectedYear]);
+  }, [activities, activeDateRange.from, activeDateRange.to]);
 
   const filteredContacts = useMemo(() => {
     return (
@@ -234,113 +241,37 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         isInSelectedPeriod(contact.created_at || contact.updated_at),
       ) || []
     );
-  }, [allContacts, selectedMonth, selectedQuarter, selectedYear]);
+  }, [allContacts, activeDateRange.from, activeDateRange.to]);
 
   const filteredTasks = useMemo(() => {
     return (
       allTasks?.filter((task) => isInSelectedPeriod(task.created_at)) || []
     );
-  }, [allTasks, selectedMonth, selectedQuarter, selectedYear]);
+  }, [allTasks, activeDateRange.from, activeDateRange.to]);
 
-  // Filter targets based on selected filters - check if target period overlaps with selected filters
+  // Filter targets whose period overlaps with activeDateRange
   const filteredMyTargets = useMemo(() => {
-    if (
-      selectedMonth === null &&
-      selectedQuarter === null &&
-      selectedYear === null
-    )
-      return myTargets;
     if (!myTargets) return myTargets;
-
+    const from = new Date(activeDateRange.from + 'T00:00:00');
+    const to   = new Date(activeDateRange.to   + 'T23:59:59');
     return myTargets.filter((target) => {
       const targetStart = new Date(target.period_start);
-      const targetEnd = new Date(target.period_end);
-
-      // All filters work together with AND logic
-      // Check year filter (required if set)
-      if (selectedYear !== null) {
-        const periodStart = new Date(selectedYear, 0, 1);
-        const periodEnd = new Date(selectedYear, 11, 31, 23, 59, 59);
-        if (!(targetStart <= periodEnd && targetEnd >= periodStart))
-          return false;
-      }
-
-      // Check quarter filter (required if set)
-      if (selectedQuarter !== null) {
-        const quarterMonth = selectedQuarter * 3;
-        // Use selectedYear if available, otherwise check all years
-        const year =
-          selectedYear !== null ? selectedYear : targetStart.getFullYear();
-        const periodStart = new Date(year, quarterMonth, 1);
-        const periodEnd = new Date(year, quarterMonth + 3, 0, 23, 59, 59);
-        if (!(targetStart <= periodEnd && targetEnd >= periodStart))
-          return false;
-      }
-
-      // Check month filter (required if set)
-      if (selectedMonth !== null) {
-        // Use selectedYear if available, otherwise check all years
-        const year =
-          selectedYear !== null ? selectedYear : targetStart.getFullYear();
-        const periodStart = new Date(year, selectedMonth, 1);
-        const periodEnd = new Date(year, selectedMonth + 1, 0, 23, 59, 59);
-        if (!(targetStart <= periodEnd && targetEnd >= periodStart))
-          return false;
-      }
-
-      return true;
+      const targetEnd   = new Date(target.period_end);
+      return targetStart <= to && targetEnd >= from;
     });
-  }, [myTargets, selectedMonth, selectedQuarter, selectedYear]);
+  }, [myTargets, activeDateRange.from, activeDateRange.to]);
 
-  // Filter assigned targets based on selected time filters
+  // Filter assigned targets whose period overlaps with activeDateRange
   const filteredAssignedTargets = useMemo(() => {
-    if (
-      selectedMonth === null &&
-      selectedQuarter === null &&
-      selectedYear === null
-    )
-      return assignedTargets;
     if (!assignedTargets) return assignedTargets;
-
+    const from = new Date(activeDateRange.from + 'T00:00:00');
+    const to   = new Date(activeDateRange.to   + 'T23:59:59');
     return assignedTargets.filter((target) => {
       const targetStart = new Date(target.period_start);
-      const targetEnd = new Date(target.period_end);
-
-      // All filters work together with AND logic
-      // Check year filter (required if set)
-      if (selectedYear !== null) {
-        const periodStart = new Date(selectedYear, 0, 1);
-        const periodEnd = new Date(selectedYear, 11, 31, 23, 59, 59);
-        if (!(targetStart <= periodEnd && targetEnd >= periodStart))
-          return false;
-      }
-
-      // Check quarter filter (required if set)
-      if (selectedQuarter !== null) {
-        const quarterMonth = selectedQuarter * 3;
-        // Use selectedYear if available, otherwise check all years
-        const year =
-          selectedYear !== null ? selectedYear : targetStart.getFullYear();
-        const periodStart = new Date(year, quarterMonth, 1);
-        const periodEnd = new Date(year, quarterMonth + 3, 0, 23, 59, 59);
-        if (!(targetStart <= periodEnd && targetEnd >= periodStart))
-          return false;
-      }
-
-      // Check month filter (required if set)
-      if (selectedMonth !== null) {
-        // Use selectedYear if available, otherwise check all years
-        const year =
-          selectedYear !== null ? selectedYear : targetStart.getFullYear();
-        const periodStart = new Date(year, selectedMonth, 1);
-        const periodEnd = new Date(year, selectedMonth + 1, 0, 23, 59, 59);
-        if (!(targetStart <= periodEnd && targetEnd >= periodStart))
-          return false;
-      }
-
-      return true;
+      const targetEnd   = new Date(target.period_end);
+      return targetStart <= to && targetEnd >= from;
     });
-  }, [assignedTargets, selectedMonth, selectedQuarter, selectedYear]);
+  }, [assignedTargets, activeDateRange.from, activeDateRange.to]);
 
   // Recalculate per-subordinate target progress from deals.
   // The DB column `progress_amount` is not auto-updated when deals close,
@@ -475,15 +406,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   };
 
   const targetsWithRecalculatedProgress = useMemo(() => {
-    // If no filter selected, return targets as-is with their original calculated progress
-    if (
-      selectedMonth === null &&
-      selectedQuarter === null &&
-      selectedYear === null
-    ) {
-      return filteredMyTargets;
-    }
-
     // If no deals at all, return targets as-is
     if (!allDeals?.length) {
       return filteredMyTargets;
@@ -520,9 +442,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
           calculated_progress: totalProgress,
           manager_revenue: managerRevenue,
           subordinates_contribution: subordinatesRevenue,
-          period_type: selectedMonth
+          period_type: selectedMonth !== null
             ? "month"
-            : selectedQuarter
+            : selectedQuarter !== null
               ? "quarter"
               : "year",
           is_synthetic: true, // Flag to indicate this is not a real target
@@ -540,12 +462,11 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   }, [
     filteredMyTargets,
     allDeals,
-    selectedMonth,
-    selectedQuarter,
-    selectedYear,
+    activeDateRange.from,
+    activeDateRange.to,
     user?.id,
     allSubordinates,
-    isInSelectedPeriod,
+    preferredCurrency,
   ]);
 
   // Calculate performance trend based on active filters
@@ -1373,7 +1294,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   }
 
   return (
-    <div className="space-y-8">
+    <div className={`space-y-8 transition-opacity duration-200 ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -1429,11 +1350,13 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
             onChange={(e) => {
               const newMonth =
                 e.target.value === "" ? null : parseInt(e.target.value);
+              const newQuarter =
+                newMonth !== null ? Math.floor(newMonth / 3) : selectedQuarter;
               setSelectedMonth(newMonth);
-              if (newMonth !== null) {
-                const monthQuarter = Math.floor(newMonth / 3);
-                setSelectedQuarter(monthQuarter);
-              }
+              setSelectedQuarter(newQuarter);
+              const range = buildDateRange(newMonth, newMonth !== null ? newQuarter : selectedQuarter, selectedYear);
+              setActiveDateRange(range);
+              setRange({ from: range.from, to: range.to });
             }}
             className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[140px]"
           >
@@ -1454,14 +1377,17 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
             onChange={(e) => {
               const newQuarter =
                 e.target.value === "" ? null : parseInt(e.target.value);
-              setSelectedQuarter(newQuarter);
-              // Clear month if it's outside the selected quarter
+              let newMonth = selectedMonth;
               if (newQuarter !== null && selectedMonth !== null) {
-                const monthQuarter = Math.floor(selectedMonth / 3);
-                if (monthQuarter !== newQuarter) {
-                  setSelectedMonth(null);
+                if (Math.floor(selectedMonth / 3) !== newQuarter) {
+                  newMonth = null;
                 }
               }
+              setSelectedQuarter(newQuarter);
+              setSelectedMonth(newMonth);
+              const range = buildDateRange(newMonth, newQuarter, selectedYear);
+              setActiveDateRange(range);
+              setRange({ from: range.from, to: range.to });
             }}
             className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[120px]"
           >
@@ -1483,6 +1409,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               const newYear =
                 e.target.value === "" ? null : parseInt(e.target.value);
               setSelectedYear(newYear);
+              const range = buildDateRange(selectedMonth, selectedQuarter, newYear);
+              setActiveDateRange(range);
+              setRange({ from: range.from, to: range.to });
             }}
             className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[100px]"
           >
@@ -1496,12 +1425,18 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         </div>
 
         {/* Clear Filter Button */}
-        {(selectedMonth || selectedQuarter || selectedYear) && (
+        {(selectedMonth !== null || selectedQuarter !== null || selectedYear !== null) && (
           <button
             onClick={() => {
-              setSelectedMonth(null);
+              const now = new Date();
+              const m = now.getMonth();
+              const y = now.getFullYear();
+              setSelectedMonth(m);
               setSelectedQuarter(null);
-              setSelectedYear(null);
+              setSelectedYear(y);
+              const range = buildDateRange(m, null, y);
+              setActiveDateRange(range);
+              setRange({ from: range.from, to: range.to });
             }}
             className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
           >

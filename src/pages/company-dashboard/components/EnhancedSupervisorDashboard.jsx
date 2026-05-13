@@ -28,6 +28,10 @@ import MetricInsightModal from "./MetricInsightModal";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
 import { useLanguage } from "../../../i18n";
+import {
+  buildDateRange,
+  syncDropdownsFromRange,
+} from "../../../utils/dashboardDateUtils";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
 import {
   BarChart,
@@ -48,7 +52,7 @@ const EnhancedSupervisorDashboard = ({
 }) => {
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
-  const { dateRange } = useDateRange();
+  const { dateRange, setRange } = useDateRange();
   const { t } = useLanguage();
 
   // If viewing as another user (director view), use that user's data
@@ -70,12 +74,46 @@ const EnhancedSupervisorDashboard = ({
   const [selectedQuarter, setSelectedQuarter] = useState(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
+  // Single source of truth for the active date range
+  const [activeDateRange, setActiveDateRange] = useState(() =>
+    buildDateRange(new Date().getMonth(), null, new Date().getFullYear())
+  );
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Sync from top-right DateRangePicker (via context) → local dropdowns
+  const activeDateRangeRef = React.useRef(activeDateRange);
+  activeDateRangeRef.current = activeDateRange;
+  useEffect(() => {
+    if (!dateRange?.from || !dateRange?.to) return;
+    if (
+      dateRange.from === activeDateRangeRef.current.from &&
+      dateRange.to   === activeDateRangeRef.current.to
+    ) return;
+    const synced = syncDropdownsFromRange(dateRange.from, dateRange.to);
+    setActiveDateRange({ from: dateRange.from, to: dateRange.to });
+    setSelectedMonth(synced.selectedMonth);
+    setSelectedQuarter(synced.selectedQuarter);
+    setSelectedYear(synced.selectedYear);
+  }, [dateRange?.from, dateRange?.to]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Brief opacity flash when date range changes
+  useEffect(() => {
+    setRefreshing(true);
+    const timer = setTimeout(() => setRefreshing(false), 200);
+    return () => clearTimeout(timer);
+  }, [activeDateRange.from, activeDateRange.to]);
+
   // Sync from parent filter props when the manager controls filters via "View As"
   useEffect(() => {
     if (filterMonth !== undefined) {
-      setSelectedMonth(filterMonth ?? null);
-      setSelectedQuarter(filterQuarter ?? null);
-      setSelectedYear(filterYear ?? null);
+      const m = filterMonth ?? null;
+      const q = filterQuarter ?? null;
+      const y = filterYear ?? null;
+      setSelectedMonth(m);
+      setSelectedQuarter(q);
+      setSelectedYear(y);
+      const range = buildDateRange(m, q, y);
+      setActiveDateRange(range);
     }
   }, [filterMonth, filterQuarter, filterYear]);
 
@@ -275,30 +313,13 @@ const EnhancedSupervisorDashboard = ({
     }
   }, [allDeals, trendPeriod, preferredCurrency]);
 
-  // Helper function to check if a date falls within selected filters
-  // All three filters work together: year + quarter + month
+  // Check if a date falls within activeDateRange
   const isInSelectedPeriod = (date) => {
+    if (!date) return false;
     const itemDate = new Date(date);
-    const itemYear = itemDate.getFullYear();
-    const itemMonth = itemDate.getMonth();
-    const itemQuarter = Math.floor(itemMonth / 3);
-
-    // Check year filter (required if set)
-    if (selectedYear !== null && itemYear !== selectedYear) {
-      return false;
-    }
-
-    // Check quarter filter (required if set)
-    if (selectedQuarter !== null && itemQuarter !== selectedQuarter) {
-      return false;
-    }
-
-    // Check month filter (required if set)
-    if (selectedMonth !== null && itemMonth !== selectedMonth) {
-      return false;
-    }
-
-    return true;
+    const from = new Date(activeDateRange.from + 'T00:00:00');
+    const to   = new Date(activeDateRange.to   + 'T23:59:59');
+    return itemDate >= from && itemDate <= to;
   };
 
   const dealDate = (deal) => deal.stage === "won" ? deal.closed_at : deal.created_at;
@@ -306,7 +327,7 @@ const EnhancedSupervisorDashboard = ({
   // Filter all data based on selected filters
   const filteredDeals = useMemo(() => {
     return allDeals?.filter((deal) => isInSelectedPeriod(dealDate(deal))) || [];
-  }, [allDeals, selectedMonth, selectedQuarter, selectedYear]);
+  }, [allDeals, activeDateRange.from, activeDateRange.to]);
 
   // ----- useMemo-derived metrics (always in sync with filters, no state race) -----
 
@@ -413,7 +434,7 @@ const EnhancedSupervisorDashboard = ({
         isInSelectedPeriod(activity.created_at),
       ) || []
     );
-  }, [activities, selectedMonth, selectedQuarter, selectedYear]);
+  }, [activities, activeDateRange.from, activeDateRange.to]);
 
   const filteredContacts = useMemo(() => {
     return (
@@ -421,13 +442,13 @@ const EnhancedSupervisorDashboard = ({
         isInSelectedPeriod(contact.created_at || contact.updated_at),
       ) || []
     );
-  }, [allContacts, selectedMonth, selectedQuarter, selectedYear]);
+  }, [allContacts, activeDateRange.from, activeDateRange.to]);
 
   const filteredTasks = useMemo(() => {
     return (
       allTasks?.filter((task) => isInSelectedPeriod(task.created_at)) || []
     );
-  }, [allTasks, selectedMonth, selectedQuarter, selectedYear]);
+  }, [allTasks, activeDateRange.from, activeDateRange.to]);
 
   // Helper function to get dynamic period label
   const getPeriodLabel = () => {
@@ -453,51 +474,17 @@ const EnhancedSupervisorDashboard = ({
     return t("dashboard.currentPeriod");
   };
 
-  // Filter targets based on selected filters - check if target period overlaps with selected filters
+  // Filter targets whose period overlaps with activeDateRange
   const filteredMyTargets = useMemo(() => {
     if (!myTargets) return myTargets;
-    if (
-      selectedMonth === null &&
-      selectedQuarter === null &&
-      selectedYear === null
-    )
-      return myTargets;
-
+    const from = new Date(activeDateRange.from + 'T00:00:00');
+    const to   = new Date(activeDateRange.to   + 'T23:59:59');
     return myTargets.filter((target) => {
       const targetStart = new Date(target.period_start);
-      const targetEnd = new Date(target.period_end);
-
-      // Build the filter period based on selected filters
-      let periodStart, periodEnd;
-
-      if (selectedMonth !== null && selectedYear !== null) {
-        // Specific month in a year
-        periodStart = new Date(selectedYear, selectedMonth, 1);
-        periodEnd = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59);
-      } else if (selectedQuarter !== null && selectedYear !== null) {
-        // Specific quarter in a year
-        const quarterMonth = selectedQuarter * 3;
-        periodStart = new Date(selectedYear, quarterMonth, 1);
-        periodEnd = new Date(selectedYear, quarterMonth + 3, 0, 23, 59, 59);
-      } else if (selectedYear !== null) {
-        // Entire year
-        periodStart = new Date(selectedYear, 0, 1);
-        periodEnd = new Date(selectedYear, 11, 31, 23, 59, 59);
-      } else if (selectedMonth !== null) {
-        // Same month across all years - check if target period includes this month
-        const targetMonth = targetStart.getMonth();
-        return targetMonth === selectedMonth;
-      } else if (selectedQuarter !== null) {
-        // Same quarter across all years - check if target period includes this quarter
-        const targetMonth = targetStart.getMonth();
-        const targetQuarter = Math.floor(targetMonth / 3);
-        return targetQuarter === selectedQuarter;
-      }
-
-      // Check if target overlaps with the filter period
-      return targetStart <= periodEnd && targetEnd >= periodStart;
+      const targetEnd   = new Date(target.period_end);
+      return targetStart <= to && targetEnd >= from;
     });
-  }, [myTargets, selectedMonth, selectedQuarter, selectedYear]);
+  }, [myTargets, activeDateRange.from, activeDateRange.to]);
 
   // Recalculate target progress based on filtered deals for the selected filters
   const targetsWithRecalculatedProgress = useMemo(() => {
@@ -583,59 +570,24 @@ const EnhancedSupervisorDashboard = ({
   }, [
     filteredMyTargets,
     allDeals,
-    selectedMonth,
-    selectedQuarter,
-    selectedYear,
+    activeDateRange.from,
+    activeDateRange.to,
     effectiveUser?.id,
     allSubordinates,
     preferredCurrency,
   ]);
 
-  // Filter assigned targets (targets assigned BY the supervisor to salesmen) based on selected time period
+  // Filter assigned targets whose period overlaps with activeDateRange
   const filteredAssignedTargets = useMemo(() => {
     if (!assignedTargets) return assignedTargets;
-    if (
-      selectedMonth === null &&
-      selectedQuarter === null &&
-      selectedYear === null
-    )
-      return assignedTargets;
-
+    const from = new Date(activeDateRange.from + 'T00:00:00');
+    const to   = new Date(activeDateRange.to   + 'T23:59:59');
     return assignedTargets.filter((target) => {
       const targetStart = new Date(target.period_start);
-      const targetEnd = new Date(target.period_end);
-
-      // Build the filter period based on selected filters
-      let periodStart, periodEnd;
-
-      if (selectedMonth !== null && selectedYear !== null) {
-        // Specific month in a year
-        periodStart = new Date(selectedYear, selectedMonth, 1);
-        periodEnd = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59);
-      } else if (selectedQuarter !== null && selectedYear !== null) {
-        // Specific quarter in a year
-        const quarterMonth = selectedQuarter * 3;
-        periodStart = new Date(selectedYear, quarterMonth, 1);
-        periodEnd = new Date(selectedYear, quarterMonth + 3, 0, 23, 59, 59);
-      } else if (selectedYear !== null) {
-        // Entire year
-        periodStart = new Date(selectedYear, 0, 1);
-        periodEnd = new Date(selectedYear, 11, 31, 23, 59, 59);
-      } else if (selectedMonth !== null) {
-        // Same month across all years - check if target period includes this month
-        const targetMonth = targetStart.getMonth();
-        return targetMonth === selectedMonth;
-      } else if (selectedQuarter !== null) {
-        // Same quarter across all years - check if target period includes this quarter
-        const targetMonth = targetStart.getMonth();
-        const targetQuarter = Math.floor(targetMonth / 3);
-        return targetQuarter === selectedQuarter;
-      }
-
-      // Check if target overlaps with the filter period
-      return targetStart <= periodEnd && targetEnd >= periodStart;
+      const targetEnd   = new Date(target.period_end);
+      return targetStart <= to && targetEnd >= from;
     });
-  }, [assignedTargets, selectedMonth, selectedQuarter, selectedYear]);
+  }, [assignedTargets, activeDateRange.from, activeDateRange.to]);
 
   // Recalculate per-subordinate target progress from deals.
   // The DB column `progress_amount` is not auto-updated when deals close,
@@ -1428,7 +1380,7 @@ const EnhancedSupervisorDashboard = ({
   }
 
   return (
-    <div className="space-y-8">
+    <div className={`space-y-8 transition-opacity duration-200 ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
       {/* Header */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -1457,11 +1409,13 @@ const EnhancedSupervisorDashboard = ({
                 onChange={(e) => {
                   const newMonth =
                     e.target.value === "" ? null : parseInt(e.target.value);
+                  const newQuarter =
+                    newMonth !== null ? Math.floor(newMonth / 3) : selectedQuarter;
                   setSelectedMonth(newMonth);
-                  if (newMonth !== null) {
-                    const monthQuarter = Math.floor(newMonth / 3);
-                    setSelectedQuarter(monthQuarter);
-                  }
+                  setSelectedQuarter(newQuarter);
+                  const range = buildDateRange(newMonth, newMonth !== null ? newQuarter : selectedQuarter, selectedYear);
+                  setActiveDateRange(range);
+                  setRange({ from: range.from, to: range.to });
                 }}
                 className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[140px]"
               >
@@ -1482,14 +1436,17 @@ const EnhancedSupervisorDashboard = ({
                 onChange={(e) => {
                   const newQuarter =
                     e.target.value === "" ? null : parseInt(e.target.value);
-                  setSelectedQuarter(newQuarter);
-                  // Clear month if it's outside the selected quarter
+                  let newMonth = selectedMonth;
                   if (newQuarter !== null && selectedMonth !== null) {
-                    const monthQuarter = Math.floor(selectedMonth / 3);
-                    if (monthQuarter !== newQuarter) {
-                      setSelectedMonth(null);
+                    if (Math.floor(selectedMonth / 3) !== newQuarter) {
+                      newMonth = null;
                     }
                   }
+                  setSelectedQuarter(newQuarter);
+                  setSelectedMonth(newMonth);
+                  const range = buildDateRange(newMonth, newQuarter, selectedYear);
+                  setActiveDateRange(range);
+                  setRange({ from: range.from, to: range.to });
                 }}
                 className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[120px]"
               >
@@ -1511,6 +1468,9 @@ const EnhancedSupervisorDashboard = ({
                   const newYear =
                     e.target.value === "" ? null : parseInt(e.target.value);
                   setSelectedYear(newYear);
+                  const range = buildDateRange(selectedMonth, selectedQuarter, newYear);
+                  setActiveDateRange(range);
+                  setRange({ from: range.from, to: range.to });
                 }}
                 className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[100px]"
               >
@@ -1524,12 +1484,18 @@ const EnhancedSupervisorDashboard = ({
             </div>
 
             {/* Clear All Filters */}
-            {(selectedMonth || selectedQuarter || selectedYear) && (
+            {(selectedMonth !== null || selectedQuarter !== null || selectedYear !== null) && (
               <button
                 onClick={() => {
-                  setSelectedMonth(null);
+                  const now = new Date();
+                  const m = now.getMonth();
+                  const y = now.getFullYear();
+                  setSelectedMonth(m);
                   setSelectedQuarter(null);
-                  setSelectedYear(null);
+                  setSelectedYear(y);
+                  const range = buildDateRange(m, null, y);
+                  setActiveDateRange(range);
+                  setRange({ from: range.from, to: range.to });
                 }}
                 className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 ml-2"
               >
