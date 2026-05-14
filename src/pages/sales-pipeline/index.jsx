@@ -11,7 +11,7 @@ import Button from "../../components/ui/Button";
 import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../i18n";
-import { useLocation } from "react-router-dom";
+import { useLocation, Navigate } from "react-router-dom";
 import {
   dealService,
   contactService,
@@ -466,6 +466,11 @@ const SalesPipeline = () => {
     { id: "won", name: t("deals.won") },
     { id: "lost", name: t("deals.lost") },
   ];
+
+  // Defence-in-depth: viewer must not reach the full pipeline page
+  if (userProfile?.role === "viewer") {
+    return <Navigate to="/pipeline-view" replace />;
+  }
 
   if (!company) {
     return <div>{t("common.noData")}</div>;

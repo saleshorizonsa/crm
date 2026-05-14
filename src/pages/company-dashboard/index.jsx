@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Navigate } from "react-router-dom";
 import Header from "../../components/ui/Header";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
 import RoleBasedDashboard from "./components/RoleBasedDashboard";
@@ -87,6 +88,11 @@ const CompanyDashboard = () => {
         </div>
       </div>
     );
+  }
+
+  // Defence-in-depth: viewer must not reach the company dashboard
+  if (userProfile?.role === "viewer") {
+    return <Navigate to="/pipeline-view" replace />;
   }
 
   return (

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Navigate } from "react-router-dom";
 import Header from "../../components/ui/Header";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
 import GeneralSettings from "./components/GeneralSettings";
@@ -10,7 +11,7 @@ import { settingsService } from "../../services/supabaseService";
 import { useLanguage } from "../../i18n";
 
 const Settings = () => {
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState("general");
   const [settings, setSettings] = useState(null);
@@ -64,6 +65,11 @@ const Settings = () => {
     { id: "notifications", label: t("dashboard.notifications"), icon: "Bell"     },
     { id: "calendar",      label: t("nav.calendar"),            icon: "Calendar"  },
   ];
+
+  // Defence-in-depth: viewer must not reach settings
+  if (userProfile?.role === "viewer") {
+    return <Navigate to="/pipeline-view" replace />;
+  }
 
   if (!user) {
     return <div>{t("common.loading")}...</div>;

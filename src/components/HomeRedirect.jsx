@@ -15,6 +15,11 @@ export const HomeRedirect = () => {
     );
   }
 
+  // Viewer role lands on the read-only pipeline page
+  if (userProfile?.role === "viewer") {
+    return <Navigate to="/pipeline-view" replace />;
+  }
+
   // Redirect based on role
   if (userProfile?.role === "admin") {
     return <Navigate to="/admin-dashboard" replace />;

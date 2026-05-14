@@ -128,10 +128,10 @@ const UserManagement = () => {
           </Button>
         </div>
 
-        {/* <Button onClick={() => setShowInviteModal(true)}>
+        <Button onClick={() => setShowInviteModal(true)}>
           <Icon name="UserPlus" size={16} />
           Invite User
-        </Button> */}
+        </Button>
       </div>
 
       {/* Content */}
@@ -191,10 +191,17 @@ const UserManagement = () => {
                       {user.email}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium capitalize">
-                        <Icon name="Briefcase" size={12} />
-                        {user.role}
-                      </span>
+                      {user.role === "viewer" ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium">
+                          <Icon name="Lock" size={12} />
+                          Pipeline Viewer
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium capitalize">
+                          <Icon name="Briefcase" size={12} />
+                          {user.role}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       {user.role === "admin" || user.role === "director" ? (

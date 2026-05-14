@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Navigate } from "react-router-dom";
 import Icon from "../../components/AppIcon";
 import Button from "../../components/ui/Button";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
@@ -20,7 +20,7 @@ import {
 import { useLanguage } from "../../i18n";
 
 const TaskManagement = () => {
-  const { user, company } = useAuth();
+  const { user, company, userProfile } = useAuth();
   const { t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
@@ -266,6 +266,11 @@ const TaskManagement = () => {
 
     return filtered;
   }, [tasks, filters]);
+
+  // Defence-in-depth: viewer must not reach task management
+  if (userProfile?.role === "viewer") {
+    return <Navigate to="/pipeline-view" replace />;
+  }
 
   if (!user) {
     return <div>{t("common.loading")}</div>;

@@ -111,6 +111,11 @@ const UserDetailModal = ({ user, onClose, onUpdate }) => {
       icon: "User",
       label: "Agent",
     },
+    viewer: {
+      color: "#6b7280",
+      icon: "Lock",
+      label: "Pipeline Viewer",
+    },
   };
 
   const config = roleConfig[user.role] || roleConfig.agent;
@@ -273,6 +278,17 @@ const UserDetailModal = ({ user, onClose, onUpdate }) => {
                 </div>
               </div>
             </div>
+
+            {/* Viewer read-only note */}
+            {user.role === "viewer" && (
+              <div className="flex items-start gap-2 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-600">
+                <Icon name="Lock" size={14} className="mt-0.5 flex-shrink-0 text-gray-400" />
+                <p>
+                  This user has read-only access to the pipeline from Qualified stage onwards.
+                  They cannot see deal values or targets.
+                </p>
+              </div>
+            )}
 
             {/* Direct Reports */}
             {user.subordinates && user.subordinates.length > 0 && (

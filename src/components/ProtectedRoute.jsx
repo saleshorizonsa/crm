@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { capitalize } from "../utils/helper";
 
@@ -10,6 +10,7 @@ const Spinner = () => (
 
 export const ProtectedRoute = ({ children, requiredRole }) => {
   const { user, userProfile, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return <Spinner />;
@@ -17,6 +18,14 @@ export const ProtectedRoute = ({ children, requiredRole }) => {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Viewers are confined to /pipeline-view — redirect any other path back
+  if (
+    userProfile?.role === "viewer" &&
+    location.pathname !== "/pipeline-view"
+  ) {
+    return <Navigate to="/pipeline-view" replace />;
   }
 
   // Wait for userProfile to load before checking roles

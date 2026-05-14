@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { Navigate } from "react-router-dom";
 import Icon from "../../components/AppIcon";
 import Button from "../../components/ui/Button";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
@@ -14,7 +15,7 @@ import { contactService, activityService } from "../../services/supabaseService"
 import { useLanguage } from "../../i18n";
 
 const ContactManagement = () => {
-  const { company, user } = useAuth();
+  const { company, user, userProfile } = useAuth();
   const { t } = useLanguage();
   const [isLoading, setIsLoading] = useState(true);
   const [contacts, setContacts] = useState([]);
@@ -186,6 +187,11 @@ const ContactManagement = () => {
 
     return filtered;
   }, [contacts, filters]);
+
+  // Defence-in-depth: viewer must not reach contact management
+  if (userProfile?.role === "viewer") {
+    return <Navigate to="/pipeline-view" replace />;
+  }
 
   if (!user) {
     return <div>{t("common.loading")}</div>;

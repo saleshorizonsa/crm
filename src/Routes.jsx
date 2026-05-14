@@ -32,6 +32,7 @@ import Notifications from "./pages/notifications";
 import ForecastPage from "./pages/forecast";
 import ReportsPage from "./pages/reports";
 import CalendarPage from "./pages/calendar";
+import PipelineView from "./pages/pipeline-view";
 
 const Routes = () => {
   return (
@@ -159,6 +160,14 @@ const Routes = () => {
                   element={
                     <ProtectedRoute>
                       <ReportsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/pipeline-view"
+                  element={
+                    <ProtectedRoute>
+                      <PipelineView />
                     </ProtectedRoute>
                   }
                 />
