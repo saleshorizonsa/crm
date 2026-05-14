@@ -107,57 +107,33 @@ const AcceptInvitation = () => {
     setIsLoading(true);
 
     try {
-      // Sign up the user with Supabase Auth
+      // 1 — Create the auth user
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: invitation.email,
         password: formData.password,
         options: {
-          data: {
-            full_name: invitation.full_name,
-          },
+          data: { full_name: invitation.full_name },
         },
       });
 
-      if (signUpError) {
-        throw signUpError;
-      }
+      if (signUpError) throw signUpError;
+      if (!authData.user) throw new Error("Account creation failed — please try again.");
 
-      // Wait a moment for the trigger to create the user record
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // 2 — Run the server-side function that:
+      //     • creates the users profile row (role, company, supervisor)
+      //     • auto-confirms the email so login works immediately
+      //     • marks the invitation as accepted
+      const { data: rpcData, error: rpcError } = await supabase.rpc(
+        "accept_invitation",
+        { p_token: token, p_user_id: authData.user.id }
+      );
 
-      // Update the user record with invitation details (role, company, supervisor)
-      if (authData.user) {
-        const { error: updateUserError } = await supabase
-          .from("users")
-          .update({
-            role: invitation.role,
-            company_id: invitation.company?.id,
-            supervisor_id: invitation.supervisor_id || null,
-            full_name: invitation.full_name,
-          })
-          .eq("id", authData.user.id);
-
-        if (updateUserError) {
-          console.error("Error updating user profile:", updateUserError);
-        }
-      }
-
-      // Update the invitation status to accepted
-      const { error: updateError } = await supabase
-        .from("user_invitations")
-        .update({ status: "accepted" })
-        .eq("id", invitation.id);
-
-      if (updateError) {
-        console.error("Error updating invitation status:", updateError);
-      }
+      if (rpcError) throw rpcError;
+      if (rpcData?.error) throw new Error(rpcData.error);
 
       setIsSuccess(true);
 
-      // Redirect to login after 3 seconds
-      setTimeout(() => {
-        navigate("/login");
-      }, 3000);
+      setTimeout(() => navigate("/login"), 3000);
     } catch (err) {
       console.error("Account creation error:", err);
       setErrors({
