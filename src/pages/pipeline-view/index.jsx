@@ -46,22 +46,28 @@ const SortIcon = ({ active, dir }) => (
 );
 
 function formatQty(dp) {
-  const qty  = dp.uom_value != null ? dp.uom_value : dp.quantity;
+  const qty  = dp.quantity ?? dp.uom_value;
   const unit = UOM_LABEL[dp.uom_type] || dp.uom_type || "";
   if (qty == null) return unit || "";
   return `${qty}${unit ? " " + unit : ""}`;
+}
+
+// Resolve display name: prefer material code, fall back to description
+function productLabel(dp) {
+  return dp.product?.material || dp.product?.description || "Unknown Product";
 }
 
 function buildProductMap(dealList) {
   const map = new Map();
   dealList.forEach((deal) => {
     (deal.deal_products || []).forEach((dp) => {
-      const desc = dp.product?.description || "Unknown Product";
-      const qty  = Number(dp.uom_value ?? dp.quantity ?? 0);
-      const unit = UOM_LABEL[dp.uom_type] || dp.uom_type || "";
-      const key  = `${desc}__${unit}`;
+      const desc  = productLabel(dp);
+      const group = dp.product?.material_group || "";
+      const qty   = Number(dp.quantity ?? dp.uom_value ?? 0);
+      const unit  = UOM_LABEL[dp.uom_type] || dp.uom_type || "";
+      const key   = `${desc}__${unit}`;
       if (map.has(key)) map.get(key).qty += qty;
-      else               map.set(key, { desc, qty, unit });
+      else               map.set(key, { desc, group, qty, unit });
     });
   });
   return Array.from(map.values()).sort((a, b) => b.qty - a.qty);
@@ -82,7 +88,7 @@ function exportCSV(deals) {
   const rows = deals.map((d) => {
     const products = (d.deal_products || [])
       .map((dp) => {
-        const desc = dp.product?.description || "Unknown";
+        const desc = productLabel(dp);
         const qty  = formatQty(dp);
         return qty ? `${desc} x ${qty}` : desc;
       })
@@ -147,7 +153,7 @@ const PipelineView = () => {
         owner:users!owner_id(id, full_name),
         deal_products(
           quantity, uom_type, uom_value,
-          product:products!product_id(description)
+          product:products!product_id(material, description, material_group)
         )
       `)
       .eq("company_id", company.id)
@@ -359,8 +365,11 @@ const PipelineView = () => {
                     <div className="space-y-1">
                       {products.slice(0, 4).map((p, i) => (
                         <div key={i} className="flex items-center justify-between gap-1">
-                          <span className="text-xs text-gray-600 truncate flex-1" title={p.desc}>{p.desc}</span>
-                          <span className={`text-xs font-medium whitespace-nowrap ${cfg.text}`}>
+                          <span className="text-xs text-gray-600 truncate flex-1 font-mono" title={p.desc}>
+                            {p.desc}
+                            {p.group && <span className="ml-1 not-italic font-sans text-gray-400">({p.group})</span>}
+                          </span>
+                          <span className={`text-xs font-semibold whitespace-nowrap ${cfg.text}`}>
                             {p.qty > 0 ? `${p.qty}${p.unit ? " " + p.unit : ""}` : "—"}
                           </span>
                         </div>
@@ -531,15 +540,21 @@ const PipelineView = () => {
                         <td className="px-4 py-3"><StageBadge stage={deal.stage} /></td>
                         <td className="px-4 py-3">
                           {(deal.deal_products || []).length > 0 ? (
-                            <div className="flex flex-col gap-1">
+                            <div className="flex flex-col gap-1.5">
                               {deal.deal_products.map((dp, idx) => {
-                                const desc = dp.product?.description || "Unknown Product";
-                                const qty  = formatQty(dp);
+                                const label = productLabel(dp);
+                                const group = dp.product?.material_group;
+                                const qty   = formatQty(dp);
                                 return (
-                                  <div key={idx} className="flex items-center gap-1.5">
-                                    <span className="text-gray-800 text-xs font-medium">{desc}</span>
+                                  <div key={idx} className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-gray-800 text-xs font-semibold font-mono">{label}</span>
+                                    {group && (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 text-xs font-medium">
+                                        {group}
+                                      </span>
+                                    )}
                                     {qty && (
-                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-xs font-semibold">
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 text-xs font-semibold">
                                         {qty}
                                       </span>
                                     )}
