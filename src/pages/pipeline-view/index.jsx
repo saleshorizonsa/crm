@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Navigate } from "react-router-dom";
 import { format, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, startOfYear } from "date-fns";
 import { useAuth } from "../../contexts/AuthContext";
@@ -17,8 +17,23 @@ const STAGE_CONFIG = {
 
 const UOM_LABEL = { qty: "pcs", m: "m", ton: "ton" };
 
-const fmtDate   = (d) => format(d, "yyyy-MM-dd");
+const fmtDate    = (d)   => format(d, "yyyy-MM-dd");
 const fmtDisplay = (iso) => { try { return format(new Date(iso), "d MMM yyyy"); } catch { return "—"; } };
+
+function initials(name = "") {
+  return name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+}
+
+const AVATAR_COLORS = [
+  "bg-blue-500", "bg-violet-500", "bg-emerald-500",
+  "bg-amber-500", "bg-rose-500",  "bg-cyan-500",
+  "bg-indigo-500","bg-teal-500",  "bg-orange-500",
+];
+function avatarColor(id = "") {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
 
 const StageBadge = ({ stage }) => {
   const cfg = STAGE_CONFIG[stage] || { label: stage, pill: "bg-gray-100 text-gray-600" };
@@ -40,7 +55,7 @@ const SkeletonRow = () => (
 );
 
 const SortIcon = ({ active, dir }) => (
-  <span className={`ml-1 inline-block transition-colors ${active ? "text-blue-600" : "text-gray-300"}`}>
+  <span className={`ml-1 inline-block ${active ? "text-blue-600" : "text-gray-300"}`}>
     {active && dir === "desc" ? "↓" : "↑"}
   </span>
 );
@@ -52,7 +67,6 @@ function formatQty(dp) {
   return `${qty}${unit ? " " + unit : ""}`;
 }
 
-// Resolve display name: prefer material code, fall back to description
 function productLabel(dp) {
   return dp.product?.material || dp.product?.description || "Unknown Product";
 }
@@ -74,36 +88,29 @@ function buildProductMap(dealList) {
 }
 
 const DATE_PRESETS = [
-  { label: "This Month",  range: () => { const d = new Date(); return [fmtDate(startOfMonth(d)), fmtDate(endOfMonth(d))]; } },
-  { label: "Last Month",  range: () => { const d = subMonths(new Date(), 1); return [fmtDate(startOfMonth(d)), fmtDate(endOfMonth(d))]; } },
-  { label: "This Quarter",range: () => { const d = new Date(); return [fmtDate(startOfQuarter(d)), fmtDate(endOfQuarter(d))]; } },
-  { label: "YTD",         range: () => [fmtDate(startOfYear(new Date())), fmtDate(new Date())] },
+  { label: "This Month",   range: () => { const d = new Date(); return [fmtDate(startOfMonth(d)), fmtDate(endOfMonth(d))]; } },
+  { label: "Last Month",   range: () => { const d = subMonths(new Date(), 1); return [fmtDate(startOfMonth(d)), fmtDate(endOfMonth(d))]; } },
+  { label: "This Quarter", range: () => { const d = new Date(); return [fmtDate(startOfQuarter(d)), fmtDate(endOfQuarter(d))]; } },
+  { label: "YTD",          range: () => [fmtDate(startOfYear(new Date())), fmtDate(new Date())] },
 ];
 
-// ─── CSV Export ────────────────────────────────────────────────────────────────
-function exportCSV(deals) {
-  const cols = ["Company", "Deal Title", "Stage", "Products", "Expected Close", "Owner"];
+function exportCSV(deals, salesmanName) {
+  const cols = ["Salesman", "Company", "Deal Title", "Stage", "Products", "Expected Close"];
   const esc  = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
 
   const rows = deals.map((d) => {
     const products = (d.deal_products || [])
-      .map((dp) => {
-        const desc = productLabel(dp);
-        const qty  = formatQty(dp);
-        return qty ? `${desc} x ${qty}` : desc;
-      })
+      .map((dp) => { const qty = formatQty(dp); return qty ? `${productLabel(dp)} x ${qty}` : productLabel(dp); })
       .join("; ");
 
     return [
+      d.owner?.full_name || "",
       d.contact?.company_name || "",
       d.title || "",
       STAGE_CONFIG[d.stage]?.label || d.stage,
       products,
       d.expected_close_date ? fmtDisplay(d.expected_close_date) : "",
-      d.owner?.full_name || "",
-    ]
-      .map(esc)
-      .join(",");
+    ].map(esc).join(",");
   });
 
   const csv  = [cols.map(esc).join(","), ...rows].join("\r\n");
@@ -111,7 +118,7 @@ function exportCSV(deals) {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
   a.href     = url;
-  a.download = `pipeline_${fmtDate(new Date())}.csv`;
+  a.download = `pipeline_${salesmanName ? salesmanName.replace(/\s+/g, "_") + "_" : ""}${fmtDate(new Date())}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -122,27 +129,61 @@ const PipelineView = () => {
 
   const today = new Date();
   const [deals,          setDeals]          = useState([]);
+  const [salesmen,       setSalesmen]       = useState([]);
   const [loading,        setLoading]        = useState(true);
   const [lastUpdated,    setLastUpdated]    = useState(null);
-  const [stageFilter,    setStageFilter]    = useState("");
-  const [ownerFilter,    setOwnerFilter]    = useState("");
-  const [companySearch,  setCompanySearch]  = useState("");
-  const [productSearch,  setProductSearch]  = useState("");
-  const [dateFrom,       setDateFrom]       = useState(fmtDate(startOfMonth(today)));
-  const [dateTo,         setDateTo]         = useState(fmtDate(endOfMonth(today)));
-  const [activePreset,   setActivePreset]   = useState("This Month");
+
+  // Filters
+  const [selectedSalesman, setSelectedSalesman] = useState("");   // user id or ""
+  const [stageFilter,      setStageFilter]      = useState("");
+  const [companySearch,    setCompanySearch]    = useState("");
+  const [productSearch,    setProductSearch]    = useState("");
+
+  // Date
+  const [dateFrom,     setDateFrom]     = useState(fmtDate(startOfMonth(today)));
+  const [dateTo,       setDateTo]       = useState(fmtDate(endOfMonth(today)));
+  const [activePreset, setActivePreset] = useState("This Month");
+
+  // UI toggles
   const [showStageSummary,  setShowStageSummary]  = useState(true);
   const [showProductTotals, setShowProductTotals] = useState(false);
+
+  // Sort
   const [sortBy,  setSortBy]  = useState("");
   const [sortDir, setSortDir] = useState("asc");
 
   useEffect(() => {
-    if (company?.id) fetchPipelineDeals(dateFrom, dateTo);
-  }, [company?.id, dateFrom, dateTo]);
+    if (company?.id) {
+      fetchSalesmen();
+      fetchPipelineDeals(dateFrom, dateTo);
+    }
+  }, [company?.id]);
 
-  // Defence-in-depth: non-viewers must not reach this page
+  useEffect(() => {
+    if (company?.id) fetchPipelineDeals(dateFrom, dateTo);
+  }, [dateFrom, dateTo]);
+
+  // Defence-in-depth
   if (userProfile && userProfile.role !== "viewer") return <Navigate to="/" replace />;
 
+  // ── Fetch company salesmen ──────────────────────────────────────────────────
+  async function fetchSalesmen() {
+    const { data } = await supabase
+      .from("users")
+      .select("id, full_name, role")
+      .eq("company_id", company.id)
+      .eq("is_active", true)
+      .in("role", ["salesman", "supervisor", "manager", "head", "director"])
+      .order("full_name");
+
+    if (data && data.length > 0) {
+      setSalesmen(data);
+    }
+    // If RLS blocks the users table, salesmen will remain [] and we fall back
+    // to the deals-derived list (see salesmenList memo below)
+  }
+
+  // ── Fetch deals ─────────────────────────────────────────────────────────────
   async function fetchPipelineDeals(from, to) {
     setLoading(true);
     const { data } = await supabase
@@ -188,25 +229,37 @@ const PipelineView = () => {
     else { setSortBy(col); setSortDir("asc"); }
   };
 
-  // Owner options built from loaded deals
-  const ownerOptions = useMemo(() => {
+  // ── Salesmen list: prefer DB fetch, fall back to deals-derived ──────────────
+  const salesmenList = useMemo(() => {
+    if (salesmen.length > 0) return salesmen;
+    // Fallback: build from loaded deals
     const map = new Map();
-    deals.forEach((d) => { if (d.owner?.id) map.set(d.owner.id, d.owner.full_name); });
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+    deals.forEach((d) => { if (d.owner?.id) map.set(d.owner.id, { id: d.owner.id, full_name: d.owner.full_name, role: "salesman" }); });
+    return Array.from(map.values()).sort((a, b) => a.full_name.localeCompare(b.full_name));
+  }, [salesmen, deals]);
+
+  // Deal count per salesman (from raw deals, unaffected by other filters)
+  const dealCountBySalesman = useMemo(() => {
+    const map = {};
+    deals.forEach((d) => {
+      if (d.owner?.id) map[d.owner.id] = (map[d.owner.id] || 0) + 1;
+    });
+    return map;
   }, [deals]);
 
-  // Filtered + sorted deals
+  // ── Filtered + sorted deals ─────────────────────────────────────────────────
   const filteredDeals = useMemo(() => {
     const co = companySearch.toLowerCase().trim();
     const pq = productSearch.toLowerCase().trim();
 
     let list = deals.filter((deal) => {
-      if (stageFilter && deal.stage !== stageFilter)         return false;
-      if (ownerFilter && deal.owner?.id !== ownerFilter)     return false;
+      if (selectedSalesman && deal.owner?.id !== selectedSalesman) return false;
+      if (stageFilter && deal.stage !== stageFilter)               return false;
       if (co && !(deal.contact?.company_name || "").toLowerCase().includes(co)) return false;
       if (pq) {
         const hit = (deal.deal_products || []).some((dp) =>
-          (dp.product?.description || "").toLowerCase().includes(pq) ||
+          (productLabel(dp)).toLowerCase().includes(pq) ||
+          (dp.product?.material_group || "").toLowerCase().includes(pq) ||
           (deal.title || "").toLowerCase().includes(pq)
         );
         if (!hit) return false;
@@ -227,7 +280,7 @@ const PipelineView = () => {
       });
     }
     return list;
-  }, [deals, stageFilter, ownerFilter, companySearch, productSearch, sortBy, sortDir]);
+  }, [deals, selectedSalesman, stageFilter, companySearch, productSearch, sortBy, sortDir]);
 
   const stageSummary = useMemo(() =>
     VIEWER_STAGES.map((stage) => {
@@ -238,11 +291,17 @@ const PipelineView = () => {
 
   const productTotals = useMemo(() => buildProductMap(filteredDeals), [filteredDeals]);
 
-  const hasActiveFilters = stageFilter || ownerFilter || companySearch || productSearch;
-  const clearFilters = () => { setStageFilter(""); setOwnerFilter(""); setCompanySearch(""); setProductSearch(""); };
+  const hasActiveFilters = selectedSalesman || stageFilter || companySearch || productSearch;
+  const clearFilters = () => {
+    setSelectedSalesman("");
+    setStageFilter("");
+    setCompanySearch("");
+    setProductSearch("");
+  };
 
-  const thClass = (col) =>
-    `text-left px-4 py-3 font-medium text-gray-600 cursor-pointer select-none hover:text-gray-900 whitespace-nowrap`;
+  const selectedSalesmanName = salesmenList.find((s) => s.id === selectedSalesman)?.full_name || "";
+
+  const thClass = () => "text-left px-4 py-3 font-medium text-gray-600 cursor-pointer select-none hover:text-gray-900 whitespace-nowrap";
 
   return (
     <>
@@ -251,18 +310,16 @@ const PipelineView = () => {
         <h1 className="text-xl font-bold">Pipeline Overview — {company?.name}</h1>
         <p className="text-sm text-gray-500 mt-1">
           {dateFrom} → {dateTo}
+          {selectedSalesmanName ? ` · Salesman: ${selectedSalesmanName}` : ""}
           {stageFilter ? ` · Stage: ${STAGE_CONFIG[stageFilter]?.label}` : ""}
-          {ownerFilter ? ` · Owner: ${ownerOptions.find(o => o.id === ownerFilter)?.name}` : ""}
           {" "}· Printed {format(new Date(), "d MMM yyyy HH:mm")}
         </p>
       </div>
 
       <div className="min-h-screen bg-gray-50 print:bg-white">
-        <div className="print:hidden">
-          <ViewerHeader />
-        </div>
+        <div className="print:hidden"><ViewerHeader /></div>
 
-        {/* Page title */}
+        {/* ── Page title + action buttons ── */}
         <div className="px-6 py-4 bg-white border-b border-gray-200 print:hidden">
           <div className="flex items-center justify-between">
             <div>
@@ -270,40 +327,26 @@ const PipelineView = () => {
               <p className="text-sm text-gray-500 mt-1">Read-only view · Qualified and above</p>
             </div>
             <div className="flex items-center gap-2">
-              {/* Last updated */}
               {lastUpdated && (
-                <span className="text-xs text-gray-400">
-                  Updated {format(lastUpdated, "HH:mm:ss")}
-                </span>
+                <span className="text-xs text-gray-400">Updated {format(lastUpdated, "HH:mm:ss")}</span>
               )}
-              {/* Refresh */}
-              <button
-                onClick={handleRefresh}
-                disabled={loading}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 disabled:opacity-50 transition-colors"
-              >
+              <button onClick={handleRefresh} disabled={loading}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 disabled:opacity-50 transition-colors">
                 <svg className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
                 Refresh
               </button>
-              {/* Export CSV */}
-              <button
-                onClick={() => exportCSV(filteredDeals)}
+              <button onClick={() => exportCSV(filteredDeals, selectedSalesmanName)}
                 disabled={loading || filteredDeals.length === 0}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 disabled:opacity-50 transition-colors"
-              >
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 disabled:opacity-50 transition-colors">
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
                 Export CSV
               </button>
-              {/* Print */}
-              <button
-                onClick={() => window.print()}
-                disabled={loading}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 disabled:opacity-50 transition-colors"
-              >
+              <button onClick={() => window.print()} disabled={loading}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 disabled:opacity-50 transition-colors">
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                 </svg>
@@ -313,20 +356,17 @@ const PipelineView = () => {
           </div>
         </div>
 
-        <div className="px-6 pt-4 print:px-0 print:pt-0">
+        <div className="px-6 pt-4 print:px-0 print:pt-2">
 
           {/* ── Date presets ── */}
-          <div className="flex flex-wrap items-center gap-2 mb-3 print:hidden">
+          <div className="flex flex-wrap items-center gap-2 mb-4 print:hidden">
             {DATE_PRESETS.map((p) => (
-              <button
-                key={p.label}
-                onClick={() => applyPreset(p)}
+              <button key={p.label} onClick={() => applyPreset(p)}
                 className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                   activePreset === p.label
                     ? "bg-blue-600 text-white border-blue-600"
                     : "bg-white text-gray-600 border-gray-200 hover:border-blue-400 hover:text-blue-600"
-                }`}
-              >
+                }`}>
                 {p.label}
               </button>
             ))}
@@ -341,21 +381,91 @@ const PipelineView = () => {
             </div>
           </div>
 
+          {/* ── Salesman selector ── */}
+          {salesmenList.length > 0 && (
+            <div className="mb-4 print:hidden">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Salesman</h2>
+                {selectedSalesman && (
+                  <button onClick={() => setSelectedSalesman("")}
+                    className="text-xs text-blue-600 hover:text-blue-800 transition-colors">
+                    Show All
+                  </button>
+                )}
+              </div>
+
+              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                {/* All card */}
+                <button
+                  onClick={() => setSelectedSalesman("")}
+                  className={`flex-shrink-0 flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl border transition-all ${
+                    !selectedSalesman
+                      ? "bg-blue-600 border-blue-600 shadow-md shadow-blue-100"
+                      : "bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm"
+                  }`}
+                >
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${
+                    !selectedSalesman ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"
+                  }`}>
+                    All
+                  </div>
+                  <span className={`text-xs font-medium whitespace-nowrap ${!selectedSalesman ? "text-white" : "text-gray-700"}`}>
+                    All Salesmen
+                  </span>
+                  <span className={`text-xs font-bold ${!selectedSalesman ? "text-blue-100" : "text-gray-400"}`}>
+                    {deals.length} deals
+                  </span>
+                </button>
+
+                {/* Individual salesman cards */}
+                {salesmenList.map((s) => {
+                  const isActive = selectedSalesman === s.id;
+                  const count    = dealCountBySalesman[s.id] || 0;
+                  const color    = avatarColor(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => setSelectedSalesman(isActive ? "" : s.id)}
+                      className={`flex-shrink-0 flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl border transition-all ${
+                        isActive
+                          ? "bg-blue-600 border-blue-600 shadow-md shadow-blue-100"
+                          : "bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm"
+                      }`}
+                    >
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white ${
+                        isActive ? "bg-white/20" : color
+                      }`}>
+                        {initials(s.full_name)}
+                      </div>
+                      <span className={`text-xs font-medium whitespace-nowrap max-w-[96px] truncate ${isActive ? "text-white" : "text-gray-700"}`}
+                        title={s.full_name}>
+                        {s.full_name}
+                      </span>
+                      <span className={`text-xs font-bold ${isActive ? "text-blue-100" : count > 0 ? "text-blue-600" : "text-gray-300"}`}>
+                        {count} deal{count !== 1 ? "s" : ""}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* ── Stage summary cards ── */}
-          <div className="flex items-center justify-between mb-2 print:hidden">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Stage Summary</h2>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide print:hidden">Stage Summary</h2>
             <button onClick={() => setShowStageSummary((v) => !v)}
-              className="text-xs text-gray-400 hover:text-gray-600">
+              className="text-xs text-gray-400 hover:text-gray-600 print:hidden">
               {showStageSummary ? "Hide" : "Show"}
             </button>
           </div>
 
           {showStageSummary && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4 print:hidden">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
               {stageSummary.map(({ stage, cfg, count, products }) => (
                 <div key={stage}
                   onClick={() => setStageFilter(stageFilter === stage ? "" : stage)}
-                  className={`rounded-lg border p-4 cursor-pointer transition-all ${cfg.bg} ${cfg.border} ${
+                  className={`rounded-lg border p-4 cursor-pointer transition-all ${cfg.bg} ${cfg.border} print:cursor-default ${
                     stageFilter === stage ? "ring-2 ring-offset-1 ring-blue-400" : "hover:shadow-sm"
                   }`}
                 >
@@ -367,7 +477,7 @@ const PipelineView = () => {
                         <div key={i} className="flex items-center justify-between gap-1">
                           <span className="text-xs text-gray-600 truncate flex-1 font-mono" title={p.desc}>
                             {p.desc}
-                            {p.group && <span className="ml-1 not-italic font-sans text-gray-400">({p.group})</span>}
+                            {p.group && <span className="ml-1 font-sans text-gray-400 not-italic">({p.group})</span>}
                           </span>
                           <span className={`text-xs font-semibold whitespace-nowrap ${cfg.text}`}>
                             {p.qty > 0 ? `${p.qty}${p.unit ? " " + p.unit : ""}` : "—"}
@@ -388,10 +498,8 @@ const PipelineView = () => {
 
           {/* ── Product totals panel ── */}
           <div className="mb-4 print:hidden">
-            <button
-              onClick={() => setShowProductTotals((v) => !v)}
-              className="flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide hover:text-gray-700 transition-colors"
-            >
+            <button onClick={() => setShowProductTotals((v) => !v)}
+              className="flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide hover:text-gray-700 transition-colors">
               <svg className={`w-3.5 h-3.5 transition-transform ${showProductTotals ? "rotate-90" : ""}`}
                 fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -408,6 +516,7 @@ const PipelineView = () => {
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-100">
                         <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Product</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Group</th>
                         <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Total Qty</th>
                         <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Unit</th>
                       </tr>
@@ -415,7 +524,14 @@ const PipelineView = () => {
                     <tbody className="divide-y divide-gray-50">
                       {productTotals.map((p, i) => (
                         <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-4 py-2.5 text-gray-800 font-medium">{p.desc}</td>
+                          <td className="px-4 py-2.5 font-mono text-gray-800 font-medium text-xs">{p.desc}</td>
+                          <td className="px-4 py-2.5">
+                            {p.group ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 text-xs font-medium">
+                                {p.group}
+                              </span>
+                            ) : <span className="text-gray-300">—</span>}
+                          </td>
                           <td className="px-4 py-2.5 text-right text-gray-700 font-semibold tabular-nums">{p.qty}</td>
                           <td className="px-4 py-2.5 text-right text-gray-400 text-xs">{p.unit || "—"}</td>
                         </tr>
@@ -424,7 +540,10 @@ const PipelineView = () => {
                     <tfoot className="border-t border-gray-200">
                       <tr className="bg-gray-50">
                         <td className="px-4 py-2.5 text-xs text-gray-500 font-medium">{productTotals.length} product{productTotals.length !== 1 ? "s" : ""}</td>
-                        <td colSpan={2} className="px-4 py-2.5 text-right text-xs text-gray-400">across {filteredDeals.length} deal{filteredDeals.length !== 1 ? "s" : ""}</td>
+                        <td colSpan={3} className="px-4 py-2.5 text-right text-xs text-gray-400">
+                          across {filteredDeals.length} deal{filteredDeals.length !== 1 ? "s" : ""}
+                          {selectedSalesmanName ? ` · ${selectedSalesmanName}` : ""}
+                        </td>
                       </tr>
                     </tfoot>
                   </table>
@@ -443,8 +562,8 @@ const PipelineView = () => {
                   className="text-sm border border-gray-200 rounded px-3 py-1.5 w-44 focus:outline-none focus:ring-1 focus:ring-blue-400" />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1 font-medium">Product</label>
-                <input type="text" placeholder="Search product…" value={productSearch}
+                <label className="block text-xs text-gray-500 mb-1 font-medium">Product / Material</label>
+                <input type="text" placeholder="Code or keyword…" value={productSearch}
                   onChange={(e) => setProductSearch(e.target.value)}
                   className="text-sm border border-gray-200 rounded px-3 py-1.5 w-44 focus:outline-none focus:ring-1 focus:ring-blue-400" />
               </div>
@@ -459,26 +578,16 @@ const PipelineView = () => {
                   <option value="won">Won</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1 font-medium">Owner</label>
-                <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)}
-                  disabled={ownerOptions.length === 0}
-                  className="text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50">
-                  <option value="">All Owners</option>
-                  {ownerOptions.map((o) => (
-                    <option key={o.id} value={o.id}>{o.name}</option>
-                  ))}
-                </select>
-              </div>
               {hasActiveFilters && (
                 <button onClick={clearFilters}
                   className="self-end text-sm text-blue-600 hover:text-blue-800 py-1.5 px-2 rounded transition-colors">
-                  Clear filters
+                  Clear all filters
                 </button>
               )}
               {!loading && (
                 <span className="self-end ml-auto text-xs text-gray-400">
                   {filteredDeals.length} deal{filteredDeals.length !== 1 ? "s" : ""}
+                  {selectedSalesmanName ? ` · ${selectedSalesmanName}` : ""}
                 </span>
               )}
             </div>
@@ -490,21 +599,21 @@ const PipelineView = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 print:bg-white">
-                    <th className={thClass("company")} onClick={() => handleSort("company")}>
+                    <th className={thClass()} onClick={() => handleSort("company")}>
                       Company <SortIcon active={sortBy === "company"} dir={sortDir} />
                     </th>
-                    <th className={thClass("title")} onClick={() => handleSort("title")}>
+                    <th className={thClass()} onClick={() => handleSort("title")}>
                       Deal Title <SortIcon active={sortBy === "title"} dir={sortDir} />
                     </th>
-                    <th className={thClass("stage")} onClick={() => handleSort("stage")}>
+                    <th className={thClass()} onClick={() => handleSort("stage")}>
                       Stage <SortIcon active={sortBy === "stage"} dir={sortDir} />
                     </th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Products &amp; Quantity</th>
-                    <th className={thClass("close_date")} onClick={() => handleSort("close_date")}>
+                    <th className={thClass()} onClick={() => handleSort("close_date")}>
                       Expected Close <SortIcon active={sortBy === "close_date"} dir={sortDir} />
                     </th>
-                    <th className={thClass("owner")} onClick={() => handleSort("owner")}>
-                      Owner <SortIcon active={sortBy === "owner"} dir={sortDir} />
+                    <th className={thClass()} onClick={() => handleSort("owner")}>
+                      Salesman <SortIcon active={sortBy === "owner"} dir={sortDir} />
                     </th>
                   </tr>
                 </thead>
@@ -569,7 +678,18 @@ const PipelineView = () => {
                         <td className="px-4 py-3 text-gray-600">
                           {deal.expected_close_date ? fmtDisplay(deal.expected_close_date) : "—"}
                         </td>
-                        <td className="px-4 py-3 text-gray-600">{deal.owner?.full_name || "—"}</td>
+                        <td className="px-4 py-3">
+                          {deal.owner ? (
+                            <div className="flex items-center gap-2">
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${avatarColor(deal.owner.id)}`}>
+                                {initials(deal.owner.full_name)}
+                              </div>
+                              <span className="text-gray-700 text-xs">{deal.owner.full_name}</span>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
                       </tr>
                     ))
                   )}
