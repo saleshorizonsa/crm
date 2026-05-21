@@ -16,7 +16,9 @@ import {
   userService,
   salesTargetService,
   contactService,
+  getMonthlyTarget,
 } from "../../../services/supabaseService";
+import MonthlyTargetCard from "../../../components/MonthlyTargetCard";
 import SupervisorSalesTargetAssignment from "../../../components/SupervisorSalesTargetAssignment";
 import SalesTargetTable from "../../../components/SalesTargetTable";
 import PipelineChart from "./PipelineChart";
@@ -154,6 +156,10 @@ const EnhancedSupervisorDashboard = ({
     isOpen: false,
     metricType: null,
   });
+
+  // Monthly target state
+  const [monthlyTarget, setMonthlyTarget] = useState(null);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
 
   const handleMetricClick = (metricType) => {
     setMetricInsightModal({
@@ -991,6 +997,31 @@ const EnhancedSupervisorDashboard = ({
       );
     } catch (error) {
       console.error("Error loading action items:", error);
+    }
+  };
+
+  // Fetch supervisor's own monthly target when targets tab is active or date range changes
+  useEffect(() => {
+    if (activeView !== 'targets') return;
+    if (!effectiveUser?.id || !company?.id) return;
+    fetchMonthlyTarget();
+  }, [activeView, activeDateRange.from, activeDateRange.to, effectiveUser?.id, company?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchMonthlyTarget = async () => {
+    setMonthlyLoading(true);
+    try {
+      const result = await getMonthlyTarget({
+        userId:    effectiveUser.id,
+        companyId: company.id,
+        dateFrom:  activeDateRange.from,
+        dateTo:    activeDateRange.to,
+      });
+      setMonthlyTarget(result);
+    } catch (err) {
+      console.error('Error fetching monthly target:', err);
+      setMonthlyTarget(null);
+    } finally {
+      setMonthlyLoading(false);
     }
   };
 
@@ -2391,8 +2422,16 @@ const EnhancedSupervisorDashboard = ({
       {/* Sales Targets Tab */}
       {activeView === "targets" && (
         <div className="space-y-6">
-          {/* Enhanced Your Current Targets Card */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          {/* Monthly Target Card + Yearly Target Card side by side */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <MonthlyTargetCard
+              monthlyTarget={monthlyTarget}
+              periodLabel={getPeriodLabel()}
+              loading={monthlyLoading}
+            />
+
+            {/* Existing Yearly Target Card — unchanged */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 bg-blue-100 rounded-lg">
                 <Icon name="Target" size={24} className="text-blue-600" />
@@ -2840,6 +2879,7 @@ const EnhancedSupervisorDashboard = ({
               </div>
             )}
           </div>
+          </div>{/* end grid */}
 
           {/* Enhanced Targets Breakdown Section */}
           {(filteredMyTargets.length > 0 ||

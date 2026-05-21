@@ -20,7 +20,9 @@ import {
   userService,
   salesTargetService,
   contactService,
+  getMonthlyTarget,
 } from "../../../services/supabaseService";
+import MonthlyTargetCard from "../../../components/MonthlyTargetCard";
 import SalesTargetAssignment from "../../../components/SalesTargetAssignment";
 import DirectorSalesTargetAssignment from "../../../components/DirectorSalesTargetAssignment";
 import SalesTargetTable from "../../../components/SalesTargetTable";
@@ -157,6 +159,12 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     metricType: null,
   });
 
+  // Monthly target state
+  const [directorMonthlyTarget, setDirectorMonthlyTarget] = useState(null);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
+  const [companyMonthlyTotal, setCompanyMonthlyTotal] = useState(0);
+  const [companyMonthlyAchieved, setCompanyMonthlyAchieved] = useState(0);
+
   useEffect(() => {
     loadAllCompanies();
   }, []);
@@ -196,6 +204,68 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       loadActionItems();
     }
   }, [selectedEmployee]);
+
+  // Fetch director's own monthly target + company-level monthly summary
+  useEffect(() => {
+    if (activeView !== 'targets') return;
+    if (!user?.id || !selectedCompany?.id) return;
+    fetchDirectorMonthlyTargets();
+  }, [activeView, activeDateRange.from, activeDateRange.to, user?.id, selectedCompany?.id, allEmployees.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchDirectorMonthlyTargets = async () => {
+    setMonthlyLoading(true);
+    try {
+      const directorResult = await getMonthlyTarget({
+        userId:    user.id,
+        companyId: selectedCompany.id,
+        dateFrom:  activeDateRange.from,
+        dateTo:    activeDateRange.to,
+      });
+      setDirectorMonthlyTarget(directorResult);
+
+      // Company-level: sum monthly targets across all managers in the company
+      if (allEmployees.length > 0) {
+        const results = await Promise.all(
+          allEmployees
+            .filter(e => e.role === 'manager')
+            .map(m => getMonthlyTarget({
+              userId:    m.id,
+              companyId: selectedCompany.id,
+              dateFrom:  activeDateRange.from,
+              dateTo:    activeDateRange.to,
+            }))
+        );
+        const total   = results.reduce((s, r) => s + (r?.amount   || 0), 0);
+        const achieved = results.reduce((s, r) => s + (r?.achieved || 0), 0);
+        setCompanyMonthlyTotal(total);
+        setCompanyMonthlyAchieved(achieved);
+      } else {
+        setCompanyMonthlyTotal(0);
+        setCompanyMonthlyAchieved(0);
+      }
+    } catch (err) {
+      console.error('Error fetching director monthly targets:', err);
+      setDirectorMonthlyTarget(null);
+    } finally {
+      setMonthlyLoading(false);
+    }
+  };
+
+  // Period label helper for monthly target card
+  const getPeriodLabel = () => {
+    if (selectedMonth !== null && selectedYear !== null) {
+      const monthName = new Date(2000, selectedMonth, 1).toLocaleString('default', { month: 'long' });
+      return `${monthName} ${selectedYear}`;
+    } else if (selectedMonth !== null) {
+      return new Date(2000, selectedMonth, 1).toLocaleString('default', { month: 'long' });
+    } else if (selectedQuarter !== null && selectedYear !== null) {
+      return `Q${selectedQuarter + 1} ${selectedYear}`;
+    } else if (selectedYear !== null) {
+      return `${selectedYear}`;
+    }
+    const now = new Date();
+    return now.toLocaleString('default', { month: 'long' }) + ' ' + now.getFullYear();
+  };
 
   // Check if a date falls within activeDateRange
   const isInSelectedPeriod = (date) => {
@@ -2041,6 +2111,25 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
   const renderSalesTargets = () => (
     <div className="space-y-6">
+      {/* Director's own monthly target + company monthly summary */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <MonthlyTargetCard
+          monthlyTarget={directorMonthlyTarget}
+          periodLabel={getPeriodLabel()}
+          loading={monthlyLoading}
+        />
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-white rounded-xl border border-border-tertiary p-4">
+            <p className="text-xs text-text-tertiary">Company Monthly Target</p>
+            <p className="text-xl font-semibold mt-1">{formatCurrency(companyMonthlyTotal)}</p>
+          </div>
+          <div className="bg-white rounded-xl border border-border-tertiary p-4">
+            <p className="text-xs text-text-tertiary">Company Monthly Achieved</p>
+            <p className="text-xl font-semibold text-green-600 mt-1">{formatCurrency(companyMonthlyAchieved)}</p>
+          </div>
+        </div>
+      </div>
+
       {/* Header with Actions */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">

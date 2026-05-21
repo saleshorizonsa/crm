@@ -3723,6 +3723,62 @@ export const salesTargetService = {
 };
 
 // ========================================
+// MONTHLY TARGET SERVICE
+// ========================================
+
+export async function getMonthlyTarget({ userId, companyId, dateFrom, dateTo }) {
+  const { data: target } = await supabase
+    .from('sales_targets')
+    .select(`
+      id, target_amount, period_type,
+      period_start, period_end, status,
+      target_type, assigned_to, assigned_by,
+      assigner:users!assigned_by(full_name)
+    `)
+    .eq('assigned_to', userId)
+    .eq('status', 'active')
+    .eq('period_type', 'monthly')
+    .lte('period_start', dateTo)
+    .gte('period_end', dateFrom)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!target) return null;
+
+  const { data: wonDeals } = await supabase
+    .from('deals')
+    .select('amount')
+    .eq('owner_id', userId)
+    .eq('company_id', companyId)
+    .eq('stage', 'won')
+    .gte('closed_at', dateFrom)
+    .lte('closed_at', dateTo);
+
+  const achieved = (wonDeals || []).reduce(
+    (s, d) => s + parseFloat(d.amount || 0), 0
+  );
+
+  const targetAmount = parseFloat(target.target_amount || 0);
+  const remaining = Math.max(0, targetAmount - achieved);
+  const attainment = targetAmount > 0
+    ? Math.min(100, Math.round(achieved / targetAmount * 100))
+    : 0;
+
+  return {
+    id:          target.id,
+    amount:      targetAmount,
+    achieved,
+    remaining,
+    attainment,
+    periodStart: target.period_start,
+    periodEnd:   target.period_end,
+    assignedBy:  target.assigner?.full_name || 'Manager',
+    targetType:  target.target_type,
+  };
+}
+
+// ========================================
 // PRODUCTS SERVICES
 // ========================================
 

@@ -16,7 +16,9 @@ import {
   userService,
   salesTargetService,
   contactService,
+  getMonthlyTarget,
 } from "../../../services/supabaseService";
+import MonthlyTargetCard from "../../../components/MonthlyTargetCard";
 import ManagerSalesTargetAssignment from "../../../components/ManagerSalesTargetAssignment";
 import EnhancedSupervisorDashboard from "./EnhancedSupervisorDashboard";
 import EnhancedSalesmanDashboard from "./EnhancedSalesmanDashboard";
@@ -144,6 +146,12 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     isOpen: false,
     metricType: null,
   });
+
+  // Monthly target state
+  const [managerMonthlyTarget, setManagerMonthlyTarget] = useState(null);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
+  const [teamMonthlyTotal, setTeamMonthlyTotal] = useState(0);
+  const [teamMonthlyAchieved, setTeamMonthlyAchieved] = useState(0);
 
   const handleMetricClick = (metricType) => {
     setMetricInsightModal({
@@ -974,6 +982,49 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       );
     } catch (error) {
       console.error("Error loading action items:", error);
+    }
+  };
+
+  // Fetch manager's own monthly target + team monthly totals when targets tab active
+  useEffect(() => {
+    if (activeView !== 'targets') return;
+    if (!effectiveUser?.id || !company?.id) return;
+    fetchManagerMonthlyTargets();
+  }, [activeView, activeDateRange.from, activeDateRange.to, effectiveUser?.id, company?.id, allSubordinates.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchManagerMonthlyTargets = async () => {
+    setMonthlyLoading(true);
+    try {
+      const managerResult = await getMonthlyTarget({
+        userId:    effectiveUser.id,
+        companyId: company.id,
+        dateFrom:  activeDateRange.from,
+        dateTo:    activeDateRange.to,
+      });
+      setManagerMonthlyTarget(managerResult);
+
+      if (allSubordinates.length > 0) {
+        const results = await Promise.all(
+          allSubordinates.map(m => getMonthlyTarget({
+            userId:    m.id,
+            companyId: company.id,
+            dateFrom:  activeDateRange.from,
+            dateTo:    activeDateRange.to,
+          }))
+        );
+        const total = results.reduce((s, r) => s + (r?.amount || 0), 0);
+        const achieved = results.reduce((s, r) => s + (r?.achieved || 0), 0);
+        setTeamMonthlyTotal(total);
+        setTeamMonthlyAchieved(achieved);
+      } else {
+        setTeamMonthlyTotal(0);
+        setTeamMonthlyAchieved(0);
+      }
+    } catch (err) {
+      console.error('Error fetching monthly targets:', err);
+      setManagerMonthlyTarget(null);
+    } finally {
+      setMonthlyLoading(false);
     }
   };
 
@@ -2272,7 +2323,26 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
           {/* Sales Targets Tab */}
           {activeView === "targets" && (
             <div className="space-y-6">
-              {/* Enhanced Your Current Targets Card */}
+              {/* Manager's own monthly target + team monthly summary */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <MonthlyTargetCard
+                  monthlyTarget={managerMonthlyTarget}
+                  periodLabel={getPeriodLabel()}
+                  loading={monthlyLoading}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white rounded-xl border border-border-tertiary p-4">
+                    <p className="text-xs text-text-tertiary">Team Monthly Target</p>
+                    <p className="text-xl font-semibold mt-1">{formatCurrency(teamMonthlyTotal)}</p>
+                  </div>
+                  <div className="bg-white rounded-xl border border-border-tertiary p-4">
+                    <p className="text-xs text-text-tertiary">Team Monthly Achieved</p>
+                    <p className="text-xl font-semibold text-green-600 mt-1">{formatCurrency(teamMonthlyAchieved)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Enhanced Your Current Targets Card — unchanged */}
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="p-2 bg-blue-100 rounded-lg">

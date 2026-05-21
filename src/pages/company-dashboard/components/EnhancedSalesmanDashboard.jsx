@@ -15,7 +15,9 @@ import {
   taskService,
   activityService,
   salesTargetService,
+  getMonthlyTarget,
 } from "../../../services/supabaseService";
+import MonthlyTargetCard from "../../../components/MonthlyTargetCard";
 import ExecutiveMetrics from "./ExecutiveMetrics";
 import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
@@ -127,6 +129,10 @@ const EnhancedSalesmanDashboard = ({
   const [executiveMetrics, setExecutiveMetrics] = useState(null);
   const [pipelineData, setPipelineData] = useState([]);
   const [actionItems, setActionItems] = useState([]);
+
+  // Monthly target state
+  const [monthlyTarget, setMonthlyTarget] = useState(null);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
 
   // Generate filter options for month, quarter, and year
   const monthOptions = useMemo(() => {
@@ -531,6 +537,15 @@ const EnhancedSalesmanDashboard = ({
       hasActiveTarget: filteredMyTargets.length > 0,
     };
   }, [filteredMyTargets, filteredDeals, preferredCurrency, activeDateRange.from, activeDateRange.to]);
+
+  // Period label for monthly target card
+  const periodLabel = useMemo(() => {
+    if (selectedMonth !== null && selectedYear !== null) {
+      return new Date(2000, selectedMonth, 1).toLocaleString('default', { month: 'long' }) + ' ' + selectedYear;
+    }
+    const now = new Date();
+    return now.toLocaleString('default', { month: 'long' }) + ' ' + now.getFullYear();
+  }, [selectedMonth, selectedYear]);
 
   // Pipeline summary and attention deals
   const pipelineSummary = useMemo(() => {
@@ -953,6 +968,31 @@ const EnhancedSalesmanDashboard = ({
       );
     } catch (error) {
       console.error("Error loading action items:", error);
+    }
+  };
+
+  // Fetch monthly target when targets tab is active or date range changes
+  useEffect(() => {
+    if (activeView !== 'targets') return;
+    if (!effectiveUser?.id || !company?.id) return;
+    fetchMonthlyTarget();
+  }, [activeView, activeDateRange.from, activeDateRange.to, effectiveUser?.id, company?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchMonthlyTarget = async () => {
+    setMonthlyLoading(true);
+    try {
+      const result = await getMonthlyTarget({
+        userId:    effectiveUser.id,
+        companyId: company.id,
+        dateFrom:  activeDateRange.from,
+        dateTo:    activeDateRange.to,
+      });
+      setMonthlyTarget(result);
+    } catch (err) {
+      console.error('Error fetching monthly target:', err);
+      setMonthlyTarget(null);
+    } finally {
+      setMonthlyLoading(false);
     }
   };
 
@@ -1914,7 +1954,16 @@ const EnhancedSalesmanDashboard = ({
       {/* My Targets Tab (VIEW-ONLY) */}
       {activeView === "targets" && (
         <div className="space-y-6">
-          {targetsWithCalculatedProgress.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {/* Monthly Target Card */}
+            <MonthlyTargetCard
+              monthlyTarget={monthlyTarget}
+              periodLabel={periodLabel}
+              loading={monthlyLoading}
+            />
+
+            {/* Existing Yearly Target Card — unchanged */}
+            {targetsWithCalculatedProgress.length > 0 ? (
             <div className="bg-white rounded-lg shadow p-6">
               <div className="flex items-start space-x-3 mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <Icon name="Info" size={20} className="text-blue-600 mt-0.5" />
@@ -1959,6 +2008,7 @@ const EnhancedSalesmanDashboard = ({
               </p>
             </div>
           )}
+          </div>{/* end grid */}
         </div>
       )}
     </div>
