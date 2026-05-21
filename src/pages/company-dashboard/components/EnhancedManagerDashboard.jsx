@@ -717,6 +717,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         const teamIds = allTeamIds.length ? allTeamIds : [effectiveUser.id];
         const teamDeals = deals.filter((d) => teamIds.includes(d.owner_id));
         const wonDeals = teamDeals.filter((d) => d.stage === "won");
+        const lostDeals = teamDeals.filter((d) => d.stage === "lost");
+        const closedCount = wonDeals.length + lostDeals.length;
         const totalRevenue = wonDeals.reduce(
           (sum, d) => sum + getConvertedAmount(d),
           0,
@@ -725,7 +727,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
           .filter((d) => !["won", "lost"].includes(d.stage))
           .reduce((sum, d) => sum + getConvertedAmount(d), 0);
         const winRate =
-          teamDeals.length > 0 ? (wonDeals.length / teamDeals.length) * 100 : 0;
+          closedCount > 0 ? (wonDeals.length / closedCount) * 100 : 0;
 
         setExecutiveMetrics({
           totalRevenue,
@@ -750,6 +752,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       teamIds.includes(d.owner_id),
     );
     const wonDeals = teamFilteredDeals.filter((d) => d.stage === "won");
+    const lostFilteredDeals = teamFilteredDeals.filter((d) => d.stage === "lost");
+    const closedFilteredCount = wonDeals.length + lostFilteredDeals.length;
     const totalRevenue = wonDeals.reduce(
       (sum, d) => sum + getConvertedAmount(d),
       0,
@@ -758,8 +762,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       .filter((d) => !["won", "lost"].includes(d.stage))
       .reduce((sum, d) => sum + getConvertedAmount(d), 0);
     const winRate =
-      teamFilteredDeals.length > 0
-        ? (wonDeals.length / teamFilteredDeals.length) * 100
+      closedFilteredCount > 0
+        ? (wonDeals.length / closedFilteredCount) * 100
         : 0;
 
     setExecutiveMetrics((prev) => ({
@@ -2013,8 +2017,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   />
                   <MetricsCard
                     title={t("dashboard.teamMembers")}
-                    value={`${allSubordinates.length + 1}`}
-                    subtitle={t("dashboard.includingYou")}
+                    value={`${allSubordinates.length}`}
+                    subtitle={`${allSubordinates.filter((m) => m.role === "supervisor").length} supervisor · ${allSubordinates.filter((m) => m.role === "salesman" || m.role === "agent").length} salesmen`}
                     icon="Users"
                     iconColor="text-orange-600"
                     iconBgColor="bg-orange-100"
@@ -3205,7 +3209,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
             onClose={handleCloseMetricModal}
             metricType={metricInsightModal.metricType}
             metrics={executiveMetrics}
-            teamData={[...subordinates, effectiveUserProfile]}
+            teamData={[...allSubordinates, effectiveUserProfile]}
             dealsData={filteredDeals}
           />
         </>
