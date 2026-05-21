@@ -575,23 +575,34 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   const loadManagerData = async () => {
     setIsLoading(true);
     try {
-      // Get subordinates (supervisors under this manager)
-      const { data: subordinatesData } = await userService.getUserSubordinates(
+      // Get direct reports (supervisors under this manager)
+      const { data: directReportsData } = await userService.getUserSubordinates(
         effectiveUser.id,
       );
-      setAllSubordinates(subordinatesData || []);
-
-      // Store subordinate IDs for filtering deals
-      const subIds = subordinatesData?.map((s) => s.id) || [];
-      setSubordinateIds(subIds);
+      const directReports = directReportsData || [];
 
       // For managers, only supervisors can be assigned targets
-      const supervisorsOnly =
-        subordinatesData?.filter((sub) => sub.role === "supervisor") || [];
+      const supervisorsOnly = directReports.filter((s) => s.role === "supervisor");
       setSubordinates(supervisorsOnly);
 
+      // Fetch level-2 subordinates (salesmen under each supervisor)
+      const salesmanResults = await Promise.all(
+        supervisorsOnly.map((sup) => userService.getUserSubordinates(sup.id)),
+      );
+      const allSalesmen = salesmanResults.flatMap((r) => r.data || []);
+
+      // Deduplicate and merge all team members below this manager
+      const allTeamMembers = [...directReports, ...allSalesmen];
+      const uniqueTeam = Array.from(
+        new Map(allTeamMembers.map((m) => [m.id, m])).values(),
+      );
+
+      setAllSubordinates(uniqueTeam);
+      const subIds = uniqueTeam.map((s) => s.id);
+      setSubordinateIds(subIds);
+
       // Get all team user IDs (manager + all subordinates)
-      const allSubordinateIds = subordinatesData?.map((s) => s.id) || [];
+      const allSubordinateIds = subIds;
       const allUserIds = [effectiveUser.id, ...allSubordinateIds];
 
       const results = await Promise.allSettled([
@@ -646,7 +657,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         // Team performance will be recalculated from filtered deals in useEffect
       }
 
-      await loadExecutiveMetrics();
+      await loadExecutiveMetrics(allUserIds);
       await loadPipelineData();
       await loadActionItems();
       await loadSalesTargets();
@@ -693,7 +704,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     });
   };
 
-  const loadExecutiveMetrics = async () => {
+  const loadExecutiveMetrics = async (allTeamIds = []) => {
     try {
       const { data: deals } = await dealService.getDeals(
         company.id,
@@ -702,25 +713,25 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       );
 
       if (deals) {
-        setAllDeals(deals); // Store all deals for filtering
-        // Filter to only manager's own deals for personal metrics
-        const myDeals = deals.filter((d) => d.owner_id === effectiveUser.id);
-        const wonDeals = myDeals.filter((d) => d.stage === "won");
+        setAllDeals(deals);
+        const teamIds = allTeamIds.length ? allTeamIds : [effectiveUser.id];
+        const teamDeals = deals.filter((d) => teamIds.includes(d.owner_id));
+        const wonDeals = teamDeals.filter((d) => d.stage === "won");
         const totalRevenue = wonDeals.reduce(
           (sum, d) => sum + getConvertedAmount(d),
           0,
         );
-        const activePipeline = myDeals
+        const activePipeline = teamDeals
           .filter((d) => !["won", "lost"].includes(d.stage))
           .reduce((sum, d) => sum + getConvertedAmount(d), 0);
         const winRate =
-          myDeals.length > 0 ? (wonDeals.length / myDeals.length) * 100 : 0;
+          teamDeals.length > 0 ? (wonDeals.length / teamDeals.length) * 100 : 0;
 
         setExecutiveMetrics({
           totalRevenue,
           activePipeline,
           winRate,
-          totalDeals: myDeals.length,
+          totalDeals: teamDeals.length,
           wonDeals: wonDeals.length,
         });
       }
@@ -733,21 +744,22 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   useEffect(() => {
     if (!allDeals.length) return;
 
-    // Recalculate executive metrics from filtered deals (only manager's own deals)
-    const myFilteredDeals = filteredDeals.filter(
-      (d) => d.owner_id === effectiveUser.id,
+    // Recalculate executive metrics from filtered deals (all team members)
+    const teamIds = [effectiveUser.id, ...allSubordinates.map((s) => s.id)];
+    const teamFilteredDeals = filteredDeals.filter((d) =>
+      teamIds.includes(d.owner_id),
     );
-    const wonDeals = myFilteredDeals.filter((d) => d.stage === "won");
+    const wonDeals = teamFilteredDeals.filter((d) => d.stage === "won");
     const totalRevenue = wonDeals.reduce(
       (sum, d) => sum + getConvertedAmount(d),
       0,
     );
-    const activePipeline = myFilteredDeals
+    const activePipeline = teamFilteredDeals
       .filter((d) => !["won", "lost"].includes(d.stage))
       .reduce((sum, d) => sum + getConvertedAmount(d), 0);
     const winRate =
-      myFilteredDeals.length > 0
-        ? (wonDeals.length / myFilteredDeals.length) * 100
+      teamFilteredDeals.length > 0
+        ? (wonDeals.length / teamFilteredDeals.length) * 100
         : 0;
 
     setExecutiveMetrics((prev) => ({
@@ -755,8 +767,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       totalRevenue,
       activePipeline,
       winRate,
-      totalDeals: myFilteredDeals.length,
-      dealsWon: wonDeals.length,
+      totalDeals: teamFilteredDeals.length,
+      wonDeals: wonDeals.length,
     }));
 
     // Recalculate pipeline data from filtered deals
@@ -769,7 +781,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       "lost",
     ];
     const pipelineStats = stages.map((stage) => {
-      const stageDeals = myFilteredDeals.filter((d) => d.stage === stage);
+      const stageDeals = teamFilteredDeals.filter((d) => d.stage === stage);
       return {
         stage,
         count: stageDeals.length,
@@ -787,7 +799,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       return {
         ...baseMetrics,
         totalRevenue: totalRevenue,
-        totalDeals: filteredDeals.length,
+        totalDeals: teamFilteredDeals.length,
         totalContacts: filteredContacts.length,
         totalTasks: filteredTasks.length,
       };
@@ -2001,7 +2013,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   />
                   <MetricsCard
                     title={t("dashboard.teamMembers")}
-                    value={`${subordinates.length + 1}`}
+                    value={`${allSubordinates.length + 1}`}
                     subtitle={t("dashboard.includingYou")}
                     icon="Users"
                     iconColor="text-orange-600"
