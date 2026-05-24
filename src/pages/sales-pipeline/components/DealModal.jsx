@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
@@ -17,6 +17,232 @@ import {
   salesTargetService,
 } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
+
+// ─── Multi-select product picker components ───────────────────────────────────
+
+function ProductPickerRow({ product, isSelected, price, onToggle, onPriceChange }) {
+  const lineTotal = isSelected && price
+    ? parseFloat(price.quantity || 0) * parseFloat(price.price || 0)
+    : 0;
+
+  return (
+    <div className={`border-b border-border last:border-0 transition-colors ${
+      isSelected ? 'bg-blue-50' : 'hover:bg-muted/50'
+    }`}>
+      <div className="flex items-start gap-3 px-3 py-2.5">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={onToggle}
+          className="w-4 h-4 rounded mt-0.5 flex-shrink-0 cursor-pointer accent-blue-600"
+        />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-card-foreground truncate">{product.material}</p>
+              {product.description && (
+                <p className="text-xs text-muted-foreground truncate">{product.description}</p>
+              )}
+              {product.material_group && (
+                <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground mt-0.5 inline-block">
+                  {product.material_group}
+                </span>
+              )}
+            </div>
+            {!isSelected && product.unit_price > 0 && (
+              <span className="text-xs text-muted-foreground flex-shrink-0">
+                {product.unit_price} SAR
+              </span>
+            )}
+          </div>
+
+          {isSelected && (
+            <div className="mt-2 flex gap-2 flex-wrap">
+              <div className="min-w-[60px] flex-1">
+                <label className="text-xs text-muted-foreground block mb-1">Qty</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={price?.quantity ?? 1}
+                  onChange={e => onPriceChange('quantity', parseFloat(e.target.value) || 0)}
+                  onClick={e => e.stopPropagation()}
+                  className="w-full px-2 py-1.5 text-sm border border-border rounded-lg bg-card text-card-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div className="w-20">
+                <label className="text-xs text-muted-foreground block mb-1">UOM</label>
+                <select
+                  value={price?.uomType || product.base_unit_of_measure || 'pc'}
+                  onChange={e => onPriceChange('uomType', e.target.value)}
+                  onClick={e => e.stopPropagation()}
+                  className="w-full px-2 py-1.5 text-xs border border-border rounded-lg bg-card text-card-foreground"
+                >
+                  <option value="pc">PC</option>
+                  <option value="ton">Ton</option>
+                  <option value="kg">KG</option>
+                  <option value="meter">Meter</option>
+                  <option value="sqm">SQM</option>
+                  <option value="set">Set</option>
+                </select>
+              </div>
+              <div className="min-w-[80px] flex-1">
+                <label className="text-xs text-muted-foreground block mb-1">Unit Price (SAR)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={price?.price ?? (product.unit_price || '')}
+                  onChange={e => onPriceChange('price', parseFloat(e.target.value) || 0)}
+                  onClick={e => e.stopPropagation()}
+                  placeholder="0.00"
+                  className="w-full px-2 py-1.5 text-sm border border-border rounded-lg bg-card text-card-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div className="min-w-[70px] flex-1">
+                <label className="text-xs text-muted-foreground block mb-1">Total</label>
+                <div className="px-2 py-1.5 text-sm font-medium text-card-foreground bg-muted rounded-lg border border-border">
+                  {lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductPickerPanel({
+  products, productGroups, productGroup, setProductGroup,
+  productSearch, setProductSearch,
+  selectedProductIds, setSelectedProductIds,
+  productPrices, setProductPrices,
+  loading, onAddSelected, isLoadingProducts,
+}) {
+  return (
+    <div className="border-t border-border">
+      {/* Search and group filter */}
+      <div className="p-3 flex gap-2 border-b border-border">
+        <div className="relative flex-1">
+          <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={productSearch}
+            onChange={e => setProductSearch(e.target.value)}
+            placeholder="Search by name, description or group…"
+            className="w-full pl-8 pr-3 py-2 text-sm border border-border rounded-lg bg-card text-card-foreground focus:outline-none focus:border-primary"
+          />
+        </div>
+        <select
+          value={productGroup}
+          onChange={e => setProductGroup(e.target.value)}
+          className="text-sm border border-border rounded-lg px-3 py-2 bg-card text-card-foreground min-w-[140px]"
+        >
+          {productGroups.map(g => (
+            <option key={g} value={g}>{g === 'all' ? 'All Groups' : g}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Select-all / count bar */}
+      <div className="flex items-center justify-between px-3 py-2 bg-muted/30 text-xs text-muted-foreground border-b border-border">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={selectedProductIds.size > 0 && selectedProductIds.size === products.length}
+            ref={el => {
+              if (el) el.indeterminate = selectedProductIds.size > 0 && selectedProductIds.size < products.length;
+            }}
+            onChange={e => {
+              if (e.target.checked) {
+                setSelectedProductIds(new Set(products.map(p => p.id)));
+                const newPrices = {};
+                products.forEach(p => {
+                  newPrices[p.id] = { price: p.unit_price || 0, quantity: 1, uomType: p.base_unit_of_measure || 'pc' };
+                });
+                setProductPrices(pp => ({ ...pp, ...newPrices }));
+              } else {
+                setSelectedProductIds(new Set());
+                setProductPrices({});
+              }
+            }}
+            className="w-4 h-4 rounded accent-blue-600"
+          />
+          <span>Select all ({products.length} products)</span>
+        </label>
+        {selectedProductIds.size > 0 && (
+          <span className="text-primary font-medium">{selectedProductIds.size} selected</span>
+        )}
+      </div>
+
+      {/* Product list */}
+      <div className="max-h-64 overflow-y-auto">
+        {loading ? (
+          <div className="p-4 text-center text-sm text-muted-foreground">Loading products…</div>
+        ) : products.length === 0 ? (
+          <div className="p-4 text-center text-sm text-muted-foreground">No products found</div>
+        ) : (
+          products.map(product => (
+            <ProductPickerRow
+              key={product.id}
+              product={product}
+              isSelected={selectedProductIds.has(product.id)}
+              price={productPrices[product.id]}
+              onToggle={() => {
+                setSelectedProductIds(prev => {
+                  const next = new Set(prev);
+                  if (next.has(product.id)) {
+                    next.delete(product.id);
+                    setProductPrices(pp => {
+                      const np = { ...pp };
+                      delete np[product.id];
+                      return np;
+                    });
+                  } else {
+                    next.add(product.id);
+                    setProductPrices(pp => ({
+                      ...pp,
+                      [product.id]: {
+                        price: product.unit_price || 0,
+                        quantity: 1,
+                        uomType: product.base_unit_of_measure || 'pc',
+                      },
+                    }));
+                  }
+                  return next;
+                });
+              }}
+              onPriceChange={(field, value) => {
+                setProductPrices(pp => ({
+                  ...pp,
+                  [product.id]: { ...(pp[product.id] || {}), [field]: value },
+                }));
+              }}
+            />
+          ))
+        )}
+      </div>
+
+      {/* Add button */}
+      {selectedProductIds.size > 0 && (
+        <div className="p-3 border-t border-border bg-muted/30">
+          <button
+            type="button"
+            onClick={onAddSelected}
+            disabled={isLoadingProducts}
+            className="w-full py-2 px-4 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <Icon name="Plus" size={14} />
+            Add {selectedProductIds.size} product{selectedProductIds.size !== 1 ? 's' : ''} to deal
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Original search dropdown (kept for backward-compat) ──────────────────────
 
 function ProductSearchDropdown({ results, onSelect, onClose, formatCurrency }) {
   return (
@@ -106,6 +332,33 @@ const DealModal = ({
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [uomTypeOptions, setUomTypeOptions] = useState([]);
 
+  // Multi-select product picker state
+  const [showProductPicker, setShowProductPicker] = useState(false);
+  const [allProducts, setAllProducts] = useState([]);
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [selectedProductIds, setSelectedProductIds] = useState(new Set());
+  const [productPrices, setProductPrices] = useState({}); // { productId: { price, quantity, uomType } }
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [pickerGroup, setPickerGroup] = useState('all');
+
+  // Derived lists for the picker
+  const productGroups = useMemo(() => {
+    const groups = [...new Set(allProducts.map(p => p.material_group).filter(Boolean))].sort();
+    return ['all', ...groups];
+  }, [allProducts]);
+
+  const filteredProducts = useMemo(() => {
+    return allProducts.filter(p => {
+      const q = pickerSearch.toLowerCase();
+      const matchSearch = !pickerSearch ||
+        p.material?.toLowerCase().includes(q) ||
+        p.description?.toLowerCase().includes(q) ||
+        p.material_group?.toLowerCase().includes(q);
+      const matchGroup = pickerGroup === 'all' || p.material_group === pickerGroup;
+      return matchSearch && matchGroup;
+    });
+  }, [allProducts, pickerSearch, pickerGroup]);
+
   // Load UOM types on mount
   useEffect(() => {
     const loadUomTypes = async () => {
@@ -130,6 +383,12 @@ const DealModal = ({
       setShowDeleteConfirm(false);
       setDeleteReferences(null);
       setErrors({});
+      // Reset multi-select picker
+      setShowProductPicker(false);
+      setSelectedProductIds(new Set());
+      setProductPrices({});
+      setPickerSearch('');
+      setPickerGroup('all');
       // Auto-detect deal type: if existing deal has products default to product mode
       setDealType(
         deal?.deal_products?.length > 0 ? "product" : "value"
@@ -186,17 +445,25 @@ const DealModal = ({
     }
   }, [isOpen, deal]);
 
-  // Load all products when modal opens
+  // Load all products when modal opens (feeds both the legacy dropdown and the new picker)
   useEffect(() => {
     if (!isOpen) return;
     async function loadAllProducts() {
-      const { data } = await supabase
+      setProductsLoading(true);
+      let query = supabase
         .from('products')
-        .select('id, material, description, material_group, unit_price, base_unit_of_measure, is_active')
+        .select('id, material, description, material_group, base_unit_of_measure, unit_price, price_per_ton, price_per_pc, price_per_meter, cost_price, is_active')
         .eq('is_active', true)
-        .order('material', { ascending: true })
-        .limit(50);
-      setProductResults(data || []);
+        .order('material_group', { ascending: true })
+        .order('material', { ascending: true });
+      if (company?.id) {
+        query = query.eq('company_id', company.id);
+      }
+      const { data } = await query;
+      const products = data || [];
+      setProductResults(products);
+      setAllProducts(products);
+      setProductsLoading(false);
     }
     loadAllProducts();
   }, [isOpen]);
@@ -402,6 +669,107 @@ const DealModal = ({
     setUomType("qty");
     setUomValue("");
     setUnitRate("");
+  };
+
+  // Closes the picker and resets selection state
+  const resetPicker = () => {
+    setShowProductPicker(false);
+    setSelectedProductIds(new Set());
+    setProductPrices({});
+    setPickerSearch('');
+  };
+
+  // Called when user clicks "Add X products to deal" inside the picker panel
+  const handleAddSelectedProducts = async () => {
+    if (selectedProductIds.size === 0) return;
+
+    if (deal?.id) {
+      // Existing deal — persist each product to the DB immediately (same as single-add)
+      setIsLoadingProducts(true);
+      try {
+        for (const productId of selectedProductIds) {
+          const product = allProducts.find(p => p.id === productId);
+          if (!product) continue;
+
+          // Skip duplicates already on the deal
+          if (dealProducts.find(dp => dp.product_id === productId)) continue;
+
+          const priceData = productPrices[productId] || {};
+          const quantity  = parseFloat(priceData.quantity ?? 1);
+          const unitPrice = parseFloat(priceData.price    != null ? priceData.price : (product.unit_price || 0));
+          const uomType   = priceData.uomType || product.base_unit_of_measure || 'pc';
+
+          const { error } = await dealProductService.addProductToDeal(
+            deal.id,
+            productId,
+            quantity,
+            uomType === 'sqm' ? quantity : null,
+            uomType === 'ton' ? quantity : null,
+            unitPrice,
+            null,
+            uomType,
+            quantity,
+            product.cost_price || null,
+          );
+          if (error) throw error;
+        }
+
+        if (errors.products) setErrors(prev => ({ ...prev, products: '' }));
+
+        const { data: freshProducts } = await dealProductService.getDealProducts(deal.id);
+        setDealProducts(freshProducts || []);
+        const newAmount = (freshProducts || []).reduce(
+          (sum, p) => sum + parseFloat(p.line_total || 0), 0
+        );
+        setFormData(prev => ({ ...prev, amount: newAmount }));
+      } catch (err) {
+        console.error('Error adding products via picker:', err);
+        alert('Failed to add some products: ' + (err.message || err));
+      } finally {
+        setIsLoadingProducts(false);
+      }
+    } else {
+      // New deal — stage products in selectedProducts (same format executeSave expects)
+      const newItems = [];
+
+      for (const productId of selectedProductIds) {
+        const product = allProducts.find(p => p.id === productId);
+        if (!product) continue;
+
+        // Skip duplicates already staged
+        if (selectedProducts.find(sp => sp.productId === productId)) continue;
+
+        const priceData = productPrices[productId] || {};
+        const quantity  = parseFloat(priceData.quantity ?? 1);
+        const unitPrice = parseFloat(priceData.price    != null ? priceData.price : (product.unit_price || 0));
+        const uomType   = priceData.uomType || product.base_unit_of_measure || 'pc';
+        const lineTotal = quantity * unitPrice;
+
+        newItems.push({
+          product:            product,
+          productId:          productId,
+          product_group_name: product.material_group || '',
+          quantity:           quantity,
+          sqm:                uomType === 'sqm' ? quantity : null,
+          ton:                uomType === 'ton' ? quantity : null,
+          unit_price:         unitPrice,
+          cost_price:         product.cost_price || null,
+          line_total:         lineTotal,
+          uom_type:           uomType,
+          uom_value:          quantity,
+        });
+      }
+
+      if (newItems.length > 0) {
+        const allProds = [...selectedProducts, ...newItems];
+        setSelectedProducts(allProds);
+        const newAmount = allProds.reduce((s, p) => s + parseFloat(p.line_total || 0), 0);
+        setFormData(prev => ({ ...prev, amount: newAmount }));
+        if (errors.products) setErrors(prev => ({ ...prev, products: '' }));
+      }
+    }
+
+    resetPicker();
   };
 
   const handleRemoveProduct = async (indexOrId) => {
@@ -905,154 +1273,48 @@ const DealModal = ({
 
             {/* Products Section */}
             <div className="border border-border rounded-lg overflow-hidden">
-              <div className="bg-muted/30 px-4 py-3 border-b border-border">
+              {/* Section header with toggle button */}
+              <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b border-border">
                 <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
                   <Icon name="Package" size={16} />
                   {t("deals.dealProductsSection")}
+                  {(deal ? dealProducts : selectedProducts).length > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">
+                      {(deal ? dealProducts : selectedProducts).length} added
+                    </span>
+                  )}
                 </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowProductPicker(p => !p)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors"
+                >
+                  <Icon name={showProductPicker ? "ChevronUp" : "Plus"} size={14} />
+                  {showProductPicker ? 'Hide Products' : 'Select Products'}
+                </button>
               </div>
 
+              {/* Multi-select product picker panel */}
+              {showProductPicker && (
+                <ProductPickerPanel
+                  products={filteredProducts}
+                  productGroups={productGroups}
+                  productGroup={pickerGroup}
+                  setProductGroup={setPickerGroup}
+                  productSearch={pickerSearch}
+                  setProductSearch={setPickerSearch}
+                  selectedProductIds={selectedProductIds}
+                  setSelectedProductIds={setSelectedProductIds}
+                  productPrices={productPrices}
+                  setProductPrices={setProductPrices}
+                  loading={productsLoading}
+                  onAddSelected={handleAddSelectedProducts}
+                  isLoadingProducts={isLoadingProducts}
+                />
+              )}
+
+              {/* Added products list */}
               <div className="p-4 space-y-4">
-                {/* Product Selection */}
-                <div className="space-y-3">
-                  {/* Unified product search */}
-                  <div>
-                    <label className="block text-xs font-medium text-muted-foreground mb-1">
-                      {t("deals.searchProduct")}
-                    </label>
-                    <div className="product-search-container relative">
-                      <input
-                        type="text"
-                        placeholder={t("deals.searchByNameOrGroup")}
-                        value={productSearch}
-                        onChange={e => {
-                          setProductSearch(e.target.value);
-                          searchProducts(e.target.value);
-                        }}
-                        onFocus={() => {
-                          if (productResults.length > 0)
-                            setShowProductDropdown(true);
-                        }}
-                        className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      />
-                      {searchLoading && (
-                        <div className="absolute right-3 top-2.5 text-muted-foreground text-xs">
-                          ...
-                        </div>
-                      )}
-                      {showProductDropdown && productResults.length > 0 && (
-                        <ProductSearchDropdown
-                          results={productResults}
-                          onSelect={handleProductSelect}
-                          onClose={() => setShowProductDropdown(false)}
-                          formatCurrency={(v) => formatCurrency(v, preferredCurrency)}
-                        />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Selected product indicator */}
-                  {selectedProductData && (
-                    <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm">
-                      <Icon name="Package" size={14} className="text-blue-600 flex-shrink-0" />
-                      <span className="font-medium text-blue-800 flex-1 truncate">
-                        {selectedProductData.material}
-                      </span>
-                      {selectedProductData.material_group && (
-                        <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded flex-shrink-0">
-                          {selectedProductData.material_group}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setSelectedProductData(null)}
-                        className="text-blue-400 hover:text-blue-700 flex-shrink-0"
-                      >
-                        <Icon name="X" size={14} />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* UOM Type, Value and Unit Rate */}
-                  {selectedProductData && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-muted-foreground mb-1">
-                          {t("deals.uomType")}
-                        </label>
-                        <Select
-                          options={uomTypeOptions}
-                          value={uomType}
-                          onChange={(value) => setUomType(value)}
-                          placeholder={t("deals.selectUom")}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-muted-foreground mb-1">
-                          {t("deals.uomValue")}
-                        </label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="0.00"
-                          value={uomValue}
-                          onChange={(e) => setUomValue(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-muted-foreground mb-1">
-                          {t("deals.unitRate")} ({preferredCurrency})
-                        </label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="0.00"
-                          value={unitRate}
-                          onChange={(e) => setUnitRate(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Calculated Line Total Display */}
-                  {selectedProductData && uomType && uomValue && unitRate && (
-                    <div className="bg-primary/5 border border-primary/20 rounded-md p-3">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">
-                          {t("deals.lineTotal")}:
-                        </span>
-                        <span className="font-bold text-primary text-lg">
-                          {formatCurrency(
-                            parseFloat(uomValue) * parseFloat(unitRate),
-                            preferredCurrency,
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Add Button */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddProduct}
-                    disabled={
-                      !selectedProductData ||
-                      !uomType ||
-                      !uomValue ||
-                      !unitRate ||
-                      isLoadingProducts
-                    }
-                    className="w-full"
-                  >
-                    <Icon name="Plus" size={16} className={isRTL ? "ml-2" : "mr-2"} />
-                    {isLoadingProducts ? t("deals.adding") : t("deals.addProduct")}
-                  </Button>
-                </div>
-
-                {/* Products List */}
                 {(() => {
                   const productsToShow = deal ? dealProducts : selectedProducts;
                   console.log("🎨 Rendering products list:", {
@@ -1250,7 +1512,7 @@ const DealModal = ({
                   );
                 })()}
 
-                {!deal && selectedProducts.length === 0 && (
+                {!deal && selectedProducts.length === 0 && !showProductPicker && (
                   <div className="text-center py-6 text-muted-foreground">
                     <Icon
                       name="Package"
