@@ -188,35 +188,40 @@ const EnhancedSalesmanDashboard = ({
       : amount;
   };
 
-  // Check if a date falls within activeDateRange
-  const isInSelectedPeriod = (date) => {
-    if (!date) return false;
-    const itemDate = new Date(date);
+  const filteredDeals = useMemo(() => {
     const from = new Date(activeDateRange.from + 'T00:00:00');
     const to   = new Date(activeDateRange.to   + 'T23:59:59');
-    return itemDate >= from && itemDate <= to;
-  };
-
-  const filteredDeals = useMemo(() => {
     return (
       allDeals?.filter((deal) => {
         const dateToCheck = deal.stage === "won" ? deal.closed_at : deal.created_at;
-        return isInSelectedPeriod(dateToCheck);
+        if (!dateToCheck) return false;
+        const d = new Date(dateToCheck);
+        return d >= from && d <= to;
       }) || []
     );
   }, [allDeals, activeDateRange.from, activeDateRange.to]);
 
   const filteredTasks = useMemo(() => {
+    const from = new Date(activeDateRange.from + 'T00:00:00');
+    const to   = new Date(activeDateRange.to   + 'T23:59:59');
     return (
-      allTasks?.filter((task) => isInSelectedPeriod(task.created_at)) || []
+      allTasks?.filter((task) => {
+        if (!task.created_at) return false;
+        const d = new Date(task.created_at);
+        return d >= from && d <= to;
+      }) || []
     );
   }, [allTasks, activeDateRange.from, activeDateRange.to]);
 
   const filteredActivities = useMemo(() => {
+    const from = new Date(activeDateRange.from + 'T00:00:00');
+    const to   = new Date(activeDateRange.to   + 'T23:59:59');
     return (
-      activities?.filter((activity) =>
-        isInSelectedPeriod(activity.created_at),
-      ) || []
+      activities?.filter((activity) => {
+        if (!activity.created_at) return false;
+        const d = new Date(activity.created_at);
+        return d >= from && d <= to;
+      }) || []
     );
   }, [activities, activeDateRange.from, activeDateRange.to]);
 

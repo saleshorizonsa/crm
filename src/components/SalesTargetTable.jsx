@@ -329,7 +329,7 @@ const SalesTargetTable = ({
                         selectedTargets.size < displayRows.length;
                   }}
                   onChange={handleSelectAll}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
+                  className="w-4 h-4 cursor-pointer accent-blue-600"
                 />
               </th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">
@@ -421,7 +421,7 @@ const SalesTargetTable = ({
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => handleSelectRow(target.id)}
-                        className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
+                        className="w-4 h-4 cursor-pointer accent-blue-600"
                       />
                     </td>
 
