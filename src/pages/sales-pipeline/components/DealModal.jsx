@@ -335,17 +335,17 @@ const DealModal = ({
   // Multi-select product picker state
   const [showProductPicker, setShowProductPicker] = useState(false);
   const [allProducts, setAllProducts] = useState([]);
+  const [allGroupNames, setAllGroupNames] = useState([]);
   const [pickerSearch, setPickerSearch] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
   const [productPrices, setProductPrices] = useState({}); // { productId: { price, quantity, uomType } }
   const [productsLoading, setProductsLoading] = useState(false);
   const [pickerGroup, setPickerGroup] = useState('all');
 
-  // Derived lists for the picker
+  // Derived lists for the picker — groups come from ALL products (matching admin panel)
   const productGroups = useMemo(() => {
-    const groups = [...new Set(allProducts.map(p => p.material_group).filter(Boolean))].sort();
-    return ['all', ...groups];
-  }, [allProducts]);
+    return ['all', ...allGroupNames];
+  }, [allGroupNames]);
 
   const filteredProducts = useMemo(() => {
     return allProducts.filter(p => {
@@ -354,7 +354,7 @@ const DealModal = ({
         p.material?.toLowerCase().includes(q) ||
         p.description?.toLowerCase().includes(q) ||
         p.material_group?.toLowerCase().includes(q);
-      const matchGroup = pickerGroup === 'all' || p.material_group === pickerGroup;
+      const matchGroup = pickerGroup === 'all' || (p.material_group?.trim() || '') === pickerGroup;
       return matchSearch && matchGroup;
     });
   }, [allProducts, pickerSearch, pickerGroup]);
@@ -450,15 +450,27 @@ const DealModal = ({
     if (!isOpen) return;
     async function loadAllProducts() {
       setProductsLoading(true);
-      const { data } = await supabase
+
+      // Active products for the picker list
+      const { data: activeData } = await supabase
         .from('products')
         .select('id, material, description, material_group, base_unit_of_measure, unit_price, is_active')
         .eq('is_active', true)
         .order('material_group', { ascending: true })
         .order('material', { ascending: true });
-      const products = data || [];
+      const products = activeData || [];
       setProductResults(products);
       setAllProducts(products);
+
+      // Groups from ALL products (active + inactive) — matches the admin panel's group list
+      const { data: groupData } = await supabase
+        .from('products')
+        .select('material_group');
+      const groups = [
+        ...new Set((groupData || []).map(p => p.material_group?.trim()).filter(Boolean))
+      ].sort();
+      setAllGroupNames(groups);
+
       setProductsLoading(false);
     }
     loadAllProducts();
