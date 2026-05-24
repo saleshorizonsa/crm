@@ -5340,3 +5340,154 @@ export const permissionsService = {
     }
   },
 };
+
+// ========================================
+// MATERIAL GROUP / SUBGROUP SERVICES
+// ========================================
+
+export const materialGroupService = {
+  // ---- Groups ----
+  async getGroups(companyId) {
+    try {
+      const { data, error } = await supabase
+        .from("material_groups")
+        .select("*")
+        .eq("company_id", companyId)
+        .order("sort_order", { ascending: true })
+        .order("name",       { ascending: true });
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async createGroup(companyId, name) {
+    try {
+      const { data: existing } = await supabase
+        .from("material_groups")
+        .select("sort_order")
+        .eq("company_id", companyId)
+        .order("sort_order", { ascending: false })
+        .limit(1)
+        .single();
+      const nextOrder = (existing?.sort_order ?? 0) + 1;
+
+      const { data, error } = await supabase
+        .from("material_groups")
+        .insert([{ company_id: companyId, name: name.trim(), sort_order: nextOrder, is_active: true }])
+        .select()
+        .single();
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async updateGroup(id, updates) {
+    try {
+      const { data, error } = await supabase
+        .from("material_groups")
+        .update(updates)
+        .eq("id", id)
+        .select()
+        .single();
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async deleteGroup(id) {
+    try {
+      const { error } = await supabase.from("material_groups").delete().eq("id", id);
+      return { error };
+    } catch (error) {
+      return { error };
+    }
+  },
+
+  async getGroupUsageCount(companyId, groupName) {
+    try {
+      const { count, error } = await supabase
+        .from("products")
+        .select("*", { count: "exact", head: true })
+        .eq("material_group", groupName);
+      return { count: count || 0, error };
+    } catch (error) {
+      return { count: 0, error };
+    }
+  },
+
+  // ---- Subgroups ----
+  async getSubgroups(groupId) {
+    try {
+      const { data, error } = await supabase
+        .from("material_subgroups")
+        .select("*")
+        .eq("group_id", groupId)
+        .order("sort_order", { ascending: true })
+        .order("name",       { ascending: true });
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async getAllSubgroups(companyId) {
+    try {
+      const { data, error } = await supabase
+        .from("material_subgroups")
+        .select("*, group:material_groups!group_id(id, name)")
+        .eq("company_id", companyId)
+        .order("name", { ascending: true });
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async createSubgroup(groupId, companyId, name) {
+    try {
+      const { data: existing } = await supabase
+        .from("material_subgroups")
+        .select("sort_order")
+        .eq("group_id", groupId)
+        .order("sort_order", { ascending: false })
+        .limit(1)
+        .single();
+      const nextOrder = (existing?.sort_order ?? 0) + 1;
+
+      const { data, error } = await supabase
+        .from("material_subgroups")
+        .insert([{ group_id: groupId, company_id: companyId, name: name.trim(), sort_order: nextOrder, is_active: true }])
+        .select()
+        .single();
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async updateSubgroup(id, updates) {
+    try {
+      const { data, error } = await supabase
+        .from("material_subgroups")
+        .update(updates)
+        .eq("id", id)
+        .select()
+        .single();
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async deleteSubgroup(id) {
+    try {
+      const { error } = await supabase.from("material_subgroups").delete().eq("id", id);
+      return { error };
+    } catch (error) {
+      return { error };
+    }
+  },
+};

@@ -10,6 +10,7 @@ import CompanyManagement from "./components/CompanyManagement";
 import UomSettings from "./components/UomSettings";
 import UserAuthorization from "./components/UserAuthorization";
 import LostReasonSettings from "./components/LostReasonSettings";
+import MaterialGroupSettings from "./components/MaterialGroupSettings";
 import { useLanguage } from "../../i18n";
 
 const AdminDashboard = () => {
@@ -39,8 +40,9 @@ const AdminDashboard = () => {
     { id: "companies",     label: t("admin.companyManagement"), icon: "Building2" },
     { id: "products",      label: t("admin.productMaster"),  icon: "Package"     },
     { id: "targets",       label: t("admin.salesTargets"),   icon: "Target"      },
-    { id: "lost-reasons",  label: t("admin.lostReasons"),    icon: "XCircle"     },
-    { id: "settings",      label: t("admin.settings"),       icon: "Settings"    },
+    { id: "lost-reasons",     label: t("admin.lostReasons"),    icon: "XCircle"  },
+    { id: "material-groups",  label: "Material Groups",         icon: "Layers"   },
+    { id: "settings",         label: t("admin.settings"),       icon: "Settings" },
   ];
 
   const handleLogout = async () => {
@@ -124,8 +126,9 @@ const AdminDashboard = () => {
           {activeTab === "companies"     && <CompanyManagement />}
           {activeTab === "products"      && <ProductMaster />}
           {activeTab === "targets"       && <SalesTarget />}
-          {activeTab === "lost-reasons"  && <LostReasonSettings />}
-          {activeTab === "settings"      && <UomSettings />}
+          {activeTab === "lost-reasons"     && <LostReasonSettings />}
+          {activeTab === "material-groups"  && <MaterialGroupSettings />}
+          {activeTab === "settings"         && <UomSettings />}
         </div>
       </div>
     </div>

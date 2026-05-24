@@ -4,13 +4,17 @@ import Button from "components/ui/Button";
 import Input from "components/ui/Input";
 import Select from "components/ui/Select";
 import { Checkbox } from "components/ui/Checkbox";
-import { adminService } from "../../../services/supabaseService";
+import { adminService, materialGroupService } from "../../../services/supabaseService";
+import { useAuth } from "contexts/AuthContext";
 
 const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
+  const { company } = useAuth();
+
   const [formData, setFormData] = useState({
     material: "",
     description: "",
     material_group: "",
+    material_subgroup: "",
     base_unit_of_measure: "EA",
     unit_price: "",
     cost_price: "",
@@ -21,21 +25,31 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
     is_active: true,
   });
   const [loading, setLoading] = useState(false);
-  const [existingGroups, setExistingGroups] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [subgroups, setSubgroups] = useState([]);
   const [addingNewGroup, setAddingNewGroup] = useState(false);
   const [newGroupInput, setNewGroupInput] = useState("");
 
-  // Load existing material groups on mount
+  // Load groups from material_groups master table
   useEffect(() => {
+    if (!company?.id) return;
     const loadGroups = async () => {
-      const { data } = await adminService.getAllProducts();
-      if (data) {
-        const groups = [...new Set(data.map((p) => p.material_group).filter(Boolean))].sort();
-        setExistingGroups(groups);
-      }
+      const { data } = await materialGroupService.getGroups(company.id);
+      setGroups(data || []);
     };
     loadGroups();
-  }, []);
+  }, [company?.id]);
+
+  // Load subgroups when selected group changes
+  useEffect(() => {
+    const selectedGroup = groups.find((g) => g.name === formData.material_group);
+    if (!selectedGroup) { setSubgroups([]); return; }
+    const load = async () => {
+      const { data } = await materialGroupService.getSubgroups(selectedGroup.id);
+      setSubgroups((data || []).filter((s) => s.is_active));
+    };
+    load();
+  }, [formData.material_group, groups]);
 
   useEffect(() => {
     if (product) {
@@ -43,6 +57,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
         material: product.material || "",
         description: product.description || "",
         material_group: product.material_group || "",
+        material_subgroup: product.material_subgroup || "",
         base_unit_of_measure: product.base_unit_of_measure || "EA",
         unit_price: product.unit_price?.toString() || "",
         cost_price: product.cost_price?.toString() || "",
@@ -52,7 +67,6 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
         maintenance_status: product.maintenance_status || "Active",
         is_active: product.is_active ?? true,
       });
-      // If editing and the product's group isn't in the list yet, it's valid — keep it
     }
   }, [product]);
 
@@ -106,6 +120,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
     } else {
       setAddingNewGroup(false);
       handleChange("material_group", value);
+      handleChange("material_subgroup", "");
     }
   };
 
@@ -113,20 +128,11 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
     const trimmed = newGroupInput.trim();
     if (!trimmed) return;
     handleChange("material_group", trimmed);
-    if (!existingGroups.includes(trimmed)) {
-      setExistingGroups((prev) => [...prev, trimmed].sort());
-    }
     setAddingNewGroup(false);
   };
 
-  // The value shown in the select: if addingNewGroup we highlight __new__, else the current group
-  const selectValue = addingNewGroup
-    ? "__new__"
-    : existingGroups.includes(formData.material_group)
-    ? formData.material_group
-    : formData.material_group
-    ? "__new__" // editing a product whose group isn't in list yet — treat as custom
-    : "";
+  const activeGroups = groups.filter((g) => g.is_active);
+  const selectValue = addingNewGroup ? "__new__" : formData.material_group || "";
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -180,19 +186,19 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
             <div>
               <label className="block text-sm font-medium mb-1">Material Group</label>
               <select
-                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm disabled:opacity-60"
                 value={selectValue}
                 onChange={(e) => handleGroupSelect(e.target.value)}
+                disabled={viewOnly}
               >
                 <option value="">— Select a group —</option>
-                {existingGroups.map((g) => (
-                  <option key={g} value={g}>{g}</option>
+                {activeGroups.map((g) => (
+                  <option key={g.id} value={g.name}>{g.name}</option>
                 ))}
-                <option value="__new__">+ Add new group…</option>
+                {!viewOnly && <option value="__new__">+ Type a new group name…</option>}
               </select>
 
-              {/* Inline input for new group name */}
-              {addingNewGroup && (
+              {addingNewGroup && !viewOnly && (
                 <div className="mt-2 flex gap-2">
                   <Input
                     type="text"
@@ -201,34 +207,23 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
                     onChange={(e) => setNewGroupInput(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") { e.preventDefault(); handleNewGroupConfirm(); }
-                      if (e.key === "Escape") { setAddingNewGroup(false); }
+                      if (e.key === "Escape") setAddingNewGroup(false);
                     }}
                     autoFocus
                     className="flex-1"
                   />
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={handleNewGroupConfirm}
-                    disabled={!newGroupInput.trim()}
-                  >
-                    Add
+                  <Button type="button" size="sm" onClick={handleNewGroupConfirm} disabled={!newGroupInput.trim()}>
+                    Use
                   </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setAddingNewGroup(false)}
-                  >
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setAddingNewGroup(false)}>
                     <Icon name="X" size={14} />
                   </Button>
                 </div>
               )}
 
-              {/* Show selected value when it's a custom one not in the list */}
-              {!addingNewGroup && formData.material_group && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Selected: <span className="font-medium text-foreground">{formData.material_group}</span>
+              {!viewOnly && groups.length === 0 && (
+                <p className="mt-1 text-xs text-amber-600">
+                  No groups defined yet — go to Admin → Material Groups to create them.
                 </p>
               )}
             </div>
@@ -257,6 +252,39 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
               </Select>
             </div>
           </div>
+
+          {/* Material Subgroup */}
+          {(formData.material_group || viewOnly) && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Material Subgroup</label>
+              {subgroups.length > 0 ? (
+                <select
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm disabled:opacity-60"
+                  value={formData.material_subgroup}
+                  onChange={(e) => handleChange("material_subgroup", e.target.value)}
+                  disabled={viewOnly}
+                >
+                  <option value="">— None —</option>
+                  {subgroups.map((s) => (
+                    <option key={s.id} value={s.name}>{s.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <Input
+                  type="text"
+                  placeholder="e.g., 110mm Series"
+                  value={formData.material_subgroup}
+                  onChange={(e) => handleChange("material_subgroup", e.target.value)}
+                  disabled={viewOnly}
+                />
+              )}
+              {!viewOnly && subgroups.length === 0 && formData.material_group && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  No subgroups for this group yet — add them in Admin → Material Groups, or type freely above.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Prices by UOM */}
           <div>
