@@ -3899,19 +3899,6 @@ export const dealProductService = {
     costPrice = null,
   ) {
     try {
-      console.log("💾 dealProductService.addProductToDeal called with:", {
-        dealId,
-        productId,
-        quantity,
-        sqm,
-        ton,
-        unitPrice,
-        notes,
-        uomType,
-        uomValue,
-        costPrice,
-      });
-
       const effectiveQty    = uomValue || quantity || 0;
       const calculatedLineTotal = effectiveQty * (unitPrice || 0);
       const lineCost        = effectiveQty * (costPrice || 0);
@@ -3937,8 +3924,6 @@ export const dealProductService = {
           margin_pct: marginPct,
         })
         .select("*, product:products!product_id(*)");
-
-      console.log("💾 addProductToDeal result:", { data, error });
 
       if (error) throw error;
 
