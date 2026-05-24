@@ -348,14 +348,15 @@ const EnhancedSupervisorDashboard = ({
       (d) => d.owner_id === effectiveUser.id || teamSubIds.includes(d.owner_id),
     );
     const myWon = myDeals.filter((d) => d.stage === "won");
+    const myLost = myDeals.filter((d) => d.stage === "lost");
     const totalRevenue = teamDeals
       .filter((d) => d.stage === "won")
       .reduce((sum, d) => sum + getConvertedAmount(d), 0);
     const activePipeline = myDeals
       .filter((d) => !["won", "lost"].includes(d.stage))
       .reduce((sum, d) => sum + getConvertedAmount(d), 0);
-    const winRate =
-      myDeals.length > 0 ? (myWon.length / myDeals.length) * 100 : 0;
+    const myClosedCount = myWon.length + myLost.length;
+    const winRate = myClosedCount > 0 ? (myWon.length / myClosedCount) * 100 : 0;
     return {
       totalRevenue,
       activePipeline,
@@ -404,6 +405,8 @@ const EnhancedSupervisorDashboard = ({
     return teamUsers.map((teamUser) => {
       const userDeals = filteredDeals.filter((d) => d.owner_id === teamUser.id);
       const won = userDeals.filter((d) => d.stage === "won");
+      const lost = userDeals.filter((d) => d.stage === "lost");
+      const closedDeals = won.length + lost.length;
       const totalValue = won.reduce((sum, d) => sum + getConvertedAmount(d), 0);
       return {
         id: teamUser.id,
@@ -418,11 +421,9 @@ const EnhancedSupervisorDashboard = ({
         total: totalValue,
         activeDeals: userDeals.filter((d) => !["won", "lost"].includes(d.stage))
           .length,
-        lostDeals: userDeals.filter((d) => d.stage === "lost").length,
+        lostDeals: lost.length,
         winRate:
-          userDeals.length > 0
-            ? Math.round((won.length / userDeals.length) * 100)
-            : 0,
+          closedDeals > 0 ? Math.round((won.length / closedDeals) * 100) : 0,
       };
     });
   }, [
@@ -827,6 +828,8 @@ const EnhancedSupervisorDashboard = ({
     return teamMembers.map((teamUser) => {
       const userDeals = deals.filter((deal) => deal.owner_id === teamUser.id);
       const wonDeals = userDeals.filter((deal) => deal.stage === "won");
+      const lostDeals = userDeals.filter((deal) => deal.stage === "lost");
+      const closedDeals = wonDeals.length + lostDeals.length;
       const totalValue = wonDeals.reduce(
         (sum, deal) => sum + getConvertedAmount(deal),
         0,
@@ -849,11 +852,9 @@ const EnhancedSupervisorDashboard = ({
         total: totalValue,
         activeDeals: userDeals.filter((d) => !["won", "lost"].includes(d.stage))
           .length,
-        lostDeals: userDeals.filter((d) => d.stage === "lost").length,
+        lostDeals: lostDeals.length,
         winRate:
-          userDeals.length > 0
-            ? Math.round((wonDeals.length / userDeals.length) * 100)
-            : 0,
+          closedDeals > 0 ? Math.round((wonDeals.length / closedDeals) * 100) : 0,
       };
     });
   };

@@ -574,9 +574,7 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                   </span>
                 </div>
                 <p className="text-lg font-bold text-warning">
-                  {getTotalDeals() > 0
-                    ? ((getWonDeals() / getTotalDeals()) * 100).toFixed(1)
-                    : 0}%
+                  {getConversionRate().toFixed(1)}%
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">{t("pipeline.overall")}</p>
               </div>

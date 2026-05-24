@@ -677,6 +677,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     return teamMembers.map((teamUser) => {
       const userDeals = deals.filter((deal) => deal.owner_id === teamUser.id);
       const wonDeals = userDeals.filter((deal) => deal.stage === "won");
+      const lostDeals = userDeals.filter((deal) => deal.stage === "lost");
+      const closedDeals = wonDeals.length + lostDeals.length;
       const totalValue = wonDeals.reduce(
         (sum, deal) => sum + getConvertedAmount(deal),
         0,
@@ -695,11 +697,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         total: totalValue,
         activeDeals: userDeals.filter((d) => !["won", "lost"].includes(d.stage))
           .length,
-        lostDeals: userDeals.filter((d) => d.stage === "lost").length,
+        lostDeals: lostDeals.length,
         winRate:
-          userDeals.length > 0
-            ? Math.round((wonDeals.length / userDeals.length) * 100)
-            : 0,
+          closedDeals > 0 ? Math.round((wonDeals.length / closedDeals) * 100) : 0,
       };
     });
   };

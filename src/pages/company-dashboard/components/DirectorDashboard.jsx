@@ -557,10 +557,10 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     const closedDeals = wonDeals.length + lostDeals.length;
     const winRate = closedDeals > 0 ? (wonDeals.length / closedDeals) * 100 : 0;
 
-    // Conversion rate: won deals / all deals (including active pipeline)
+    // Close rate: closed (won + lost) / all deals — pipeline maturity metric
     const conversionRate =
       filteredDeals.length > 0
-        ? (wonDeals.length / filteredDeals.length) * 100
+        ? (closedDeals / filteredDeals.length) * 100
         : 0;
 
     // Team performance: count of active team members with deals
@@ -1096,6 +1096,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         0,
       );
 
+      const closedUserDeals = wonDeals.length + lostDeals.length;
       return {
         id: user.id,
         name: user.full_name || user.email,
@@ -1110,12 +1111,12 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         wonAmount: totalValue,
         total: totalValue,
         winRate:
-          userDeals.length > 0
-            ? Math.round((wonDeals.length / userDeals.length) * 100)
+          closedUserDeals > 0
+            ? Math.round((wonDeals.length / closedUserDeals) * 100)
             : 0,
         conversionRate:
-          userDeals.length > 0
-            ? ((wonDeals.length / userDeals.length) * 100).toFixed(1)
+          closedUserDeals > 0
+            ? ((wonDeals.length / closedUserDeals) * 100).toFixed(1)
             : 0,
       };
     });
@@ -1280,7 +1281,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           dealsWon: wonDeals.length,
           dealsChange: dealsChangeResult.change || 0,
           conversionRate:
-            deals.length > 0 ? (wonDeals.length / deals.length) * 100 : 0,
+            deals.length > 0 ? (closedDeals / deals.length) * 100 : 0,
           conversionChange: winRateChangeResult.change || 0,
           dealsThisMonth: deals.filter(
             (d) => new Date(d.created_at).getMonth() === new Date().getMonth(),

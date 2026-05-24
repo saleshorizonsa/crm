@@ -673,10 +673,9 @@ const EnhancedSalesmanDashboard = ({
     const activePipeline = (filteredDeals || [])
       .filter((d) => !["won", "lost"].includes(d.stage))
       .reduce((sum, d) => sum + convertDealAmount(d), 0);
-    const winRate =
-      filteredDeals && filteredDeals.length > 0
-        ? (wonDeals.length / filteredDeals.length) * 100
-        : 0;
+    const lostDealsInPeriod = filteredDeals?.filter((d) => d.stage === "lost") || [];
+    const closedCount = wonDeals.length + lostDealsInPeriod.length;
+    const winRate = closedCount > 0 ? (wonDeals.length / closedCount) * 100 : 0;
 
     setExecutiveMetrics({
       totalRevenue,
@@ -802,8 +801,9 @@ const EnhancedSalesmanDashboard = ({
         const activePipeline = deals
           .filter((d) => !["won", "lost"].includes(d.stage))
           .reduce((sum, d) => sum + convertDealAmount(d), 0);
-        const winRate =
-          deals.length > 0 ? (wonDeals.length / deals.length) * 100 : 0;
+        const lostDealsAll = deals.filter((d) => d.stage === "lost");
+        const closedCountAll = wonDeals.length + lostDealsAll.length;
+        const winRate = closedCountAll > 0 ? (wonDeals.length / closedCountAll) * 100 : 0;
 
         setAllDeals(deals); // Store all deals for trend calculation
         setExecutiveMetrics({
