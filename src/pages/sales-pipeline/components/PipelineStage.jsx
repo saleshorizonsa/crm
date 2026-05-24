@@ -4,6 +4,89 @@ import Button from "../../../components/ui/Button";
 import DealCard from "./DealCard";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
+import { groupDealsByMaterialGroup } from "../../../utils/dealGroupUtils";
+
+// ─── Grouped view component ───────────────────────────────────────────────────
+
+function GroupedDealsList({ deals, onDealClick, onDealUpdate }) {
+  const grouped = groupDealsByMaterialGroup(deals);
+  const groups  = Object.keys(grouped).sort((a, b) => {
+    if (a === 'No Products') return 1;
+    if (b === 'No Products') return -1;
+    return a.localeCompare(b);
+  });
+
+  const [collapsedGroups, setCollapsedGroups] = useState({});
+
+  function toggleGroup(group) {
+    setCollapsedGroups(prev => ({ ...prev, [group]: !prev[group] }));
+  }
+
+  return (
+    <div className="space-y-2">
+      {groups.map(group => {
+        const groupDeals  = grouped[group];
+        const isCollapsed = collapsedGroups[group];
+        const groupTotal  = groupDeals.reduce(
+          (s, d) => s + parseFloat(d.amount || 0), 0
+        );
+
+        return (
+          <div key={group} className="rounded-lg overflow-hidden border border-gray-200">
+            {/* Group header */}
+            <button
+              onClick={() => toggleGroup(group)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Icon
+                  name={isCollapsed ? 'ChevronRight' : 'ChevronDown'}
+                  size={12}
+                  className="text-gray-400 flex-shrink-0"
+                />
+                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide truncate max-w-[120px]">
+                  {group}
+                </span>
+                <span className="text-xs px-1.5 py-0.5 rounded-full bg-white border border-gray-200 text-gray-500 flex-shrink-0">
+                  {groupDeals.length}
+                </span>
+              </div>
+              <span className="text-xs font-medium text-gray-600 flex-shrink-0 ml-1">
+                {groupTotal.toLocaleString('en-US', {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 0,
+                })} SAR
+              </span>
+            </button>
+
+            {/* Group deal cards */}
+            {!isCollapsed && (
+              <div className="p-2 space-y-2 bg-white">
+                {groupDeals.map(deal => (
+                  <div
+                    key={deal.id}
+                    draggable
+                    onDragStart={e => e.dataTransfer.setData('text/plain', deal.id)}
+                    className="cursor-grab active:cursor-grabbing"
+                  >
+                    <DealCard
+                      deal={deal}
+                      onDealClick={onDealClick}
+                      onDealUpdate={onDealUpdate}
+                      showProductSummary={true}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Stage column ─────────────────────────────────────────────────────────────
 
 const PipelineStage = ({
   stage,
@@ -17,6 +100,20 @@ const PipelineStage = ({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
   const { t } = useLanguage();
+
+  // Persist grouped-view preference per stage in localStorage
+  const storageKey = `pipeline_group_${stage?.id || 'unknown'}`;
+  const [groupByMaterial, setGroupByMaterial] = useState(() => {
+    try { return localStorage.getItem(storageKey) === 'true'; }
+    catch { return false; }
+  });
+
+  function handleToggleGroup() {
+    const newVal = !groupByMaterial;
+    setGroupByMaterial(newVal);
+    try { localStorage.setItem(storageKey, String(newVal)); }
+    catch { /* storage unavailable */ }
+  }
 
   const getStageColor = (stageId) => {
     const map = {
@@ -85,6 +182,21 @@ const PipelineStage = ({
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {/* Group-by-material toggle */}
+          <button
+            onClick={handleToggleGroup}
+            title={groupByMaterial ? 'Show flat list' : 'Group by material'}
+            className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 ${
+              groupByMaterial
+                ? 'bg-blue-50 text-blue-600'
+                : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+            }`}
+          >
+            <Icon name="Layers" size={13} />
+            {groupByMaterial && (
+              <span className="text-xs font-medium">Grouped</span>
+            )}
+          </button>
           <Button
             variant="ghost"
             size="icon"
@@ -134,7 +246,7 @@ const PipelineStage = ({
         </div>
       )}
 
-      {/* Deal Cards */}
+      {/* Deal Cards — flat or grouped */}
       {!isCollapsed && (
         <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-white scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
           {deals.length === 0 ? (
@@ -142,6 +254,12 @@ const PipelineStage = ({
               <Icon name="Inbox" size={32} className="mb-2" />
               <p className="text-sm mb-1">{t("deals.emptyPipeline")}</p>
             </div>
+          ) : groupByMaterial ? (
+            <GroupedDealsList
+              deals={deals}
+              onDealClick={onDealClick}
+              onDealUpdate={onDealUpdate}
+            />
           ) : (
             deals.map((deal) => (
               <div

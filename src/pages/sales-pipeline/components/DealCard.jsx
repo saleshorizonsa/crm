@@ -5,6 +5,7 @@ import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { dealProductService } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
+import { getDealProductSummary } from "../../../utils/dealGroupUtils";
 
 // Fallback label map — kept in sync with the default seed list
 const LOST_CODE_LABELS = {
@@ -30,7 +31,7 @@ const LOST_CODE_LABELS = {
   CAPACITY:          "Capacity",
 };
 
-const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
+const DealCard = ({ deal, onDealUpdate, onDealClick, showProductSummary = false }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editAmount, setEditAmount] = useState(deal?.amount);
   const [productCount, setProductCount] = useState(0);
@@ -130,6 +131,15 @@ const DealCard = ({ deal, onDealUpdate, onDealClick }) => {
               ? `${deal.contact.first_name} ${deal.contact.last_name}`
               : t("deals.selectContact")}
           </p>
+          {showProductSummary && (() => {
+            const summary = getDealProductSummary(deal);
+            return summary ? (
+              <div className="flex items-center gap-1 mt-1">
+                <Icon name="Package" size={10} className="text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-400 truncate">{summary}</span>
+              </div>
+            ) : null;
+          })()}
           {deal?.stage === "lost" && deal?.lost_reason_code && (
             <div className="flex items-center gap-1 mt-1 flex-wrap">
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700">

@@ -23,6 +23,7 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import FunnelChart from "./FunnelChart";
 import { useLanguage } from "../../../i18n";
+import { groupDealsByMaterialGroup } from "../../../utils/dealGroupUtils";
 
 const LOST_CODE_LABELS = {
   PRICE_HIGH:        "Price too high",
@@ -459,6 +460,56 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                 </div>
               ))}
             </div>
+
+            {/* Material Group Breakdown */}
+            {(() => {
+              const grouped = groupDealsByMaterialGroup(deals || []);
+              const stats = Object.entries(grouped)
+                .map(([group, groupDeals]) => ({
+                  group,
+                  count: groupDeals.length,
+                  totalValue: groupDeals.reduce((s, d) => s + parseFloat(d.amount || 0), 0),
+                }))
+                .sort((a, b) => {
+                  if (a.group === 'No Products') return 1;
+                  if (b.group === 'No Products') return -1;
+                  return b.totalValue - a.totalValue;
+                });
+              if (stats.length === 0) return null;
+              const maxVal = stats.filter(s => s.group !== 'No Products')[0]?.totalValue || stats[0]?.totalValue || 1;
+              return (
+                <div>
+                  <h4 className="text-sm font-semibold text-card-foreground mb-3 flex items-center gap-2">
+                    <Icon name="Layers" size={14} className="text-muted-foreground" />
+                    Pipeline by Material Group
+                  </h4>
+                  <div className="space-y-2">
+                    {stats.map(({ group, count, totalValue }) => {
+                      const pct = maxVal > 0 ? Math.round((totalValue / maxVal) * 100) : 0;
+                      return (
+                        <div key={group} className="flex items-center gap-3">
+                          <div className="w-36 text-xs text-muted-foreground truncate flex-shrink-0">
+                            {group}
+                          </div>
+                          <div className="flex-1 bg-muted/40 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="bg-primary h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <div className="w-6 text-right text-xs text-muted-foreground flex-shrink-0">
+                            {count}
+                          </div>
+                          <div className="w-28 text-right text-xs font-medium text-card-foreground flex-shrink-0">
+                            {formatCurrency(totalValue, preferredCurrency)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
