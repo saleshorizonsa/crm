@@ -490,23 +490,45 @@ const DealModal = ({
     }
   }, [isOpen, deal]);
 
-  // Load group list when modal opens — same source as admin Material Groups panel
+  // Load group list — direct query to material_groups admin table, bypassing the
+  // getMaterialGroups fallback chain which can return garbage product values.
   useEffect(() => {
     if (!isOpen || !company?.id) return;
     async function loadGroups() {
-      try {
-        const mgList = await adminService.getMaterialGroups(company.id);
-        if (mgList && mgList.length > 0) {
-          setAllGroupNames(mgList.map(g => g.name));
-          return;
-        }
-      } catch (_) {}
-      // Fallback: distinct values from products table
-      const { data } = await supabase.from('products').select('material_group');
-      const groups = [
-        ...new Set((data || []).map(p => p.material_group?.trim()).filter(Boolean))
+      // PRIMARY: admin-managed material_groups table
+      const { data: mgData, error: mgError } = await supabase
+        .from('material_groups')
+        .select('name')
+        .eq('company_id', company.id)
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+
+      if (!mgError && mgData && mgData.length > 0) {
+        setAllGroupNames(mgData.map(g => g.name));
+        return;
+      }
+
+      // FALLBACK: derive from products but reject garbage values.
+      // Non-ASCII chars = encoding corruption (e.g. "1/2â€|").
+      // Purely numeric strings = item codes, not group names.
+      // Strings ≤2 chars = abbreviations / UOM codes (PC, EA …).
+      const { data: pData } = await supabase
+        .from('products')
+        .select('material_group');
+
+      const cleanGroups = [
+        ...new Set(
+          (pData || [])
+            .map(p => (p.material_group || '').trim())
+            .filter(g =>
+              g.length > 2 &&
+              !/[^\x20-\x7E]/.test(g) &&
+              !/^\d+$/.test(g)
+            )
+        )
       ].sort();
-      setAllGroupNames(groups);
+
+      setAllGroupNames(cleanGroups);
     }
     loadGroups();
   }, [isOpen, company?.id]);
