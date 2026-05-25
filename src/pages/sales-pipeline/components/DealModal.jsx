@@ -508,18 +508,17 @@ const DealModal = ({
         return;
       }
 
-      // FALLBACK: derive from products but reject garbage values.
-      // Non-ASCII chars = encoding corruption (e.g. "1/2â€|").
-      // Purely numeric strings = item codes, not group names.
-      // Strings ≤2 chars = abbreviations / UOM codes (PC, EA …).
+      // FALLBACK: derive from products using product_group then material_group.
+      // Reject garbage: non-ASCII chars (encoding corruption), purely numeric
+      // strings (item codes), and strings ≤2 chars (UOM abbreviations).
       const { data: pData } = await supabase
         .from('products')
-        .select('material_group');
+        .select('product_group, material_group');
 
       const cleanGroups = [
         ...new Set(
           (pData || [])
-            .map(p => (p.material_group || '').trim())
+            .map(p => (p.product_group || p.material_group || '').trim())
             .filter(g =>
               g.length > 2 &&
               !/[^\x20-\x7E]/.test(g) &&
@@ -541,10 +540,11 @@ const DealModal = ({
     }
     async function loadGroupProducts() {
       setProductsLoading(true);
+      // Filter by product_group OR material_group so both column conventions work
       const { data } = await supabase
         .from('products')
-        .select('id, material, description, material_group, material_subgroup, base_unit_of_measure, unit_price, is_active')
-        .eq('material_group', pickerGroup)
+        .select('id, material, description, material_group, product_group, sub_group, material_subgroup, base_unit_of_measure, unit_price, is_active')
+        .or(`product_group.eq.${pickerGroup},material_group.eq.${pickerGroup}`)
         .or('is_active.eq.true,is_active.is.null')
         .order('material', { ascending: true });
       setAllProducts(data || []);
