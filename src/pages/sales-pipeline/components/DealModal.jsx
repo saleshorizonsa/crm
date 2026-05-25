@@ -141,6 +141,7 @@ function ProductPickerPanel({
           <select
             value={productGroup}
             onChange={e => {
+              console.log('Group selected:', e.target.value);
               setProductGroup(e.target.value);
               setProductSearch('');
               setSelectedProductIds(new Set());
@@ -514,13 +515,15 @@ const DealModal = ({
     }
     async function loadGroupProducts() {
       setProductsLoading(true);
-      // Filter by product_group OR material_group so both column conventions work
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('products')
-        .select('id, material, description, material_group, product_group, sub_group, material_subgroup, base_unit_of_measure, unit_price, is_active')
-        .or(`product_group.eq.${pickerGroup},material_group.eq.${pickerGroup}`)
-        .or('is_active.eq.true,is_active.is.null')
+        .select('id, material, description, material_group, material_subgroup, base_unit_of_measure, unit_price, cost_price, is_active')
+        .eq('material_group', pickerGroup)
+        .eq('is_active', true)
         .order('material', { ascending: true });
+      if (error) {
+        console.error('Product fetch error:', error);
+      }
       setAllProducts(data || []);
       setProductsLoading(false);
     }
