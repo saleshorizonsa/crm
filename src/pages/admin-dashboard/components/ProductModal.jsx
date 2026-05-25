@@ -30,21 +30,19 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
   const [addingNewGroup, setAddingNewGroup] = useState(false);
   const [newGroupInput, setNewGroupInput] = useState("");
 
-  // Load groups from material_groups table; fall back to product-scan if table missing
+  // Load groups — getMaterialGroups returns array directly with products fallback built in
   const loadGroups = async () => {
     if (!company?.id) return;
-    const { data, error } = await adminService.getMaterialGroups(company.id);
-    if (!error && data) {
-      setGroups(data.map((g) => ({ name: g.name })));
+    const fetched = await adminService.getMaterialGroups(company.id);
+    if (fetched && fetched.length > 0) {
+      setGroups(fetched.map((g) => ({ name: g.name })));
     } else {
-      // Fallback: derive from products table
+      // Last-resort fallback: scan products table directly
       const { data: products } = await adminService.getAllProducts();
       if (products) {
         const names = [
           ...new Set(
-            products
-              .map((p) => (p.material_group || "").trim())
-              .filter(Boolean)
+            products.map((p) => (p.material_group || "").trim()).filter(Boolean)
           ),
         ].sort();
         setGroups(names.map((name) => ({ name })));
@@ -64,7 +62,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
     if (!groupName || !company?.id) { setSubgroups([]); return; }
 
     const load = async () => {
-      const { data: allGroups } = await adminService.getMaterialGroups(company.id);
+      const allGroups = await adminService.getMaterialGroups(company.id);
       const group = (allGroups || []).find((g) => g.name === groupName);
       if (group?.sub_groups?.length) {
         setSubgroups(group.sub_groups.map((s) => ({ name: s.name })));

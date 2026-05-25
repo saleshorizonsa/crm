@@ -4562,8 +4562,9 @@ export const adminService = {
 
   // ── Material Groups ────────────────────────────────────────────────────────
 
-  // Get all groups (with nested sub groups) + product counts per group.
-  // Falls back to deriving groups directly from products if the table is empty.
+  // Returns groups array directly (not wrapped in {data,error}).
+  // Source 1: material_groups table. Source 2: products fallback.
+  // NOTE: products table has no company_id column — never filter by it.
   async getMaterialGroups(companyId) {
     try {
       // ── Source 1: material_groups table ──────────────────────────────────
@@ -4582,44 +4583,38 @@ export const adminService = {
           .order("name",       { ascending: true });
         if (!error && data && data.length > 0) tableGroups = data;
       } catch (_) {
-        // table may not exist yet — continue to products fallback
+        // table may not exist yet — fall through to products
       }
 
-      // ── Source 2: products table (always, for counts + fallback) ─────────
-      // Products are not scoped by company_id — fetch all
+      // ── Source 2: products (no company_id filter — column doesn't exist) ──
       const { data: products } = await supabase
         .from("products")
-        .select("material_group, material_subgroup");
+        .select("id, material_group, material_subgroup, is_active");
 
-      // Build product-count map
       const countMap = {};
       (products || []).forEach((p) => {
         const name = (p.material_group || "").trim();
         if (name) countMap[name] = (countMap[name] || 0) + 1;
       });
 
-      // If the table has data, enrich with product counts and return
       if (tableGroups.length > 0) {
-        return {
-          data: tableGroups.map((g) => ({
-            ...g,
-            productCount: countMap[g.name] || 0,
-            sub_groups: (g.sub_groups || []).sort(
-              (a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)
-            ),
-          })),
-          error: null,
-        };
+        return tableGroups.map((g) => ({
+          ...g,
+          productCount: countMap[g.name] || 0,
+          sub_groups: (g.sub_groups || []).sort(
+            (a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)
+          ),
+        }));
       }
 
-      // ── Fallback: build entirely from products ────────────────────────────
+      // ── Fallback: build from products ────────────────────────────────────
       const groupMap = {};
       (products || []).forEach((p) => {
         const name = (p.material_group || "").trim();
         if (!name) return;
         if (!groupMap[name]) {
           groupMap[name] = {
-            id: name, // temporary — replaced by real UUID after seed
+            id: name,
             name,
             sort_order: 0,
             is_active: true,
@@ -4636,16 +4631,16 @@ export const adminService = {
         }
       });
 
-      const result = Object.values(groupMap)
+      return Object.values(groupMap)
         .map(({ _subs, ...g }) => ({
           ...g,
           sub_groups: g.sub_groups.sort((a, b) => a.name.localeCompare(b.name)),
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
 
-      return { data: result, error: null };
-    } catch (error) {
-      return { data: null, error };
+    } catch (err) {
+      console.error("getMaterialGroups error:", err);
+      return [];
     }
   },
 

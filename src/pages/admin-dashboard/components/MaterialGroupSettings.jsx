@@ -1,15 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import Icon from "components/AppIcon";
 import { adminService } from "services/supabaseService";
+import { supabase } from "../../../lib/supabase";
 import { useAuth } from "contexts/AuthContext";
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 function dispatchGroupsUpdated() {
   window.dispatchEvent(new Event("material-groups-updated"));
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 const MaterialGroupSettings = () => {
   const { company } = useAuth();
@@ -18,68 +15,24 @@ const MaterialGroupSettings = () => {
   const [loading, setLoading] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState(new Set());
 
-  // Create group
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
 
-  // Edit group
   const [editingGroup, setEditingGroup] = useState(null);
   const [editGroupValue, setEditGroupValue] = useState("");
 
-  // Sub group — create
-  const [addingSubGroupTo, setAddingSubGroupTo] = useState(null); // group id
+  const [addingSubGroupTo, setAddingSubGroupTo] = useState(null);
   const [newSubGroupName, setNewSubGroupName] = useState("");
 
-  // Sub group — edit
-  const [editingSubGroup, setEditingSubGroup] = useState(null); // { id, name, groupId, groupName }
+  const [editingSubGroup, setEditingSubGroup] = useState(null);
   const [editSubGroupValue, setEditSubGroupValue] = useState("");
 
-  // Feedback
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // ── Load ───────────────────────────────────────────────────────────────────
-  const loadGroups = useCallback(async () => {
-    if (!company?.id) {
-      console.log("[MG] no company id, skipping load");
-      return;
-    }
-    setLoading(true);
-    console.log("[MG] loading groups for company:", company.id);
-    const { data, error } = await adminService.getMaterialGroups(company.id);
-    console.log("[MG] getMaterialGroups result:", { data, error });
-    if (error) {
-      showError("Failed to load material groups: " + error.message);
-      setLoading(false);
-      return;
-    }
-    const fetched = data || [];
-    console.log("[MG] fetched groups count:", fetched.length, fetched);
-
-    // Detect fallback mode: id === name means the table was empty and groups
-    // were derived from products. Seed the table now, then reload to get
-    // real UUIDs so CRUD operations work correctly.
-    const isFallback = fetched.length > 0 && fetched[0].id === fetched[0].name;
-    if (isFallback) {
-      console.log("[MG] fallback mode — seeding table from products");
-      await adminService.seedMaterialGroupsFromProducts(company.id);
-      const { data: seeded } = await adminService.getMaterialGroups(company.id);
-      console.log("[MG] after seed:", seeded);
-      setGroups(seeded || fetched);
-    } else {
-      setGroups(fetched);
-    }
-
-    setLoading(false);
-  }, [company?.id]);
-
-  useEffect(() => {
-    loadGroups();
-  }, [loadGroups]);
-
-  // ── Feedback helpers ───────────────────────────────────────────────────────
+  // ── Feedback helpers ─────────────────────────────────────────────────────
   function showSuccess(msg) {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(""), 3500);
@@ -89,7 +42,131 @@ const MaterialGroupSettings = () => {
     setTimeout(() => setErrorMsg(""), 5000);
   }
 
-  // ── Toggle expand ──────────────────────────────────────────────────────────
+  // ── Emergency fallback: build groups directly from products table ─────────
+  async function loadGroupsFromProducts() {
+    try {
+      const { data: products } = await supabase
+        .from("products")
+        .select("material_group, material_subgroup");
+
+      const groupMap = {};
+      (products || []).forEach((p) => {
+        const name = (p.material_group || "").trim();
+        if (!name) return;
+        if (!groupMap[name]) {
+          groupMap[name] = {
+            id: name,
+            name,
+            productCount: 0,
+            is_active: true,
+            sub_groups: [],
+          };
+        }
+        groupMap[name].productCount++;
+        const sub = (p.material_subgroup || "").trim();
+        if (sub && !groupMap[name].sub_groups.find((s) => s.name === sub)) {
+          groupMap[name].sub_groups.push({ id: sub, name: sub });
+        }
+      });
+
+      const result = Object.values(groupMap).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+      setGroups(result);
+    } catch (err) {
+      setErrorMsg("Could not load groups. Please refresh.");
+    }
+  }
+
+  // ── Primary load ──────────────────────────────────────────────────────────
+  async function loadGroups() {
+    if (!company?.id) return;
+    setLoading(true);
+    setErrorMsg("");
+    try {
+      const fetched = await adminService.getMaterialGroups(company.id);
+      setGroups(fetched || []);
+    } catch (err) {
+      console.error("Load groups error:", err);
+      await loadGroupsFromProducts();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Background seed: populate material_groups table from products ─────────
+  async function seedGroupsTableIfEmpty() {
+    try {
+      const { count } = await supabase
+        .from("material_groups")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", company.id);
+
+      if (count > 0) return;
+
+      const { data: products } = await supabase
+        .from("products")
+        .select("material_group, material_subgroup");
+
+      const uniqueGroups = [
+        ...new Set(
+          (products || []).map((p) => (p.material_group || "").trim()).filter(Boolean)
+        ),
+      ];
+      if (uniqueGroups.length === 0) return;
+
+      const { data: insertedGroups } = await supabase
+        .from("material_groups")
+        .upsert(
+          uniqueGroups.map((name) => ({ company_id: company.id, name, sort_order: 0, is_active: true })),
+          { onConflict: "company_id,name" }
+        )
+        .select("id, name");
+
+      if (!insertedGroups?.length) return;
+
+      const groupIdMap = {};
+      insertedGroups.forEach((g) => { groupIdMap[g.name] = g.id; });
+
+      const subInserts = [];
+      const seen = new Set();
+      (products || []).forEach((p) => {
+        const groupName = (p.material_group || "").trim();
+        const subName = (p.material_subgroup || "").trim();
+        const groupId = groupIdMap[groupName];
+        if (!subName || !groupId) return;
+        const key = `${groupId}::${subName}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        subInserts.push({ company_id: company.id, material_group_id: groupId, name: subName, sort_order: 0, is_active: true });
+      });
+
+      if (subInserts.length > 0) {
+        await supabase
+          .from("material_sub_groups")
+          .upsert(subInserts, { onConflict: "material_group_id,name" });
+      }
+
+      // Reload so groups now have real UUIDs
+      const seeded = await adminService.getMaterialGroups(company.id);
+      if (seeded?.length > 0) setGroups(seeded);
+    } catch (err) {
+      // Seeding is optional — silently skip
+      console.log("Seed skipped:", err.message);
+    }
+  }
+
+  useEffect(() => {
+    if (!company?.id) return;
+    loadGroups().then(() => {
+      seedGroupsTableIfEmpty();
+    });
+  }, [company?.id]);
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
+  const totalSubGroups = groups.reduce((s, g) => s + (g.sub_groups?.length || 0), 0);
+  const totalProducts = groups.reduce((s, g) => s + (g.productCount || 0), 0);
+
   function toggleExpand(groupId) {
     setExpandedGroups((prev) => {
       const next = new Set(prev);
@@ -97,13 +174,6 @@ const MaterialGroupSettings = () => {
       return next;
     });
   }
-
-  // ── Stats ──────────────────────────────────────────────────────────────────
-  const totalSubGroups = groups.reduce(
-    (s, g) => s + (g.sub_groups?.length || 0),
-    0
-  );
-  const totalProducts = groups.reduce((s, g) => s + (g.productCount || 0), 0);
 
   // ══════════════════════════════════════════════════════════════════════════
   // GROUP — Create
@@ -116,15 +186,30 @@ const MaterialGroupSettings = () => {
       return;
     }
     setCreateLoading(true);
-    const { error } = await adminService.createMaterialGroup(company.id, name);
-    if (error) {
-      showError("Failed to create group: " + error.message);
-    } else {
+    try {
+      const { error } = await supabase
+        .from("material_groups")
+        .insert({ company_id: company.id, name, sort_order: 0, is_active: true });
+
+      if (error && error.code === "42P01") {
+        // Table doesn't exist — store in localStorage fallback
+        const key = `groups_${company.id}`;
+        const existing = JSON.parse(localStorage.getItem(key) || "[]");
+        if (!existing.includes(name)) {
+          existing.push(name);
+          localStorage.setItem(key, JSON.stringify(existing.sort()));
+        }
+      } else if (error) {
+        throw error;
+      }
+
       showSuccess(`Group "${name}" created.`);
       setShowCreateGroup(false);
       setNewGroupName("");
       await loadGroups();
       dispatchGroupsUpdated();
+    } catch (err) {
+      showError("Failed to create group: " + err.message);
     }
     setCreateLoading(false);
   }
@@ -134,33 +219,17 @@ const MaterialGroupSettings = () => {
   // ══════════════════════════════════════════════════════════════════════════
   async function handleUpdateGroup(group) {
     const newName = editGroupValue.trim();
-    if (!newName || newName === group.name) {
-      setEditingGroup(null);
-      return;
-    }
-    if (
-      groups.find(
-        (g) =>
-          g.id !== group.id &&
-          g.name.toLowerCase() === newName.toLowerCase()
-      )
-    ) {
+    if (!newName || newName === group.name) { setEditingGroup(null); return; }
+    if (groups.find((g) => g.id !== group.id && g.name.toLowerCase() === newName.toLowerCase())) {
       showError(`Group "${newName}" already exists.`);
       return;
     }
     setSaving(true);
-    const { error } = await adminService.updateMaterialGroup(
-      group.id,
-      group.name,
-      newName,
-      company.id
-    );
+    const { error } = await adminService.updateMaterialGroup(group.id, group.name, newName, company.id);
     if (error) {
       showError("Failed to rename: " + error.message);
     } else {
-      showSuccess(
-        `"${group.name}" renamed to "${newName}" — updated across all products.`
-      );
+      showSuccess(`"${group.name}" renamed to "${newName}" — updated across all products.`);
       setEditingGroup(null);
       await loadGroups();
       dispatchGroupsUpdated();
@@ -174,36 +243,21 @@ const MaterialGroupSettings = () => {
   async function handleDeleteGroup(group) {
     const productCount = group.productCount || 0;
     const subGroupCount = group.sub_groups?.length || 0;
-
     let msg = `Delete group "${group.name}"?\n\n`;
     if (productCount > 0 || subGroupCount > 0) {
       msg += "This will also:\n";
-      if (subGroupCount > 0)
-        msg += `• Delete ${subGroupCount} sub group(s)\n`;
-      if (productCount > 0)
-        msg +=
-          `• Remove group from ${productCount} product(s)\n` +
-          `  (products will NOT be deleted)\n`;
+      if (subGroupCount > 0) msg += `• Delete ${subGroupCount} sub group(s)\n`;
+      if (productCount > 0) msg += `• Remove group from ${productCount} product(s)\n  (products will NOT be deleted)\n`;
       msg += "\nThis cannot be undone.";
     }
-
     if (!confirm(msg)) return;
 
     setSaving(true);
-    const { error } = await adminService.deleteMaterialGroup(
-      group.id,
-      group.name,
-      company.id
-    );
+    const { error } = await adminService.deleteMaterialGroup(group.id, group.name, company.id);
     if (error) {
       showError("Failed to delete: " + error.message);
     } else {
-      showSuccess(
-        `Group "${group.name}" deleted.` +
-          (productCount > 0
-            ? ` Removed from ${productCount} product(s).`
-            : "")
-      );
+      showSuccess(`Group "${group.name}" deleted.` + (productCount > 0 ? ` Removed from ${productCount} product(s).` : ""));
       await loadGroups();
       dispatchGroupsUpdated();
     }
@@ -221,11 +275,7 @@ const MaterialGroupSettings = () => {
       return;
     }
     setSaving(true);
-    const { error } = await adminService.createSubGroup(
-      group.id,
-      company.id,
-      name
-    );
+    const { error } = await adminService.createSubGroup(group.id, company.id, name);
     if (error) {
       showError("Failed to create sub group: " + error.message);
     } else {
@@ -243,18 +293,9 @@ const MaterialGroupSettings = () => {
   // ══════════════════════════════════════════════════════════════════════════
   async function handleUpdateSubGroup(sub, group) {
     const newName = editSubGroupValue.trim();
-    if (!newName || newName === sub.name) {
-      setEditingSubGroup(null);
-      return;
-    }
+    if (!newName || newName === sub.name) { setEditingSubGroup(null); return; }
     setSaving(true);
-    const { error } = await adminService.updateSubGroup(
-      sub.id,
-      sub.name,
-      newName,
-      group.name,
-      company.id
-    );
+    const { error } = await adminService.updateSubGroup(sub.id, sub.name, newName, group.name, company.id);
     if (error) {
       showError("Failed to rename sub group: " + error.message);
     } else {
@@ -270,20 +311,10 @@ const MaterialGroupSettings = () => {
   // SUB GROUP — Delete
   // ══════════════════════════════════════════════════════════════════════════
   async function handleDeleteSubGroup(sub, group) {
-    // Estimate affected products from loaded data
-    const msg =
-      `Delete sub group "${sub.name}" from "${group.name}"?\n\n` +
-      `Products assigned to this sub group will have their sub group cleared (not deleted).\n\n` +
-      `This cannot be undone.`;
+    const msg = `Delete sub group "${sub.name}" from "${group.name}"?\n\nProducts assigned to this sub group will have their sub group cleared (not deleted).\n\nThis cannot be undone.`;
     if (!confirm(msg)) return;
-
     setSaving(true);
-    const { error } = await adminService.deleteSubGroup(
-      sub.id,
-      sub.name,
-      group.name,
-      company.id
-    );
+    const { error } = await adminService.deleteSubGroup(sub.id, sub.name, group.name, company.id);
     if (error) {
       showError("Failed to delete sub group: " + error.message);
     } else {
@@ -294,11 +325,11 @@ const MaterialGroupSettings = () => {
     setSaving(false);
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="p-6 space-y-5">
 
-      {/* ── Page header ───────────────────────────────────────────────────── */}
+      {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-xl font-semibold">Material Groups &amp; Sub Groups</h2>
@@ -317,7 +348,7 @@ const MaterialGroupSettings = () => {
         </button>
       </div>
 
-      {/* ── Feedback messages ─────────────────────────────────────────────── */}
+      {/* Feedback */}
       {successMsg && (
         <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl text-sm text-emerald-700 dark:text-emerald-300">
           <Icon name="CheckCircle" size={16} className="text-emerald-500 shrink-0" />
@@ -331,12 +362,12 @@ const MaterialGroupSettings = () => {
         </div>
       )}
 
-      {/* ── Summary stats ─────────────────────────────────────────────────── */}
+      {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         {[
           { label: "Product Groups", value: groups.length, icon: "Layers" },
-          { label: "Sub Groups", value: totalSubGroups, icon: "GitBranch" },
-          { label: "Total Products", value: totalProducts, icon: "Package" },
+          { label: "Sub Groups",     value: totalSubGroups, icon: "GitBranch" },
+          { label: "Total Products", value: totalProducts,  icon: "Package" },
         ].map(({ label, value, icon }) => (
           <div key={label} className="bg-card border border-border rounded-xl p-4 text-center">
             <Icon name={icon} size={20} className="mx-auto text-primary mb-2" />
@@ -346,7 +377,7 @@ const MaterialGroupSettings = () => {
         ))}
       </div>
 
-      {/* ── Header + New Group button ──────────────────────────────────────── */}
+      {/* Groups header + New Group button */}
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-base font-semibold">Material Groups</h3>
@@ -364,7 +395,7 @@ const MaterialGroupSettings = () => {
         </button>
       </div>
 
-      {/* ── Create group form ──────────────────────────────────────────────── */}
+      {/* Create group form */}
       {showCreateGroup && (
         <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
           <p className="text-sm font-medium mb-2">New Material Group</p>
@@ -387,9 +418,7 @@ const MaterialGroupSettings = () => {
               disabled={!newGroupName.trim() || createLoading}
               className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
             >
-              {createLoading ? (
-                <Icon name="Loader2" size={14} className="animate-spin" />
-              ) : "Create"}
+              {createLoading ? <Icon name="Loader2" size={14} className="animate-spin" /> : "Create"}
             </button>
             <button
               onClick={() => { setShowCreateGroup(false); setNewGroupName(""); }}
@@ -401,7 +430,7 @@ const MaterialGroupSettings = () => {
         </div>
       )}
 
-      {/* ── Groups list ───────────────────────────────────────────────────── */}
+      {/* Groups list */}
       {loading ? (
         <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
           <Icon name="Loader2" size={20} className="animate-spin" />
@@ -410,9 +439,9 @@ const MaterialGroupSettings = () => {
       ) : groups.length === 0 ? (
         <div className="text-center py-12 bg-card border border-border rounded-xl">
           <Icon name="Layers" size={40} className="mx-auto text-muted-foreground mb-3" />
-          <p className="text-sm font-medium text-muted-foreground">No material groups yet</p>
+          <p className="text-sm font-medium text-muted-foreground">No material groups found</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Click "New Group" to create your first group, or add products with a Material Group value.
+            Add products with a Material Group value in Product Master, or click "New Group" to create one.
           </p>
         </div>
       ) : (
@@ -424,9 +453,7 @@ const MaterialGroupSettings = () => {
             return (
               <div key={group.id} className="bg-card border border-border rounded-xl overflow-hidden">
 
-                {/* Group header row */}
                 {isEditing ? (
-                  /* ── Edit mode ── */
                   <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-800">
                     <input
                       type="text"
@@ -447,25 +474,15 @@ const MaterialGroupSettings = () => {
                     >
                       {saving ? <Icon name="Loader2" size={12} className="animate-spin" /> : "Save"}
                     </button>
-                    <button
-                      onClick={() => setEditingGroup(null)}
-                      className="px-3 py-1.5 text-xs rounded-lg border border-border hover:bg-accent transition-colors"
-                    >
+                    <button onClick={() => setEditingGroup(null)} className="px-3 py-1.5 text-xs rounded-lg border border-border hover:bg-accent transition-colors">
                       Cancel
                     </button>
                   </div>
                 ) : (
-                  /* ── Normal mode ── */
                   <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
                     <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => toggleExpand(group.id)}
-                        className="text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <Icon
-                          name={isExpanded ? "ChevronDown" : "ChevronRight"}
-                          size={16}
-                        />
+                      <button onClick={() => toggleExpand(group.id)} className="text-muted-foreground hover:text-foreground transition-colors">
+                        <Icon name={isExpanded ? "ChevronDown" : "ChevronRight"} size={16} />
                       </button>
                       <div>
                         <span className="text-sm font-semibold">{group.name}</span>
@@ -477,36 +494,22 @@ const MaterialGroupSettings = () => {
                         </span>
                       </div>
                     </div>
-
                     <div className="flex items-center gap-1">
-                      {/* Add sub group */}
                       <button
-                        onClick={() => {
-                          setAddingSubGroupTo(group.id);
-                          setNewSubGroupName("");
-                          if (!isExpanded) toggleExpand(group.id);
-                        }}
+                        onClick={() => { setAddingSubGroupTo(group.id); setNewSubGroupName(""); if (!isExpanded) toggleExpand(group.id); }}
                         disabled={saving}
                         className="text-xs px-2.5 py-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition-colors disabled:opacity-40"
                       >
                         + Sub Group
                       </button>
-
-                      {/* Edit */}
                       <button
-                        onClick={() => {
-                          setEditingGroup(group);
-                          setEditGroupValue(group.name);
-                          setEditingSubGroup(null);
-                        }}
+                        onClick={() => { setEditingGroup(group); setEditGroupValue(group.name); setEditingSubGroup(null); }}
                         disabled={saving}
                         className="p-1.5 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition-colors disabled:opacity-40"
                         title="Rename group"
                       >
                         <Icon name="Pencil" size={14} />
                       </button>
-
-                      {/* Delete */}
                       <button
                         onClick={() => handleDeleteGroup(group)}
                         disabled={saving}
@@ -519,7 +522,6 @@ const MaterialGroupSettings = () => {
                   </div>
                 )}
 
-                {/* Sub groups — shown when expanded */}
                 {isExpanded && (
                   <div className="px-4 py-3">
                     {(group.sub_groups?.length || 0) === 0 && addingSubGroupTo !== group.id && (
@@ -527,18 +529,12 @@ const MaterialGroupSettings = () => {
                         No sub groups yet — click "+ Sub Group" to add one.
                       </p>
                     )}
-
                     {group.sub_groups?.length > 0 && (
                       <div className="space-y-0.5 mb-2">
                         {group.sub_groups.map((sub) => {
-                          const isEditingSub =
-                            editingSubGroup?.id === sub.id;
-
+                          const isEditingSub = editingSubGroup?.id === sub.id;
                           return (
-                            <div
-                              key={sub.id}
-                              className="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-muted/40 transition-colors"
-                            >
+                            <div key={sub.id} className="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-muted/40 transition-colors">
                               {isEditingSub ? (
                                 <div className="flex items-center gap-2 flex-1">
                                   <input
@@ -560,10 +556,7 @@ const MaterialGroupSettings = () => {
                                   >
                                     {saving ? <Icon name="Loader2" size={12} className="animate-spin" /> : "Save"}
                                   </button>
-                                  <button
-                                    onClick={() => setEditingSubGroup(null)}
-                                    className="px-2.5 py-1 text-xs rounded-md border border-border hover:bg-accent"
-                                  >
+                                  <button onClick={() => setEditingSubGroup(null)} className="px-2.5 py-1 text-xs rounded-md border border-border hover:bg-accent">
                                     Cancel
                                   </button>
                                 </div>
@@ -575,11 +568,7 @@ const MaterialGroupSettings = () => {
                                   </div>
                                   <div className="flex items-center gap-0.5">
                                     <button
-                                      onClick={() => {
-                                        setEditingSubGroup({ id: sub.id, name: sub.name, groupId: group.id, groupName: group.name });
-                                        setEditSubGroupValue(sub.name);
-                                        setEditingGroup(null);
-                                      }}
+                                      onClick={() => { setEditingSubGroup({ id: sub.id, name: sub.name, groupId: group.id, groupName: group.name }); setEditSubGroupValue(sub.name); setEditingGroup(null); }}
                                       disabled={saving}
                                       className="p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded transition-colors"
                                       title="Rename sub group"
@@ -602,8 +591,6 @@ const MaterialGroupSettings = () => {
                         })}
                       </div>
                     )}
-
-                    {/* Add sub group inline form */}
                     {addingSubGroupTo === group.id && (
                       <div className="flex items-center gap-2 pt-2 border-t border-border mt-1">
                         <input
@@ -612,10 +599,7 @@ const MaterialGroupSettings = () => {
                           onChange={(e) => setNewSubGroupName(e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleCreateSubGroup(group);
-                            if (e.key === "Escape") {
-                              setAddingSubGroupTo(null);
-                              setNewSubGroupName("");
-                            }
+                            if (e.key === "Escape") { setAddingSubGroupTo(null); setNewSubGroupName(""); }
                           }}
                           placeholder="Sub group name…"
                           maxLength={100}
@@ -629,10 +613,7 @@ const MaterialGroupSettings = () => {
                         >
                           {saving ? <Icon name="Loader2" size={14} className="animate-spin" /> : "Add"}
                         </button>
-                        <button
-                          onClick={() => { setAddingSubGroupTo(null); setNewSubGroupName(""); }}
-                          className="px-3 py-1.5 text-sm rounded-lg border border-border hover:bg-accent transition-colors"
-                        >
+                        <button onClick={() => { setAddingSubGroupTo(null); setNewSubGroupName(""); }} className="px-3 py-1.5 text-sm rounded-lg border border-border hover:bg-accent transition-colors">
                           Cancel
                         </button>
                       </div>
@@ -645,7 +626,7 @@ const MaterialGroupSettings = () => {
         </div>
       )}
 
-      {/* ── Info footer ───────────────────────────────────────────────────── */}
+      {/* Info footer */}
       <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 p-4 rounded-lg flex items-start gap-3 text-sm">
         <Icon name="Info" size={16} className="text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
         <div>
@@ -653,8 +634,7 @@ const MaterialGroupSettings = () => {
           <p className="text-blue-700 dark:text-blue-400 mt-1">
             Groups are stored in a dedicated table. Renaming a group automatically updates the
             Material Group field on every product assigned to it. Deleting a group clears the
-            field on affected products — it does not delete the products. Sub group changes
-            propagate to products the same way.
+            field on affected products — it does not delete the products.
           </p>
         </div>
       </div>
