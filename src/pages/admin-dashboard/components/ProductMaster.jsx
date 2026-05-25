@@ -30,6 +30,9 @@ const ProductMaster = () => {
 
   useEffect(() => {
     loadProducts();
+    // Reload when MaterialGroupSettings renames/deletes a group
+    window.addEventListener("material-groups-updated", loadProducts);
+    return () => window.removeEventListener("material-groups-updated", loadProducts);
   }, []);
 
   const loadProducts = async () => {

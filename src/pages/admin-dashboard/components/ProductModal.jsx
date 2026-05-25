@@ -30,53 +30,57 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
   const [addingNewGroup, setAddingNewGroup] = useState(false);
   const [newGroupInput, setNewGroupInput] = useState("");
 
-  // Derive groups and subgroups from the products table (same source as MaterialGroupSettings)
+  // Load groups from material_groups table; fall back to product-scan if table missing
+  const loadGroups = async () => {
+    if (!company?.id) return;
+    const { data, error } = await adminService.getMaterialGroups(company.id);
+    if (!error && data) {
+      setGroups(data.map((g) => ({ name: g.name })));
+    } else {
+      // Fallback: derive from products table
+      const { data: products } = await adminService.getAllProducts();
+      if (products) {
+        const names = [
+          ...new Set(
+            products
+              .map((p) => (p.product_group || p.material_group || "").trim())
+              .filter(Boolean)
+          ),
+        ].sort();
+        setGroups(names.map((name) => ({ name })));
+      }
+    }
+  };
+
   useEffect(() => {
-    const load = async () => {
-      const { data } = await adminService.getAllProducts();
-      if (!data) return;
+    loadGroups();
+    window.addEventListener("material-groups-updated", loadGroups);
+    return () => window.removeEventListener("material-groups-updated", loadGroups);
+  }, [company?.id]);
 
-      // Unique groups
-      const groupNames = [
-        ...new Set(
-          data
-            .map((p) => (p.product_group || p.material_group || "").trim())
-            .filter(Boolean)
-        ),
-      ].sort();
-      setGroups(groupNames.map((name) => ({ name })));
-    };
-    load();
-  }, []);
-
-  // Subgroups: product-derived + localStorage additions
+  // Subgroups: from material_sub_groups table, with localStorage fallback
   useEffect(() => {
     const groupName = formData.material_group;
     if (!groupName || !company?.id) { setSubgroups([]); return; }
 
     const load = async () => {
-      const { data } = await adminService.getAllProducts();
-      const productSubs = [
+      const { data: allGroups } = await adminService.getMaterialGroups(company.id);
+      const group = (allGroups || []).find((g) => g.name === groupName);
+      if (group?.sub_groups?.length) {
+        setSubgroups(group.sub_groups.map((s) => ({ name: s.name })));
+        return;
+      }
+      // Fallback: derive from products
+      const { data: products } = await adminService.getAllProducts();
+      const subs = [
         ...new Set(
-          (data || [])
-            .filter(
-              (p) =>
-                (p.product_group || p.material_group || "").trim() === groupName
-            )
+          (products || [])
+            .filter((p) => (p.product_group || p.material_group || "").trim() === groupName)
             .map((p) => (p.material_subgroup || p.sub_group || "").trim())
             .filter(Boolean)
         ),
-      ];
-
-      let localSubs = [];
-      try {
-        localSubs = JSON.parse(
-          localStorage.getItem(`subgroups_${company.id}_${groupName}`) || "[]"
-        );
-      } catch {}
-
-      const all = [...new Set([...productSubs, ...localSubs])].sort();
-      setSubgroups(all.map((name) => ({ name })));
+      ].sort();
+      setSubgroups(subs.map((name) => ({ name })));
     };
     load();
   }, [formData.material_group, company?.id]);

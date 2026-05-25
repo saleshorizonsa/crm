@@ -4559,6 +4559,205 @@ export const adminService = {
       return { data: null, error };
     }
   },
+
+  // ── Material Groups ────────────────────────────────────────────────────────
+
+  // Get all groups (with nested sub groups) + product counts per group
+  async getMaterialGroups(companyId) {
+    try {
+      const [{ data: groups, error: gErr }, { data: products }] = await Promise.all([
+        supabase
+          .from("material_groups")
+          .select(`
+            id, name, sort_order, is_active,
+            sub_groups:material_sub_groups(
+              id, name, sort_order, is_active
+            )
+          `)
+          .eq("company_id", companyId)
+          .order("sort_order", { ascending: true })
+          .order("name",       { ascending: true }),
+        supabase
+          .from("products")
+          .select("material_group, product_group")
+          .eq("company_id", companyId),
+      ]);
+
+      if (gErr) return { data: null, error: gErr };
+
+      // Build count map: group name → count
+      const countMap = {};
+      (products || []).forEach((p) => {
+        const name = (p.product_group || p.material_group || "").trim();
+        if (name) countMap[name] = (countMap[name] || 0) + 1;
+      });
+
+      const enriched = (groups || []).map((g) => ({
+        ...g,
+        productCount: countMap[g.name] || 0,
+        sub_groups: (g.sub_groups || [])
+          .slice()
+          .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+      }));
+
+      return { data: enriched, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async createMaterialGroup(companyId, name) {
+    try {
+      const { data, error } = await supabase
+        .from("material_groups")
+        .insert([{ company_id: companyId, name: name.trim(), sort_order: 0, is_active: true }])
+        .select()
+        .single();
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async updateMaterialGroup(groupId, oldName, newName, companyId) {
+    try {
+      const trimNew = newName.trim();
+
+      // 1. Update the group record
+      const { error: gErr } = await supabase
+        .from("material_groups")
+        .update({ name: trimNew, updated_at: new Date().toISOString() })
+        .eq("id", groupId);
+      if (gErr) return { error: gErr };
+
+      // 2. Update products where product_group = oldName
+      await supabase
+        .from("products")
+        .update({ product_group: trimNew, updated_at: new Date().toISOString() })
+        .eq("company_id", companyId)
+        .eq("product_group", oldName);
+
+      // 3. Update products where material_group = oldName
+      await supabase
+        .from("products")
+        .update({ material_group: trimNew, updated_at: new Date().toISOString() })
+        .eq("company_id", companyId)
+        .eq("material_group", oldName);
+
+      return { error: null };
+    } catch (error) {
+      return { error };
+    }
+  },
+
+  async deleteMaterialGroup(groupId, groupName, companyId) {
+    try {
+      // 1. Nullify group on products (do not delete products)
+      await supabase
+        .from("products")
+        .update({ product_group: null, material_group: null, updated_at: new Date().toISOString() })
+        .eq("company_id", companyId)
+        .eq("product_group", groupName);
+
+      await supabase
+        .from("products")
+        .update({ product_group: null, material_group: null, updated_at: new Date().toISOString() })
+        .eq("company_id", companyId)
+        .eq("material_group", groupName);
+
+      // 2. Delete group (cascades to material_sub_groups)
+      const { error } = await supabase
+        .from("material_groups")
+        .delete()
+        .eq("id", groupId);
+
+      return { error };
+    } catch (error) {
+      return { error };
+    }
+  },
+
+  // ── Sub Groups ─────────────────────────────────────────────────────────────
+
+  async createSubGroup(materialGroupId, companyId, name) {
+    try {
+      const { data, error } = await supabase
+        .from("material_sub_groups")
+        .insert([{
+          material_group_id: materialGroupId,
+          company_id: companyId,
+          name: name.trim(),
+          sort_order: 0,
+          is_active: true,
+        }])
+        .select()
+        .single();
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async updateSubGroup(subGroupId, oldName, newName, groupName, companyId) {
+    try {
+      const trimNew = newName.trim();
+
+      // 1. Update sub group record
+      const { error: sErr } = await supabase
+        .from("material_sub_groups")
+        .update({ name: trimNew, updated_at: new Date().toISOString() })
+        .eq("id", subGroupId);
+      if (sErr) return { error: sErr };
+
+      // 2. Update products where sub_group = oldName AND belongs to this group
+      await supabase
+        .from("products")
+        .update({ sub_group: trimNew, updated_at: new Date().toISOString() })
+        .eq("company_id", companyId)
+        .eq("sub_group", oldName)
+        .eq("material_group", groupName);
+
+      await supabase
+        .from("products")
+        .update({ sub_group: trimNew, updated_at: new Date().toISOString() })
+        .eq("company_id", companyId)
+        .eq("sub_group", oldName)
+        .eq("product_group", groupName);
+
+      return { error: null };
+    } catch (error) {
+      return { error };
+    }
+  },
+
+  async deleteSubGroup(subGroupId, subGroupName, groupName, companyId) {
+    try {
+      // Nullify sub_group on affected products
+      await supabase
+        .from("products")
+        .update({ sub_group: null, updated_at: new Date().toISOString() })
+        .eq("company_id", companyId)
+        .eq("sub_group", subGroupName)
+        .eq("material_group", groupName);
+
+      await supabase
+        .from("products")
+        .update({ sub_group: null, updated_at: new Date().toISOString() })
+        .eq("company_id", companyId)
+        .eq("sub_group", subGroupName)
+        .eq("product_group", groupName);
+
+      // Delete the sub group record
+      const { error } = await supabase
+        .from("material_sub_groups")
+        .delete()
+        .eq("id", subGroupId);
+
+      return { error };
+    } catch (error) {
+      return { error };
+    }
+  },
 };
 
 // ========================================
