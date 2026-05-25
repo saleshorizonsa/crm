@@ -26,6 +26,10 @@ function ProductPickerRow({ product, isSelected, price, onToggle, onPriceChange 
     ? parseFloat(price.quantity || 0) * parseFloat(price.price || 0)
     : 0;
 
+  // Strip non-ASCII characters that appear when UOM encoding is incorrect (e.g. "1/2â€|")
+  const uomDisplay = (product.base_unit_of_measure || 'EA')
+    .replace(/[^\x20-\x7E]/g, '').trim() || 'EA';
+
   return (
     <div className={`border-b border-border last:border-0 transition-colors ${
       isSelected ? 'bg-blue-50' : 'hover:bg-muted/50'
@@ -44,11 +48,16 @@ function ProductPickerRow({ product, isSelected, price, onToggle, onPriceChange 
               {product.description && (
                 <p className="text-xs text-muted-foreground truncate">{product.description}</p>
               )}
-              {product.material_group && (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground mt-0.5 inline-block">
-                  {product.material_group}
+              <div className="flex items-center flex-wrap gap-1 mt-0.5">
+                {product.material_subgroup && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">
+                    {product.material_subgroup}
+                  </span>
+                )}
+                <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                  {uomDisplay}
                 </span>
-              )}
+              </div>
             </div>
             {!isSelected && product.unit_price > 0 && (
               <span className="text-xs text-muted-foreground flex-shrink-0">
@@ -123,66 +132,104 @@ function ProductPickerPanel({
 }) {
   return (
     <div className="border-t border-border">
-      {/* Search and group filter */}
-      <div className="p-3 flex gap-2 border-b border-border">
-        <div className="relative flex-1">
-          <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={productSearch}
-            onChange={e => setProductSearch(e.target.value)}
-            placeholder="Search by name, description or group…"
-            className="w-full pl-8 pr-3 py-2 text-sm border border-border rounded-lg bg-card text-card-foreground focus:outline-none focus:border-primary"
-          />
-        </div>
-        <select
-          value={productGroup}
-          onChange={e => setProductGroup(e.target.value)}
-          className="text-sm border border-border rounded-lg px-3 py-2 bg-card text-card-foreground min-w-[140px]"
-        >
-          {productGroups.map(g => (
-            <option key={g} value={g}>{g === 'all' ? 'All Groups' : g}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Select-all / count bar */}
-      <div className="flex items-center justify-between px-3 py-2 bg-muted/30 text-xs text-muted-foreground border-b border-border">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={selectedProductIds.size > 0 && selectedProductIds.size === products.length}
-            ref={el => {
-              if (el) el.indeterminate = selectedProductIds.size > 0 && selectedProductIds.size < products.length;
-            }}
+      {/* Group selector (required first step) + search */}
+      <div className="p-3 border-b border-border space-y-2">
+        <div>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">
+            Select Product Group *
+          </label>
+          <select
+            value={productGroup}
             onChange={e => {
-              if (e.target.checked) {
-                setSelectedProductIds(new Set(products.map(p => p.id)));
-                const newPrices = {};
-                products.forEach(p => {
-                  newPrices[p.id] = { price: p.unit_price || 0, quantity: 1, uomType: p.base_unit_of_measure || 'pc' };
-                });
-                setProductPrices(pp => ({ ...pp, ...newPrices }));
-              } else {
-                setSelectedProductIds(new Set());
-                setProductPrices({});
-              }
+              setProductGroup(e.target.value);
+              setProductSearch('');
+              setSelectedProductIds(new Set());
+              setProductPrices({});
             }}
-            className="w-4 h-4 rounded accent-blue-600"
-          />
-          <span>Select all ({products.length} products)</span>
-        </label>
-        {selectedProductIds.size > 0 && (
-          <span className="text-primary font-medium">{selectedProductIds.size} selected</span>
+            className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card text-card-foreground font-medium focus:outline-none focus:border-primary"
+          >
+            <option value="">— Select a group to browse products —</option>
+            {productGroups.map(g => (
+              <option key={g} value={g}>{g}</option>
+            ))}
+          </select>
+        </div>
+
+        {productGroup && (
+          <div className="relative">
+            <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={productSearch}
+              onChange={e => setProductSearch(e.target.value)}
+              placeholder={`Search in ${productGroup}…`}
+              className="w-full pl-8 pr-3 py-2 text-sm border border-border rounded-lg bg-card text-card-foreground focus:outline-none focus:border-primary"
+            />
+          </div>
         )}
       </div>
 
-      {/* Product list */}
+      {/* Select-all bar — only when group selected, loaded, and has results */}
+      {productGroup && !loading && products.length > 0 && (
+        <div className="flex items-center justify-between px-3 py-2 bg-muted/30 text-xs text-muted-foreground border-b border-border">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectedProductIds.size > 0 && selectedProductIds.size === products.length}
+              ref={el => {
+                if (el) el.indeterminate = selectedProductIds.size > 0 && selectedProductIds.size < products.length;
+              }}
+              onChange={e => {
+                if (e.target.checked) {
+                  setSelectedProductIds(new Set(products.map(p => p.id)));
+                  const newPrices = {};
+                  products.forEach(p => {
+                    newPrices[p.id] = { price: p.unit_price || 0, quantity: 1, uomType: p.base_unit_of_measure || 'pc' };
+                  });
+                  setProductPrices(pp => ({ ...pp, ...newPrices }));
+                } else {
+                  setSelectedProductIds(new Set());
+                  setProductPrices({});
+                }
+              }}
+              className="w-4 h-4 rounded accent-blue-600"
+            />
+            <span>Select all ({products.length} products in {productGroup})</span>
+          </label>
+          {selectedProductIds.size > 0 && (
+            <span className="text-primary font-medium">{selectedProductIds.size} selected</span>
+          )}
+        </div>
+      )}
+
+      {/* Product list / empty states */}
       <div className="max-h-64 overflow-y-auto">
-        {loading ? (
-          <div className="p-4 text-center text-sm text-muted-foreground">Loading products…</div>
+        {!productGroup ? (
+          <div className="flex flex-col items-center justify-center py-10 text-center px-6">
+            <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+              <Icon name="Layers" size={24} className="text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium text-muted-foreground">Select a product group</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Choose a group above to browse and select products
+            </p>
+            {productGroups.length === 0 && (
+              <p className="text-xs text-amber-600 mt-2">
+                No groups found. Add products with a Material Group in the admin panel first.
+              </p>
+            )}
+          </div>
+        ) : loading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin w-5 h-5 border-2 border-primary border-t-transparent rounded-full" />
+            <span className="ml-2 text-sm text-muted-foreground">Loading {productGroup} products…</span>
+          </div>
         ) : products.length === 0 ? (
-          <div className="p-4 text-center text-sm text-muted-foreground">No products found</div>
+          <div className="text-center py-8 text-sm text-muted-foreground">
+            {productSearch
+              ? `No products match "${productSearch}" in ${productGroup}`
+              : `No products in ${productGroup}`}
+          </div>
         ) : (
           products.map(product => (
             <ProductPickerRow
@@ -341,23 +388,20 @@ const DealModal = ({
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
   const [productPrices, setProductPrices] = useState({}); // { productId: { price, quantity, uomType } }
   const [productsLoading, setProductsLoading] = useState(false);
-  const [pickerGroup, setPickerGroup] = useState('all');
+  const [pickerGroup, setPickerGroup] = useState('');
 
-  // Derived lists for the picker — groups come from ALL products (matching admin panel)
-  const productGroups = useMemo(() => {
-    return ['all', ...allGroupNames];
-  }, [allGroupNames]);
+  // Groups come from material_groups admin table (set by loadAllProducts)
+  const productGroups = useMemo(() => allGroupNames, [allGroupNames]);
 
+  // Filter by search only — group filtering is done at the DB query level
   const filteredProducts = useMemo(() => {
-    return allProducts.filter(p => {
-      const q = pickerSearch.toLowerCase();
-      const matchSearch = !pickerSearch ||
-        p.material?.toLowerCase().includes(q) ||
-        p.description?.toLowerCase().includes(q) ||
-        p.material_group?.toLowerCase().includes(q);
-      const matchGroup = pickerGroup === 'all' || (p.material_group?.trim() || '') === pickerGroup;
-      return matchSearch && matchGroup;
-    });
+    if (!pickerGroup) return [];
+    if (!pickerSearch) return allProducts;
+    const q = pickerSearch.toLowerCase();
+    return allProducts.filter(p =>
+      p.material?.toLowerCase().includes(q) ||
+      p.description?.toLowerCase().includes(q)
+    );
   }, [allProducts, pickerSearch, pickerGroup]);
 
   // Load UOM types on mount
@@ -389,7 +433,7 @@ const DealModal = ({
       setSelectedProductIds(new Set());
       setProductPrices({});
       setPickerSearch('');
-      setPickerGroup('all');
+      setPickerGroup('');
       // Auto-detect deal type: if existing deal has products default to product mode
       setDealType(
         deal?.deal_products?.length > 0 ? "product" : "value"
@@ -446,45 +490,46 @@ const DealModal = ({
     }
   }, [isOpen, deal]);
 
-  // Load all products when modal opens (feeds both the legacy dropdown and the new picker)
+  // Load group list when modal opens — same source as admin Material Groups panel
   useEffect(() => {
-    if (!isOpen) return;
-    async function loadAllProducts() {
-      setProductsLoading(true);
-
-      // Active products for the picker list (include null is_active — treated as active)
-      const { data: activeData } = await supabase
-        .from('products')
-        .select('id, material, description, material_group, base_unit_of_measure, unit_price, is_active')
-        .or('is_active.eq.true,is_active.is.null')
-        .order('material_group', { ascending: true })
-        .order('material', { ascending: true });
-      const products = activeData || [];
-      setProductResults(products);
-      setAllProducts(products);
-
-      // Groups from material_groups table (same source as admin panel)
-      let groups = [];
-      if (company?.id) {
-        try {
-          const mgList = await adminService.getMaterialGroups(company.id);
-          if (mgList && mgList.length > 0) {
-            groups = mgList.map(g => g.name);
-          }
-        } catch (_) {}
-      }
-      // Fallback: distinct material_group values from products that are in the picker list
-      if (groups.length === 0) {
-        groups = [
-          ...new Set(products.map(p => p.material_group?.trim()).filter(Boolean))
-        ].sort();
-      }
+    if (!isOpen || !company?.id) return;
+    async function loadGroups() {
+      try {
+        const mgList = await adminService.getMaterialGroups(company.id);
+        if (mgList && mgList.length > 0) {
+          setAllGroupNames(mgList.map(g => g.name));
+          return;
+        }
+      } catch (_) {}
+      // Fallback: distinct values from products table
+      const { data } = await supabase.from('products').select('material_group');
+      const groups = [
+        ...new Set((data || []).map(p => p.material_group?.trim()).filter(Boolean))
+      ].sort();
       setAllGroupNames(groups);
+    }
+    loadGroups();
+  }, [isOpen, company?.id]);
 
+  // Load products for the selected group only (avoids loading all 1000+ products at once)
+  useEffect(() => {
+    if (!isOpen || !pickerGroup) {
+      setAllProducts([]);
+      return;
+    }
+    async function loadGroupProducts() {
+      setProductsLoading(true);
+      const { data } = await supabase
+        .from('products')
+        .select('id, material, description, material_group, material_subgroup, base_unit_of_measure, unit_price, cost_price, is_active')
+        .eq('material_group', pickerGroup)
+        .or('is_active.eq.true,is_active.is.null')
+        .order('material', { ascending: true });
+      setAllProducts(data || []);
       setProductsLoading(false);
     }
-    loadAllProducts();
-  }, [isOpen, company?.id]);
+    loadGroupProducts();
+  }, [isOpen, pickerGroup]);
 
   // Close dropdown on click outside
   useEffect(() => {
