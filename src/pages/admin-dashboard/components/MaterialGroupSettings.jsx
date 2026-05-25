@@ -42,11 +42,36 @@ const MaterialGroupSettings = () => {
 
   // ── Load ───────────────────────────────────────────────────────────────────
   const loadGroups = useCallback(async () => {
-    if (!company?.id) return;
+    if (!company?.id) {
+      console.log("[MG] no company id, skipping load");
+      return;
+    }
     setLoading(true);
+    console.log("[MG] loading groups for company:", company.id);
     const { data, error } = await adminService.getMaterialGroups(company.id);
-    if (error) showError("Failed to load material groups: " + error.message);
-    else setGroups(data || []);
+    console.log("[MG] getMaterialGroups result:", { data, error });
+    if (error) {
+      showError("Failed to load material groups: " + error.message);
+      setLoading(false);
+      return;
+    }
+    const fetched = data || [];
+    console.log("[MG] fetched groups count:", fetched.length, fetched);
+
+    // Detect fallback mode: id === name means the table was empty and groups
+    // were derived from products. Seed the table now, then reload to get
+    // real UUIDs so CRUD operations work correctly.
+    const isFallback = fetched.length > 0 && fetched[0].id === fetched[0].name;
+    if (isFallback) {
+      console.log("[MG] fallback mode — seeding table from products");
+      await adminService.seedMaterialGroupsFromProducts(company.id);
+      const { data: seeded } = await adminService.getMaterialGroups(company.id);
+      console.log("[MG] after seed:", seeded);
+      setGroups(seeded || fetched);
+    } else {
+      setGroups(fetched);
+    }
+
     setLoading(false);
   }, [company?.id]);
 

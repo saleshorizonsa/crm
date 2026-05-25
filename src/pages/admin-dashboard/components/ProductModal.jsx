@@ -43,7 +43,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
         const names = [
           ...new Set(
             products
-              .map((p) => (p.product_group || p.material_group || "").trim())
+              .map((p) => (p.material_group || "").trim())
               .filter(Boolean)
           ),
         ].sort();
@@ -75,8 +75,8 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
       const subs = [
         ...new Set(
           (products || [])
-            .filter((p) => (p.product_group || p.material_group || "").trim() === groupName)
-            .map((p) => (p.material_subgroup || p.sub_group || "").trim())
+            .filter((p) => (p.material_group || "").trim() === groupName)
+            .map((p) => (p.material_subgroup || "").trim())
             .filter(Boolean)
         ),
       ].sort();

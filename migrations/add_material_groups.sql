@@ -1,9 +1,13 @@
 -- ============================================================
 -- Migration: add_material_groups.sql
--- Creates dedicated tables for material groups and sub groups,
--- seeds them from existing product data, and sets up RLS.
+-- Adds material_subgroup column to products, creates dedicated
+-- tables for material groups and sub groups, seeds from existing
+-- product data, and sets up RLS.
 -- Run once in Supabase SQL Editor.
 -- ============================================================
+
+-- 0. Add missing column to products table
+ALTER TABLE products ADD COLUMN IF NOT EXISTS material_subgroup text;
 
 -- 1. Material groups master table
 CREATE TABLE IF NOT EXISTS material_groups (
@@ -37,60 +41,38 @@ ALTER TABLE material_sub_groups  ENABLE ROW LEVEL SECURITY;
 -- 4. RLS policies — read
 CREATE POLICY "Company users read groups"
   ON material_groups FOR SELECT
-  USING (
-    company_id IN (
-      SELECT company_id FROM users WHERE id = auth.uid()
-    )
-  );
+  USING (company_id IN (SELECT company_id FROM users WHERE id = auth.uid()));
 
 CREATE POLICY "Company users read sub groups"
   ON material_sub_groups FOR SELECT
-  USING (
-    company_id IN (
-      SELECT company_id FROM users WHERE id = auth.uid()
-    )
-  );
+  USING (company_id IN (SELECT company_id FROM users WHERE id = auth.uid()));
 
 -- 5. RLS policies — admin write
 CREATE POLICY "Admin manages groups"
   ON material_groups FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM users
-      WHERE id = auth.uid()
-        AND role IN ('admin', 'director')
-    )
-  );
+  USING (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'director')));
 
 CREATE POLICY "Admin manages sub groups"
   ON material_sub_groups FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM users
-      WHERE id = auth.uid()
-        AND role IN ('admin', 'director')
-    )
-  );
+  USING (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'director')));
 
--- 6. Seed groups from existing products data
+-- 6. Seed groups from products.material_group
 INSERT INTO material_groups (company_id, name)
-SELECT DISTINCT
-  company_id,
-  TRIM(COALESCE(product_group, material_group))
+SELECT DISTINCT company_id, TRIM(material_group)
 FROM products
-WHERE TRIM(COALESCE(product_group, material_group)) IS NOT NULL
+WHERE TRIM(material_group) IS NOT NULL
+  AND TRIM(material_group) <> ''
   AND company_id IS NOT NULL
 ON CONFLICT (company_id, name) DO NOTHING;
 
--- 7. Seed sub groups from existing products data
+-- 7. Seed sub groups from products.material_subgroup
+-- (will be empty on first run since the column was just added above)
 INSERT INTO material_sub_groups (company_id, material_group_id, name)
-SELECT DISTINCT
-  p.company_id,
-  mg.id,
-  TRIM(p.sub_group)
+SELECT DISTINCT p.company_id, mg.id, TRIM(p.material_subgroup)
 FROM products p
 JOIN material_groups mg
   ON mg.company_id = p.company_id
-  AND mg.name = TRIM(COALESCE(p.product_group, p.material_group))
-WHERE TRIM(p.sub_group) IS NOT NULL
+  AND mg.name = TRIM(p.material_group)
+WHERE TRIM(p.material_subgroup) IS NOT NULL
+  AND TRIM(p.material_subgroup) <> ''
 ON CONFLICT (material_group_id, name) DO NOTHING;

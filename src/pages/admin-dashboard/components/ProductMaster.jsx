@@ -91,7 +91,7 @@ const ProductMaster = () => {
     return [
       ...new Set(
         products
-          .map((p) => p.product_group || p.material_group)
+          .map((p) => p.material_group)
           .filter(Boolean)
       ),
     ].sort();
@@ -101,12 +101,8 @@ const ProductMaster = () => {
     return [
       ...new Set(
         products
-          .filter(
-            (p) =>
-              !filterGroup ||
-              (p.product_group || p.material_group) === filterGroup
-          )
-          .map((p) => p.sub_group || p.material_subgroup)
+          .filter((p) => !filterGroup || p.material_group === filterGroup)
+          .map((p) => p.material_subgroup)
           .filter(Boolean)
       ),
     ].sort();
@@ -141,23 +137,19 @@ const ProductMaster = () => {
           p.material?.toLowerCase().includes(term) ||
           p.item_description?.toLowerCase().includes(term) ||
           p.description?.toLowerCase().includes(term) ||
-          p.product_group?.toLowerCase().includes(term) ||
           p.material_group?.toLowerCase().includes(term) ||
-          p.sub_group?.toLowerCase().includes(term) ||
           p.material_subgroup?.toLowerCase().includes(term);
         if (!matchSearch) return false;
       }
 
       // Product Group filter
       if (filterGroup) {
-        const group = p.product_group || p.material_group;
-        if (group !== filterGroup) return false;
+        if (p.material_group !== filterGroup) return false;
       }
 
       // Sub Group filter
       if (filterSubGroup) {
-        const sub = p.sub_group || p.material_subgroup;
-        if (sub !== filterSubGroup) return false;
+        if (p.material_subgroup !== filterSubGroup) return false;
       }
 
       // Status filter

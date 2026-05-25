@@ -4562,11 +4562,14 @@ export const adminService = {
 
   // ── Material Groups ────────────────────────────────────────────────────────
 
-  // Get all groups (with nested sub groups) + product counts per group
+  // Get all groups (with nested sub groups) + product counts per group.
+  // Falls back to deriving groups directly from products if the table is empty.
   async getMaterialGroups(companyId) {
     try {
-      const [{ data: groups, error: gErr }, { data: products }] = await Promise.all([
-        supabase
+      // ── Source 1: material_groups table ──────────────────────────────────
+      let tableGroups = [];
+      try {
+        const { data, error } = await supabase
           .from("material_groups")
           .select(`
             id, name, sort_order, is_active,
@@ -4576,33 +4579,146 @@ export const adminService = {
           `)
           .eq("company_id", companyId)
           .order("sort_order", { ascending: true })
-          .order("name",       { ascending: true }),
-        supabase
-          .from("products")
-          .select("material_group, product_group")
-          .eq("company_id", companyId),
-      ]);
+          .order("name",       { ascending: true });
+        if (!error && data && data.length > 0) tableGroups = data;
+      } catch (_) {
+        // table may not exist yet — continue to products fallback
+      }
 
-      if (gErr) return { data: null, error: gErr };
+      // ── Source 2: products table (always, for counts + fallback) ─────────
+      // Products are not scoped by company_id — fetch all
+      const { data: products } = await supabase
+        .from("products")
+        .select("material_group, material_subgroup");
 
-      // Build count map: group name → count
+      // Build product-count map
       const countMap = {};
       (products || []).forEach((p) => {
-        const name = (p.product_group || p.material_group || "").trim();
+        const name = (p.material_group || "").trim();
         if (name) countMap[name] = (countMap[name] || 0) + 1;
       });
 
-      const enriched = (groups || []).map((g) => ({
-        ...g,
-        productCount: countMap[g.name] || 0,
-        sub_groups: (g.sub_groups || [])
-          .slice()
-          .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
-      }));
+      // If the table has data, enrich with product counts and return
+      if (tableGroups.length > 0) {
+        return {
+          data: tableGroups.map((g) => ({
+            ...g,
+            productCount: countMap[g.name] || 0,
+            sub_groups: (g.sub_groups || []).sort(
+              (a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)
+            ),
+          })),
+          error: null,
+        };
+      }
 
-      return { data: enriched, error: null };
+      // ── Fallback: build entirely from products ────────────────────────────
+      const groupMap = {};
+      (products || []).forEach((p) => {
+        const name = (p.material_group || "").trim();
+        if (!name) return;
+        if (!groupMap[name]) {
+          groupMap[name] = {
+            id: name, // temporary — replaced by real UUID after seed
+            name,
+            sort_order: 0,
+            is_active: true,
+            productCount: 0,
+            sub_groups: [],
+            _subs: new Set(),
+          };
+        }
+        groupMap[name].productCount++;
+        const sub = (p.material_subgroup || "").trim();
+        if (sub && !groupMap[name]._subs.has(sub)) {
+          groupMap[name]._subs.add(sub);
+          groupMap[name].sub_groups.push({ id: sub, name: sub, sort_order: 0, is_active: true });
+        }
+      });
+
+      const result = Object.values(groupMap)
+        .map(({ _subs, ...g }) => ({
+          ...g,
+          sub_groups: g.sub_groups.sort((a, b) => a.name.localeCompare(b.name)),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      return { data: result, error: null };
     } catch (error) {
       return { data: null, error };
+    }
+  },
+
+  // Seeds material_groups and material_sub_groups from products if the table is empty.
+  // Safe to call repeatedly — exits immediately if data already exists.
+  async seedMaterialGroupsFromProducts(companyId) {
+    try {
+      const { count } = await supabase
+        .from("material_groups")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", companyId);
+
+      if (count > 0) return { seeded: false }; // already populated
+
+      // Products are not scoped by company_id — fetch all
+      const { data: products } = await supabase
+        .from("products")
+        .select("material_group, material_subgroup");
+
+      const uniqueGroupNames = [
+        ...new Set(
+          (products || []).map((p) => (p.material_group || "").trim()).filter(Boolean)
+        ),
+      ];
+      if (uniqueGroupNames.length === 0) return { seeded: false };
+
+      const { data: insertedGroups, error: gErr } = await supabase
+        .from("material_groups")
+        .upsert(
+          uniqueGroupNames.map((name) => ({
+            company_id: companyId,
+            name,
+            sort_order: 0,
+            is_active: true,
+          })),
+          { onConflict: "company_id,name" }
+        )
+        .select("id, name");
+
+      if (gErr || !insertedGroups?.length) return { seeded: false, error: gErr };
+
+      // Build id map and seed sub groups
+      const groupIdMap = {};
+      insertedGroups.forEach((g) => { groupIdMap[g.name] = g.id; });
+
+      const subInserts = [];
+      const seen = new Set();
+      (products || []).forEach((p) => {
+        const groupName = (p.material_group || "").trim();
+        const subName = (p.material_subgroup || "").trim();
+        const groupId = groupIdMap[groupName];
+        if (!subName || !groupId) return;
+        const key = `${groupId}::${subName}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        subInserts.push({
+          company_id: companyId,
+          material_group_id: groupId,
+          name: subName,
+          sort_order: 0,
+          is_active: true,
+        });
+      });
+
+      if (subInserts.length > 0) {
+        await supabase
+          .from("material_sub_groups")
+          .upsert(subInserts, { onConflict: "material_group_id,name" });
+      }
+
+      return { seeded: true };
+    } catch (error) {
+      return { seeded: false, error };
     }
   },
 
@@ -4630,18 +4746,10 @@ export const adminService = {
         .eq("id", groupId);
       if (gErr) return { error: gErr };
 
-      // 2. Update products where product_group = oldName
-      await supabase
-        .from("products")
-        .update({ product_group: trimNew, updated_at: new Date().toISOString() })
-        .eq("company_id", companyId)
-        .eq("product_group", oldName);
-
-      // 3. Update products where material_group = oldName
+      // 2. Propagate rename to all products in this group
       await supabase
         .from("products")
         .update({ material_group: trimNew, updated_at: new Date().toISOString() })
-        .eq("company_id", companyId)
         .eq("material_group", oldName);
 
       return { error: null };
@@ -4655,14 +4763,7 @@ export const adminService = {
       // 1. Nullify group on products (do not delete products)
       await supabase
         .from("products")
-        .update({ product_group: null, material_group: null, updated_at: new Date().toISOString() })
-        .eq("company_id", companyId)
-        .eq("product_group", groupName);
-
-      await supabase
-        .from("products")
-        .update({ product_group: null, material_group: null, updated_at: new Date().toISOString() })
-        .eq("company_id", companyId)
+        .update({ material_group: null, updated_at: new Date().toISOString() })
         .eq("material_group", groupName);
 
       // 2. Delete group (cascades to material_sub_groups)
@@ -4709,20 +4810,12 @@ export const adminService = {
         .eq("id", subGroupId);
       if (sErr) return { error: sErr };
 
-      // 2. Update products where sub_group = oldName AND belongs to this group
+      // 2. Propagate rename to all products in this sub group
       await supabase
         .from("products")
-        .update({ sub_group: trimNew, updated_at: new Date().toISOString() })
-        .eq("company_id", companyId)
-        .eq("sub_group", oldName)
+        .update({ material_subgroup: trimNew, updated_at: new Date().toISOString() })
+        .eq("material_subgroup", oldName)
         .eq("material_group", groupName);
-
-      await supabase
-        .from("products")
-        .update({ sub_group: trimNew, updated_at: new Date().toISOString() })
-        .eq("company_id", companyId)
-        .eq("sub_group", oldName)
-        .eq("product_group", groupName);
 
       return { error: null };
     } catch (error) {
@@ -4732,20 +4825,12 @@ export const adminService = {
 
   async deleteSubGroup(subGroupId, subGroupName, groupName, companyId) {
     try {
-      // Nullify sub_group on affected products
+      // Nullify material_subgroup on affected products
       await supabase
         .from("products")
-        .update({ sub_group: null, updated_at: new Date().toISOString() })
-        .eq("company_id", companyId)
-        .eq("sub_group", subGroupName)
+        .update({ material_subgroup: null, updated_at: new Date().toISOString() })
+        .eq("material_subgroup", subGroupName)
         .eq("material_group", groupName);
-
-      await supabase
-        .from("products")
-        .update({ sub_group: null, updated_at: new Date().toISOString() })
-        .eq("company_id", companyId)
-        .eq("sub_group", subGroupName)
-        .eq("product_group", groupName);
 
       // Delete the sub group record
       const { error } = await supabase
