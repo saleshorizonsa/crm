@@ -517,7 +517,7 @@ const DealModal = ({
       setProductsLoading(true);
       const { data, error } = await supabase
         .from('products')
-        .select('id, material, description, material_group, material_subgroup, base_unit_of_measure, unit_price, cost_price, is_active')
+        .select('id, material, description, material_group, material_subgroup, base_unit_of_measure, unit_price, is_active')
         .eq('material_group', pickerGroup)
         .eq('is_active', true)
         .order('material', { ascending: true });
