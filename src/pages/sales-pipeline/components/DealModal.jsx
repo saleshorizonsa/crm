@@ -451,11 +451,11 @@ const DealModal = ({
     async function loadAllProducts() {
       setProductsLoading(true);
 
-      // Active products for the picker list
+      // Active products for the picker list (include null is_active — treated as active)
       const { data: activeData } = await supabase
         .from('products')
         .select('id, material, description, material_group, base_unit_of_measure, unit_price, is_active')
-        .eq('is_active', true)
+        .or('is_active.eq.true,is_active.is.null')
         .order('material_group', { ascending: true })
         .order('material', { ascending: true });
       const products = activeData || [];
@@ -492,7 +492,7 @@ const DealModal = ({
       const { data } = await supabase
         .from('products')
         .select('id, material, description, material_group, unit_price, base_unit_of_measure, is_active')
-        .eq('is_active', true)
+        .or('is_active.eq.true,is_active.is.null')
         .order('material', { ascending: true })
         .limit(50);
       setProductResults(data || []);
@@ -503,7 +503,7 @@ const DealModal = ({
     const { data, error } = await supabase
       .from('products')
       .select('id, material, description, material_group, unit_price, base_unit_of_measure, is_active')
-      .eq('is_active', true)
+      .or(`is_active.eq.true,is_active.is.null`)
       .or(`material.ilike.%${query}%,description.ilike.%${query}%,material_group.ilike.%${query}%`)
       .order('material', { ascending: true })
       .limit(20);
