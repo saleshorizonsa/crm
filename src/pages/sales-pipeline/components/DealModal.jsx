@@ -490,47 +490,21 @@ const DealModal = ({
     }
   }, [isOpen, deal]);
 
-  // Load group list — direct query to material_groups admin table, bypassing the
-  // getMaterialGroups fallback chain which can return garbage product values.
+  // Load group list from material_groups admin table
   useEffect(() => {
-    if (!isOpen || !company?.id) return;
+    if (!isOpen) return;
     async function loadGroups() {
-      // PRIMARY: admin-managed material_groups table
-      const { data: mgData, error: mgError } = await supabase
+      const { data: mgRows } = await supabase
         .from('material_groups')
         .select('name')
-        .eq('company_id', company.id)
         .eq('is_active', true)
         .order('name', { ascending: true });
-
-      if (!mgError && mgData && mgData.length > 0) {
-        setAllGroupNames(mgData.map(g => g.name));
-        return;
-      }
-
-      // FALLBACK: derive from products using product_group then material_group.
-      // Reject garbage: non-ASCII chars (encoding corruption), purely numeric
-      // strings (item codes), and strings ≤2 chars (UOM abbreviations).
-      const { data: pData } = await supabase
-        .from('products')
-        .select('product_group, material_group');
-
-      const cleanGroups = [
-        ...new Set(
-          (pData || [])
-            .map(p => (p.product_group || p.material_group || '').trim())
-            .filter(g =>
-              g.length > 2 &&
-              !/[^\x20-\x7E]/.test(g) &&
-              !/^\d+$/.test(g)
-            )
-        )
-      ].sort();
-
-      setAllGroupNames(cleanGroups);
+      setAllGroupNames(
+        (mgRows || []).map(r => r.name)
+      );
     }
     loadGroups();
-  }, [isOpen, company?.id]);
+  }, [isOpen]);
 
   // Load products for the selected group only (avoids loading all 1000+ products at once)
   useEffect(() => {
