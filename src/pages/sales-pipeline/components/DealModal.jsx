@@ -462,26 +462,20 @@ const DealModal = ({
       setProductResults(products);
       setAllProducts(products);
 
-      // Groups from material_groups table (admin-configured); fall back to products if empty
+      // Groups from material_groups table (same source as admin panel)
       let groups = [];
       if (company?.id) {
-        const { data: mgData } = await supabase
-          .from('material_groups')
-          .select('name')
-          .eq('company_id', company.id)
-          .eq('is_active', true)
-          .order('sort_order', { ascending: true })
-          .order('name', { ascending: true });
-        if (mgData && mgData.length > 0) {
-          groups = mgData.map(g => g.name);
-        }
+        try {
+          const mgList = await adminService.getMaterialGroups(company.id);
+          if (mgList && mgList.length > 0) {
+            groups = mgList.map(g => g.name);
+          }
+        } catch (_) {}
       }
+      // Fallback: distinct material_group values from products that are in the picker list
       if (groups.length === 0) {
-        const { data: groupData } = await supabase
-          .from('products')
-          .select('material_group');
         groups = [
-          ...new Set((groupData || []).map(p => p.material_group?.trim()).filter(Boolean))
+          ...new Set(products.map(p => p.material_group?.trim()).filter(Boolean))
         ].sort();
       }
       setAllGroupNames(groups);
@@ -489,7 +483,7 @@ const DealModal = ({
       setProductsLoading(false);
     }
     loadAllProducts();
-  }, [isOpen]);
+  }, [isOpen, company?.id]);
 
   // Close dropdown on click outside
   useEffect(() => {
