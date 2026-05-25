@@ -4,7 +4,7 @@ import Button from "components/ui/Button";
 import Input from "components/ui/Input";
 import Select from "components/ui/Select";
 import { Checkbox } from "components/ui/Checkbox";
-import { adminService, materialGroupService } from "../../../services/supabaseService";
+import { adminService } from "../../../services/supabaseService";
 import { useAuth } from "contexts/AuthContext";
 
 const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
@@ -30,26 +30,56 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
   const [addingNewGroup, setAddingNewGroup] = useState(false);
   const [newGroupInput, setNewGroupInput] = useState("");
 
-  // Load groups from material_groups master table
+  // Derive groups and subgroups from the products table (same source as MaterialGroupSettings)
   useEffect(() => {
-    if (!company?.id) return;
-    const loadGroups = async () => {
-      const { data } = await materialGroupService.getGroups(company.id);
-      setGroups(data || []);
-    };
-    loadGroups();
-  }, [company?.id]);
-
-  // Load subgroups when selected group changes
-  useEffect(() => {
-    const selectedGroup = groups.find((g) => g.name === formData.material_group);
-    if (!selectedGroup) { setSubgroups([]); return; }
     const load = async () => {
-      const { data } = await materialGroupService.getSubgroups(selectedGroup.id);
-      setSubgroups((data || []).filter((s) => s.is_active));
+      const { data } = await adminService.getAllProducts();
+      if (!data) return;
+
+      // Unique groups
+      const groupNames = [
+        ...new Set(
+          data
+            .map((p) => (p.product_group || p.material_group || "").trim())
+            .filter(Boolean)
+        ),
+      ].sort();
+      setGroups(groupNames.map((name) => ({ name })));
     };
     load();
-  }, [formData.material_group, groups]);
+  }, []);
+
+  // Subgroups: product-derived + localStorage additions
+  useEffect(() => {
+    const groupName = formData.material_group;
+    if (!groupName || !company?.id) { setSubgroups([]); return; }
+
+    const load = async () => {
+      const { data } = await adminService.getAllProducts();
+      const productSubs = [
+        ...new Set(
+          (data || [])
+            .filter(
+              (p) =>
+                (p.product_group || p.material_group || "").trim() === groupName
+            )
+            .map((p) => (p.material_subgroup || p.sub_group || "").trim())
+            .filter(Boolean)
+        ),
+      ];
+
+      let localSubs = [];
+      try {
+        localSubs = JSON.parse(
+          localStorage.getItem(`subgroups_${company.id}_${groupName}`) || "[]"
+        );
+      } catch {}
+
+      const all = [...new Set([...productSubs, ...localSubs])].sort();
+      setSubgroups(all.map((name) => ({ name })));
+    };
+    load();
+  }, [formData.material_group, company?.id]);
 
   useEffect(() => {
     if (product) {
@@ -131,7 +161,6 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
     setAddingNewGroup(false);
   };
 
-  const activeGroups = groups.filter((g) => g.is_active);
   const selectValue = addingNewGroup ? "__new__" : formData.material_group || "";
 
   return (
@@ -192,8 +221,8 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
                 disabled={viewOnly}
               >
                 <option value="">— Select a group —</option>
-                {activeGroups.map((g) => (
-                  <option key={g.id} value={g.name}>{g.name}</option>
+                {groups.map((g) => (
+                  <option key={g.name} value={g.name}>{g.name}</option>
                 ))}
                 {!viewOnly && <option value="__new__">+ Type a new group name…</option>}
               </select>
@@ -266,7 +295,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
                 >
                   <option value="">— None —</option>
                   {subgroups.map((s) => (
-                    <option key={s.id} value={s.name}>{s.name}</option>
+                    <option key={s.name} value={s.name}>{s.name}</option>
                   ))}
                 </select>
               ) : (
