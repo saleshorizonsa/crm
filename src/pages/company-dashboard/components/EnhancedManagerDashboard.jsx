@@ -1365,7 +1365,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-lg font-bold tabular-nums text-gray-900">
             {t("roles.manager")} {t("nav.dashboard")}
           </h1>
           <p className="text-gray-600 mt-1">
@@ -1719,7 +1719,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                               </span>
                             </div>
                             <div className="flex items-baseline gap-2 mb-2">
-                              <span className="text-2xl font-bold text-gray-900">
+                              <span className="text-lg font-bold tabular-nums text-gray-900">
                                 {formatCurrency(progressAmount)}
                               </span>
                               <span className="text-sm text-gray-500">
@@ -2110,7 +2110,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                 {performanceTrendData.length > 0 && (
                   <div className="mt-4 grid grid-cols-2 gap-4 pt-4 border-t">
                     <div className="text-center">
-                      <div className="text-2xl font-bold text-blue-600">
+                      <div className="text-lg font-bold tabular-nums text-blue-600">
                         {formatCurrency(
                           performanceTrendData.reduce(
                             (sum, d) => sum + d.revenue,
@@ -2121,7 +2121,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       <div className="text-sm text-gray-500">{t("dashboard.totalRevenueSummary")}</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-2xl font-bold text-green-600">
+                      <div className="text-lg font-bold tabular-nums text-green-600">
                         {performanceTrendData.reduce(
                           (sum, d) => sum + d.deals,
                           0,
@@ -2382,7 +2382,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                         <p className="text-sm text-blue-600 font-medium">
                           {t("dashboard.totalAllocated")}
                         </p>
-                        <p className="text-2xl font-bold text-blue-700">
+                        <p className="text-lg font-bold tabular-nums text-blue-700">
                           {formatCurrency(
                             myTargets.reduce(
                               (sum, t) =>
@@ -2396,7 +2396,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                         <p className="text-sm text-green-600 font-medium">
                           {t("dashboard.assignedToTeam")}
                         </p>
-                        <p className="text-2xl font-bold text-green-700">
+                        <p className="text-lg font-bold tabular-nums text-green-700">
                           {formatCurrency(
                             filteredAssignedTargets.reduce(
                               (sum, t) =>
@@ -2410,7 +2410,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                         <p className="text-sm text-amber-600 font-medium">
                           {t("dashboard.availableBudget")}
                         </p>
-                        <p className="text-2xl font-bold text-amber-700">
+                        <p className="text-lg font-bold tabular-nums text-amber-700">
                           {formatCurrency(
                             Math.max(
                               0,
@@ -2465,7 +2465,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             </div>
 
                             <div className="space-y-2 mb-4">
-                              <div className="text-2xl font-bold text-gray-900">
+                              <div className="text-lg font-bold tabular-nums text-gray-900">
                                 {formatCurrency(target.target_amount)}
                               </div>
                               <div className="text-sm text-gray-600">

@@ -2007,7 +2007,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         {performanceTrendData.length > 0 && (
           <div className="mt-4 grid grid-cols-2 gap-4 pt-4 border-t">
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">
+              <div className="text-lg font-bold tabular-nums text-blue-600">
                 {formatCurrency(
                   performanceTrendData.reduce((sum, d) => sum + d.revenue, 0),
                 )}
@@ -2015,7 +2015,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               <div className="text-sm text-gray-500">{t("dashboard.totalRevenueSummary")}</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
+              <div className="text-lg font-bold tabular-nums text-green-600">
                 {performanceTrendData.reduce((sum, d) => sum + d.deals, 0)}
               </div>
               <div className="text-sm text-gray-500">{t("dashboard.dealsClosedSummary")}</div>

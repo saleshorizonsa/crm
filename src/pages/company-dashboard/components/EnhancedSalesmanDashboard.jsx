@@ -1046,7 +1046,7 @@ const EnhancedSalesmanDashboard = ({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-lg font-bold tabular-nums text-gray-900">
               Salesman Dashboard
             </h1>
             <p className="text-gray-600 mt-1">
@@ -1223,8 +1223,8 @@ const EnhancedSalesmanDashboard = ({
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
               {/* Total Revenue */}
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <div className="text-3xl font-bold text-green-600">
+              <div className="text-center p-4 bg-green-50 rounded-lg min-w-0 overflow-hidden">
+                <div className="text-xl font-bold tabular-nums truncate leading-tight text-green-600">
                   {formatCurrency(
                     targetMetrics?.progressAmount ||
                       executiveMetrics?.totalRevenue ||
@@ -1235,8 +1235,8 @@ const EnhancedSalesmanDashboard = ({
               </div>
 
               {/* Target Assigned */}
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <div className="text-3xl font-bold text-blue-600">
+              <div className="text-center p-4 bg-blue-50 rounded-lg min-w-0 overflow-hidden">
+                <div className="text-xl font-bold tabular-nums truncate leading-tight text-blue-600">
                   {targetMetrics?.hasActiveTarget
                     ? formatCurrency(targetMetrics.targetAmount)
                     : "—"}
@@ -1247,8 +1247,8 @@ const EnhancedSalesmanDashboard = ({
               </div>
 
               {/* Progress */}
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
-                <div className="text-3xl font-bold text-purple-600">
+              <div className="text-center p-4 bg-purple-50 rounded-lg min-w-0 overflow-hidden">
+                <div className="text-xl font-bold tabular-nums truncate leading-tight text-purple-600">
                   {targetMetrics?.hasActiveTarget
                     ? `${targetMetrics.progressPercent.toFixed(1)}%`
                     : "—"}
@@ -1272,8 +1272,8 @@ const EnhancedSalesmanDashboard = ({
               </div>
 
               {/* Remaining Revenue */}
-              <div className="text-center p-4 bg-red-500 rounded-lg">
-                <div className="text-3xl font-bold text-white">
+              <div className="text-center p-4 bg-red-500 rounded-lg min-w-0 overflow-hidden">
+                <div className="text-xl font-bold tabular-nums truncate leading-tight text-white">
                   {targetMetrics?.hasActiveTarget
                     ? formatCurrency(
                         Math.max(
@@ -1436,7 +1436,7 @@ const EnhancedSalesmanDashboard = ({
             {performanceTrendData.length > 0 && (
               <div className="mt-4 grid grid-cols-2 gap-4 pt-4 border-t">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
+                  <div className="text-lg font-bold tabular-nums text-blue-600">
                     {formatCurrency(
                       performanceTrendData.reduce(
                         (sum, d) => sum + d.revenue,
@@ -1447,7 +1447,7 @@ const EnhancedSalesmanDashboard = ({
                   <div className="text-sm text-gray-500">{t("dashboard.totalRevenue")}</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">
+                  <div className="text-lg font-bold tabular-nums text-green-600">
                     {performanceTrendData.reduce((sum, d) => sum + d.deals, 0)}
                   </div>
                   <div className="text-sm text-gray-500">{t("dashboard.dealsClosed")}</div>
@@ -1734,7 +1734,7 @@ const EnhancedSalesmanDashboard = ({
                 onClick={() => navigate("/sales-pipeline", { state: { activeStage: "lead" } })}
                 title="View Lead deals in pipeline"
               >
-                <div className="text-2xl font-bold text-gray-600">
+                <div className="text-lg font-bold tabular-nums text-gray-600">
                   {pipelineSummary.lead || 0}
                 </div>
                 <div className="text-sm text-gray-500">{t("deals.lead")}</div>
@@ -1744,7 +1744,7 @@ const EnhancedSalesmanDashboard = ({
                 onClick={() => navigate("/sales-pipeline", { state: { activeStage: "contact_made" } })}
                 title="View Contacted deals in pipeline"
               >
-                <div className="text-2xl font-bold text-blue-600">
+                <div className="text-lg font-bold tabular-nums text-blue-600">
                   {pipelineSummary.contact_made || 0}
                 </div>
                 <div className="text-sm text-gray-500">{t("deals.qualified")}</div>
@@ -1754,7 +1754,7 @@ const EnhancedSalesmanDashboard = ({
                 onClick={() => navigate("/sales-pipeline", { state: { activeStage: "proposal_sent" } })}
                 title="View Proposal deals in pipeline"
               >
-                <div className="text-2xl font-bold text-yellow-600">
+                <div className="text-lg font-bold tabular-nums text-yellow-600">
                   {pipelineSummary.proposal_sent || 0}
                 </div>
                 <div className="text-sm text-gray-500">{t("deals.proposal")}</div>
@@ -1764,7 +1764,7 @@ const EnhancedSalesmanDashboard = ({
                 onClick={() => navigate("/sales-pipeline", { state: { activeStage: "negotiation" } })}
                 title="View Negotiation deals in pipeline"
               >
-                <div className="text-2xl font-bold text-orange-600">
+                <div className="text-lg font-bold tabular-nums text-orange-600">
                   {pipelineSummary.negotiation || 0}
                 </div>
                 <div className="text-sm text-gray-500">{t("deals.negotiation")}</div>
@@ -1774,7 +1774,7 @@ const EnhancedSalesmanDashboard = ({
                 onClick={() => navigate("/sales-pipeline", { state: { activeStage: "won" } })}
                 title="View Won deals in pipeline"
               >
-                <div className="text-2xl font-bold text-green-600">
+                <div className="text-lg font-bold tabular-nums text-green-600">
                   {pipelineSummary.won || 0}
                 </div>
                 <div className="text-sm text-gray-500">{t("deals.won")}</div>
@@ -1784,7 +1784,7 @@ const EnhancedSalesmanDashboard = ({
                 onClick={() => navigate("/sales-pipeline", { state: { activeStage: "lost" } })}
                 title="View Lost deals in pipeline"
               >
-                <div className="text-2xl font-bold text-red-600">
+                <div className="text-lg font-bold tabular-nums text-red-600">
                   {pipelineSummary.lost || 0}
                 </div>
                 <div className="text-sm text-gray-500">{t("deals.lost")}</div>

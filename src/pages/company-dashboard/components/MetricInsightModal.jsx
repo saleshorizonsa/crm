@@ -277,8 +277,10 @@ const MetricInsightModal = ({
             </div>
 
             {/* Main Value */}
-            <div className={`mt-3 text-3xl font-bold ${textColor}`}>
-              {config.mainValue}
+            <div className="mt-3 min-w-0 overflow-hidden">
+              <div className={`text-xl font-bold tabular-nums truncate leading-tight ${textColor}`}>
+                {config.mainValue}
+              </div>
             </div>
           </div>
 

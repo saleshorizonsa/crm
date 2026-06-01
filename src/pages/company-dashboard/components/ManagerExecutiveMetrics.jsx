@@ -225,18 +225,18 @@ const ManagerExecutiveMetrics = ({
         {metricCards.map((card, index) => (
           <div
             key={index}
-            className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
+            className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 min-w-0 overflow-hidden"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center">
                 <div className={`${card.color} p-3 rounded-lg mr-4`}>
                   <Icon name={card.icon} className="w-6 h-6 text-white" />
                 </div>
-                <div>
+                <div className="min-w-0 overflow-hidden">
                   <p className="text-sm font-medium text-gray-600">
                     {card.title}
                   </p>
-                  <p className="text-2xl font-bold text-gray-900">
+                  <p className="text-lg font-bold tabular-nums truncate text-gray-900">
                     {card.value}
                   </p>
                 </div>
@@ -261,11 +261,11 @@ const ManagerExecutiveMetrics = ({
 
       {/* Secondary Metrics Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 min-w-0 overflow-hidden">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">{t("dashboard.teamSize")}</p>
-              <p className="text-3xl font-bold text-gray-900">
+              <p className="text-xl font-bold tabular-nums truncate leading-tight text-gray-900">
                 {managerMetrics.teamSize}
               </p>
               <p className="text-sm text-gray-500">{t("dashboard.activeTeamMembers")}</p>
@@ -276,11 +276,11 @@ const ManagerExecutiveMetrics = ({
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 min-w-0 overflow-hidden">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">{t("dashboard.wonDeals")}</p>
-              <p className="text-3xl font-bold text-gray-900">
+              <p className="text-xl font-bold tabular-nums truncate leading-tight text-gray-900">
                 {managerMetrics.dealsWon}
               </p>
               <p className="text-sm text-green-600">
@@ -293,13 +293,13 @@ const ManagerExecutiveMetrics = ({
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 min-w-0 overflow-hidden">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">
                 {t("dashboard.avgConversion")}
               </p>
-              <p className="text-3xl font-bold text-gray-900">
+              <p className="text-xl font-bold tabular-nums truncate leading-tight text-gray-900">
                 {formatPercent(managerMetrics.conversionRate)}
               </p>
               <p
@@ -320,7 +320,7 @@ const ManagerExecutiveMetrics = ({
 
       {/* Actionable Insights - matching Director Dashboard alerts */}
       {alerts.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 min-w-0 overflow-hidden">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
             <Icon
               name="alert-circle"

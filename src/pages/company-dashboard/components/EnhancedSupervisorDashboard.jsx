@@ -1417,7 +1417,7 @@ const EnhancedSupervisorDashboard = ({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-lg font-bold tabular-nums text-gray-900">
               {t("roles.supervisor")} {t("nav.dashboard")}
             </h1>
             <p className="text-gray-600 mt-1">
@@ -1615,8 +1615,8 @@ const EnhancedSupervisorDashboard = ({
 
               {/* Summary Stats - Fixed calculations */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-blue-50 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-blue-700">
+                <div className="bg-blue-50 rounded-lg p-4 text-center min-w-0 overflow-hidden">
+                  <div className="text-lg font-bold tabular-nums text-blue-700">
                     {formatCurrency(
                       targetsWithRecalculatedProgress.reduce(
                         (sum, t) => sum + parseFloat(t.target_amount || 0),
@@ -1626,8 +1626,8 @@ const EnhancedSupervisorDashboard = ({
                   </div>
                   <div className="text-sm text-blue-600">{t("dashboard.totalTarget")}</div>
                 </div>
-                <div className="bg-green-50 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-green-700">
+                <div className="bg-green-50 rounded-lg p-4 text-center min-w-0 overflow-hidden">
+                  <div className="text-lg font-bold tabular-nums text-green-700">
                     {formatCurrency(
                       (targetsWithRecalculatedProgress[0]?.supervisor_revenue ||
                         0) +
@@ -1637,8 +1637,8 @@ const EnhancedSupervisorDashboard = ({
                   </div>
                   <div className="text-sm text-green-600">{t("dashboard.totalAchieved")}</div>
                 </div>
-                <div className="bg-purple-50 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-purple-700">
+                <div className="bg-purple-50 rounded-lg p-4 text-center min-w-0 overflow-hidden">
+                  <div className="text-lg font-bold tabular-nums text-purple-700">
                     {formatCurrency(
                       targetsWithRecalculatedProgress[0]?.supervisor_revenue ||
                         0,
@@ -1646,8 +1646,8 @@ const EnhancedSupervisorDashboard = ({
                   </div>
                   <div className="text-sm text-purple-600">{t("dashboard.yourRevenue")}</div>
                 </div>
-                <div className="bg-red-500 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-white">
+                <div className="bg-red-500 rounded-lg p-4 text-center min-w-0 overflow-hidden">
+                  <div className="text-lg font-bold tabular-nums text-white">
                     {formatCurrency(
                       targetsWithRecalculatedProgress.reduce(
                         (sum, t) => sum + parseFloat(t.target_amount || 0),
@@ -1725,7 +1725,7 @@ const EnhancedSupervisorDashboard = ({
 
                         <div className="flex items-end justify-between mb-3">
                           <div>
-                            <div className="text-2xl font-bold text-gray-900">
+                            <div className="text-lg font-bold tabular-nums text-gray-900">
                               {formatCurrency(progressAmount)}
                             </div>
                             <div className="text-sm text-gray-600">
@@ -2220,7 +2220,7 @@ const EnhancedSupervisorDashboard = ({
             {performanceTrendData.length > 0 && (
               <div className="mt-4 grid grid-cols-2 gap-4 pt-4 border-t">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
+                  <div className="text-lg font-bold tabular-nums text-blue-600">
                     {formatCurrency(
                       performanceTrendData.reduce(
                         (sum, d) => sum + d.revenue,
@@ -2231,7 +2231,7 @@ const EnhancedSupervisorDashboard = ({
                   <div className="text-sm text-gray-500">{t("dashboard.totalRevenueSummary")}</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">
+                  <div className="text-lg font-bold tabular-nums text-green-600">
                     {performanceTrendData.reduce((sum, d) => sum + d.deals, 0)}
                   </div>
                   <div className="text-sm text-gray-500">{t("dashboard.dealsClosedSummary")}</div>
@@ -2453,7 +2453,7 @@ const EnhancedSupervisorDashboard = ({
                     <p className="text-sm text-green-600 font-medium">
                       {t("dashboard.totalAllocated")}
                     </p>
-                    <p className="text-2xl font-bold text-green-700">
+                    <p className="text-lg font-bold tabular-nums text-green-700">
                       {formatCurrency(
                         myTargets.reduce(
                           (sum, t) => sum + (parseFloat(t.target_amount) || 0),
@@ -2466,7 +2466,7 @@ const EnhancedSupervisorDashboard = ({
                     <p className="text-sm text-blue-600 font-medium">
                       {t("dashboard.assignedToSalesmen")}
                     </p>
-                    <p className="text-2xl font-bold text-blue-700">
+                    <p className="text-lg font-bold tabular-nums text-blue-700">
                       {formatCurrency(
                         filteredAssignedTargets.reduce(
                           (sum, t) => sum + (parseFloat(t.target_amount) || 0),
@@ -2479,7 +2479,7 @@ const EnhancedSupervisorDashboard = ({
                     <p className="text-sm text-amber-600 font-medium">
                       {t("dashboard.availableBudget")}
                     </p>
-                    <p className="text-2xl font-bold text-amber-700">
+                    <p className="text-lg font-bold tabular-nums text-amber-700">
                       {formatCurrency(
                         Math.max(
                           0,
@@ -2534,7 +2534,7 @@ const EnhancedSupervisorDashboard = ({
                         </div>
 
                         <div className="space-y-2 mb-4">
-                          <div className="text-2xl font-bold text-gray-900">
+                          <div className="text-lg font-bold tabular-nums text-gray-900">
                             {formatCurrency(target.target_amount)}
                           </div>
                           <div className="text-sm text-gray-600">
@@ -3375,7 +3375,7 @@ const EnhancedSupervisorDashboard = ({
             <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-xl">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold">{t("dashboard.targetDetails")}</h2>
+                  <h2 className="text-lg font-bold tabular-nums">{t("dashboard.targetDetails")}</h2>
                   <p className="text-blue-100 text-sm mt-1">
                     {selectedTargetDetail.target_type
                       ?.replace("_", " ")
@@ -3399,13 +3399,13 @@ const EnhancedSupervisorDashboard = ({
                   <div className="text-sm text-blue-600 mb-1">
                     {t("dashboard.targetAmountLabel")}
                   </div>
-                  <div className="text-2xl font-bold text-blue-700">
+                  <div className="text-lg font-bold tabular-nums text-blue-700">
                     {formatCurrency(selectedTargetDetail.target_amount)}
                   </div>
                 </div>
                 <div className="bg-green-50 rounded-lg p-4 text-center border border-green-200">
                   <div className="text-sm text-green-600 mb-1">{t("dashboard.achieved")}</div>
-                  <div className="text-2xl font-bold text-green-700">
+                  <div className="text-lg font-bold tabular-nums text-green-700">
                     {formatCurrency(
                       (selectedTargetDetail.supervisor_revenue || 0) +
                         (selectedTargetDetail.subordinates_contribution || 0),
@@ -3416,7 +3416,7 @@ const EnhancedSupervisorDashboard = ({
                   <div className="text-sm text-purple-600 mb-1">
                     {t("dashboard.yourRevenue")}
                   </div>
-                  <div className="text-2xl font-bold text-purple-700">
+                  <div className="text-lg font-bold tabular-nums text-purple-700">
                     {formatCurrency(
                       selectedTargetDetail.supervisor_revenue || 0,
                     )}
@@ -3426,7 +3426,7 @@ const EnhancedSupervisorDashboard = ({
                   <div className="text-sm text-orange-600 mb-1">
                     {t("dashboard.teamRevenue")}
                   </div>
-                  <div className="text-2xl font-bold text-orange-700">
+                  <div className="text-lg font-bold tabular-nums text-orange-700">
                     {formatCurrency(
                       selectedTargetDetail.subordinates_contribution || 0,
                     )}
