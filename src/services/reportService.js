@@ -1,11 +1,19 @@
 import { supabase } from '../lib/supabase';
 
 const DEAL_SELECT = `
-  id, title, amount, stage, created_at, expected_close_date, lost_at,
-  contact:contacts!contact_id(id, first_name, last_name, company_name),
+  id, title, amount, stage,
+  created_at, closed_at, lost_at,
+  expected_close_date,
+  contact:contacts!contact_id(
+    id, first_name, last_name, company_name
+  ),
   owner:users!owner_id(id, full_name),
-  deal_products(id, line_total, uom_value, unit_price,
-    product:products(id, material, description, material_group))
+  deal_products(
+    id, line_total, uom_value, unit_price,
+    product:products(
+      id, material, description, material_group
+    )
+  )
 `;
 
 async function getTeamUserIds(userId, role, companyId) {
@@ -60,11 +68,37 @@ export const reportService = {
       .select(DEAL_SELECT)
       .eq('company_id', companyId);
 
-    if (teamIds)  query = query.in('owner_id', teamIds);
-    if (dateFrom) query = query.gte('created_at', dateFrom);
-    if (dateTo)   query = query.lte('created_at', dateTo);
+    if (teamIds) query = query.in('owner_id', teamIds);
 
-    const { data, error } = await query.order('created_at', { ascending: false });
-    return { data: data || [], error };
+    // Fetch without date filter first — filter client-side because different
+    // stages use different date fields:
+    //   won deals  → closed_at
+    //   lost deals → closed_at or lost_at
+    //   open deals → created_at
+    const { data: allData, error } = await query
+      .order('created_at', { ascending: false });
+
+    if (error) return { data: [], error };
+
+    const filtered = (allData || []).filter(deal => {
+      if (!dateFrom && !dateTo) return true;
+
+      let dateToCheck;
+      if (deal.stage === 'won') {
+        dateToCheck = deal.closed_at || deal.expected_close_date || deal.created_at;
+      } else if (deal.stage === 'lost') {
+        dateToCheck = deal.closed_at || deal.lost_at || deal.created_at;
+      } else {
+        dateToCheck = deal.created_at;
+      }
+
+      if (!dateToCheck) return false;
+      const d = new Date(dateToCheck);
+      if (dateFrom && d < new Date(dateFrom)) return false;
+      if (dateTo   && d > new Date(dateTo))   return false;
+      return true;
+    });
+
+    return { data: filtered, error: null };
   },
 };
