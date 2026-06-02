@@ -285,8 +285,8 @@ const SupervisorDashboard = ({ viewAsUser = null, readOnly = false }) => {
           value={formatCurrency(
             teamData.reduce((sum, member) => sum + (member.totalValue || 0), 0)
           )}
-          change="+12.5%"
-          trend="up"
+          change={null}
+          trend={undefined}
           icon="💰"
         />
         <MetricsCard
@@ -308,8 +308,8 @@ const SupervisorDashboard = ({ viewAsUser = null, readOnly = false }) => {
         <MetricsCard
           title={t("dashboard.activeTasks")}
           value={upcomingTasks.length}
-          change="-2.1%"
-          trend="down"
+          change={null}
+          trend={undefined}
           icon="📋"
         />
       </div>

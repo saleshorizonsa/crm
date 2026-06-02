@@ -145,3 +145,43 @@ export function getQuickRanges() {
     },
   ];
 }
+
+export function getPreviousPeriod(dateFrom, dateTo) {
+  const from   = new Date(dateFrom);
+  const to     = new Date(dateTo);
+  const diffMs = to.getTime() - from.getTime();
+  const prevTo   = new Date(from.getTime() - 1);
+  const prevFrom = new Date(prevTo.getTime() - diffMs);
+  return {
+    from: format(prevFrom, 'yyyy-MM-dd'),
+    to:   format(prevTo,   'yyyy-MM-dd'),
+  };
+}
+
+export function calcChange(current, previous) {
+  if (previous === null || previous === undefined || previous === 0) {
+    return current > 0 ? '+100%' : null;
+  }
+  const pct     = ((current - previous) / Math.abs(previous)) * 100;
+  const rounded = Math.round(pct * 10) / 10;
+  if (rounded === 0) return null;
+  return rounded > 0 ? `+${rounded}%` : `${rounded}%`;
+}
+
+export function isPositiveChange(changeStr) {
+  if (!changeStr) return null;
+  if (changeStr.startsWith('+')) return true;
+  if (changeStr.startsWith('-')) return false;
+  return null;
+}
+
+export function getComparisonLabel(dateFrom, dateTo) {
+  if (!dateFrom || !dateTo) return 'vs previous period';
+  const days = Math.round(
+    (new Date(dateTo) - new Date(dateFrom)) / 86400000
+  );
+  if (days <= 31)  return 'vs last month';
+  if (days <= 92)  return 'vs last quarter';
+  if (days <= 366) return 'vs last year';
+  return 'vs previous period';
+}

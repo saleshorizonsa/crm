@@ -37,6 +37,9 @@ import QuickDateSelector from '../../../components/QuickDateSelector';
 import {
   buildDateRange,
   syncDropdownsFromRange,
+  getPreviousPeriod,
+  calcChange,
+  isPositiveChange,
 } from "../../../utils/dashboardDateUtils";
 import { Edit2 } from "lucide-react";
 import SalesTargetTable from "../../../components/SalesTargetTable";
@@ -243,6 +246,37 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       }) || []
     );
   }, [allDeals, activeDateRange.from, activeDateRange.to]);
+
+  // Percentage change vs previous equivalent period
+  const changes = useMemo(() => {
+    if (!allDeals.length || !activeDateRange?.from) {
+      return { revenue: null, activeDeals: null, wonDeals: null };
+    }
+    const prev  = getPreviousPeriod(activeDateRange.from, activeDateRange.to);
+    const pFrom = new Date(prev.from + 'T00:00:00');
+    const pTo   = new Date(prev.to   + 'T23:59:59');
+
+    const prevFiltered = allDeals.filter(deal => {
+      const dt = deal.stage === 'won' ? deal.closed_at : deal.created_at;
+      if (!dt) return false;
+      const d = new Date(dt);
+      return d >= pFrom && d <= pTo;
+    });
+
+    const prevWon      = prevFiltered.filter(d => d.stage === 'won');
+    const prevRevenue  = prevWon.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+    const prevActive   = prevFiltered.filter(d => !['won', 'lost'].includes(d.stage));
+
+    const currWon      = filteredDeals.filter(d => d.stage === 'won');
+    const currRevenue  = currWon.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+    const currActive   = filteredDeals.filter(d => !['won', 'lost'].includes(d.stage));
+
+    return {
+      revenue:     calcChange(currRevenue,      prevRevenue),
+      activeDeals: calcChange(currActive.length, prevActive.length),
+      wonDeals:    calcChange(currWon.length,    prevWon.length),
+    };
+  }, [allDeals, filteredDeals, activeDateRange?.from, activeDateRange?.to]);
 
   const filteredActivities = useMemo(() => {
     return (
@@ -1885,31 +1919,31 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                 <MetricsCard
                   title={t("dashboard.totalRevenue")}
                   value={formatCurrency(executiveMetrics?.totalRevenue || 0)}
-                  change="+12.5%"
-                  trend="up"
+                  change={changes.revenue}
+                  trend={isPositiveChange(changes.revenue) === true ? 'up' : isPositiveChange(changes.revenue) === false ? 'down' : undefined}
                   icon="💰"
                   onClick={() => handleMetricClick("totalRevenue")}
                 />
                 <MetricsCard
                   title={t("dashboard.activeDeals")}
                   value={`${metrics?.totalDeals || 0}`}
-                  change="+8.2%"
-                  trend="up"
+                  change={changes.activeDeals}
+                  trend={isPositiveChange(changes.activeDeals) === true ? 'up' : isPositiveChange(changes.activeDeals) === false ? 'down' : undefined}
                   icon="🤝"
                   onClick={() => handleMetricClick("activePipeline")}
                 />
                 <MetricsCard
                   title={t("dashboard.totalContacts")}
                   value={`${metrics?.totalContacts || 0}`}
-                  change="+5.4%"
-                  trend="up"
+                  change={null}
+                  trend={undefined}
                   icon="👥"
                 />
                 <MetricsCard
                   title={t("nav.tasks")}
                   value={`${metrics?.totalTasks || 0}`}
-                  change="-2.1%"
-                  trend="down"
+                  change={null}
+                  trend={undefined}
                   icon="📋"
                 />
               </div>

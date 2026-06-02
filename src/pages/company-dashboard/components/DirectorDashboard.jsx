@@ -45,6 +45,9 @@ import QuickDateSelector from '../../../components/QuickDateSelector';
 import {
   buildDateRange,
   syncDropdownsFromRange,
+  getPreviousPeriod,
+  calcChange,
+  isPositiveChange,
 } from "../../../utils/dashboardDateUtils";
 
 // Employee-specific dashboards - use Enhanced versions for full features
@@ -294,6 +297,36 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       }) || []
     );
   }, [allDealsData, activeDateRange.from, activeDateRange.to]);
+
+  // Percentage change vs previous equivalent period
+  const changes = useMemo(() => {
+    if (!allDealsData.length || !activeDateRange?.from) {
+      return { revenue: null, activeDeals: null };
+    }
+    const prev  = getPreviousPeriod(activeDateRange.from, activeDateRange.to);
+    const pFrom = new Date(prev.from + 'T00:00:00');
+    const pTo   = new Date(prev.to   + 'T23:59:59');
+
+    const prevFiltered = allDealsData.filter(deal => {
+      const dt = deal.stage === 'won' ? deal.closed_at : deal.created_at;
+      if (!dt) return false;
+      const d = new Date(dt);
+      return d >= pFrom && d <= pTo;
+    });
+
+    const prevWon     = prevFiltered.filter(d => d.stage === 'won');
+    const prevRevenue = prevWon.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+    const prevActive  = prevFiltered.filter(d => !['won', 'lost'].includes(d.stage));
+
+    const currWon     = filteredDeals.filter(d => d.stage === 'won');
+    const currRevenue = currWon.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+    const currActive  = filteredDeals.filter(d => !['won', 'lost'].includes(d.stage));
+
+    return {
+      revenue:     calcChange(currRevenue,       prevRevenue),
+      activeDeals: calcChange(currActive.length,  prevActive.length),
+    };
+  }, [allDealsData, filteredDeals, activeDateRange?.from, activeDateRange?.to]);
 
   const filteredActivities = useMemo(() => {
     return (
@@ -1874,29 +1907,29 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             <MetricsCard
               title="Total Revenue"
               value={formatCurrency(metrics?.totalRevenue || 0)}
-              change="+12.5%"
-              trend="up"
+              change={changes.revenue}
+              trend={isPositiveChange(changes.revenue) === true ? 'up' : isPositiveChange(changes.revenue) === false ? 'down' : undefined}
               icon="💰"
             />
             <MetricsCard
               title="Active Deals"
               value={metrics?.totalDeals || 0}
-              change="+8.2%"
-              trend="up"
+              change={changes.activeDeals}
+              trend={isPositiveChange(changes.activeDeals) === true ? 'up' : isPositiveChange(changes.activeDeals) === false ? 'down' : undefined}
               icon="🤝"
             />
             <MetricsCard
               title="Contacts"
               value={metrics?.totalContacts || 0}
-              change="+5.4%"
-              trend="up"
+              change={null}
+              trend={undefined}
               icon="👥"
             />
             <MetricsCard
               title="Tasks"
               value={metrics?.totalTasks || 0}
-              change="-2.1%"
-              trend="down"
+              change={null}
+              trend={undefined}
               icon="📋"
             />
           </>

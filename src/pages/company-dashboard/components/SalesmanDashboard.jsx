@@ -17,6 +17,12 @@ import {
   salesTargetService,
 } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
+import {
+  buildDateRange,
+  getPreviousPeriod,
+  calcChange,
+  isPositiveChange,
+} from "../../../utils/dashboardDateUtils";
 
 const SalesmanDashboard = ({
   viewAsUser = null,
@@ -124,6 +130,30 @@ const SalesmanDashboard = ({
       .filter((d) => d.stage === "won")
       .reduce((sum, d) => sum + getConvertedAmount(d), 0);
   }, [filteredDeals, preferredCurrency]);
+
+  // Percentage change vs previous equivalent period
+  const changes = useMemo(() => {
+    if (!myDeals.length || selectedYear === null) {
+      return { activeDeals: null };
+    }
+    const curr  = buildDateRange(selectedMonth, selectedQuarter, selectedYear);
+    const prev  = getPreviousPeriod(curr.from, curr.to);
+    const pFrom = new Date(prev.from + 'T00:00:00');
+    const pTo   = new Date(prev.to   + 'T23:59:59');
+
+    const prevFiltered = myDeals.filter(deal => {
+      const dt = deal.stage === 'won'
+        ? deal.closed_at || deal.created_at
+        : deal.created_at;
+      if (!dt) return false;
+      const d = new Date(dt);
+      return d >= pFrom && d <= pTo;
+    });
+
+    return {
+      activeDeals: calcChange(filteredDeals.length, prevFiltered.length),
+    };
+  }, [myDeals, filteredDeals, selectedMonth, selectedQuarter, selectedYear]);
 
   useEffect(() => {
     if (company?.id && effectiveUserProfile?.id) {
@@ -308,15 +338,15 @@ const SalesmanDashboard = ({
         <MetricsCard
           title={t("dashboard.myDeals")}
           value={filteredDeals.length.toString()}
-          change="+5.8%"
-          trend="up"
+          change={changes.activeDeals}
+          trend={isPositiveChange(changes.activeDeals) === true ? 'up' : isPositiveChange(changes.activeDeals) === false ? 'down' : undefined}
           icon="🤝"
         />
         <MetricsCard
           title={t("dashboard.myContacts")}
           value={myContacts.length.toString()}
-          change="+12.1%"
-          trend="up"
+          change={null}
+          trend={undefined}
           icon="👥"
         />
         <MetricsCard
