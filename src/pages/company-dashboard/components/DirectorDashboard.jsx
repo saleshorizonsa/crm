@@ -40,6 +40,8 @@ import ForecastAISummary from "./forecast/ForecastAISummary";
 import AtRiskDealsPanel from "./AtRiskDealsPanel";
 import SalesLeaderboard from "./SalesLeaderboard";
 import { useDateRange } from "../../../contexts/DateRangeContext";
+import { format, startOfMonth } from 'date-fns';
+import QuickDateSelector from '../../../components/QuickDateSelector';
 import {
   buildDateRange,
   syncDropdownsFromRange,
@@ -95,10 +97,17 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const [selectedQuarter, setSelectedQuarter] = useState(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
-  // Single source of truth for the active date range
-  const [activeDateRange, setActiveDateRange] = useState(() =>
-    buildDateRange(new Date().getMonth(), null, new Date().getFullYear())
-  );
+  // Single source of truth for the active date range — defaults to current month 1st → today
+  const [activeDateRange, setActiveDateRange] = useState(() => {
+    const now = new Date();
+    return {
+      from: format(startOfMonth(now), 'yyyy-MM-dd'),
+      to:   format(now, 'yyyy-MM-dd'),
+      label: format(now, 'MMMM yyyy'),
+      type:  'monthly',
+      period: format(now, 'MMMM yyyy'),
+    };
+  });
   const [refreshing, setRefreshing] = useState(false);
 
   // Sync from top-right DateRangePicker (via context) → local dropdowns
@@ -2211,115 +2220,33 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               />
             </div>
 
-            {/* Time Filter Dropdowns */}
-            <div className="flex items-center gap-4 flex-wrap">
-              <label className="text-sm font-medium text-gray-700">
-                Filter by:
-              </label>
-
-              {/* Month Filter */}
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">{t("dashboard.monthLabel")}:</label>
-                <select
-                  value={selectedMonth !== null ? selectedMonth : ""}
-                  onChange={(e) => {
-                    const newMonth =
-                      e.target.value === "" ? null : parseInt(e.target.value);
-                    const newQuarter =
-                      newMonth !== null ? Math.floor(newMonth / 3) : selectedQuarter;
-                    setSelectedMonth(newMonth);
-                    setSelectedQuarter(newQuarter);
-                    const range = buildDateRange(newMonth, newMonth !== null ? newQuarter : selectedQuarter, selectedYear);
-                    setActiveDateRange(range);
-                    setRange({ from: range.from, to: range.to });
-                  }}
-                  className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[140px]"
-                >
-                  <option value="">{t("dashboard.allMonths")}</option>
-                  {monthOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Quarter Filter */}
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">{t("dashboard.quarterLabel")}:</label>
-                <select
-                  value={selectedQuarter !== null ? selectedQuarter : ""}
-                  onChange={(e) => {
-                    const newQuarter =
-                      e.target.value === "" ? null : parseInt(e.target.value);
-                    let newMonth = selectedMonth;
-                    if (newQuarter !== null && selectedMonth !== null) {
-                      if (Math.floor(selectedMonth / 3) !== newQuarter) {
-                        newMonth = null;
-                      }
-                    }
-                    setSelectedQuarter(newQuarter);
-                    setSelectedMonth(newMonth);
-                    const range = buildDateRange(newMonth, newQuarter, selectedYear);
-                    setActiveDateRange(range);
-                    setRange({ from: range.from, to: range.to });
-                  }}
-                  className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[120px]"
-                >
-                  <option value="">{t("dashboard.allQuarters")}</option>
-                  {quarterOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Year Filter */}
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">{t("dashboard.yearLabel")}:</label>
-                <select
-                  value={selectedYear !== null ? selectedYear : ""}
-                  onChange={(e) => {
-                    const newYear =
-                      e.target.value === "" ? null : parseInt(e.target.value);
-                    setSelectedYear(newYear);
-                    const range = buildDateRange(selectedMonth, selectedQuarter, newYear);
-                    setActiveDateRange(range);
-                    setRange({ from: range.from, to: range.to });
-                  }}
-                  className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[100px]"
-                >
-                  <option value="">{t("dashboard.allYears")}</option>
-                  {yearOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Clear Filter Button */}
-              {(selectedMonth !== null || selectedQuarter !== null || selectedYear !== null) && (
-                <button
-                  onClick={() => {
-                    const now = new Date();
-                    const m = now.getMonth();
-                    const y = now.getFullYear();
-                    setSelectedMonth(m);
-                    setSelectedQuarter(null);
-                    setSelectedYear(y);
-                    const range = buildDateRange(m, null, y);
-                    setActiveDateRange(range);
-                    setRange({ from: range.from, to: range.to });
-                  }}
-                  className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
-                >
-                  <Icon name="X" size={14} />
-                  {t("messages.clearFilters")}
-                </button>
-              )}
-            </div>
+            {/* Quick Date Selector */}
+            <QuickDateSelector
+              activeDateRange={activeDateRange}
+              onRangeChange={(range) => {
+                setActiveDateRange(range);
+                if (range.type === 'monthly') {
+                  const d = new Date(range.from);
+                  setSelectedMonth(d.getMonth());
+                  setSelectedQuarter(Math.floor(d.getMonth() / 3));
+                  setSelectedYear(d.getFullYear());
+                } else if (range.type === 'quarterly') {
+                  const d = new Date(range.from);
+                  setSelectedMonth(null);
+                  setSelectedQuarter(Math.floor(d.getMonth() / 3));
+                  setSelectedYear(d.getFullYear());
+                } else if (range.type === 'yearly') {
+                  setSelectedMonth(null);
+                  setSelectedQuarter(null);
+                  setSelectedYear(new Date(range.from).getFullYear());
+                } else {
+                  setSelectedMonth(null);
+                  setSelectedQuarter(null);
+                  setSelectedYear(null);
+                }
+                setRange({ from: range.from, to: range.to });
+              }}
+            />
 
             {/* Viewing As Badge */}
             {selectedEmployee && (

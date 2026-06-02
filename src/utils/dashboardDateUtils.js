@@ -1,4 +1,4 @@
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 
 /**
  * Build an ISO date range from the dashboard's integer-based filter state.
@@ -84,4 +84,64 @@ export function formatViewingLabel(from, to) {
   } catch {
     return '';
   }
+}
+
+/**
+ * Five plain-English quick-select date ranges for dashboard buttons.
+ */
+export function getQuickRanges() {
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth();
+  const fmt   = d => format(d, 'yyyy-MM-dd');
+
+  const thisMonthStart = startOfMonth(now);
+  const thisMonthEnd   = now;
+
+  const lastMonthStart = startOfMonth(new Date(year, month - 1, 1));
+  const lastMonthEnd   = endOfMonth(new Date(year, month - 1, 1));
+
+  const currentQ = Math.floor(month / 3);
+  const qStart   = new Date(year, currentQ * 3, 1);
+  const qEnd     = endOfMonth(new Date(year, currentQ * 3 + 2, 1));
+
+  const yearStart = new Date(year, 0, 1);
+
+  return [
+    {
+      label:  'This Month',
+      from:   fmt(thisMonthStart),
+      to:     fmt(thisMonthEnd),
+      type:   'monthly',
+      period: format(now, 'MMMM yyyy'),
+    },
+    {
+      label:  'Last Month',
+      from:   fmt(lastMonthStart),
+      to:     fmt(lastMonthEnd),
+      type:   'monthly',
+      period: format(lastMonthStart, 'MMMM yyyy'),
+    },
+    {
+      label:  'This Quarter',
+      from:   fmt(qStart),
+      to:     fmt(now < qEnd ? now : qEnd),
+      type:   'quarterly',
+      period: `Q${currentQ + 1} ${year}`,
+    },
+    {
+      label:  'This Year',
+      from:   fmt(yearStart),
+      to:     fmt(now),
+      type:   'yearly',
+      period: String(year),
+    },
+    {
+      label:  'All Time',
+      from:   '2025-01-01',
+      to:     fmt(now),
+      type:   'alltime',
+      period: 'All Time',
+    },
+  ];
 }
