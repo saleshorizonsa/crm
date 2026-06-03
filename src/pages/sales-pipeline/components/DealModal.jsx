@@ -925,6 +925,7 @@ const DealModal = ({
             null,
             product.uom_type || null,
             product.uom_value || null,
+            product.cost_price || null,
           );
           if (result.error) {
             console.error("Failed to add product:", result.error);
