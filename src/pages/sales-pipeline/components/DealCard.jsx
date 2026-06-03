@@ -5,7 +5,7 @@ import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { dealProductService } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
-import { getDealProductSummary } from "../../../utils/dealGroupUtils";
+import { getDealProductSummary, getDealOrigin, getOriginLabel, getWonDealOrigin } from "../../../utils/dealGroupUtils";
 
 // Fallback label map — kept in sync with the default seed list
 const LOST_CODE_LABELS = {
@@ -31,7 +31,7 @@ const LOST_CODE_LABELS = {
   CAPACITY:          "Capacity",
 };
 
-const DealCard = ({ deal, onDealUpdate, onDealClick, showProductSummary = false }) => {
+const DealCard = ({ deal, onDealUpdate, onDealClick, showProductSummary = false, periodFrom }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editAmount, setEditAmount] = useState(deal?.amount);
   const [productCount, setProductCount] = useState(0);
@@ -153,6 +153,29 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, showProductSummary = false 
               )}
             </div>
           )}
+          {/* Origin badge — open deals */}
+          {periodFrom && deal.stage !== 'won' && deal.stage !== 'lost' && (() => {
+            const origin = getDealOrigin(deal, periodFrom);
+            const label  = getOriginLabel(deal, periodFrom);
+            return label ? (
+              <span className={`inline-flex items-center text-xs px-1.5 py-0.5 rounded-full font-medium mt-0.5 ${
+                origin === 'new' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'
+              }`}>
+                {origin === 'new' ? '✦' : '↻'}{' '}{label}
+              </span>
+            ) : null;
+          })()}
+          {/* Origin badge — won deals */}
+          {periodFrom && deal.stage === 'won' && (() => {
+            const origin = getWonDealOrigin(deal, periodFrom);
+            return (
+              <span className={`inline-flex items-center text-xs px-1.5 py-0.5 rounded-full font-medium mt-0.5 ${
+                origin === 'won_new' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'
+              }`}>
+                {origin === 'won_new' ? '✦ Won new' : '↻ Won carry'}
+              </span>
+            );
+          })()}
         </div>
       </div>
 

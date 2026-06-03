@@ -4,11 +4,11 @@ import Button from "../../../components/ui/Button";
 import DealCard from "./DealCard";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
-import { groupDealsByMaterialGroup } from "../../../utils/dealGroupUtils";
+import { groupDealsByMaterialGroup, getDealOrigin } from "../../../utils/dealGroupUtils";
 
 // ─── Grouped view component ───────────────────────────────────────────────────
 
-function GroupedDealsList({ deals, onDealClick, onDealUpdate }) {
+function GroupedDealsList({ deals, onDealClick, onDealUpdate, activePeriodFrom }) {
   const grouped = groupDealsByMaterialGroup(deals);
   const groups  = Object.keys(grouped).sort((a, b) => {
     if (a === 'No Products') return 1;
@@ -74,6 +74,7 @@ function GroupedDealsList({ deals, onDealClick, onDealUpdate }) {
                       onDealClick={onDealClick}
                       onDealUpdate={onDealUpdate}
                       showProductSummary={true}
+                      periodFrom={activePeriodFrom}
                     />
                   </div>
                 ))}
@@ -96,6 +97,7 @@ const PipelineStage = ({
   onStageUpdate,
   onDragOver,
   onDrop,
+  activePeriodFrom,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
@@ -243,6 +245,24 @@ const PipelineStage = ({
                 : formatCurrency(0, preferredCurrency)}
             </span>
           </div>
+          {/* Origin breakdown for contact_made (Qualified) stage */}
+          {stage?.id === 'contact_made' && activePeriodFrom && deals.length > 0 && (() => {
+            const newInStage   = deals.filter(d => getDealOrigin(d, activePeriodFrom) === 'new').length;
+            const carryInStage = deals.length - newInStage;
+            return (
+              <div className="flex items-center justify-between mt-1.5 bg-gray-50 rounded-md px-2 py-1.5">
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1 text-green-600 font-medium">
+                    <span>✦</span><span>{newInStage} new</span>
+                  </span>
+                  <span className="flex items-center gap-1 text-amber-600 font-medium">
+                    <span>↻</span><span>{carryInStage} carry</span>
+                  </span>
+                </div>
+                <span className="text-gray-400">{deals.length} total</span>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -259,6 +279,7 @@ const PipelineStage = ({
               deals={deals}
               onDealClick={onDealClick}
               onDealUpdate={onDealUpdate}
+              activePeriodFrom={activePeriodFrom}
             />
           ) : (
             deals.map((deal) => (
@@ -274,6 +295,7 @@ const PipelineStage = ({
                   deal={deal}
                   onDealClick={onDealClick}
                   onDealUpdate={onDealUpdate}
+                  periodFrom={activePeriodFrom}
                 />
               </div>
             ))

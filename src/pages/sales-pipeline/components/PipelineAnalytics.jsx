@@ -23,7 +23,8 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import FunnelChart from "./FunnelChart";
 import { useLanguage } from "../../../i18n";
-import { groupDealsByMaterialGroup } from "../../../utils/dealGroupUtils";
+import { format, startOfMonth } from 'date-fns';
+import { groupDealsByMaterialGroup, classifyDealsByOrigin } from "../../../utils/dealGroupUtils";
 
 const LOST_CODE_LABELS = {
   PRICE_HIGH:        "Price too high",
@@ -48,7 +49,7 @@ const LOST_CODE_LABELS = {
   CAPACITY:          "Capacity not available",
 };
 
-const PipelineAnalytics = ({ deals, onStageFilter }) => {
+const PipelineAnalytics = ({ deals, onStageFilter, activePeriodFrom }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [collapseToggle, setCollapseToggle] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
@@ -460,6 +461,74 @@ const PipelineAnalytics = ({ deals, onStageFilter }) => {
                 </div>
               ))}
             </div>
+
+            {/* Pipeline Origin Breakdown */}
+            {(() => {
+              const periodFrom = activePeriodFrom || format(startOfMonth(new Date()), 'yyyy-MM-dd');
+              const origin = classifyDealsByOrigin(deals || [], periodFrom);
+              return (
+                <div className="mt-5 pt-5 border-t border-border-tertiary">
+                  <h4 className="text-sm font-semibold text-card-foreground mb-4">Pipeline Origin Breakdown</h4>
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="bg-green-50 rounded-xl p-3 border border-green-100">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-green-600 text-sm">✦</span>
+                        <span className="text-xs font-semibold text-green-700">New This Period</span>
+                      </div>
+                      <div className="text-lg font-bold text-green-700">{formatCurrency(origin.newValue, preferredCurrency)}</div>
+                      <div className="text-xs text-green-600 mt-0.5">{origin.newCount} deals</div>
+                    </div>
+                    <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-amber-600 text-sm">↻</span>
+                        <span className="text-xs font-semibold text-amber-700">Carried Forward</span>
+                      </div>
+                      <div className="text-lg font-bold text-amber-700">{formatCurrency(origin.carryValue, preferredCurrency)}</div>
+                      <div className="text-xs text-amber-600 mt-0.5">{origin.carryCount} deals</div>
+                    </div>
+                    <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-blue-600 text-sm">✦</span>
+                        <span className="text-xs font-semibold text-blue-700">Won — New Deals</span>
+                      </div>
+                      <div className="text-lg font-bold text-blue-700">{formatCurrency(origin.wonNewValue, preferredCurrency)}</div>
+                      <div className="text-xs text-blue-600 mt-0.5">{origin.wonNewCount} deals</div>
+                    </div>
+                    <div className="bg-purple-50 rounded-xl p-3 border border-purple-100">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-purple-600 text-sm">↻</span>
+                        <span className="text-xs font-semibold text-purple-700">Won — Carried Forward</span>
+                      </div>
+                      <div className="text-lg font-bold text-purple-700">{formatCurrency(origin.wonCarryValue, preferredCurrency)}</div>
+                      <div className="text-xs text-purple-600 mt-0.5">{origin.wonCarryCount} deals</div>
+                    </div>
+                  </div>
+                  {origin.totalOpenCount > 0 && (
+                    <div className="bg-muted/30 rounded-lg p-3">
+                      <div className="flex items-center justify-between text-xs mb-2">
+                        <span className="text-muted-foreground font-medium">Pipeline Health</span>
+                        <span className="text-muted-foreground">New vs Carry-Forward ratio</span>
+                      </div>
+                      <div className="h-2 rounded-full overflow-hidden bg-amber-100">
+                        <div
+                          className="h-full bg-green-500 rounded-full"
+                          style={{ width: `${Math.round(origin.newCount / origin.totalOpenCount * 100)}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-xs mt-1">
+                        <span className="text-green-600">{Math.round(origin.newCount / origin.totalOpenCount * 100)}% new</span>
+                        <span className="text-amber-600">{Math.round(origin.carryCount / origin.totalOpenCount * 100)}% carry</span>
+                      </div>
+                      {origin.carryCount / origin.totalOpenCount > 0.7 && (
+                        <p className="text-xs text-amber-600 mt-2">
+                          ⚠️ More than 70% of pipeline is carried forward. Focus on generating new deals this month.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Material Group Breakdown */}
             {(() => {

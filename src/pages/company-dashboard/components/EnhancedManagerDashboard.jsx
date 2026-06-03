@@ -41,6 +41,7 @@ import {
   calcChange,
   isPositiveChange,
 } from "../../../utils/dashboardDateUtils";
+import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { Edit2 } from "lucide-react";
 import SalesTargetTable from "../../../components/SalesTargetTable";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
@@ -277,6 +278,12 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       wonDeals:    calcChange(currWon.length,    prevWon.length),
     };
   }, [allDeals, filteredDeals, activeDateRange?.from, activeDateRange?.to]);
+
+  // Origin classification: new pipeline vs carry-forward
+  const originMetrics = useMemo(() => {
+    if (!filteredDeals?.length || !activeDateRange?.from) return null;
+    return classifyDealsByOrigin(filteredDeals, activeDateRange.from);
+  }, [filteredDeals, activeDateRange?.from]);
 
   const filteredActivities = useMemo(() => {
     return (
@@ -1947,6 +1954,38 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   icon="📋"
                 />
               </div>
+
+              {/* Pipeline Origin KPI Cards */}
+              {originMetrics && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                  <div className="bg-white rounded-xl border border-border-tertiary p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="w-9 h-9 rounded-lg bg-green-50 flex items-center justify-center">
+                        <Icon name="Sparkles" size={18} className="text-green-500" />
+                      </div>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-600 font-medium">New</span>
+                    </div>
+                    <div className="text-xl font-bold tabular-nums truncate text-text-primary">
+                      {formatCurrency(originMetrics.newValue || 0)}
+                    </div>
+                    <div className="text-xs text-text-tertiary mt-1">New Pipeline This Period</div>
+                    <div className="text-xs text-green-600 mt-1">{originMetrics.newCount || 0} new deals</div>
+                  </div>
+                  <div className="bg-white rounded-xl border border-border-tertiary p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center">
+                        <Icon name="RefreshCw" size={18} className="text-amber-500" />
+                      </div>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">Carry</span>
+                    </div>
+                    <div className="text-xl font-bold tabular-nums truncate text-text-primary">
+                      {formatCurrency(originMetrics.carryValue || 0)}
+                    </div>
+                    <div className="text-xs text-text-tertiary mt-1">Carried Forward Pipeline</div>
+                    <div className="text-xs text-amber-600 mt-1">{originMetrics.carryCount || 0} carry deals</div>
+                  </div>
+                </div>
+              )}
 
               {/* Metrics Cards - Second Row */}
               {executiveMetrics && (

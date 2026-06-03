@@ -1,3 +1,5 @@
+import { format } from 'date-fns';
+
 /**
  * Returns the primary material group for a deal.
  * When a deal has products from multiple groups, the group
@@ -65,4 +67,77 @@ export function getDealProductSummary(deal, maxItems = 2) {
   const remaining = deal.deal_products.length - maxItems;
   if (remaining > 0) items.push(`+${remaining} more`);
   return items.join(', ');
+}
+
+/**
+ * Determine if a deal is NEW or CARRY_FORWARD for the given period.
+ * NEW          = deal created within this period
+ * CARRY_FORWARD = deal created before this period but active/closing in it
+ */
+export function getDealOrigin(deal, periodFrom) {
+  const originDate = deal.creation_date || deal.created_at;
+  if (!originDate || !periodFrom) return 'new';
+  const created = new Date(originDate);
+  const from    = new Date(periodFrom);
+  created.setHours(0, 0, 0, 0);
+  from.setHours(0, 0, 0, 0);
+  return created >= from ? 'new' : 'carry_forward';
+}
+
+/**
+ * For Won deals — 'won_new' if created this period, 'won_carry' if carried forward.
+ */
+export function getWonDealOrigin(deal, periodFrom) {
+  return getDealOrigin(deal, periodFrom) === 'new' ? 'won_new' : 'won_carry';
+}
+
+/**
+ * Human-readable origin label: "New Jun 2026" or "From Apr 2026".
+ */
+export function getOriginLabel(deal, periodFrom) {
+  const originDate = deal.creation_date || deal.created_at;
+  if (!originDate) return null;
+  const created = new Date(originDate);
+  const origin  = getDealOrigin(deal, periodFrom);
+  return origin === 'new'
+    ? `New ${format(created, 'MMM yyyy')}`
+    : `From ${format(created, 'MMM yyyy')}`;
+}
+
+/**
+ * Classify and summarise a list of deals by origin for analytics.
+ */
+export function classifyDealsByOrigin(deals, periodFrom) {
+  const newDeals   = [];
+  const carryDeals = [];
+  const wonNew     = [];
+  const wonCarry   = [];
+
+  (deals || []).forEach(deal => {
+    const origin = getDealOrigin(deal, periodFrom);
+    if (deal.stage === 'won') {
+      origin === 'new' ? wonNew.push(deal) : wonCarry.push(deal);
+    } else if (deal.stage !== 'lost') {
+      origin === 'new' ? newDeals.push(deal) : carryDeals.push(deal);
+    }
+  });
+
+  const sum = arr => arr.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+
+  return {
+    newDeals,
+    carryDeals,
+    wonNew,
+    wonCarry,
+    newCount:       newDeals.length,
+    carryCount:     carryDeals.length,
+    wonNewCount:    wonNew.length,
+    wonCarryCount:  wonCarry.length,
+    newValue:       sum(newDeals),
+    carryValue:     sum(carryDeals),
+    wonNewValue:    sum(wonNew),
+    wonCarryValue:  sum(wonCarry),
+    totalOpenCount: newDeals.length + carryDeals.length,
+    totalOpenValue: sum(newDeals) + sum(carryDeals),
+  };
 }

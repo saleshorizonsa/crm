@@ -20,8 +20,10 @@ import {
 } from "../../services/supabaseService";
 import { exportToExcel } from "../../utils/exportUtils";
 import { now } from "d3";
+import { format, startOfMonth } from 'date-fns';
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { resolveDateRange } from "../../components/ui/DateRangePicker";
+import { getDealOrigin } from "../../utils/dealGroupUtils";
 
 const SalesPipeline = () => {
   const { t } = useLanguage();
@@ -64,6 +66,7 @@ const SalesPipeline = () => {
   const [trackedKey, setTrackedKey] = useState(location.key);
   const [filters, setFilters] = useState(() => filtersFromLocation(location));
   const [drillDownContext, setDrillDownContext] = useState(null);
+  const [originFilter, setOriginFilter] = useState('all'); // 'all' | 'new' | 'carry_forward'
 
   // Synchronously reset filters when location.key changes (new navigation from dashboard).
   // This runs during render so PipelineFilters always gets the right initialFilters on mount.
@@ -104,7 +107,7 @@ const SalesPipeline = () => {
 
   useEffect(() => {
     applyFilters();
-  }, [deals, filters]); // Apply filters whenever deals or filters change
+  }, [deals, filters, originFilter]); // Apply filters whenever deals or filters change
 
   const loadDeals = async (force = false) => {
     try {
@@ -201,7 +204,13 @@ const SalesPipeline = () => {
 
       if (resolved.startDate && resolved.endDate) {
         filtered = filtered.filter((deal) => {
-          const dateField = deal.stage === "won" ? deal.closed_at : deal.created_at;
+          // Won → closed_at, Lost → closed_at/lost_at, Open → expected_close_date fallback created_at
+          const dateField =
+            deal.stage === 'won'
+              ? (deal.closed_at || deal.created_at)
+            : deal.stage === 'lost'
+              ? (deal.closed_at || deal.lost_at || deal.created_at)
+            : (deal.expected_close_date || deal.created_at);
           if (!dateField) return false;
           const dealDate = new Date(dateField);
           return dealDate >= resolved.startDate && dealDate <= resolved.endDate;
@@ -219,6 +228,16 @@ const SalesPipeline = () => {
         if (!deal.expected_close_date) return false;
         const closeDate = new Date(deal.expected_close_date);
         return closeDate < today;
+      });
+    }
+
+    // Origin filter (skips won/lost)
+    if (originFilter !== 'all') {
+      const periodFrom = filters.customDateRange?.from
+        || format(startOfMonth(new Date()), 'yyyy-MM-dd');
+      filtered = filtered.filter(deal => {
+        if (deal.stage === 'won' || deal.stage === 'lost') return true;
+        return getDealOrigin(deal, periodFrom) === originFilter;
       });
     }
 
@@ -574,6 +593,19 @@ const SalesPipeline = () => {
               onExport={handleExportToCSV}
               initialFilters={filters}
             />
+            {/* Origin filter */}
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-xs text-gray-500">Origin:</span>
+              <select
+                value={originFilter}
+                onChange={e => setOriginFilter(e.target.value)}
+                className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:border-blue-400"
+              >
+                <option value="all">All Origins</option>
+                <option value="new">New This Period</option>
+                <option value="carry_forward">Carried Forward</option>
+              </select>
+            </div>
           </div>
 
           {/* Content View */}
@@ -600,6 +632,10 @@ const SalesPipeline = () => {
                       console.log("Dragging over:", stageId)
                     }
                     onDrop={handleDealStageChange}
+                    activePeriodFrom={
+                      filters.customDateRange?.from ||
+                      format(startOfMonth(new Date()), 'yyyy-MM-dd')
+                    }
                   />
                 ))}
               </div>
@@ -615,6 +651,10 @@ const SalesPipeline = () => {
         <div className="mt-20">
           <PipelineAnalytics
             deals={filteredDeals}
+            activePeriodFrom={
+              filters.customDateRange?.from ||
+              format(startOfMonth(new Date()), 'yyyy-MM-dd')
+            }
             onStageFilter={(stageId) => {
               const newFilters = { ...filters, stage: stageId };
               setFilters(newFilters);
