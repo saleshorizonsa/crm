@@ -1,5 +1,90 @@
 import * as XLSX from "xlsx";
 
+/**
+ * Simplified Excel export for the Reports page drill-down view.
+ * Produces 4 sheets: Deals, By Salesman, By Stage, By Product Group.
+ */
+export function exportReportToExcel({ deals, activeTab, period, filters = {} }) {
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1 — Deal Summary
+  const summaryData = deals.map(d => ({
+    'Deal Title':       d.title || '',
+    'Company':          d.contact?.company_name || '',
+    'Salesman':         d.owner?.full_name || '',
+    'Stage':            d.stage || '',
+    'Amount (SAR)':     parseFloat(d.amount || 0),
+    'Created Date':     d.creation_date || d.created_at?.split('T')[0] || '',
+    'Expected Close':   d.expected_close_date || '',
+    'Closed Date':      d.closed_at?.split('T')[0] || '',
+    'Material Groups':  d.deal_products?.map(dp => dp.product?.material_group).filter(Boolean).join(', ') || '',
+    'Line Total (SAR)': d.deal_products?.reduce((s, dp) => s + parseFloat(dp.line_total || 0), 0) || 0,
+  }));
+  const ws1 = XLSX.utils.json_to_sheet(summaryData);
+  ws1['!cols'] = [
+    { wch: 35 }, { wch: 30 }, { wch: 20 }, { wch: 15 }, { wch: 15 },
+    { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 15 },
+  ];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Deals');
+
+  // Sheet 2 — By Salesman
+  const byRep = {};
+  deals.forEach(d => {
+    const name = d.owner?.full_name || 'Unknown';
+    if (!byRep[name]) byRep[name] = { total: 0, won: 0, wonValue: 0, count: 0 };
+    byRep[name].count++;
+    byRep[name].total += parseFloat(d.amount || 0);
+    if (d.stage === 'won') { byRep[name].won++; byRep[name].wonValue += parseFloat(d.amount || 0); }
+  });
+  const repData = Object.entries(byRep)
+    .map(([name, s]) => ({
+      'Salesman': name, 'Total Deals': s.count, 'Won Deals': s.won,
+      'Revenue (SAR)': s.wonValue, 'Pipeline (SAR)': s.total - s.wonValue,
+      'Win Rate %': s.count > 0 ? Math.round(s.won / s.count * 100) : 0,
+    }))
+    .sort((a, b) => b['Revenue (SAR)'] - a['Revenue (SAR)']);
+  const ws2 = XLSX.utils.json_to_sheet(repData);
+  ws2['!cols'] = [{ wch: 25 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 12 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'By Salesman');
+
+  // Sheet 3 — By Stage
+  const byStage = {};
+  deals.forEach(d => {
+    const stage = d.stage || 'unknown';
+    if (!byStage[stage]) byStage[stage] = { count: 0, value: 0 };
+    byStage[stage].count++; byStage[stage].value += parseFloat(d.amount || 0);
+  });
+  const ws3 = XLSX.utils.json_to_sheet(
+    Object.entries(byStage).map(([stage, s]) => ({ 'Stage': stage, 'Deal Count': s.count, 'Total Value (SAR)': s.value }))
+  );
+  ws3['!cols'] = [{ wch: 15 }, { wch: 12 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, ws3, 'By Stage');
+
+  // Sheet 4 — By Material Group
+  const byGroup = {};
+  deals.forEach(d => {
+    if (d.deal_products?.length) {
+      d.deal_products.forEach(dp => {
+        const g = dp.product?.material_group || 'No Group';
+        if (!byGroup[g]) byGroup[g] = { value: 0 };
+        byGroup[g].value += parseFloat(dp.line_total || 0);
+      });
+    } else {
+      if (!byGroup['No Products']) byGroup['No Products'] = { value: 0 };
+      byGroup['No Products'].value += parseFloat(d.amount || 0);
+    }
+  });
+  const ws4 = XLSX.utils.json_to_sheet(
+    Object.entries(byGroup)
+      .map(([g, s]) => ({ 'Material Group': g, 'Total Value (SAR)': s.value }))
+      .sort((a, b) => b['Total Value (SAR)'] - a['Total Value (SAR)'])
+  );
+  ws4['!cols'] = [{ wch: 25 }, { wch: 20 }];
+  XLSX.utils.book_append_sheet(wb, ws4, 'By Product Group');
+
+  XLSX.writeFile(wb, `JASCO_Report_${period || 'export'}_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
 // ── PDF Export ────────────────────────────────────────────────────────────────
 // Captures the reports content area using html2canvas and builds a multi-page
 // A4 PDF with a branded header on every page.
