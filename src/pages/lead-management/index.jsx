@@ -9,6 +9,11 @@ import LeadDetailModal from "./components/LeadDetailModal";
 import { useAuth } from "../../contexts/AuthContext";
 import { leadService } from "../../services/leadService";
 import { useLanguage } from "../../i18n";
+import CustomerAccountsTab from './components/CustomerAccountsTab';
+import AnalyticsTab        from './components/AnalyticsTab';
+import ImportTab           from './components/ImportTab';
+import { customerHistoryService } from '../../services/supabaseService';
+import DealModal from '../sales-pipeline/components/DealModal';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -141,6 +146,14 @@ const LeadManagement = () => {
   const [bulkAssignTo,    setBulkAssignTo]    = useState("");
   const [companyUsers,    setCompanyUsers]    = useState([]);
 
+  // Planning tabs
+  const [mainTab,         setMainTab]         = useState('accounts');
+  const [accounts,        setAccounts]        = useState([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [importBatches,   setImportBatches]   = useState([]);
+  const [showDealModal,   setShowDealModal]   = useState(false);
+  const [initialDealData, setInitialDealData] = useState(null);
+
   const loadingRef = useRef(false);
 
   // ── Load ───────────────────────────────────────────────────────────────────
@@ -196,6 +209,13 @@ const LeadManagement = () => {
   useEffect(() => {
     if (user?.id && company?.id) loadLeads();
   }, [filters]);
+
+  // Planning tabs data loader
+  useEffect(() => {
+    if (mainTab === 'accounts' && company?.id) loadAccounts();
+    if (mainTab === 'import'   && company?.id) loadImportBatches();
+    if (mainTab === 'analytics'&& company?.id && accounts.length === 0) loadAccounts();
+  }, [mainTab, company?.id]); // eslint-disable-line
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const filteredLeads = useMemo(() => {
@@ -347,6 +367,46 @@ const LeadManagement = () => {
     setFilter("status", filters.status === status ? "" : status);
   };
 
+  const loadAccounts = async () => {
+    if (!company?.id) return;
+    setAccountsLoading(true);
+    const { data } = await customerHistoryService.getCustomerAccounts({
+      companyId: company.id, userId: user.id, role,
+    });
+    setAccounts(data || []);
+    setAccountsLoading(false);
+  };
+
+  const loadImportBatches = async () => {
+    if (!company?.id) return;
+    const { data } = await customerHistoryService.getImportBatches(company.id);
+    setImportBatches(data || []);
+  };
+
+  const handleImportHistory = async ({ filename, records }) => {
+    const result = await customerHistoryService.importBatch({
+      companyId: company.id, userId: user.id, filename, records,
+    });
+    await loadAccounts();
+    await loadImportBatches();
+    return result;
+  };
+
+  const handleDeleteBatch = async (batchId) => {
+    await customerHistoryService.deleteBatch(batchId);
+    await loadImportBatches();
+    await loadAccounts();
+  };
+
+  const handleCreateDealFromAccount = (account) => {
+    setInitialDealData({
+      title: `Regular: ${account.customer_name}`,
+      contact_id: account.contact_id || null,
+      owner_id:   account.owner_id || user.id,
+    });
+    setShowDealModal(true);
+  };
+
   if (!user) return <div>{t("common.loading")}</div>;
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -354,6 +414,80 @@ const LeadManagement = () => {
     <div className="min-h-screen bg-gray-50">
       <Header />
 
+      {/* Top-level Planning tabs */}
+      <div className="bg-white border-b border-gray-200 px-6">
+        <div className="flex gap-1 overflow-x-auto">
+          {[
+            { id: 'accounts',  label: 'Customer Accounts', icon: 'Building2' },
+            { id: 'analytics', label: 'Analytics & Top 10', icon: 'BarChart3' },
+            { id: 'import',    label: 'Import History',    icon: 'Upload' },
+            { id: 'leads',     label: 'Leads',             icon: 'Users' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setMainTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                mainTab === tab.id
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Icon name={tab.icon} size={15} />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Customer Accounts tab */}
+      {mainTab === 'accounts' && (
+        <main className="p-6">
+          <div className="mb-4">
+            <h1 className="text-xl font-semibold text-gray-900">Customer Accounts</h1>
+            <p className="text-sm text-gray-500 mt-0.5">Historical customer data with ABC classification and dormancy tracking</p>
+          </div>
+          <CustomerAccountsTab
+            accounts={accounts}
+            loading={accountsLoading}
+            role={role}
+            onCreateDeal={handleCreateDealFromAccount}
+          />
+        </main>
+      )}
+
+      {/* Analytics tab */}
+      {mainTab === 'analytics' && (
+        <main className="p-6">
+          <div className="mb-4">
+            <h1 className="text-xl font-semibold text-gray-900">Analytics & Top 10</h1>
+            <p className="text-sm text-gray-500 mt-0.5">Revenue analytics, top customers, and dormant account alerts</p>
+          </div>
+          <AnalyticsTab
+            accounts={accounts}
+            role={role}
+            onCreateDeal={handleCreateDealFromAccount}
+          />
+        </main>
+      )}
+
+      {/* Import tab */}
+      {mainTab === 'import' && (
+        <main className="p-6">
+          <div className="mb-4">
+            <h1 className="text-xl font-semibold text-gray-900">Import Customer History</h1>
+            <p className="text-sm text-gray-500 mt-0.5">Upload Excel or CSV files with historical sales invoice data</p>
+          </div>
+          <ImportTab
+            onImport={handleImportHistory}
+            importBatches={importBatches}
+            onDeleteBatch={handleDeleteBatch}
+            role={role}
+          />
+        </main>
+      )}
+
+      {/* Leads tab — existing content unchanged */}
+      {mainTab === 'leads' && (
       <main className="p-6 space-y-5">
         {/* Page header */}
         <div className="flex items-start justify-between gap-4">
@@ -735,8 +869,9 @@ const LeadManagement = () => {
           </div>
         )}
       </main>
+      )}
 
-      {/* Apollo Search Panel */}
+      {/* Apollo Search Panel — always mounted */}
       <ApolloSearchPanel
         isOpen={showApolloPanel}
         onClose={() => setShowApolloPanel(false)}
@@ -744,7 +879,7 @@ const LeadManagement = () => {
         companyId={company?.id}
       />
 
-      {/* Lead detail / add modal */}
+      {/* Lead detail / add modal — always mounted */}
       <LeadDetailModal
         lead={selectedLead}
         isOpen={showModal}
@@ -754,6 +889,17 @@ const LeadManagement = () => {
         onConvert={handleConvertLead}
         users={companyUsers}
         initialTab={modalInitialTab}
+      />
+
+      {/* Deal Modal for creating deals from accounts */}
+      <DealModal
+        deal={initialDealData}
+        isOpen={showDealModal}
+        onSave={async (dealData) => { setShowDealModal(false); setInitialDealData(null); }}
+        onDelete={() => {}}
+        onClose={() => { setShowDealModal(false); setInitialDealData(null); }}
+        contacts={[]}
+        users={companyUsers}
       />
     </div>
   );

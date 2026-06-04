@@ -5770,3 +5770,130 @@ export const materialGroupService = {
     }
   },
 };
+
+// ── Customer History Service ──────────────────────────────────────────────────
+export const customerHistoryService = {
+
+  async importBatch({ companyId, userId, filename, records }) {
+    const { data: batch, error: batchErr } = await supabase
+      .from('import_batches')
+      .insert({ company_id: companyId, filename, imported_by: userId, record_count: records.length, status: 'processing' })
+      .select('id')
+      .single();
+
+    if (batchErr) return { error: batchErr, imported: 0 };
+    const batchId = batch.id;
+
+    const { data: users } = await supabase.from('users').select('id, full_name').eq('company_id', companyId).eq('is_active', true);
+    const userMap = {};
+    (users || []).forEach(u => { userMap[u.full_name.toLowerCase().trim()] = u.id; });
+
+    const { data: contacts } = await supabase.from('contacts').select('id, company_name').eq('company_id', companyId);
+    const contactMap = {};
+    (contacts || []).forEach(c => { if (c.company_name) contactMap[c.company_name.toLowerCase().trim()] = c.id; });
+
+    const rows = records.map(r => {
+      const salesmanKey = (r.salesman_name || '').toLowerCase().trim();
+      const customerKey = (r.customer_name || '').toLowerCase().trim();
+      return {
+        company_id:       companyId,
+        customer_name:    r.customer_name || '',
+        contact_id:       contactMap[customerKey] || null,
+        salesman_name:    r.salesman_name || '',
+        owner_id:         userMap[salesmanKey] || null,
+        invoice_number:   r.invoice_number || '',
+        invoice_date:     r.invoice_date || null,
+        amount_excl_vat:  parseFloat(r.amount_excl_vat || 0),
+        item_description: r.item_description || '',
+        product_group:    r.product_group || '',
+        import_batch_id:  batchId,
+      };
+    });
+
+    let imported = 0; let skipped = 0;
+    for (let i = 0; i < rows.length; i += 100) {
+      const chunk = rows.slice(i, i + 100);
+      const { data, error } = await supabase.from('customer_history').insert(chunk).select('id');
+      if (!error) imported += data?.length || 0;
+      else { skipped += chunk.length; console.error('Chunk error:', error); }
+    }
+
+    await supabase.from('import_batches').update({ status: 'completed', record_count: imported }).eq('id', batchId);
+
+    return { batchId, imported, skipped, matched: rows.filter(r => r.contact_id).length, error: null };
+  },
+
+  async getCustomerAccounts({ companyId, userId, role }) {
+    let query = supabase
+      .from('customer_history')
+      .select('customer_name, salesman_name, owner_id, amount_excl_vat, invoice_number, invoice_date, item_description, product_group, contact_id')
+      .eq('company_id', companyId)
+      .order('invoice_date', { ascending: false });
+
+    if (role === 'salesman') query = query.eq('owner_id', userId);
+
+    const { data, error } = await query;
+    if (error) return { data: [], error };
+
+    const accountMap = {};
+    (data || []).forEach(row => {
+      const key = (row.customer_name || '').toLowerCase().trim();
+      if (!accountMap[key]) {
+        accountMap[key] = { customer_name: row.customer_name, contact_id: row.contact_id, owner_id: row.owner_id, salesman_name: row.salesman_name, total_spend: 0, invoice_count: 0, product_groups: new Set(), last_invoice_date: null, invoices: [] };
+      }
+      const acct = accountMap[key];
+      acct.total_spend += parseFloat(row.amount_excl_vat || 0);
+      acct.invoice_count++;
+      if (row.product_group) acct.product_groups.add(row.product_group);
+      if (!acct.last_invoice_date || row.invoice_date > acct.last_invoice_date) acct.last_invoice_date = row.invoice_date;
+      acct.invoices.push(row);
+    });
+
+    const accounts = Object.values(accountMap)
+      .map(a => ({ ...a, product_groups: [...a.product_groups] }))
+      .sort((a, b) => b.total_spend - a.total_spend);
+
+    const total = accounts.length;
+    accounts.forEach((a, i) => {
+      a.abc_rank = i < total * 0.2 ? 'A' : i < total * 0.5 ? 'B' : 'C';
+      if (a.last_invoice_date) {
+        const daysSince = Math.floor((new Date() - new Date(a.last_invoice_date)) / 86400000);
+        a.days_since_purchase = daysSince;
+        a.is_dormant  = daysSince > 90;
+        a.is_at_risk  = daysSince > 60 && daysSince <= 90;
+      }
+    });
+
+    return { data: accounts, error: null };
+  },
+
+  async getImportBatches(companyId) {
+    const { data, error } = await supabase
+      .from('import_batches')
+      .select('id, filename, record_count, status, imported_at, importer:users!imported_by(full_name)')
+      .eq('company_id', companyId)
+      .order('imported_at', { ascending: false });
+    return { data: data || [], error };
+  },
+
+  async deleteBatch(batchId) {
+    await supabase.from('customer_history').delete().eq('import_batch_id', batchId);
+    const { error } = await supabase.from('import_batches').delete().eq('id', batchId);
+    return { error };
+  },
+
+  async getTopCustomers({ companyId, userId, role, limit = 10 }) {
+    let query = supabase.from('customer_history').select('customer_name, amount_excl_vat, product_group, owner_id').eq('company_id', companyId);
+    if (role === 'salesman') query = query.eq('owner_id', userId);
+    const { data } = await query;
+    const map = {};
+    (data || []).forEach(r => {
+      const key = (r.customer_name || '').toLowerCase().trim();
+      if (!map[key]) map[key] = { name: r.customer_name, total: 0, count: 0, groups: new Set() };
+      map[key].total += parseFloat(r.amount_excl_vat || 0);
+      map[key].count++;
+      if (r.product_group) map[key].groups.add(r.product_group);
+    });
+    return Object.values(map).map(m => ({ ...m, groups: [...m.groups] })).sort((a, b) => b.total - a.total).slice(0, limit);
+  },
+};
