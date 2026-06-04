@@ -38,7 +38,7 @@ const PRODUCT_CONFIG = {
 };
 
 const SOURCE_CONFIG = {
-  apollo:   { label: "Apollo",   bg: "bg-blue-50",   text: "text-blue-600"  },
+  apollo:   { label: "Radar",    bg: "bg-blue-50",   text: "text-blue-600"  },
   manual:   { label: "Manual",   bg: "bg-gray-50",   text: "text-gray-600"  },
   import:   { label: "Import",   bg: "bg-orange-50", text: "text-orange-600"},
   referral: { label: "Referral", bg: "bg-pink-50",   text: "text-pink-600"  },
@@ -593,7 +593,7 @@ const LeadManagement = () => {
               className="px-3 py-2 border border-border rounded-md bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary h-9"
             >
               <option value="">{t("leadsPage.allSources")}</option>
-              <option value="apollo">Apollo</option>
+              <option value="apollo">Radar</option>
               <option value="manual">Manual</option>
               <option value="import">Import</option>
               <option value="referral">Referral</option>

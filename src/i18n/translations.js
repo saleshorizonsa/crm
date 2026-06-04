@@ -2579,10 +2579,10 @@ export const translations = {
     // Lead Management (granular)
     leadsPage: {
       title: "Lead Management",
-      subtitle: "Prospect pipeline powered by Apollo.io",
+      subtitle: "Prospect pipeline powered by Radar",
       conversionFailed: "Conversion failed",
       addManually: "Add manually",
-      searchApollo: "Search Apollo",
+      searchApollo: "Search Radar",
       searchPlaceholder: "Search name or company…",
       statusNew: "New",
       statusContacted: "Contacted",
@@ -2595,7 +2595,7 @@ export const translations = {
       viewDetails: "View details",
       noLeads: "No leads yet",
       noLeadsFilter: "No leads match the current filters.",
-      noLeadsHint: "Search Apollo to find prospects or add one manually.",
+      noLeadsHint: "Search Radar to find prospects or add one manually.",
       allStatuses: "All statuses",
       allRegions: "All regions",
       allProducts: "All products",
@@ -5260,10 +5260,10 @@ export const translations = {
     // Lead Management (granular)
     leadsPage: {
       title: "إدارة العملاء المحتملين",
-      subtitle: "خط أنابيب العملاء المحتملين مدعوم بـ Apollo.io",
+      subtitle: "خط أنابيب العملاء المحتملين مدعوم بالرادار",
       conversionFailed: "فشل التحويل",
       addManually: "إضافة يدوياً",
-      searchApollo: "البحث في Apollo",
+      searchApollo: "البحث في رادار",
       searchPlaceholder: "ابحث بالاسم أو الشركة...",
       statusNew: "جديد",
       statusContacted: "تم التواصل",
@@ -5276,7 +5276,7 @@ export const translations = {
       viewDetails: "عرض التفاصيل",
       noLeads: "لا يوجد عملاء محتملون بعد",
       noLeadsFilter: "لا توجد نتائج تطابق الفلاتر الحالية.",
-      noLeadsHint: "ابحث في Apollo للعثور على عملاء محتملين أو أضف واحداً يدوياً.",
+      noLeadsHint: "ابحث في رادار للعثور على عملاء محتملين أو أضف واحداً يدوياً.",
       allStatuses: "جميع الحالات",
       allRegions: "جميع المناطق",
       allProducts: "جميع المنتجات",

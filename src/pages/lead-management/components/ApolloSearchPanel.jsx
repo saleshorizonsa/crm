@@ -63,7 +63,7 @@ const ApolloSearchPanel = ({ isOpen, onClose, onImport, companyId }) => {
 
     setLoading(false);
     if (err) {
-      setError("Apollo search failed: " + (err.message || String(err)));
+      setError("Radar search failed: " + (err.message || String(err)));
       return;
     }
     setResults(res || []);
@@ -109,7 +109,7 @@ const ApolloSearchPanel = ({ isOpen, onClose, onImport, companyId }) => {
               <Icon name="Zap" size={15} className="text-blue-600" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-gray-900">Apollo.io Search</h2>
+              <h2 className="text-base font-semibold text-gray-900">Radar Search</h2>
               <p className="text-xs text-gray-500">Find and import prospects</p>
             </div>
           </div>
@@ -176,7 +176,7 @@ const ApolloSearchPanel = ({ isOpen, onClose, onImport, companyId }) => {
           >
             {loading
               ? <><Icon name="Loader2" size={13} className="animate-spin" />Searching…</>
-              : <><Icon name="Search" size={13} />Search Apollo</>}
+              : <><Icon name="Search" size={13} />Search Radar</>}
           </Button>
         </div>
 
@@ -185,7 +185,7 @@ const ApolloSearchPanel = ({ isOpen, onClose, onImport, companyId }) => {
           {loading ? (
             <div className="flex flex-col items-center justify-center h-48 gap-3">
               <Icon name="Loader2" size={28} className="text-blue-500 animate-spin" />
-              <p className="text-sm text-gray-500">Searching Apollo.io…</p>
+              <p className="text-sm text-gray-500">Searching Radar…</p>
               <p className="text-xs text-gray-400">This may take a few seconds</p>
             </div>
           ) : !searched ? (
