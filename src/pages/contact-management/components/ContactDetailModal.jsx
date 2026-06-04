@@ -2,8 +2,10 @@ import React, { useState, useEffect } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
-import { contactService } from "../../../services/supabaseService";
+import { contactService, activityService } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
+import LogActivityModal from "../../../components/LogActivityModal";
+import ActivityTimeline from "../../../components/ActivityTimeline";
 
 const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
   const { t } = useLanguage();
@@ -20,6 +22,10 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteReferences, setDeleteReferences] = useState(null);
   const [validationErrors, setValidationErrors] = useState({});
+  const [contactActivities,        setContactActivities]        = useState([]);
+  const [contactActivitiesLoading, setContactActivitiesLoading] = useState(false);
+  const [showLogActivityModal,     setShowLogActivityModal]     = useState(false);
+  const [showActivitySection,      setShowActivitySection]      = useState(false);
 
   useEffect(() => {
     if (contact) {
@@ -37,6 +43,18 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
     setShowDeleteConfirm(false);
     setDeleteReferences(null);
   }, [contact, isOpen]);
+
+  async function loadContactActivities() {
+    if (!contact?.id) return;
+    setContactActivitiesLoading(true);
+    const { data } = await activityService.getActivitiesForContact(contact.id);
+    setContactActivities(data || []);
+    setContactActivitiesLoading(false);
+  }
+
+  useEffect(() => {
+    if (contact?.id && showActivitySection) loadContactActivities();
+  }, [contact?.id, showActivitySection]); // eslint-disable-line
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -240,6 +258,52 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
               </div>
             </div>
 
+            {/* Activity History — only shown when editing an existing contact */}
+            {contact?.id && (
+              <div className="px-6 pb-4">
+                <div className="border border-border rounded-xl overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setShowActivitySection(v => !v)}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon name="Activity" size={14} className="text-blue-600" />
+                      <span className="text-sm font-medium text-card-foreground">Activity History</span>
+                      {contactActivities.length > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">
+                          {contactActivities.length}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); setShowLogActivityModal(true); }}
+                        className="text-xs px-2.5 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1"
+                      >
+                        <Icon name="Plus" size={11} /> Log
+                      </button>
+                      <Icon name={showActivitySection ? 'ChevronUp' : 'ChevronDown'} size={13} className="text-muted-foreground" />
+                    </div>
+                  </button>
+                  {showActivitySection && (
+                    <div className="p-4 bg-white">
+                      <ActivityTimeline
+                        activities={contactActivities}
+                        loading={contactActivitiesLoading}
+                        showContact={false}
+                        onDelete={async (id) => {
+                          await activityService.deleteActivity(id);
+                          loadContactActivities();
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-between items-center p-6 border-t border-border">
               <div>
                 {contact && (
@@ -271,6 +335,19 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
               </div>
             </div>
           </form>
+
+          {/* Log Activity Modal */}
+          <LogActivityModal
+            isOpen={showLogActivityModal}
+            onClose={() => setShowLogActivityModal(false)}
+            onSaved={(newActivity) => {
+              setContactActivities(prev => [newActivity, ...prev]);
+              if (!showActivitySection) setShowActivitySection(true);
+            }}
+            dealId={null}
+            contactId={contact?.id}
+            contactName={contact ? `${contact.first_name} ${contact.last_name}${contact.company_name ? ' — ' + contact.company_name : ''}` : ''}
+          />
 
           {/* Delete Confirmation Modal */}
           {showDeleteConfirm && (

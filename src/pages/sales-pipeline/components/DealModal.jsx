@@ -5,6 +5,8 @@ import Input from "../../../components/ui/Input";
 import Select from "../../../components/ui/Select";
 import LostReasonModal from "./LostReasonModal";
 import MeetingModal from "../../calendar/components/MeetingModal";
+import LogActivityModal from "../../../components/LogActivityModal";
+import ActivityTimeline from "../../../components/ActivityTimeline";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
@@ -16,6 +18,7 @@ import {
   uomService,
   salesTargetService,
   adminService,
+  activityService,
 } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
 
@@ -393,6 +396,12 @@ const DealModal = ({
 
   // Groups come from material_groups admin table (set by loadAllProducts)
   const productGroups = useMemo(() => allGroupNames, [allGroupNames]);
+
+  // Activity Log state
+  const [dealActivities,        setDealActivities]        = useState([]);
+  const [activitiesLoading,     setActivitiesLoading]     = useState(false);
+  const [showActivityLog,       setShowActivityLog]       = useState(false);
+  const [showLogActivityModal,  setShowLogActivityModal]  = useState(false);
 
   // Filter by search only — group filtering is done at the DB query level
   const filteredProducts = useMemo(() => {
@@ -1071,6 +1080,19 @@ const DealModal = ({
     }
   };
 
+  // Load activities for existing deals
+  async function loadDealActivities() {
+    if (!deal?.id) return;
+    setActivitiesLoading(true);
+    const { data } = await activityService.getActivitiesForDeal(deal.id);
+    setDealActivities(data || []);
+    setActivitiesLoading(false);
+  }
+
+  useEffect(() => {
+    if (isOpen && deal?.id && showActivityLog) loadDealActivities();
+  }, [isOpen, deal?.id, showActivityLog]); // eslint-disable-line
+
   if (!isOpen) return null;
 
   return (
@@ -1591,7 +1613,78 @@ const DealModal = ({
               </div>
             </div>
           </div>
+
+          {/* Activity Log — only shown when editing an existing deal */}
+          {deal?.id && (
+            <div className="border border-border rounded-xl overflow-hidden">
+              {/* Toggle header */}
+              <button
+                type="button"
+                onClick={() => setShowActivityLog(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <Icon name="Activity" size={15} className="text-blue-600" />
+                  <span className="text-sm font-medium text-card-foreground">Activity Log</span>
+                  {dealActivities.length > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">
+                      {dealActivities.length}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); setShowLogActivityModal(true); }}
+                    className="text-xs px-2.5 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1"
+                  >
+                    <Icon name="Plus" size={12} /> Log
+                  </button>
+                  <Icon name={showActivityLog ? 'ChevronUp' : 'ChevronDown'} size={14} className="text-muted-foreground" />
+                </div>
+              </button>
+
+              {showActivityLog && (
+                <div className="p-4 bg-white">
+                  {dealActivities.length === 0 && !activitiesLoading ? (
+                    <div className="text-center py-6">
+                      <p className="text-sm text-muted-foreground">No activities logged yet</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowLogActivityModal(true)}
+                        className="mt-2 text-sm text-blue-600 hover:underline"
+                      >
+                        Log first activity
+                      </button>
+                    </div>
+                  ) : (
+                    <ActivityTimeline
+                      activities={dealActivities}
+                      loading={activitiesLoading}
+                      onDelete={async (id) => {
+                        await activityService.deleteActivity(id);
+                        loadDealActivities();
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
+
+        {/* Log Activity Modal */}
+        <LogActivityModal
+          isOpen={showLogActivityModal}
+          onClose={() => setShowLogActivityModal(false)}
+          onSaved={(newActivity) => {
+            setDealActivities(prev => [newActivity, ...prev]);
+            if (!showActivityLog) setShowActivityLog(true);
+          }}
+          dealId={deal?.id}
+          contactId={deal?.contact_id}
+          contactName={deal?.contact?.company_name || deal?.title || ''}
+        />
 
         {/* Delete Confirmation Modal */}
         {showDeleteConfirm && (

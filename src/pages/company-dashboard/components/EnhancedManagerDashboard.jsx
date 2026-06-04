@@ -32,7 +32,7 @@ import ForecastAISummary from "./forecast/ForecastAISummary";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
 import { useLanguage } from "../../../i18n";
-import { format, startOfMonth } from 'date-fns';
+import { format, startOfMonth, startOfWeek } from 'date-fns';
 import QuickDateSelector from '../../../components/QuickDateSelector';
 import {
   buildDateRange,
@@ -284,6 +284,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     if (!filteredDeals?.length || !activeDateRange?.from) return null;
     return classifyDealsByOrigin(filteredDeals, activeDateRange.from);
   }, [filteredDeals, activeDateRange?.from]);
+  const [teamActivityData,  setTeamActivityData]  = useState([]);
 
   const filteredActivities = useMemo(() => {
     return (
@@ -711,6 +712,22 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       await loadPipelineData();
       await loadActionItems();
       await loadSalesTargets();
+
+      // Team activity this week
+      try {
+        const weekStart = format(startOfWeek(new Date()), "yyyy-MM-dd");
+        const todayStr  = format(new Date(), "yyyy-MM-dd") + 'T23:59:59';
+        const teamIds = (uniqueTeam || []).map(s => s.id).concat(user?.id ? [user.id] : []);
+        if (teamIds.length > 0 && company?.id) {
+          const { data: actData } = await activityService.getTeamActivitySummary({
+            companyId: company.id,
+            ownerIds:  teamIds,
+            dateFrom:  weekStart,
+            dateTo:    todayStr,
+          });
+          setTeamActivityData(actData || []);
+        }
+      } catch (e) { console.error('Team activity fetch error:', e); }
     } catch (error) {
       console.error("Error loading manager data:", error);
     } finally {
@@ -1983,6 +2000,44 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     </div>
                     <div className="text-xs text-text-tertiary mt-1">Carried Forward Pipeline</div>
                     <div className="text-xs text-amber-600 mt-1">{originMetrics.carryCount || 0} carry deals</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Team Activity This Week */}
+              {teamActivityData.length > 0 && (
+                <div className="bg-white rounded-xl border border-border-tertiary p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                      <Icon name="Activity" size={16} className="text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-text-primary">Team Activity This Week</h3>
+                      <p className="text-xs text-text-tertiary">{teamActivityData.reduce((s, m) => s + m.total, 0)} total activities</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {(allSubordinates || []).concat(user ? [{ id: user.id, full_name: userProfile?.full_name, role: userProfile?.role }] : []).map(member => {
+                      const mData = teamActivityData.find(a => a.owner?.id === member.id);
+                      const count = mData?.total || 0;
+                      return (
+                        <div key={member.id} className={`flex items-center justify-between p-2.5 rounded-xl border ${count === 0 ? 'bg-amber-50/50 border-amber-100' : 'bg-background-secondary border-border-tertiary'}`}>
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-full bg-white border border-border-secondary flex items-center justify-center text-xs font-semibold text-text-secondary">
+                              {(member.full_name || '?').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-text-primary">{member.full_name}</p>
+                              <p className="text-xs text-text-tertiary capitalize">{member.role}</p>
+                            </div>
+                          </div>
+                          {count === 0
+                            ? <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">No activity</span>
+                            : <div className="text-right"><p className="text-sm font-semibold text-text-primary">{count}</p><p className="text-xs text-text-tertiary">activities</p></div>
+                          }
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

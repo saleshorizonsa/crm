@@ -45,6 +45,7 @@ import {
   syncDropdownsFromRange,
 } from "../../../utils/dashboardDateUtils";
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
+import LogActivityModal from '../../../components/LogActivityModal';
 
 const EnhancedSalesmanDashboard = ({
   viewAsUser = null,
@@ -216,6 +217,8 @@ const EnhancedSalesmanDashboard = ({
     if (!filteredDeals?.length || !activeDateRange?.from) return null;
     return classifyDealsByOrigin(filteredDeals, activeDateRange.from);
   }, [filteredDeals, activeDateRange?.from]);
+  const [todayActivities,  setTodayActivities]  = useState([]);
+  const [showLogModal,     setShowLogModal]      = useState(false);
 
   const filteredTasks = useMemo(() => {
     const from = new Date(activeDateRange.from + 'T00:00:00');
@@ -760,6 +763,18 @@ const EnhancedSalesmanDashboard = ({
       await loadActionItems();
       await loadSalesTargets();
       await loadPendingTasks();
+
+      // Today's activities
+      try {
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        const { data: actData } = await activityService.getMyActivities({
+          userId:    user.id,
+          companyId: company.id,
+          dateFrom:  todayStr,
+          dateTo:    todayStr + 'T23:59:59',
+        });
+        setTodayActivities(actData || []);
+      } catch (e) { console.error('Activity fetch error:', e); }
     } catch (error) {
       console.error("Error loading salesman data:", error);
     } finally {
@@ -1254,6 +1269,35 @@ const EnhancedSalesmanDashboard = ({
                 </div>
               </div>
             )}
+
+            {/* Today's Activity */}
+              <div
+                className={`bg-white rounded-xl border p-5 cursor-pointer transition-colors hover:bg-background-secondary ${todayActivities.length === 0 ? 'border-amber-200 bg-amber-50/30' : 'border-border-tertiary'}`}
+                onClick={() => setShowLogModal(true)}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center">
+                    <Icon name="Activity" size={18} className="text-blue-600" />
+                  </div>
+                  <Icon name="Plus" size={16} className="text-blue-500" />
+                </div>
+                <div className={`text-xl font-bold tabular-nums truncate leading-tight ${todayActivities.length === 0 ? 'text-amber-600' : 'text-text-primary'}`}>
+                  {todayActivities.length}
+                </div>
+                <div className="text-xs text-text-tertiary mt-1">
+                  {todayActivities.length === 0 ? 'No activity today — tap to log' : 'Activities logged today'}
+                </div>
+              </div>
+
+              {/* Quick Log Activity Modal */}
+              <LogActivityModal
+                isOpen={showLogModal}
+                onClose={() => setShowLogModal(false)}
+                onSaved={(a) => setTodayActivities(p => [a, ...p])}
+                dealId={null}
+                contactId={null}
+                contactName=""
+              />
 
             {!targetMetrics?.hasActiveTarget && (
               <div className="mt-4 pt-4 border-t text-center text-gray-500">

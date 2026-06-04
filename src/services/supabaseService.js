@@ -2637,6 +2637,122 @@ export const activityService = {
       return { data: [], count: 0, totalPages: 0, error };
     }
   },
+
+  // ── Visit-Log / Activity-Tracking helpers ──────────────────────────────────
+
+  TYPES: [
+    { value: 'visit',    label: 'Client Visit',       icon: 'MapPin'        },
+    { value: 'call',     label: 'Phone Call',          icon: 'Phone'         },
+    { value: 'whatsapp', label: 'WhatsApp',            icon: 'MessageCircle' },
+    { value: 'email',    label: 'Email',               icon: 'Mail'          },
+    { value: 'meeting',  label: 'Meeting',             icon: 'Users'         },
+    { value: 'demo',     label: 'Demo / Presentation', icon: 'Monitor'       },
+    { value: 'followup', label: 'Follow-up',           icon: 'RefreshCw'     },
+    { value: 'note',     label: 'Note',                icon: 'FileText'      },
+  ],
+
+  OUTCOMES: [
+    { value: 'positive',      label: 'Positive',        color: 'green' },
+    { value: 'neutral',       label: 'Neutral',         color: 'gray'  },
+    { value: 'followup',      label: 'Needs Follow-up', color: 'amber' },
+    { value: 'not_interested',label: 'Not Interested',  color: 'red'   },
+  ],
+
+  getTypeConfig(type) {
+    return this.TYPES.find(t => t.value === type) || this.TYPES[7];
+  },
+
+  getOutcomeConfig(outcome) {
+    return this.OUTCOMES.find(o => o.value === outcome) || null;
+  },
+
+  async logActivity({ companyId, userId, contactId, dealId, activityType, description, outcome, nextAction, nextActionDate, durationMinutes }) {
+    const { data, error } = await supabase
+      .from('activities')
+      .insert({
+        company_id:       companyId,
+        owner_id:         userId,
+        contact_id:       contactId        || null,
+        deal_id:          dealId           || null,
+        activity_type:    activityType     || 'note',
+        description:      description      || '',
+        outcome:          outcome          || null,
+        next_action:      nextAction       || null,
+        next_action_date: nextActionDate   || null,
+        duration_minutes: durationMinutes  || null,
+        created_at:       new Date().toISOString(),
+      })
+      .select(`id, activity_type, description, outcome, next_action, next_action_date, duration_minutes, created_at,
+               owner:users!owner_id(id, full_name, avatar_url),
+               contact:contacts!contact_id(id, first_name, last_name, company_name)`)
+      .single();
+    return { data, error };
+  },
+
+  async getActivitiesForDeal(dealId) {
+    const { data, error } = await supabase
+      .from('activities')
+      .select(`id, activity_type, description, outcome, next_action, next_action_date, duration_minutes, created_at,
+               owner:users!owner_id(id, full_name, avatar_url)`)
+      .eq('deal_id', dealId)
+      .order('created_at', { ascending: false });
+    return { data: data || [], error };
+  },
+
+  async getActivitiesForContact(contactId) {
+    const { data, error } = await supabase
+      .from('activities')
+      .select(`id, activity_type, description, outcome, next_action, next_action_date, duration_minutes, created_at, deal_id,
+               owner:users!owner_id(id, full_name, avatar_url)`)
+      .eq('contact_id', contactId)
+      .order('created_at', { ascending: false });
+    return { data: data || [], error };
+  },
+
+  async getTeamActivitySummary({ companyId, ownerIds, dateFrom, dateTo }) {
+    const { data, error } = await supabase
+      .from('activities')
+      .select(`id, activity_type, outcome, created_at, owner_id,
+               owner:users!owner_id(id, full_name, avatar_url)`)
+      .eq('company_id', companyId)
+      .in('owner_id', ownerIds)
+      .gte('created_at', dateFrom)
+      .lte('created_at', dateTo)
+      .order('created_at', { ascending: false });
+
+    if (error) return { data: [], error };
+
+    const byOwner = {};
+    (data || []).forEach(a => {
+      const id = a.owner_id;
+      if (!byOwner[id]) byOwner[id] = { owner: a.owner, total: 0, byType: {}, byOutcome: {}, lastActivity: null, activities: [] };
+      byOwner[id].total++;
+      byOwner[id].byType[a.activity_type] = (byOwner[id].byType[a.activity_type] || 0) + 1;
+      if (a.outcome) byOwner[id].byOutcome[a.outcome] = (byOwner[id].byOutcome[a.outcome] || 0) + 1;
+      if (!byOwner[id].lastActivity) byOwner[id].lastActivity = a.created_at;
+      byOwner[id].activities.push(a);
+    });
+
+    return { data: Object.values(byOwner).sort((a, b) => b.total - a.total), error: null };
+  },
+
+  async getMyActivities({ userId, companyId, dateFrom, dateTo }) {
+    const { data, error } = await supabase
+      .from('activities')
+      .select(`id, activity_type, description, outcome, next_action, next_action_date, duration_minutes, created_at, deal_id,
+               contact:contacts!contact_id(id, first_name, last_name, company_name)`)
+      .eq('owner_id', userId)
+      .eq('company_id', companyId)
+      .gte('created_at', dateFrom)
+      .lte('created_at', dateTo)
+      .order('created_at', { ascending: false });
+    return { data: data || [], error };
+  },
+
+  async deleteActivity(activityId) {
+    const { error } = await supabase.from('activities').delete().eq('id', activityId);
+    return { error };
+  },
 };
 
 // ========================================
