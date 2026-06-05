@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Icon from "../../../components/AppIcon";
+import { supabase } from "../../../lib/supabase";
 
 const CompanyBranding = ({ selectedCompany = "jasco-group" }) => {
   const companyThemes = {
@@ -40,30 +41,73 @@ const CompanyBranding = ({ selectedCompany = "jasco-group" }) => {
   const currentTheme =
     companyThemes?.[selectedCompany] || companyThemes?.["jasco-group"];
 
+  // Try to load the real uploaded logo + branding for this company (best-effort).
+  const [dbBrand, setDbBrand] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadBranding() {
+      try {
+        const { data } = await supabase
+          .from("companies")
+          .select("name, logo_url, primary_color, tagline")
+          .or(`logo_url.not.is.null,primary_color.not.is.null`)
+          .order("name");
+
+        if (cancelled || !data?.length) return;
+
+        // Match by selectedCompany slug against company name, else first with a logo.
+        const slugWords = (selectedCompany || "")
+          .replace(/-/g, " ")
+          .toLowerCase()
+          .split(" ")
+          .filter(Boolean);
+        const matched =
+          data.find((c) => {
+            const n = (c.name || "").toLowerCase();
+            return slugWords.length > 0 && slugWords.every((w) => n.includes(w));
+          }) ||
+          data.find((c) => c.logo_url) ||
+          null;
+
+        if (matched) setDbBrand(matched);
+      } catch {
+        /* pre-auth read may be blocked — fall back to themed icon */
+      }
+    }
+    loadBranding();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompany]);
+
+  const displayName    = dbBrand?.name     || currentTheme?.name;
+  const displayTagline = dbBrand?.tagline  || currentTheme?.tagline;
+  const primaryColor   = dbBrand?.primary_color || currentTheme?.primaryColor;
+
   return (
     <div className="text-center space-y-6">
       {/* Company Logo and Name */}
       <div className="space-y-4">
         <div
-          className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto shadow-enterprise-md"
-          style={{ backgroundColor: `${currentTheme?.primaryColor}15` }}
+          className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto shadow-enterprise-md overflow-hidden"
+          style={{ backgroundColor: `${primaryColor}15` }}
         >
-          <Icon
-            name={currentTheme?.logo}
-            size={32}
-            color={currentTheme?.primaryColor}
-          />
+          {dbBrand?.logo_url ? (
+            <img
+              src={dbBrand.logo_url}
+              alt={displayName}
+              className="w-full h-full object-contain p-2"
+            />
+          ) : (
+            <Icon name={currentTheme?.logo} size={32} color={primaryColor} />
+          )}
         </div>
 
         <div className="space-y-2">
-          <h1 className="text-2xl font-bold text-foreground">
-            {currentTheme?.name}
-          </h1>
-          <p
-            className="text-sm font-medium"
-            style={{ color: currentTheme?.primaryColor }}
-          >
-            {currentTheme?.tagline}
+          <h1 className="text-2xl font-bold text-foreground">{displayName}</h1>
+          <p className="text-sm font-medium" style={{ color: primaryColor }}>
+            {displayTagline}
           </p>
           <p className="text-sm text-muted-foreground max-w-sm mx-auto">
             {currentTheme?.description}

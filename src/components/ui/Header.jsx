@@ -207,12 +207,22 @@ const Header = ({
 
           {/* Logo */}
           <div className="flex items-center space-x-3">
-            <div className="flex items-center justify-center w-8 h-8 bg-primary rounded-lg">
-              <Icon name="Building2" size={20} color="white" />
-            </div>
+            {company?.logo_url ? (
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg overflow-hidden bg-white border border-border">
+                <img
+                  src={company.logo_url}
+                  alt={company?.name || "Company logo"}
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className="flex items-center justify-center w-8 h-8 bg-primary rounded-lg">
+                <Icon name="Building2" size={20} color="white" />
+              </div>
+            )}
             <div className="hidden sm:block">
               <h1 className="text-lg font-semibold text-foreground">
-                JASCO CRM
+                {company?.name || "JASCO CRM"}
               </h1>
             </div>
           </div>

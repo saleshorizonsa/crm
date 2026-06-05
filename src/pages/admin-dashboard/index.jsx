@@ -11,6 +11,7 @@ import UomSettings from "./components/UomSettings";
 import UserAuthorization from "./components/UserAuthorization";
 import LostReasonSettings from "./components/LostReasonSettings";
 import MaterialGroupSettings from "./components/MaterialGroupSettings";
+import CompanyLogoManager from "./components/CompanyLogoManager";
 import { useLanguage } from "../../i18n";
 
 const AdminDashboard = () => {
@@ -38,6 +39,7 @@ const AdminDashboard = () => {
     { id: "users",         label: t("admin.userManagement"), icon: "Users"       },
     { id: "authorization", label: t("admin.authorization"),  icon: "ShieldCheck" },
     { id: "companies",     label: t("admin.companyManagement"), icon: "Building2" },
+    { id: "branding",      label: "Logos & Branding",        icon: "Image"     },
     { id: "products",      label: t("admin.productMaster"),  icon: "Package"     },
     { id: "targets",       label: t("admin.salesTargets"),   icon: "Target"      },
     { id: "lost-reasons",     label: t("admin.lostReasons"),    icon: "XCircle"  },
@@ -124,6 +126,7 @@ const AdminDashboard = () => {
           {activeTab === "users"         && <UserManagement />}
           {activeTab === "authorization" && <UserAuthorization />}
           {activeTab === "companies"     && <CompanyManagement />}
+          {activeTab === "branding"      && <CompanyLogoManager />}
           {activeTab === "products"      && <ProductMaster />}
           {activeTab === "targets"       && <SalesTarget />}
           {activeTab === "lost-reasons"     && <LostReasonSettings />}

@@ -6013,3 +6013,78 @@ export const customerHistoryService = {
     return Object.values(map).map(m => ({ ...m, groups: [...m.groups] })).sort((a, b) => b.total - a.total).slice(0, limit);
   },
 };
+
+// ── Company Logo / Branding Service ───────────────────────────────────────────
+export const logoService = {
+
+  async uploadCompanyLogo(companyId, file) {
+    const maxSize = 2 * 1024 * 1024; // 2MB
+    if (file.size > maxSize) {
+      return { error: { message: 'File too large. Maximum size is 2MB.' } };
+    }
+
+    const validTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
+    if (!validTypes.includes(file.type)) {
+      return { error: { message: 'Invalid file type. Use PNG, JPG, WebP, or SVG.' } };
+    }
+
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    const filename = `${companyId}/logo.${ext}`;
+
+    const { error: uploadErr } = await supabase.storage
+      .from('company-logos')
+      .upload(filename, file, { upsert: true, contentType: file.type });
+
+    if (uploadErr) return { error: uploadErr };
+
+    const { data: urlData } = supabase.storage
+      .from('company-logos')
+      .getPublicUrl(filename);
+
+    const logoUrl = urlData.publicUrl + '?t=' + Date.now(); // cache bust
+
+    const { error: updateErr } = await supabase
+      .from('companies')
+      .update({ logo_url: logoUrl })
+      .eq('id', companyId);
+
+    if (updateErr) return { error: updateErr };
+
+    return { data: { logo_url: logoUrl }, error: null };
+  },
+
+  async removeCompanyLogo(companyId) {
+    await supabase.storage
+      .from('company-logos')
+      .remove([
+        `${companyId}/logo.png`,
+        `${companyId}/logo.jpg`,
+        `${companyId}/logo.jpeg`,
+        `${companyId}/logo.webp`,
+        `${companyId}/logo.svg`,
+      ]);
+
+    const { error } = await supabase
+      .from('companies')
+      .update({ logo_url: null })
+      .eq('id', companyId);
+
+    return { error };
+  },
+
+  async getCompanyLogos(companyIds) {
+    const { data, error } = await supabase
+      .from('companies')
+      .select('id, name, logo_url, primary_color, tagline')
+      .in('id', companyIds);
+    return { data: data || [], error };
+  },
+
+  async updateCompanyBranding({ companyId, primaryColor, tagline }) {
+    const { error } = await supabase
+      .from('companies')
+      .update({ primary_color: primaryColor, tagline })
+      .eq('id', companyId);
+    return { error };
+  },
+};
