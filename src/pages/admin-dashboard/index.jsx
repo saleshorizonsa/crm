@@ -39,7 +39,7 @@ const AdminDashboard = () => {
     { id: "users",         label: t("admin.userManagement"), icon: "Users"       },
     { id: "authorization", label: t("admin.authorization"),  icon: "ShieldCheck" },
     { id: "companies",     label: t("admin.companyManagement"), icon: "Building2" },
-    { id: "branding",      label: "Logos & Branding",        icon: "Image"     },
+    { id: "branding",      label: "Company Branding",        icon: "Palette"   },
     { id: "products",      label: t("admin.productMaster"),  icon: "Package"     },
     { id: "targets",       label: t("admin.salesTargets"),   icon: "Target"      },
     { id: "lost-reasons",     label: t("admin.lostReasons"),    icon: "XCircle"  },

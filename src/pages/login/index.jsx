@@ -4,8 +4,11 @@ import { useNavigate } from "react-router-dom";
 import LoginForm from "./components/LoginForm";
 import MFAVerification from "./components/MFAVerification";
 import CompanyBranding from "./components/CompanyBranding";
+import DailyQuote from "../../components/DailyQuote";
 import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
+import { logoService } from "../../services/supabaseService";
+import { supabase } from "../../lib/supabase";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -15,6 +18,7 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loginData, setLoginData] = useState(null);
   const [error, setError] = useState("");
+  const [companyLogos, setCompanyLogos] = useState([]);
 
   useEffect(() => {
     if (user && !loading && userProfile) {
@@ -23,6 +27,35 @@ const Login = () => {
       );
     }
   }, [user, userProfile, loading, navigate]);
+
+  useEffect(() => {
+    loadCompanyLogos();
+  }, []);
+
+  async function loadCompanyLogos() {
+    const companyIds = [
+      "adf8ee78-cf78-4f02-932c-989a214bdd78",
+      "0872a05a-6fa4-4aee-9aa2-10898e133e65",
+      "271aa099-0f92-4185-a2a9-27e4fab5b1e8",
+      "2524da2c-07e0-414d-9ceb-2adf83d92ca4",
+    ];
+    try {
+      const { data } = await logoService.getCompanyLogos(companyIds);
+      if (data && data.length > 0) {
+        setCompanyLogos(data);
+        return;
+      }
+      // Fallback: load all companies if the specific IDs return nothing
+      const { data: all } = await supabase
+        .from("companies")
+        .select("id, name, logo_url, primary_color, tagline")
+        .order("name")
+        .limit(4);
+      setCompanyLogos(all || []);
+    } catch {
+      /* pre-auth read may be blocked — grid simply stays empty */
+    }
+  }
 
   const handleLogin = async (formData) => {
     setIsLoading(true);
@@ -62,10 +95,56 @@ const Login = () => {
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2">
-      {/* LEFT — BRAND / TEXT */}
-      <div className="hidden lg:flex items-center justify-center bg-muted/40 px-16">
-        <div className="max-w-sm space-y-6">
-          <CompanyBranding selectedCompany={loginData?.company} />
+      {/* LEFT — BRANDED PANEL */}
+      <div className="hidden lg:block p-6">
+        <div className="flex flex-col justify-between h-full p-10 rounded-2xl bg-gradient-to-br from-[#1E3A5F] to-[#2563EB]">
+          {/* Header */}
+          <div>
+            <h1 className="text-2xl font-bold text-white mb-1">JASCO Group</h1>
+            <p className="text-blue-200 text-sm">Your business intelligence platform</p>
+          </div>
+
+          {/* 4 Company logos grid */}
+          <div className="grid grid-cols-2 gap-3">
+            {companyLogos.map((company) => {
+              const initials = (company.name || "")
+                .replace(/JASCO\s*/i, "")
+                .slice(0, 3)
+                .toUpperCase() || "CO";
+              return (
+                <div
+                  key={company.id}
+                  className="bg-white/10 rounded-xl p-3 flex flex-col items-center gap-2 border border-white/10 hover:bg-white/15 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center overflow-hidden">
+                    {company.logo_url ? (
+                      <img
+                        src={company.logo_url}
+                        alt={company.name}
+                        className="w-full h-full object-contain p-1"
+                        onError={(e) => {
+                          e.target.style.display = "none";
+                          if (e.target.nextSibling) e.target.nextSibling.style.display = "flex";
+                        }}
+                      />
+                    ) : null}
+                    <span
+                      className="text-xs font-bold text-[#1E3A5F] items-center justify-center w-full h-full"
+                      style={{ display: company.logo_url ? "none" : "flex" }}
+                    >
+                      {initials}
+                    </span>
+                  </div>
+                  <span className="text-xs font-medium text-white/80 text-center leading-tight">
+                    {(company.name || "").replace(/JASCO\s*/i, "") || company.name}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Daily motivation quote */}
+          <DailyQuote />
         </div>
       </div>
 
