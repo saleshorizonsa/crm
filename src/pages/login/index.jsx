@@ -7,14 +7,18 @@ import CompanyBranding from "./components/CompanyBranding";
 import DailyQuote from "../../components/DailyQuote";
 import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabase } from "../../lib/supabase";
 
-// Always-rendered company tiles (logos merge in when uploaded)
-const COMPANIES_FALLBACK = [
-  { id: "adf8ee78-cf78-4f02-932c-989a214bdd78", name: "JASCO PVC",     initials: "PVC", color: "#2563EB", bg: "#EFF6FF" },
-  { id: "0872a05a-6fa4-4aee-9aa2-10898e133e65", name: "JASCO Steels",  initials: "STL", color: "#475569", bg: "#F1F5F9" },
-  { id: "271aa099-0f92-4185-a2a9-27e4fab5b1e8", name: "JASCO IMDADAT", initials: "IMD", color: "#0D9488", bg: "#F0FDFA" },
-  { id: "2524da2c-07e0-414d-9ceb-2adf83d92ca4", name: "JAECO",         initials: "JAE", color: "#7C3AED", bg: "#FAF5FF" },
+// Public storage URLs — no DB query / no auth needed (companies table is RLS-blocked pre-login).
+// Logos are publicly readable from the company-logos bucket; onError falls back to colored initials.
+const SUPABASE_URL = "https://sywtvrfoexnvwpuiveag.supabase.co";
+const logoUrl = (id) =>
+  `${SUPABASE_URL}/storage/v1/object/public/company-logos/${id}/logo.png`;
+
+const COMPANIES_WITH_LOGOS = [
+  { id: "adf8ee78-cf78-4f02-932c-989a214bdd78", name: "JASCO PVC",     initials: "PVC", color: "#2563EB", bg: "#EFF6FF", logo_url: logoUrl("adf8ee78-cf78-4f02-932c-989a214bdd78") },
+  { id: "0872a05a-6fa4-4aee-9aa2-10898e133e65", name: "JASCO Steels",  initials: "STL", color: "#475569", bg: "#F1F5F9", logo_url: logoUrl("0872a05a-6fa4-4aee-9aa2-10898e133e65") },
+  { id: "271aa099-0f92-4185-a2a9-27e4fab5b1e8", name: "JASCO IMDADAT", initials: "IMD", color: "#0D9488", bg: "#F0FDFA", logo_url: logoUrl("271aa099-0f92-4185-a2a9-27e4fab5b1e8") },
+  { id: "2524da2c-07e0-414d-9ceb-2adf83d92ca4", name: "JAECO",         initials: "JAE", color: "#7C3AED", bg: "#FAF5FF", logo_url: logoUrl("2524da2c-07e0-414d-9ceb-2adf83d92ca4") },
 ];
 
 const Login = () => {
@@ -25,7 +29,6 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loginData, setLoginData] = useState(null);
   const [error, setError] = useState("");
-  const [companyLogos, setCompanyLogos] = useState([]);
 
   useEffect(() => {
     if (user && !loading && userProfile) {
@@ -35,44 +38,9 @@ const Login = () => {
     }
   }, [user, userProfile, loading, navigate]);
 
-  useEffect(() => {
-    loadCompanyLogos();
-  }, []);
-
-  async function loadCompanyLogos() {
-    const companyIds = COMPANIES_FALLBACK.map((c) => c.id);
-    try {
-      const { data } = await supabase
-        .from("companies")
-        .select("id, name, logo_url")
-        .in("id", companyIds);
-      if (data && data.length > 0) {
-        setCompanyLogos(data);
-        return;
-      }
-      // If the specific IDs return nothing, try the first companies by name
-      const { data: all } = await supabase
-        .from("companies")
-        .select("id, name, logo_url")
-        .order("name")
-        .limit(4);
-      setCompanyLogos(all || []);
-    } catch (err) {
-      // Silently fail — colored-initials fallback is always shown
-      console.log("Logo fetch failed:", err);
-    }
-  }
-
-  // Always show all 4 companies even if the database read is blocked pre-login.
-  // Uploaded logos merge in by id (or name); otherwise colored initials show.
-  const displayCompanies = COMPANIES_FALLBACK.map((c) => {
-    const fetched =
-      companyLogos.find((f) => f.id === c.id) ||
-      companyLogos.find(
-        (f) => (f.name || "").toLowerCase() === c.name.toLowerCase()
-      );
-    return { ...c, logo_url: fetched?.logo_url || null };
-  });
+  // Direct public storage URLs — no auth / no DB read needed.
+  // If a logo.png does not exist, onError swaps to the colored initials.
+  const displayCompanies = COMPANIES_WITH_LOGOS;
 
   const handleLogin = async (formData) => {
     setIsLoading(true);
