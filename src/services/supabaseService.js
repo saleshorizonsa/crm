@@ -2281,32 +2281,33 @@ export const userService = {
     try {
       console.log("Deleting user:", userId);
 
-      // First, deactivate the user in our database
-      const { error: deactivateError } = await supabase
-        .from("users")
-        .update({
-          is_active: false,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", userId);
-
-      if (deactivateError) {
-        console.error("Error deactivating user:", deactivateError);
-        return { error: deactivateError };
-      }
-
-      // Then delete from Supabase Auth
-      const { error: authError } = await supabase.auth.admin.deleteUser(userId);
-
-      if (authError) {
-        console.error("Error deleting user from auth:", authError);
-        // Continue even if auth deletion fails since user is deactivated
-      }
-
-      // Finally, delete from our database
+      // Step 1 — delete the profile row from our database
       const { error } = await supabase.from("users").delete().eq("id", userId);
+      if (error) {
+        console.error("Error deleting user profile:", error);
+        return { error };
+      }
 
-      return { error };
+      // Step 2 — delete the auth user via the service-role edge function.
+      // The browser anon client cannot call supabase.auth.admin.deleteUser,
+      // so this must go through the delete-user edge function. Best-effort:
+      // the profile is already gone (user can no longer log in) even if this fails.
+      try {
+        const { data, error: fnError } = await supabase.functions.invoke(
+          "delete-user",
+          { body: { userId } }
+        );
+        if (fnError || data?.error) {
+          console.warn(
+            "Auth user not deleted:",
+            data?.error || fnError?.message
+          );
+        }
+      } catch (e) {
+        console.warn("Auth user not deleted (profile already removed):", e);
+      }
+
+      return { error: null };
     } catch (error) {
       console.error("Error in deleteUser:", error);
       return { error };
