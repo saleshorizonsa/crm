@@ -101,29 +101,57 @@ const InviteUserModal = ({ onClose, onSuccess }) => {
 
     setLoading(true);
     try {
-      const { data, error: fnError } = await supabase.functions.invoke("create-user", {
-        body: {
-          email:        email.trim().toLowerCase(),
-          password,
-          fullName:     full_name.trim(),
-          role,
-          companyId:    company_id,
-          supervisorId: formData.supervisor_id || null,
+      const cleanEmail = email.trim().toLowerCase();
+
+      // Step 1 — create the Supabase auth user (client-side signUp)
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email:    cleanEmail,
+        password,
+        options: {
+          data: { full_name: full_name.trim() },
+          emailRedirectTo: undefined,
         },
       });
 
-      if (fnError || data?.error) {
-        setError(data?.error || fnError?.message || "Failed to create user");
+      if (authError) {
+        setError(authError.message);
+        return;
+      }
+
+      const userId = authData?.user?.id;
+      if (!userId) {
+        setError("User creation failed");
+        return;
+      }
+
+      // Step 2 — upsert the user profile (auth trigger may have created it)
+      const { error: profileError } = await supabase
+        .from("users")
+        .upsert(
+          {
+            id:            userId,
+            email:         cleanEmail,
+            full_name:     full_name.trim(),
+            role,
+            company_id,
+            supervisor_id: formData.supervisor_id || null,
+            is_active:     true,
+          },
+          { onConflict: "id" }
+        );
+
+      if (profileError) {
+        setError("Profile creation failed: " + profileError.message);
         return;
       }
 
       setCreatedUser({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         password,
         name:  full_name.trim(),
       });
     } catch (err) {
-      setError("An unexpected error occurred: " + err.message);
+      setError(err.message || "Unexpected error occurred");
     } finally {
       setLoading(false);
     }
