@@ -16,3 +16,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: localStorage,
   },
 });
+
+// Isolated client used only for admin-side user creation (signUp).
+// persistSession:false + a distinct storageKey means signUp here does NOT
+// overwrite the logged-in admin's session in localStorage.
+export const supabaseAuthIsolated = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+    storageKey: "sb-jasco-usercreate",
+  },
+});

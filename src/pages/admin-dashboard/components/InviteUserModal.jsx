@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Select from "components/ui/Select";
 import { companyService, adminService } from "../../../services/supabaseService";
-import { supabase } from "../../../lib/supabase";
+import { supabase, supabaseAuthIsolated } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import Button from "components/ui/Button";
 import Icon from "components/AppIcon";
@@ -103,8 +103,9 @@ const InviteUserModal = ({ onClose, onSuccess }) => {
     try {
       const cleanEmail = email.trim().toLowerCase();
 
-      // Step 1 — create the Supabase auth user (client-side signUp)
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      // Step 1 — create the Supabase auth user via the ISOLATED client so the
+      // admin's own session is not replaced by the new user's session.
+      const { data: authData, error: authError } = await supabaseAuthIsolated.auth.signUp({
         email:    cleanEmail,
         password,
         options: {
