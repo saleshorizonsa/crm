@@ -23,10 +23,12 @@ export default function InviteUserModal({ isOpen = true, onClose, onSuccess }) {
     password:  '',
     role:      'salesman',
     companyId: company?.id || '',
+    reportsTo: '',
   });
 
-  const [companies, setCompanies]       = useState([]);
-  const [showPassword, setShowPassword] = useState(false);
+  const [companies, setCompanies]             = useState([]);
+  const [reportsToOptions, setReportsToOptions] = useState([]);
+  const [showPassword, setShowPassword]       = useState(false);
   const [saving, setSaving]             = useState(false);
   const [error, setError]               = useState('');
   const [copied, setCopied]             = useState(false);
@@ -41,10 +43,12 @@ export default function InviteUserModal({ isOpen = true, onClose, onSuccess }) {
         password:  '',
         role:      'salesman',
         companyId: company?.id || '',
+        reportsTo: '',
       });
       setError('');
       setCopied(false);
       setCreatedUser(null);
+      setReportsToOptions([]);
       loadCompanies();
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -59,6 +63,56 @@ export default function InviteUserModal({ isOpen = true, onClose, onSuccess }) {
     if (data?.length && !form.companyId) {
       setForm(f => ({ ...f, companyId: company?.id || data[0].id }));
     }
+  }
+
+  // Load the "Reports To" candidates whenever role/company changes
+  useEffect(() => {
+    if (isOpen && form.role && form.companyId) {
+      loadReportsToOptions(form.role, form.companyId);
+    }
+  }, [isOpen, form.role, form.companyId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function loadReportsToOptions(role, companyId) {
+    let targetRole = null;
+    if (role === 'manager')        targetRole = 'director';
+    else if (role === 'supervisor') targetRole = 'manager';
+    else if (role === 'salesman')   targetRole = 'supervisor';
+    else {
+      setReportsToOptions([]);
+      setForm(f => ({ ...f, reportsTo: '' }));
+      return;
+    }
+
+    // Directors span all companies; everyone else is scoped to the company
+    let query = supabase
+      .from('users')
+      .select('id, full_name, role, company_id')
+      .eq('role', targetRole)
+      .eq('is_active', true)
+      .order('full_name');
+
+    if (targetRole !== 'director') {
+      query = query.eq('company_id', companyId);
+    }
+
+    const { data } = await query;
+
+    // Salesman with no supervisors → fall back to managers
+    if (role === 'salesman' && (!data || data.length === 0)) {
+      const { data: managers } = await supabase
+        .from('users')
+        .select('id, full_name, role')
+        .eq('company_id', companyId)
+        .eq('role', 'manager')
+        .eq('is_active', true)
+        .order('full_name');
+      setReportsToOptions(managers || []);
+      setForm(f => ({ ...f, reportsTo: managers?.[0]?.id || '' }));
+      return;
+    }
+
+    setReportsToOptions(data || []);
+    setForm(f => ({ ...f, reportsTo: data?.[0]?.id || '' }));
   }
 
   function generatePassword() {
@@ -143,14 +197,15 @@ export default function InviteUserModal({ isOpen = true, onClose, onSuccess }) {
         .from('users')
         .upsert(
           {
-            id:         userId,
-            email:      cleanEmail,
-            full_name:  fullName.trim(),
+            id:            userId,
+            email:         cleanEmail,
+            full_name:     fullName.trim(),
             role,
-            company_id: companyId,
-            is_active:  true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            company_id:    companyId,
+            supervisor_id: form.reportsTo || null,
+            is_active:     true,
+            created_at:    new Date().toISOString(),
+            updated_at:    new Date().toISOString(),
           },
           { onConflict: 'id' }
         );
@@ -162,11 +217,12 @@ export default function InviteUserModal({ isOpen = true, onClose, onSuccess }) {
       }
 
       setCreatedUser({
-        name:     fullName.trim(),
-        email:    cleanEmail,
+        name:          fullName.trim(),
+        email:         cleanEmail,
         password,
         role,
-        company:  companies.find(c => c.id === companyId)?.name || '',
+        company:       companies.find(c => c.id === companyId)?.name || '',
+        reportsToName: reportsToOptions.find(u => u.id === form.reportsTo)?.full_name || '',
       });
       setStep('success');
     } catch (err) {
@@ -308,6 +364,55 @@ export default function InviteUserModal({ isOpen = true, onClose, onSuccess }) {
                 </div>
               </div>
 
+              {/* Reports To — shown when role needs a reporting line */}
+              {reportsToOptions.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-text-secondary block mb-1">
+                    Reports To *
+                  </label>
+                  <select
+                    value={form.reportsTo}
+                    onChange={e => setForm(f => ({ ...f, reportsTo: e.target.value }))}
+                    className="w-full text-sm px-3 py-2 border border-border-secondary rounded-xl focus:outline-none focus:border-blue-400 bg-white"
+                  >
+                    <option value="">— Select manager —</option>
+                    {reportsToOptions.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.full_name}
+                        {u.role === 'director'
+                          ? ' (Director)'
+                          : u.role === 'manager'
+                          ? ' (Manager)'
+                          : u.role === 'supervisor'
+                          ? ' (Supervisor)'
+                          : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-text-tertiary mt-1">
+                    {form.role === 'manager'
+                      ? 'This manager will report to the selected director'
+                      : form.role === 'supervisor'
+                      ? 'This supervisor will report to the selected manager'
+                      : 'This salesman will report to the selected supervisor'}
+                  </p>
+                </div>
+              )}
+
+              {/* No options found warning */}
+              {reportsToOptions.length === 0 &&
+                ['manager', 'supervisor', 'salesman'].includes(form.role) &&
+                form.companyId && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700">
+                    <Icon name="AlertTriangle" size={13} className="flex-shrink-0" />
+                    {form.role === 'manager'
+                      ? 'No director found. User will have no reporting line set.'
+                      : form.role === 'supervisor'
+                      ? 'No manager found in this company. Assign a manager first.'
+                      : 'No supervisor found. Salesman will report to the manager.'}
+                  </div>
+                )}
+
               {error && (
                 <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600">
                   <Icon name="AlertCircle" size={14} className="flex-shrink-0 mt-0.5" />
@@ -351,6 +456,9 @@ export default function InviteUserModal({ isOpen = true, onClose, onSuccess }) {
                 { label: 'Password', value: createdUser.password, mono: true },
                 { label: 'Role',     value: ROLES.find(r => r.value === createdUser.role)?.label },
                 { label: 'Company',  value: createdUser.company },
+                ...(createdUser.reportsToName
+                  ? [{ label: 'Reports to', value: createdUser.reportsToName }]
+                  : []),
               ].map(row => (
                 <div key={row.label} className="flex items-center justify-between gap-3">
                   <span className="text-xs text-text-tertiary flex-shrink-0 w-16">{row.label}</span>
@@ -383,9 +491,11 @@ export default function InviteUserModal({ isOpen = true, onClose, onSuccess }) {
                   password:  '',
                   role:      'salesman',
                   companyId: company?.id || '',
+                  reportsTo: '',
                 });
                 setError('');
                 setCreatedUser(null);
+                setReportsToOptions([]);
               }}
               className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-medium border border-border-secondary text-text-secondary hover:bg-background-secondary transition-colors mb-2"
             >
