@@ -232,6 +232,57 @@ export const companyService = {
     }
   },
 
+  // Update company fields (name, tagline, branding) — admin only
+  async updateCompany(companyId, updates) {
+    try {
+      const { data, error } = await supabase
+        .from("companies")
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq("id", companyId)
+        .select()
+        .single();
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  // Get per-company record counts for the admin company cards
+  async getCompanyStats(companyId) {
+    try {
+      const [
+        { count: userCount },
+        { count: dealCount },
+        { count: contactCount },
+        { count: productCount },
+      ] = await Promise.all([
+        supabase.from("users")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("is_active", true),
+        supabase.from("deals")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId),
+        supabase.from("contacts")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId),
+        supabase.from("products")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("is_active", true),
+      ]);
+
+      return {
+        users:    userCount    || 0,
+        deals:    dealCount    || 0,
+        contacts: contactCount || 0,
+        products: productCount || 0,
+      };
+    } catch {
+      return { users: 0, deals: 0, contacts: 0, products: 0 };
+    }
+  },
+
   // Get team metrics for specific user IDs
   async getTeamMetrics(companyId, userIds = []) {
     try {
