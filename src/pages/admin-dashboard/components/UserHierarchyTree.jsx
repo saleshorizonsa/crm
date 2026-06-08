@@ -207,11 +207,11 @@ const UserHierarchyTree = ({ data, onToggleStatus, onViewDetails }) => {
     );
   }
 
-  // Find root level users (those without a manager_id or whose manager is not in the tree)
+  // Find root level users (those without a supervisor or whose supervisor is not in the tree)
   const userMap = new Map(data.map((u) => [u.id, u]));
   const rootUsers = data.filter((user) => {
-    if (!user.manager_id) return true;
-    return !userMap.has(user.manager_id);
+    if (!user.supervisor_id) return true;
+    return !userMap.has(user.supervisor_id);
   });
 
   return (

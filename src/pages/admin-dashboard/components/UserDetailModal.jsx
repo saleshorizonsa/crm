@@ -80,6 +80,9 @@ const UserDetailModal = ({ user, onClose, onUpdate }) => {
 
   if (!user) return null;
 
+  // The superior may arrive joined as `supervisor` (current queries) or `superior`.
+  const superior = user.supervisor || user.superior || null;
+
   const roleConfig = {
     admin: {
       color: "#6366f1",
@@ -261,18 +264,18 @@ const UserDetailModal = ({ user, onClose, onUpdate }) => {
                       placeholder="No Superior"
                       clearable
                     />
-                  ) : user.supervisor ? (
+                  ) : superior ? (
                     <div className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded">
                       <p className="text-sm font-medium text-gray-900">
-                        {user.supervisor.full_name}
+                        {superior.full_name}
                       </p>
                       <p className="text-xs text-gray-500 capitalize mt-0.5">
-                        {user.supervisor.role}
+                        {superior.role}
                       </p>
                     </div>
                   ) : (
                     <div className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500">
-                      No Superior
+                      No Superior assigned
                     </div>
                   )}
                 </div>
