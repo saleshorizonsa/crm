@@ -49,7 +49,7 @@ export default function ActivityTimeline({ activities = [], loading = false, onD
   return (
     <div className="space-y-1">
       {activities.map((activity, index) => {
-        const typeCfg    = activityService.getTypeConfig(activity.activity_type);
+        const typeCfg    = activityService.getTypeConfig(activity.type);
         const outcomeCfg = activityService.getOutcomeConfig(activity.outcome);
         const isOverdueFollowup = activity.next_action_date &&
           new Date(activity.next_action_date) < new Date() &&
@@ -63,7 +63,7 @@ export default function ActivityTimeline({ activities = [], loading = false, onD
             )}
 
             {/* Icon bubble */}
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 z-10 ${TYPE_COLORS[activity.activity_type] || TYPE_COLORS.note}`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 z-10 ${TYPE_COLORS[activity.type] || TYPE_COLORS.note}`}>
               <Icon name={typeCfg.icon} size={14} />
             </div>
 

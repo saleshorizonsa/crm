@@ -2674,7 +2674,7 @@ export const activityService = {
         owner_id:         userId,
         contact_id:       contactId        || null,
         deal_id:          dealId           || null,
-        activity_type:    activityType     || 'note',
+        type:             activityType     || 'note',
         description:      description      || '',
         outcome:          outcome          || null,
         next_action:      nextAction       || null,
@@ -2682,7 +2682,7 @@ export const activityService = {
         duration_minutes: durationMinutes  || null,
         created_at:       new Date().toISOString(),
       })
-      .select(`id, activity_type, description, outcome, next_action, next_action_date, duration_minutes, created_at,
+      .select(`id, type, description, outcome, next_action, next_action_date, duration_minutes, created_at,
                owner:users!owner_id(id, full_name, avatar_url),
                contact:contacts!contact_id(id, first_name, last_name, company_name)`)
       .single();
@@ -2692,7 +2692,7 @@ export const activityService = {
   async getActivitiesForDeal(dealId) {
     const { data, error } = await supabase
       .from('activities')
-      .select(`id, activity_type, description, outcome, next_action, next_action_date, duration_minutes, created_at,
+      .select(`id, type, description, outcome, next_action, next_action_date, duration_minutes, created_at,
                owner:users!owner_id(id, full_name, avatar_url)`)
       .eq('deal_id', dealId)
       .order('created_at', { ascending: false });
@@ -2702,7 +2702,7 @@ export const activityService = {
   async getActivitiesForContact(contactId) {
     const { data, error } = await supabase
       .from('activities')
-      .select(`id, activity_type, description, outcome, next_action, next_action_date, duration_minutes, created_at, deal_id,
+      .select(`id, type, description, outcome, next_action, next_action_date, duration_minutes, created_at, deal_id,
                owner:users!owner_id(id, full_name, avatar_url)`)
       .eq('contact_id', contactId)
       .order('created_at', { ascending: false });
@@ -2712,7 +2712,7 @@ export const activityService = {
   async getTeamActivitySummary({ companyId, ownerIds, dateFrom, dateTo }) {
     const { data, error } = await supabase
       .from('activities')
-      .select(`id, activity_type, outcome, created_at, owner_id,
+      .select(`id, type, outcome, created_at, owner_id,
                owner:users!owner_id(id, full_name, avatar_url)`)
       .eq('company_id', companyId)
       .in('owner_id', ownerIds)
@@ -2727,7 +2727,7 @@ export const activityService = {
       const id = a.owner_id;
       if (!byOwner[id]) byOwner[id] = { owner: a.owner, total: 0, byType: {}, byOutcome: {}, lastActivity: null, activities: [] };
       byOwner[id].total++;
-      byOwner[id].byType[a.activity_type] = (byOwner[id].byType[a.activity_type] || 0) + 1;
+      byOwner[id].byType[a.type] = (byOwner[id].byType[a.type] || 0) + 1;
       if (a.outcome) byOwner[id].byOutcome[a.outcome] = (byOwner[id].byOutcome[a.outcome] || 0) + 1;
       if (!byOwner[id].lastActivity) byOwner[id].lastActivity = a.created_at;
       byOwner[id].activities.push(a);
@@ -2739,7 +2739,7 @@ export const activityService = {
   async getMyActivities({ userId, companyId, dateFrom, dateTo }) {
     const { data, error } = await supabase
       .from('activities')
-      .select(`id, activity_type, description, outcome, next_action, next_action_date, duration_minutes, created_at, deal_id,
+      .select(`id, type, description, outcome, next_action, next_action_date, duration_minutes, created_at, deal_id,
                contact:contacts!contact_id(id, first_name, last_name, company_name)`)
       .eq('owner_id', userId)
       .eq('company_id', companyId)
