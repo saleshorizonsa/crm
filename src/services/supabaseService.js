@@ -290,7 +290,7 @@ export const companyService = {
         // Team deals
         supabase
           .from("deals")
-          .select("amount, stage")
+          .select("amount, final_amount, stage")
           .eq("company_id", companyId)
           .in("owner_id", userIds),
         // Team contacts
@@ -318,7 +318,7 @@ export const companyService = {
 
       const wonDeals = deals.filter((deal) => deal.stage === "won");
       const teamRevenue = wonDeals.reduce(
-        (sum, deal) => sum + (parseFloat(deal.amount) || 0),
+        (sum, deal) => sum + (parseFloat(deal.final_amount || deal.amount) || 0),
         0,
       );
 
@@ -378,7 +378,7 @@ export const companyService = {
         // User deals
         supabase
           .from("deals")
-          .select("amount, stage")
+          .select("amount, final_amount, stage")
           .eq("company_id", companyId)
           .eq("owner_id", userId),
         // User contacts
@@ -399,7 +399,7 @@ export const companyService = {
 
       const wonDeals = deals.filter((deal) => deal.stage === "won");
       const myRevenue = wonDeals.reduce(
-        (sum, deal) => sum + (parseFloat(deal.amount) || 0),
+        (sum, deal) => sum + (parseFloat(deal.final_amount || deal.amount) || 0),
         0,
       );
 
@@ -476,7 +476,7 @@ export const companyService = {
 
       let query = supabase
         .from("deals")
-        .select("amount, created_at, stage, closed_at")
+        .select("amount, final_amount, created_at, stage, closed_at")
         .eq("company_id", companyId);
 
       // Owner-level visibility unless viewAll is explicitly true
@@ -507,10 +507,10 @@ export const companyService = {
       if (metric === "revenue") {
         currentValue = currentPeriodData
           .filter((d) => d.stage === "won")
-          .reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
+          .reduce((sum, d) => sum + parseFloat(d.final_amount || d.amount || 0), 0);
         previousValue = previousPeriodData
           .filter((d) => d.stage === "won")
-          .reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
+          .reduce((sum, d) => sum + parseFloat(d.final_amount || d.amount || 0), 0);
       } else if (metric === "deals") {
         currentValue = currentPeriodData.filter(
           (d) => d.stage === "won",
@@ -599,7 +599,7 @@ export const companyService = {
     try {
       let query = supabase
         .from("deals")
-        .select("amount, created_at, closed_at, stage")
+        .select("amount, final_amount, created_at, closed_at, stage")
         .eq("company_id", companyId)
         .eq("stage", "won");
 
@@ -621,7 +621,7 @@ export const companyService = {
         if (!monthlyData[monthKey]) {
           monthlyData[monthKey] = 0;
         }
-        monthlyData[monthKey] += parseFloat(deal.amount || 0);
+        monthlyData[monthKey] += parseFloat(deal.final_amount || deal.amount || 0);
       });
 
       // Calculate average growth rate
@@ -742,9 +742,11 @@ export const dealService = {
   // Create new deal
   async createDeal(dealData) {
     try {
+      const payload = { ...dealData };
+      if (!payload.initial_amount && payload.amount) payload.initial_amount = payload.amount;
       const { data, error } = await supabase
         ?.from("deals")
-        ?.insert(dealData)
+        ?.insert(payload)
         ?.select(
           `
           *,
@@ -794,8 +796,10 @@ export const dealService = {
         oldDeal &&
         (oldDeal.stage === "won" || oldDeal.stage === "lost");
 
+      // Never allow initial_amount to be overwritten after creation
+      const { initial_amount: _ia, ...safeUpdates } = updates;
       const updatePayload = {
-        ...updates,
+        ...safeUpdates,
         updated_at: now,
       };
       if (isWinningOrLosing) {
