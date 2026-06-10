@@ -53,7 +53,10 @@ export function useMaterialGroups() {
 
     loadGroups();
 
-    const channelName = `material_groups_${company.id}`;
+    // Random suffix guarantees a fresh channel object on every effect run.
+    // Without it, Supabase returns the already-subscribed channel and throws
+    // "cannot add postgres_changes callbacks after subscribe()".
+    const channelName = `mg_${company.id}_${Math.random().toString(36).slice(2)}`;
     const subscription = supabase
       .channel(channelName)
       .on(
