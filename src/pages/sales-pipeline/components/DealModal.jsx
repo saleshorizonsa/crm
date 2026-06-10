@@ -23,6 +23,16 @@ import {
 import { useLanguage } from "../../../i18n";
 import { useMaterialGroups } from '../../../hooks/useMaterialGroups';
 
+const CHANGE_REASONS = [
+  { value: 'price_negotiation',     label: 'Price Negotiation / Discount',   icon: 'TrendingDown'  },
+  { value: 'quantity_decrease',     label: 'Quantity Decrease',              icon: 'Minus'         },
+  { value: 'quantity_increase',     label: 'Quantity Increase',              icon: 'Plus'          },
+  { value: 'additional_items',      label: 'Additional Items Added',         icon: 'PackagePlus'   },
+  { value: 'items_removed',         label: 'Items Removed',                  icon: 'PackageMinus'  },
+  { value: 'raw_material_increase', label: 'Raw Material Price Increase',    icon: 'TrendingUp'    },
+  { value: 'other',                 label: 'Other',                          icon: 'MessageSquare' },
+];
+
 // ─── Multi-select product picker components ───────────────────────────────────
 
 function ProductPickerRow({ product, isSelected, price, onToggle, onPriceChange }) {
@@ -396,6 +406,17 @@ const DealModal = ({
   const [pickerGroup, setPickerGroup] = useState('');
 
   const { groups: productGroups, reload: reloadGroups } = useMaterialGroups();
+
+  // Feature 1: product validation errors
+  const [productErrors, setProductErrors] = useState([]);
+  // Feature 2: inline editing state
+  const [editingProductId, setEditingProductId] = useState(null);
+  const [editValues, setEditValues] = useState({});
+  // Feature 3: initial vs final value
+  const [showFinalValue, setShowFinalValue] = useState(false);
+  const [finalAmount, setFinalAmount] = useState('');
+  const [changeReason, setChangeReason] = useState('');
+  const [changeNotes, setChangeNotes] = useState('');
 
   // Activity Log state
   const [dealActivities,        setDealActivities]        = useState([]);
@@ -883,6 +904,10 @@ const DealModal = ({
     { value: "high", label: t("tasks.high") },
   ];
 
+  // Feature 2: editing allowed only in lead/qualified; removal only in lead
+  const canEditProducts = deal?.stage === 'lead' || deal?.stage === 'contact_made';
+  const canAddRemoveProducts = deal?.stage === 'lead';
+
   // Convert contacts to dropdown options
   const contactOptions = contacts.map((contact) => ({
     value: contact.id,
@@ -901,10 +926,25 @@ const DealModal = ({
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  // Feature 1: validate qty > 0 and price > 0 for every product
+  function validateProducts(products) {
+    const errors = [];
+    (products || []).forEach((p, index) => {
+      const name = p.product?.description || p.product?.material || `Product ${index + 1}`;
+      const qty   = parseFloat(p.uom_value || p.quantity || 0);
+      const price = parseFloat(p.unit_price || 0);
+      if (!qty   || qty   <= 0) errors.push({ index, field: 'quantity', message: `${name} — quantity is required` });
+      if (!price || price <= 0) errors.push({ index, field: 'price',    message: `${name} — unit price is required` });
+    });
+    return errors;
+  }
+
   // Core save execution — called directly or after LostReasonModal confirms
   const executeSave = async (dealData) => {
     setIsSaving(true);
     try {
+      // Feature 3A: lock initial_amount on first creation — never overwrite after that
+      if (!deal?.id) dealData.initial_amount = dealData.amount;
       const savedDeal = await onSave(dealData);
 
       console.log("Saved deal:", savedDeal);
@@ -1008,6 +1048,51 @@ const DealModal = ({
       );
     }
 
+    // Feature 1: block save if any product has missing qty or price
+    const productsToValidate = deal?.id ? dealProducts : selectedProducts;
+    if (productsToValidate.length > 0) {
+      const prodErrors = validateProducts(productsToValidate);
+      if (prodErrors.length > 0) {
+        setProductErrors(prodErrors);
+        document.querySelector('[data-section="products"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+    }
+    setProductErrors([]);
+
+    // Feature 3D: when marking Won with no final value yet, prompt user
+    if (formData.stage === 'won' && deal?.id && !deal.final_amount && !showFinalValue) {
+      const sameValue = window.confirm(
+        `Is the closed value the same as the initial value?\n${formatCurrency(deal.initial_amount || deal.amount || 0, preferredCurrency)}`
+      );
+      if (sameValue) {
+        dealData.final_amount          = deal.initial_amount || deal.amount || 0;
+        dealData.value_change_reason   = 'no_change';
+        dealData.value_changed_at      = new Date().toISOString();
+        dealData.value_changed_by      = user?.id;
+      } else {
+        setShowFinalValue(true);
+        return;
+      }
+    }
+
+    // Feature 3C: include final value fields if the section is open
+    if (showFinalValue && finalAmount && deal?.id && !dealData.final_amount) {
+      if (!changeReason) {
+        setErrors(prev => ({ ...prev, finalValue: 'Please select a reason for the value change' }));
+        return;
+      }
+      if (changeReason === 'other' && !changeNotes.trim()) {
+        setErrors(prev => ({ ...prev, finalValue: 'Please add a comment for Other reason' }));
+        return;
+      }
+      dealData.final_amount          = parseFloat(finalAmount);
+      dealData.value_change_reason   = changeReason;
+      dealData.value_change_notes    = changeNotes || null;
+      dealData.value_changed_at      = new Date().toISOString();
+      dealData.value_changed_by      = user?.id;
+    }
+
     // Intercept: when stage is 'lost' and no code chosen yet, show reason modal
     if (formData.stage === "lost" && !formData.lost_reason_code) {
       pendingDealDataRef.current = dealData;
@@ -1080,6 +1165,22 @@ const DealModal = ({
   useEffect(() => {
     if (isOpen && deal?.id && showActivityLog) loadDealActivities();
   }, [isOpen, deal?.id, showActivityLog]); // eslint-disable-line
+
+  // Feature 3: populate final value fields from existing deal data
+  useEffect(() => {
+    if (!isOpen || !deal?.id) return;
+    if (deal.final_amount) {
+      setFinalAmount(String(deal.final_amount));
+      setChangeReason(deal.value_change_reason || '');
+      setChangeNotes(deal.value_change_notes || '');
+      setShowFinalValue(deal.final_amount !== deal.initial_amount);
+    } else {
+      setFinalAmount('');
+      setChangeReason('');
+      setChangeNotes('');
+      setShowFinalValue(false);
+    }
+  }, [isOpen, deal?.id]);
 
   if (!isOpen) return null;
 
@@ -1241,6 +1342,119 @@ const DealModal = ({
               </div>
             )}
 
+            {/* Feature 3: Initial Value (locked) + Final Value — only for existing deals */}
+            {deal?.id && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between px-4 py-3 bg-blue-50 rounded-xl border border-blue-100">
+                  <div>
+                    <p className="text-xs font-medium text-blue-700">Initial Value</p>
+                    <p className="text-xs text-blue-500 mt-0.5">Locked at deal creation</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-lg font-bold text-blue-700 tabular-nums">
+                      {formatCurrency(deal?.initial_amount || deal?.amount || 0, preferredCurrency)}
+                    </p>
+                    <Icon name="Lock" size={14} className="text-blue-400" />
+                  </div>
+                </div>
+
+                {!showFinalValue ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowFinalValue(true)}
+                    className="flex items-center gap-2 text-xs text-muted-foreground hover:text-blue-600 transition-colors"
+                  >
+                    <Icon name="Plus" size={13} />
+                    Add final value (if different from initial)
+                  </button>
+                ) : (
+                  <div className="space-y-3 p-4 bg-muted/30 rounded-xl border border-border">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-card-foreground">Final Value</p>
+                      <button
+                        type="button"
+                        onClick={() => { setShowFinalValue(false); setFinalAmount(''); setChangeReason(''); setChangeNotes(''); }}
+                        className="text-xs text-muted-foreground hover:text-destructive"
+                      >
+                        Remove
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground block mb-1">
+                        Final Amount ({preferredCurrency})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={finalAmount}
+                        onChange={e => setFinalAmount(e.target.value)}
+                        placeholder={String(deal?.initial_amount || deal?.amount || 0)}
+                        className="w-full text-sm px-3 py-2 border border-border rounded-xl focus:outline-none focus:border-primary tabular-nums"
+                      />
+                      {finalAmount && (deal?.initial_amount || deal?.amount) && (() => {
+                        const initial = parseFloat(deal.initial_amount || deal.amount);
+                        const final   = parseFloat(finalAmount);
+                        const diff    = final - initial;
+                        const pct     = initial > 0 ? ((diff / initial) * 100).toFixed(1) : 0;
+                        return (
+                          <p className={`text-xs mt-1 flex items-center gap-1 ${diff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            <Icon name={diff >= 0 ? 'TrendingUp' : 'TrendingDown'} size={11} />
+                            {diff >= 0 ? '+' : ''}{formatCurrency(diff, preferredCurrency)} ({diff >= 0 ? '+' : ''}{pct}%)
+                          </p>
+                        );
+                      })()}
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground block mb-2">
+                        Reason for Change *
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {CHANGE_REASONS.map(reason => (
+                          <button
+                            key={reason.value}
+                            type="button"
+                            onClick={() => setChangeReason(reason.value)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium text-left transition-colors ${
+                              changeReason === reason.value
+                                ? 'bg-blue-50 border-blue-300 text-blue-700'
+                                : 'border-border text-muted-foreground hover:bg-muted/50'
+                            }`}
+                          >
+                            <Icon name={reason.icon} size={13} className="flex-shrink-0" />
+                            <span className="leading-tight">{reason.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {errors.finalValue && (
+                        <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                          <Icon name="AlertCircle" size={12} />
+                          {errors.finalValue}
+                        </p>
+                      )}
+                    </div>
+
+                    {changeReason === 'other' && (
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground block mb-1">
+                          Comments *
+                        </label>
+                        <textarea
+                          value={changeNotes}
+                          onChange={e => setChangeNotes(e.target.value)}
+                          rows={2}
+                          placeholder="Describe the reason for the value change..."
+                          className="w-full text-sm px-3 py-2 border border-border rounded-xl resize-none focus:outline-none focus:border-primary"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Stage, Priority, Creation Date, Close Date */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               <Select
@@ -1345,7 +1559,7 @@ const DealModal = ({
             </div>
 
             {/* Products Section */}
-            <div className="border border-border rounded-lg overflow-hidden">
+            <div data-section="products" className="border border-border rounded-lg overflow-hidden">
               {/* Section header with toggle button */}
               <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b border-border">
                 <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
@@ -1425,128 +1639,149 @@ const DealModal = ({
 
                         <div className="space-y-2 max-h-40 overflow-y-auto">
                           {productsToShow.map((item, idx) => {
-                            const displayProduct = deal ? item : item;
-                            const productData = deal
-                              ? item.product
-                              : item.product;
+                            const productData  = item.product;
+                            const isEditing    = canEditProducts && deal?.id && editingProductId === item.id;
+                            const qtyError     = productErrors.find(e => e.index === idx && e.field === 'quantity');
+                            const priceError   = productErrors.find(e => e.index === idx && e.field === 'price');
+                            const currentQty   = parseFloat(item.uom_value || item.quantity || 0);
+                            const currentPrice = parseFloat(item.unit_price || 0);
+                            const editQty      = parseFloat(editValues.quantity || 0);
+                            const editPrice    = parseFloat(editValues.price || 0);
+                            const liveTotal    = isEditing
+                              ? editQty * editPrice
+                              : (parseFloat(item.line_total) || currentQty * currentPrice);
+                            const cp = parseFloat(item.cost_price || item.product?.cost_price || 0);
+                            const liveQty = isEditing ? editQty : currentQty;
+                            const mp = liveTotal > 0 ? ((liveTotal - liveQty * cp) / liveTotal) * 100 : null;
 
                             return (
                               <div
                                 key={deal ? item.id : idx}
-                                className="bg-muted/30 rounded-md p-3 flex items-center justify-between text-sm"
+                                className={`rounded-md p-3 flex items-center justify-between text-sm group ${
+                                  qtyError || priceError ? 'border border-red-200 bg-red-50' : 'bg-muted/30'
+                                }`}
                               >
+                                {/* Product name + group */}
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <Icon
-                                      name="Package"
-                                      size={14}
-                                      className="text-primary flex-shrink-0"
-                                    />
-                                    <span className="font-medium text-card-foreground truncate">
-                                      {productData?.material}
-                                    </span>
+                                    <Icon name="Package" size={14} className="text-primary flex-shrink-0" />
+                                    <span className="font-medium text-card-foreground truncate">{productData?.material}</span>
                                     {(() => {
                                       const grp = item.product_group_name || productData?.material_group;
                                       return grp ? (
-                                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full flex-shrink-0">
-                                          {grp}
-                                        </span>
+                                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full flex-shrink-0">{grp}</span>
                                       ) : null;
                                     })()}
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-3 ml-4 text-xs">
-                                  {displayProduct.uom_type &&
-                                  displayProduct.uom_value ? (
+                                {/* Values — editable for lead/qualified existing deals */}
+                                <div className="flex items-center gap-2 ml-4 text-xs">
+                                  {isEditing ? (
                                     <>
-                                      <span className="text-muted-foreground">
-                                        {displayProduct.uom_type.toUpperCase()}:{" "}
-                                        <span className="font-semibold text-card-foreground">
-                                          {parseFloat(
-                                            displayProduct.uom_value,
-                                          ).toFixed(2)}
-                                        </span>
+                                      <div className="flex flex-col items-end">
+                                        <input
+                                          type="number" min="0" step="0.01" autoFocus
+                                          value={editValues.quantity ?? (item.uom_value || item.quantity || '')}
+                                          onChange={e => setEditValues(v => ({ ...v, quantity: e.target.value }))}
+                                          className="w-20 text-sm px-2 py-1 border border-blue-300 rounded-lg text-right focus:outline-none focus:border-blue-500"
+                                        />
+                                        {qtyError && <span className="text-xs text-red-500 mt-0.5">Required</span>}
+                                      </div>
+                                      <div className="flex flex-col items-end">
+                                        <input
+                                          type="number" min="0" step="0.01"
+                                          value={editValues.price ?? (item.unit_price || '')}
+                                          onChange={e => setEditValues(v => ({ ...v, price: e.target.value }))}
+                                          className="w-28 text-sm px-2 py-1 border border-blue-300 rounded-lg text-right focus:outline-none focus:border-blue-500"
+                                        />
+                                        {priceError && <span className="text-xs text-red-500 mt-0.5">Required</span>}
+                                      </div>
+                                      <span className="text-primary font-semibold w-24 text-right tabular-nums">
+                                        {formatCurrency(liveTotal, preferredCurrency)}
                                       </span>
-                                      <span className="text-muted-foreground">
-                                        {t("deals.rate")}:{" "}
-                                        <span className="font-semibold text-card-foreground">
-                                          {formatCurrency(
-                                            displayProduct.unit_price || 0,
-                                            preferredCurrency,
-                                          )}
-                                        </span>
-                                      </span>
-                                                      {(() => {
-                                        const lt = parseFloat(displayProduct.line_total) ||
-                                          (parseFloat(displayProduct.uom_value || 0) * parseFloat(displayProduct.unit_price || 0));
-                                        const cp = parseFloat(item.cost_price || item.product?.cost_price || 0);
-                                        const qty2 = parseFloat(displayProduct.uom_value || displayProduct.quantity || 0);
-                                        const lc = qty2 * cp;
-                                        const mp = lt > 0 ? ((lt - lc) / lt) * 100 : null;
-                                        if (mp == null || userProfile?.role === "salesman") return null;
-                                        return (
-                                          <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
-                                            mp >= 20 ? "bg-green-100 text-green-700"
-                                            : mp >= 10 ? "bg-amber-100 text-amber-700"
-                                            : "bg-red-100 text-red-700"
-                                          }`}>{mp.toFixed(1)}%</span>
-                                        );
-                                      })()}
-                                      <span className="text-primary font-semibold">
-                                        {t("common.total")}:{" "}
-                                        {formatCurrency(
-                                          parseFloat(displayProduct.line_total) ||
-                                          (parseFloat(displayProduct.uom_value || displayProduct.quantity || 0) *
-                                           parseFloat(displayProduct.unit_price || 0)),
-                                          preferredCurrency,
-                                        )}
-                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          const qty   = parseFloat(editValues.quantity || 0);
+                                          const price = parseFloat(editValues.price || 0);
+                                          if (qty <= 0 || price <= 0) return;
+                                          const lineTotal = qty * price;
+                                          const { error } = await supabase
+                                            .from('deal_products')
+                                            .update({ uom_value: qty, quantity: qty, unit_price: price, line_total: lineTotal, updated_at: new Date().toISOString() })
+                                            .eq('id', item.id);
+                                          if (!error) {
+                                            const updated = dealProducts.map(p =>
+                                              p.id === item.id ? { ...p, uom_value: qty, quantity: qty, unit_price: price, line_total: lineTotal } : p
+                                            );
+                                            setDealProducts(updated);
+                                            setFormData(prev => ({ ...prev, amount: updated.reduce((s, p) => s + parseFloat(p.line_total || 0), 0) }));
+                                            setEditingProductId(null);
+                                            setEditValues({});
+                                          }
+                                        }}
+                                        className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                        title="Save"
+                                      >
+                                        <Icon name="Check" size={14} />
+                                      </button>
+                                      <button type="button" onClick={() => { setEditingProductId(null); setEditValues({}); }} className="p-1 text-muted-foreground hover:bg-muted rounded" title="Cancel">
+                                        <Icon name="X" size={14} />
+                                      </button>
                                     </>
                                   ) : (
                                     <>
-                                      <span className="text-muted-foreground">
-                                        {t("common.quantity")}:{" "}
-                                        <span className="font-semibold text-card-foreground">
-                                          {parseFloat(
-                                            displayProduct.quantity || 0,
-                                          ).toFixed(0)}
+                                      <span
+                                        className={`text-muted-foreground ${canEditProducts && deal?.id ? 'cursor-pointer hover:text-blue-600' : ''}`}
+                                        onClick={() => { if (!canEditProducts || !deal?.id) return; setEditingProductId(item.id); setEditValues({ quantity: item.uom_value || item.quantity || '', price: item.unit_price || '' }); }}
+                                      >
+                                        {(item.uom_type || 'QTY').toUpperCase()}:{' '}
+                                        <span className={`font-semibold ${qtyError ? 'text-red-600' : 'text-card-foreground'}`}>
+                                          {currentQty > 0 ? currentQty.toFixed(2) : '—'}
                                         </span>
                                       </span>
-                                      {displayProduct.sqm && (
-                                        <span className="text-muted-foreground">
-                                          SQM:{" "}
-                                          <span className="font-semibold text-card-foreground">
-                                            {parseFloat(
-                                              displayProduct.sqm,
-                                            ).toFixed(2)}
-                                          </span>
+                                      <span
+                                        className={`text-muted-foreground ${canEditProducts && deal?.id ? 'cursor-pointer hover:text-blue-600' : ''}`}
+                                        onClick={() => { if (!canEditProducts || !deal?.id) return; setEditingProductId(item.id); setEditValues({ quantity: item.uom_value || item.quantity || '', price: item.unit_price || '' }); }}
+                                      >
+                                        {t("deals.rate")}:{' '}
+                                        <span className={`font-semibold ${priceError ? 'text-red-600' : 'text-card-foreground'}`}>
+                                          {currentPrice > 0 ? formatCurrency(currentPrice, preferredCurrency) : '—'}
                                         </span>
+                                      </span>
+                                      {mp != null && userProfile?.role !== 'salesman' && (
+                                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
+                                          mp >= 20 ? 'bg-green-100 text-green-700' : mp >= 10 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                                        }`}>{mp.toFixed(1)}%</span>
                                       )}
-                                      {displayProduct.ton && (
-                                        <span className="text-muted-foreground">
-                                          TON:{" "}
-                                          <span className="font-semibold text-card-foreground">
-                                            {parseFloat(
-                                              displayProduct.ton,
-                                            ).toFixed(2)}
-                                          </span>
-                                        </span>
+                                      <span className="text-primary font-semibold tabular-nums">
+                                        {t("common.total")}:{' '}
+                                        {formatCurrency(liveTotal, preferredCurrency)}
+                                      </span>
+                                      {canEditProducts && deal?.id && (
+                                        <button
+                                          type="button"
+                                          onClick={() => { setEditingProductId(item.id); setEditValues({ quantity: item.uom_value || item.quantity || '', price: item.unit_price || '' }); }}
+                                          className="p-1 text-muted-foreground hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                                          title="Edit qty / price"
+                                        >
+                                          <Icon name="Pencil" size={13} />
+                                        </button>
+                                      )}
+                                      {(!deal?.id || canAddRemoveProducts) && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRemoveProduct(deal ? item.id : idx)}
+                                          disabled={isLoadingProducts}
+                                          className={`text-destructive hover:text-destructive/80 disabled:opacity-50 ml-1 ${deal?.id ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}
+                                          title={t("deals.removeProduct")}
+                                        >
+                                          <Icon name="Trash2" size={14} />
+                                        </button>
                                       )}
                                     </>
                                   )}
-
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleRemoveProduct(deal ? item.id : idx)
-                                    }
-                                    disabled={isLoadingProducts}
-                                    className="text-destructive hover:text-destructive/80 disabled:opacity-50 ml-2"
-                                    title={t("deals.removeProduct")}
-                                  >
-                                    <Icon name="Trash2" size={14} />
-                                  </button>
                                 </div>
                               </div>
                             );
@@ -1584,6 +1819,32 @@ const DealModal = ({
                     )
                   );
                 })()}
+
+                {/* Feature 1: product error summary */}
+                {productErrors.length > 0 && (
+                  <div className="flex items-start gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+                    <Icon name="AlertCircle" size={13} className="flex-shrink-0 mt-0.5" />
+                    <div>
+                      {productErrors.map((e, i) => <p key={i}>{e.message}</p>)}
+                    </div>
+                  </div>
+                )}
+
+                {/* Feature 2: stage hint */}
+                {deal?.id && canEditProducts && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                    <Icon name="Info" size={11} />
+                    {deal.stage === 'lead'
+                      ? 'Lead stage — click any qty or price to edit. Add or remove products freely.'
+                      : 'Qualified stage — click qty or price to edit. Products cannot be added or removed.'}
+                  </p>
+                )}
+                {deal?.id && !canEditProducts && (
+                  <p className="text-xs text-amber-600 flex items-center gap-1 mt-1">
+                    <Icon name="Lock" size={11} />
+                    Products are locked at {deal.stage === 'proposal_sent' ? 'Proposal' : deal.stage} stage. Use Final Value to record changes.
+                  </p>
+                )}
 
                 {!deal && selectedProducts.length === 0 && !showProductPicker && (
                   <div className="text-center py-6 text-muted-foreground">
