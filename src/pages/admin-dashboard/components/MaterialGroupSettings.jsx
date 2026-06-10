@@ -4,8 +4,10 @@ import { adminService } from "services/supabaseService";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "contexts/AuthContext";
 
-function dispatchGroupsUpdated() {
-  window.dispatchEvent(new Event("material-groups-updated"));
+function dispatchGroupsUpdated(companyId) {
+  window.dispatchEvent(
+    new CustomEvent("material-groups-updated", { detail: { companyId } })
+  );
 }
 
 const MaterialGroupSettings = () => {
@@ -181,37 +183,42 @@ const MaterialGroupSettings = () => {
   async function handleCreateGroup() {
     const name = newGroupName.trim();
     if (!name) return;
+
     if (groups.find((g) => g.name.toLowerCase() === name.toLowerCase())) {
-      showError(`Group "${name}" already exists.`);
+      showError(`"${name}" already exists`);
       return;
     }
+
     setCreateLoading(true);
-    try {
-      const { error } = await supabase
-        .from("material_groups")
-        .insert({ company_id: company.id, name, sort_order: 0, is_active: true });
 
-      if (error && error.code === "42P01") {
-        // Table doesn't exist — store in localStorage fallback
-        const key = `groups_${company.id}`;
-        const existing = JSON.parse(localStorage.getItem(key) || "[]");
-        if (!existing.includes(name)) {
-          existing.push(name);
-          localStorage.setItem(key, JSON.stringify(existing.sort()));
-        }
-      } else if (error) {
-        throw error;
-      }
+    console.log('Creating group:', { name, company_id: company?.id });
 
-      showSuccess(`Group "${name}" created.`);
-      setShowCreateGroup(false);
-      setNewGroupName("");
-      await loadGroups();
-      dispatchGroupsUpdated();
-    } catch (err) {
-      showError("Failed to create group: " + err.message);
+    const { data, error } = await supabase
+      .from("material_groups")
+      .insert({
+        company_id: company.id,
+        name:       name,
+        is_active:  true,
+        sort_order: groups.length + 1,
+      })
+      .select()
+      .single();
+
+    console.log('Create result:', data, error);
+
+    if (error) {
+      showError("Failed to create: " + error.message);
+      setCreateLoading(false);
+      return;
     }
+
+    showSuccess(`"${name}" created`);
+    setShowCreateGroup(false);
+    setNewGroupName("");
+    await loadGroups();
     setCreateLoading(false);
+
+    dispatchGroupsUpdated(company.id);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -232,7 +239,7 @@ const MaterialGroupSettings = () => {
       showSuccess(`"${group.name}" renamed to "${newName}" — updated across all products.`);
       setEditingGroup(null);
       await loadGroups();
-      dispatchGroupsUpdated();
+      dispatchGroupsUpdated(company.id);
     }
     setSaving(false);
   }
@@ -242,24 +249,26 @@ const MaterialGroupSettings = () => {
   // ══════════════════════════════════════════════════════════════════════════
   async function handleDeleteGroup(group) {
     const productCount = group.productCount || 0;
-    const subGroupCount = group.sub_groups?.length || 0;
-    let msg = `Delete group "${group.name}"?\n\n`;
-    if (productCount > 0 || subGroupCount > 0) {
-      msg += "This will also:\n";
-      if (subGroupCount > 0) msg += `• Delete ${subGroupCount} sub group(s)\n`;
-      if (productCount > 0) msg += `• Remove group from ${productCount} product(s)\n  (products will NOT be deleted)\n`;
-      msg += "\nThis cannot be undone.";
-    }
+    const msg = `Hide group "${group.name}"?\n\nIt will no longer appear in new deals. Existing deals that reference this group are unaffected.\n\nThis can be undone by contacting support.`;
     if (!confirm(msg)) return;
 
     setSaving(true);
-    const { error } = await adminService.deleteMaterialGroup(group.id, group.name, company.id);
+
+    // Soft delete — set is_active = false so existing deals keep their group reference
+    // while the group is hidden from new deal creation
+    const { error } = await supabase
+      .from("material_groups")
+      .update({ is_active: false })
+      .eq("id", group.id)
+      .eq("company_id", company.id);
+
     if (error) {
       showError("Failed to delete: " + error.message);
     } else {
-      showSuccess(`Group "${group.name}" deleted.` + (productCount > 0 ? ` Removed from ${productCount} product(s).` : ""));
-      await loadGroups();
-      dispatchGroupsUpdated();
+      showSuccess(`Group "${group.name}" hidden.` + (productCount > 0 ? ` Existing deals with this group are unaffected.` : ""));
+      // Update local state immediately — no round-trip needed
+      setGroups((prev) => prev.filter((g) => g.id !== group.id));
+      dispatchGroupsUpdated(company.id);
     }
     setSaving(false);
   }
@@ -283,7 +292,7 @@ const MaterialGroupSettings = () => {
       setAddingSubGroupTo(null);
       setNewSubGroupName("");
       await loadGroups();
-      dispatchGroupsUpdated();
+      dispatchGroupsUpdated(company.id);
     }
     setSaving(false);
   }
@@ -302,7 +311,7 @@ const MaterialGroupSettings = () => {
       showSuccess(`Sub group renamed from "${sub.name}" to "${newName}" — products updated.`);
       setEditingSubGroup(null);
       await loadGroups();
-      dispatchGroupsUpdated();
+      dispatchGroupsUpdated(company.id);
     }
     setSaving(false);
   }
@@ -320,7 +329,7 @@ const MaterialGroupSettings = () => {
     } else {
       showSuccess(`Sub group "${sub.name}" deleted.`);
       await loadGroups();
-      dispatchGroupsUpdated();
+      dispatchGroupsUpdated(company.id);
     }
     setSaving(false);
   }

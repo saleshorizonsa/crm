@@ -6,6 +6,7 @@ import Select from "components/ui/Select";
 import { Checkbox } from "components/ui/Checkbox";
 import { adminService } from "../../../services/supabaseService";
 import { useAuth } from "contexts/AuthContext";
+import { useMaterialGroups } from "../../../hooks/useMaterialGroups";
 
 const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
   const { company } = useAuth();
@@ -25,36 +26,11 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
     is_active: true,
   });
   const [loading, setLoading] = useState(false);
-  const [groups, setGroups] = useState([]);
+  const { groups } = useMaterialGroups();
   const [subgroups, setSubgroups] = useState([]);
   const [addingNewGroup, setAddingNewGroup] = useState(false);
   const [newGroupInput, setNewGroupInput] = useState("");
 
-  // Load groups — getMaterialGroups returns array directly with products fallback built in
-  const loadGroups = async () => {
-    if (!company?.id) return;
-    const fetched = await adminService.getMaterialGroups(company.id);
-    if (fetched && fetched.length > 0) {
-      setGroups(fetched.map((g) => ({ name: g.name })));
-    } else {
-      // Last-resort fallback: scan products table directly
-      const { data: products } = await adminService.getAllProducts();
-      if (products) {
-        const names = [
-          ...new Set(
-            products.map((p) => (p.material_group || "").trim()).filter(Boolean)
-          ),
-        ].sort();
-        setGroups(names.map((name) => ({ name })));
-      }
-    }
-  };
-
-  useEffect(() => {
-    loadGroups();
-    window.addEventListener("material-groups-updated", loadGroups);
-    return () => window.removeEventListener("material-groups-updated", loadGroups);
-  }, [company?.id]);
 
   // Subgroups: from material_sub_groups table, with localStorage fallback
   useEffect(() => {
@@ -224,7 +200,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
               >
                 <option value="">— Select a group —</option>
                 {groups.map((g) => (
-                  <option key={g.name} value={g.name}>{g.name}</option>
+                  <option key={g} value={g}>{g}</option>
                 ))}
                 {!viewOnly && <option value="__new__">+ Type a new group name…</option>}
               </select>

@@ -3,6 +3,7 @@ import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
 import Input from "components/ui/Input";
 import { adminService } from "../../../services/supabaseService";
+import { useMaterialGroups } from "../../../hooks/useMaterialGroups";
 import ProductModal from "./ProductModal";
 import ProductUploadModal from "./ProductUploadModal";
 import { useLanguage } from "../../../i18n";
@@ -87,15 +88,7 @@ const ProductMaster = () => {
   };
 
   // ── derived filter options ────────────────────────────────────────────────────
-  const uniqueGroups = useMemo(() => {
-    return [
-      ...new Set(
-        products
-          .map((p) => p.material_group)
-          .filter(Boolean)
-      ),
-    ].sort();
-  }, [products]);
+  const { groups: uniqueGroups } = useMaterialGroups();
 
   const uniqueSubGroups = useMemo(() => {
     return [

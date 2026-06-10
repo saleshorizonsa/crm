@@ -12,6 +12,7 @@ import MarginReport   from "./MarginReport";
 import ActivityReport from "./ActivityReport";
 import { useLanguage } from "../../i18n";
 import { exportReportToExcel } from "../../utils/reportExport";
+import { useMaterialGroups } from "../../hooks/useMaterialGroups";
 
 const today = () => new Date().toISOString().split("T")[0];
 const firstOfYear = () => `${new Date().getFullYear()}-01-01`;
@@ -130,11 +131,7 @@ const ReportsPage = () => {
     return Object.entries(map).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [deals]);
 
-  const materialGroupOptions = useMemo(() => {
-    const groups = new Set();
-    deals.forEach(d => d.deal_products?.forEach(dp => dp.product?.material_group && groups.add(dp.product.material_group)));
-    return [...groups].sort();
-  }, [deals]);
+  const { groups: materialGroupOptions } = useMaterialGroups();
 
   // Apply drill-down filters
   const filteredDeals = useMemo(() => {

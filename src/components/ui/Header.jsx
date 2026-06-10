@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import Icon from "../AppIcon";
 import Button from "./Button";
-import CompanySelector from "./CompanySelector";
 import { useAuth } from "contexts/AuthContext";
-import { companyService, notificationService } from "services/supabaseService";
+import { notificationService } from "services/supabaseService";
+import CompanySwitcher from "../CompanySwitcher";
 import { capitalize } from "utils/helper";
 import { useLanguage } from "../../i18n";
 import { useNavigate } from "react-router-dom";
@@ -12,32 +12,16 @@ const Header = ({
   isCollapsed = false,
   onToggleSidebar,
   onCompanyChange,
-  selectedCompany: propSelectedCompany,
 }) => {
-  const { user, userProfile, company, signOut, changeCompany } = useAuth();
+  const { user, userProfile, company, signOut } = useAuth();
   const { t, language, setLanguage, isRTL } = useLanguage();
   const navigate = useNavigate();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [selectedCompany, setSelectedCompany] = useState(
-    propSelectedCompany || company || null
-  );
-  const [companies, setCompanies] = useState([]);
-  const [loadingCompanies, setLoadingCompanies] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const companySelectorRef = useRef(null);
   const userMenuRef = useRef(null);
   const mobileMenuRef = useRef(null);
-
-  console.log(user);
-
-  // Update local state when prop changes
-  useEffect(() => {
-    if (propSelectedCompany) {
-      setSelectedCompany(propSelectedCompany);
-    }
-  }, [propSelectedCompany]);
 
   // Load unread notification count and refresh immediately when notifications are read
   useEffect(() => {
@@ -94,40 +78,8 @@ const Header = ({
       : []),
   ];
 
-  // Load companies for directors and admins
-  useEffect(() => {
-    const loadCompanies = async () => {
-      if (userProfile?.role === "director" || userProfile?.role === "admin") {
-        setLoadingCompanies(true);
-        try {
-          const { data: companiesData, error } =
-            await companyService.getAllCompanies();
-          if (error) {
-            console.error("Error loading companies:", error);
-            setCompanies([]);
-          } else {
-            setCompanies(companiesData || []);
-          }
-        } catch (error) {
-          console.error("Error loading companies:", error);
-        } finally {
-          setLoadingCompanies(false);
-        }
-      }
-    };
-
-    if (userProfile?.role) {
-      loadCompanies();
-    }
-  }, [userProfile?.role]);
-
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (
-        companySelectorRef?.current &&
-        !companySelectorRef?.current?.contains(event?.target)
-      ) {
-      }
       if (
         userMenuRef?.current &&
         !userMenuRef?.current?.contains(event?.target)
@@ -161,31 +113,6 @@ const Header = ({
       await signOut();
     } catch (error) {
       console.error("Error signing out:", error);
-    }
-  };
-
-  const handleCompanyChange = (company) => {
-    if (!company) {
-      setSelectedCompany(null);
-      if (onCompanyChange) {
-        onCompanyChange(null);
-      }
-      return;
-    }
-
-    setSelectedCompany(company);
-
-    // Update company in AuthContext for admin/director
-    if (
-      changeCompany &&
-      (userProfile?.role === "admin" || userProfile?.role === "director")
-    ) {
-      changeCompany(company);
-    }
-
-    // Call parent callback if provided
-    if (onCompanyChange) {
-      onCompanyChange(company);
     }
   };
 
@@ -275,28 +202,10 @@ const Header = ({
 
           <div className="flex-1" />
 
-          {/* Company Selector - Directors and Admins can switch companies */}
-          {(userProfile?.role === "director" || userProfile?.role === "admin") && (
-            <div className="relative mr-4" ref={companySelectorRef}>
-              <CompanySelector
-                companies={companies}
-                selectedCompany={selectedCompany}
-                onCompanyChange={handleCompanyChange}
-                loading={loadingCompanies}
-                showAllOption={false}
-                className="hidden sm:block min-w-[150px]"
-              />
-            </div>
-          )}
-          
-          {/* Company Name Display - For other roles */}
-          {userProfile?.role && userProfile?.role !== "director" && userProfile?.role !== "admin" && company && (
-            <div className="relative mr-4">
-              <span className="hidden sm:inline text-sm font-medium text-foreground">
-                {company?.name}
-              </span>
-            </div>
-          )}
+          {/* Company Switcher — dropdown for admin/director, static label for all other roles */}
+          <div className="mr-2">
+            <CompanySwitcher />
+          </div>
 
           {/* Language Toggle */}
           <button

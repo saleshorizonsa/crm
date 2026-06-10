@@ -19,6 +19,60 @@ export const AuthProvider = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null);
   const [company, setCompany] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [availableCompanies, setAvailableCompanies] = useState([]);
+
+  // Load all companies this user can switch to (admin = all, director = linked)
+  const loadAvailableCompanies = async (role, userId) => {
+    if (role === "admin") {
+      const { data } = await supabase
+        .from("companies")
+        .select("id, name, logo_url, is_active")
+        .eq("is_active", true)
+        .order("name");
+      setAvailableCompanies(data || []);
+    } else if (role === "director") {
+      // Try director_companies link table; fall back to all companies if missing
+      try {
+        const { data, error } = await supabase
+          .from("director_companies")
+          .select("company:companies(id, name, logo_url, is_active)")
+          .eq("user_id", userId);
+        if (!error && data?.length > 0) {
+          setAvailableCompanies(data.map((d) => d.company).filter(Boolean));
+        } else {
+          const { data: all } = await supabase
+            .from("companies")
+            .select("id, name, logo_url, is_active")
+            .eq("is_active", true)
+            .order("name");
+          setAvailableCompanies(all || []);
+        }
+      } catch {
+        const { data: all } = await supabase
+          .from("companies")
+          .select("id, name, logo_url, is_active")
+          .eq("is_active", true)
+          .order("name");
+        setAvailableCompanies(all || []);
+      }
+    } else {
+      setAvailableCompanies([]);
+    }
+  };
+
+  // Switch the active company (admin/director only). Caller reloads the page.
+  const switchCompany = async (companyId) => {
+    if (!companyId || companyId === company?.id) return;
+    const { data } = await supabase
+      .from("companies")
+      .select("*")
+      .eq("id", companyId)
+      .single();
+    if (data) {
+      setCompany(data);
+      localStorage.setItem("selectedCompanyId", data.id);
+    }
+  };
 
   // Load user profile and currency settings
   const loadUserProfile = async (userId, retryCount = 0) => {
@@ -92,6 +146,9 @@ export const AuthProvider = ({ children }) => {
       }
 
       setUserProfile(profile);
+
+      // Load company list for switcher (admin/director only — background, non-blocking)
+      loadAvailableCompanies(profile.role, profile.id);
 
       // For admin and director roles, they can work across all companies
       // For other roles, they must have a company assigned
@@ -290,6 +347,7 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setUserProfile(null);
     setCompany(null);
+    setAvailableCompanies([]);
 
     // Clear localStorage - including Supabase auth keys
     localStorage.removeItem("preferredCurrency");
@@ -331,6 +389,8 @@ export const AuthProvider = ({ children }) => {
     signIn,
     signOut,
     changeCompany,
+    switchCompany,
+    availableCompanies,
     refetchProfile: () => user?.id && loadUserProfile(user.id),
   };
 

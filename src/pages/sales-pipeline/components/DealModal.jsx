@@ -21,6 +21,7 @@ import {
   activityService,
 } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
+import { useMaterialGroups } from '../../../hooks/useMaterialGroups';
 
 // ─── Multi-select product picker components ───────────────────────────────────
 
@@ -387,15 +388,14 @@ const DealModal = ({
   // Multi-select product picker state
   const [showProductPicker, setShowProductPicker] = useState(false);
   const [allProducts, setAllProducts] = useState([]);
-  const [allGroupNames, setAllGroupNames] = useState([]);
+
   const [pickerSearch, setPickerSearch] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
   const [productPrices, setProductPrices] = useState({}); // { productId: { price, quantity, uomType } }
   const [productsLoading, setProductsLoading] = useState(false);
   const [pickerGroup, setPickerGroup] = useState('');
 
-  // Groups come from material_groups admin table (set by loadAllProducts)
-  const productGroups = useMemo(() => allGroupNames, [allGroupNames]);
+  const { groups: productGroups, reload: reloadGroups } = useMaterialGroups();
 
   // Activity Log state
   const [dealActivities,        setDealActivities]        = useState([]);
@@ -463,6 +463,9 @@ const DealModal = ({
         lost_reason_notes: deal?.lost_reason_notes || "",
       });
 
+      // Reload groups on every modal open so newly-added groups appear immediately
+      reloadGroups();
+
       // Load deal products if editing existing deal
       if (deal?.id) {
         console.log("🔍 Deal has ID:", deal.id);
@@ -498,23 +501,8 @@ const DealModal = ({
         resetProductForm();
       }
     }
-  }, [isOpen, deal]);
+  }, [isOpen, deal, reloadGroups]);
 
-  // Load group list from material_groups admin table
-  useEffect(() => {
-    if (!isOpen) return;
-    async function loadGroups() {
-      const { data: mgRows } = await supabase
-        .from('material_groups')
-        .select('name')
-        .eq('is_active', true)
-        .order('name', { ascending: true });
-      setAllGroupNames(
-        (mgRows || []).map(r => r.name)
-      );
-    }
-    loadGroups();
-  }, [isOpen]);
 
   // Load products for the selected group only (avoids loading all 1000+ products at once)
   useEffect(() => {
