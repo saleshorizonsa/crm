@@ -8,7 +8,7 @@ import ProductModal from "./ProductModal";
 import ProductUploadModal from "./ProductUploadModal";
 import { useLanguage } from "../../../i18n";
 
-const ProductMaster = () => {
+const ProductMaster = ({ adminCompany }) => {
   const { t } = useLanguage();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
