@@ -31,14 +31,18 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
   const [productTargetsData, setProductTargetsData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState("all"); // Default to "all" instead of current month
-  const [selectedCompany, setSelectedCompany] = useState("all"); // Default to all companies
+  const [selectedCompany, setSelectedCompany] = useState(propCompanyId || "all");
   const [targetGridView, setTargetGridView] = useState("value");
   const [editingTarget, setEditingTarget] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
 
   useEffect(() => {
-    loadCompanies();
+    if (!propCompanyId) loadCompanies();
   }, []);
+
+  useEffect(() => {
+    setSelectedCompany(propCompanyId || "all");
+  }, [propCompanyId]);
 
   useEffect(() => {
     loadData();
@@ -414,17 +418,19 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
           </p>
         </div>
         <div className="flex gap-3">
-          <div className="w-56">
-            <Select
-              label={t("common.company")}
-              options={[
-                { value: "all", label: t("adminCompanyMgmt.allCompanies") },
-                ...companies.map((c) => ({ value: c.id, label: c.name })),
-              ]}
-              value={selectedCompany}
-              onChange={(value) => setSelectedCompany(value)}
-            />
-          </div>
+          {!propCompanyId && (
+            <div className="w-56">
+              <Select
+                label={t("common.company")}
+                options={[
+                  { value: "all", label: t("adminCompanyMgmt.allCompanies") },
+                  ...companies.map((c) => ({ value: c.id, label: c.name })),
+                ]}
+                value={selectedCompany}
+                onChange={(value) => setSelectedCompany(value)}
+              />
+            </div>
+          )}
           <div className="w-56">
             <Select
               label={t("dashboard.month")}
