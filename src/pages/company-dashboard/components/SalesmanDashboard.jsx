@@ -522,10 +522,6 @@ const SalesmanDashboard = ({
     );
   }
 
-  const viewingLabel = activeDateRange?.type === 'custom'
-    ? `${format(new Date(activeDateRange.from + 'T00:00:00'), 'd MMM yyyy')} – ${format(new Date(activeDateRange.to + 'T00:00:00'), 'd MMM yyyy')}`
-    : activeDateRange?.label || activeDateRange?.period || 'This Month';
-
   return (
     <div className="salesman-dashboard">
       {/* Quick date selector */}
@@ -560,9 +556,13 @@ const SalesmanDashboard = ({
               Custom
             </button>
           </div>
-          <span className="text-xs font-medium text-gray-500 ml-1 hidden md:block">
-            {viewingLabel}
-          </span>
+          {activeDateRange?.from && activeDateRange?.to && (
+            <span className="text-xs font-medium text-gray-500 ml-1 hidden md:block">
+              {format(new Date(activeDateRange.from + 'T00:00:00'), 'd MMM yyyy')}
+              {' – '}
+              {format(new Date(activeDateRange.to + 'T00:00:00'), 'd MMM yyyy')}
+            </span>
+          )}
         </div>
 
         {showCustomPicker && (
