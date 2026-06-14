@@ -2,16 +2,13 @@ import React, { useState, useEffect } from "react";
 import Icon from "components/AppIcon";
 import { adminService } from "services/supabaseService";
 import { supabase } from "../../../lib/supabase";
-import { useAuth } from "contexts/AuthContext";
-
 function dispatchGroupsUpdated(companyId) {
   window.dispatchEvent(
     new CustomEvent("material-groups-updated", { detail: { companyId } })
   );
 }
 
-const MaterialGroupSettings = () => {
-  const { company } = useAuth();
+const MaterialGroupSettings = ({ adminCompany }) => {
 
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -82,11 +79,11 @@ const MaterialGroupSettings = () => {
 
   // ── Primary load ──────────────────────────────────────────────────────────
   async function loadGroups() {
-    if (!company?.id) return;
+    if (!adminCompany?.id) return;
     setLoading(true);
     setErrorMsg("");
     try {
-      const fetched = await adminService.getMaterialGroups(company.id);
+      const fetched = await adminService.getMaterialGroups(adminCompany.id);
       setGroups(fetched || []);
     } catch (err) {
       console.error("Load groups error:", err);
@@ -102,7 +99,7 @@ const MaterialGroupSettings = () => {
       const { count } = await supabase
         .from("material_groups")
         .select("id", { count: "exact", head: true })
-        .eq("company_id", company.id);
+        .eq("company_id", adminCompany.id);
 
       if (count > 0) return;
 
@@ -120,7 +117,7 @@ const MaterialGroupSettings = () => {
       const { data: insertedGroups } = await supabase
         .from("material_groups")
         .upsert(
-          uniqueGroups.map((name) => ({ company_id: company.id, name, sort_order: 0, is_active: true })),
+          uniqueGroups.map((name) => ({ company_id: adminCompany.id, name, sort_order: 0, is_active: true })),
           { onConflict: "company_id,name" }
         )
         .select("id, name");
@@ -140,7 +137,7 @@ const MaterialGroupSettings = () => {
         const key = `${groupId}::${subName}`;
         if (seen.has(key)) return;
         seen.add(key);
-        subInserts.push({ company_id: company.id, material_group_id: groupId, name: subName, sort_order: 0, is_active: true });
+        subInserts.push({ company_id: adminCompany.id, material_group_id: groupId, name: subName, sort_order: 0, is_active: true });
       });
 
       if (subInserts.length > 0) {
@@ -150,7 +147,7 @@ const MaterialGroupSettings = () => {
       }
 
       // Reload so groups now have real UUIDs
-      const seeded = await adminService.getMaterialGroups(company.id);
+      const seeded = await adminService.getMaterialGroups(adminCompany.id);
       if (seeded?.length > 0) setGroups(seeded);
     } catch (err) {
       // Seeding is optional — silently skip
@@ -159,11 +156,11 @@ const MaterialGroupSettings = () => {
   }
 
   useEffect(() => {
-    if (!company?.id) return;
+    if (!adminCompany?.id) return;
     loadGroups().then(() => {
       seedGroupsTableIfEmpty();
     });
-  }, [company?.id]);
+  }, [adminCompany?.id]);
 
   // ── Stats ─────────────────────────────────────────────────────────────────
   const totalSubGroups = groups.reduce((s, g) => s + (g.sub_groups?.length || 0), 0);
@@ -191,12 +188,12 @@ const MaterialGroupSettings = () => {
 
     setCreateLoading(true);
 
-    console.log('Creating group:', { name, company_id: company?.id });
+    console.log('Creating group:', { name, company_id: adminCompany?.id });
 
     const { data, error } = await supabase
       .from("material_groups")
       .insert({
-        company_id: company.id,
+        company_id: adminCompany.id,
         name:       name,
         is_active:  true,
         sort_order: groups.length + 1,
@@ -218,7 +215,7 @@ const MaterialGroupSettings = () => {
     await loadGroups();
     setCreateLoading(false);
 
-    dispatchGroupsUpdated(company.id);
+    dispatchGroupsUpdated(adminCompany.id);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -232,14 +229,14 @@ const MaterialGroupSettings = () => {
       return;
     }
     setSaving(true);
-    const { error } = await adminService.updateMaterialGroup(group.id, group.name, newName, company.id);
+    const { error } = await adminService.updateMaterialGroup(group.id, group.name, newName, adminCompany.id);
     if (error) {
       showError("Failed to rename: " + error.message);
     } else {
       showSuccess(`"${group.name}" renamed to "${newName}" — updated across all products.`);
       setEditingGroup(null);
       await loadGroups();
-      dispatchGroupsUpdated(company.id);
+      dispatchGroupsUpdated(adminCompany.id);
     }
     setSaving(false);
   }
@@ -260,7 +257,7 @@ const MaterialGroupSettings = () => {
       .from("material_groups")
       .update({ is_active: false })
       .eq("id", group.id)
-      .eq("company_id", company.id);
+      .eq("company_id", adminCompany.id);
 
     if (error) {
       showError("Failed to delete: " + error.message);
@@ -268,7 +265,7 @@ const MaterialGroupSettings = () => {
       showSuccess(`Group "${group.name}" hidden.` + (productCount > 0 ? ` Existing deals with this group are unaffected.` : ""));
       // Update local state immediately — no round-trip needed
       setGroups((prev) => prev.filter((g) => g.id !== group.id));
-      dispatchGroupsUpdated(company.id);
+      dispatchGroupsUpdated(adminCompany.id);
     }
     setSaving(false);
   }
@@ -284,7 +281,7 @@ const MaterialGroupSettings = () => {
       return;
     }
     setSaving(true);
-    const { error } = await adminService.createSubGroup(group.id, company.id, name);
+    const { error } = await adminService.createSubGroup(group.id, adminCompany.id, name);
     if (error) {
       showError("Failed to create sub group: " + error.message);
     } else {
@@ -292,7 +289,7 @@ const MaterialGroupSettings = () => {
       setAddingSubGroupTo(null);
       setNewSubGroupName("");
       await loadGroups();
-      dispatchGroupsUpdated(company.id);
+      dispatchGroupsUpdated(adminCompany.id);
     }
     setSaving(false);
   }
@@ -304,14 +301,14 @@ const MaterialGroupSettings = () => {
     const newName = editSubGroupValue.trim();
     if (!newName || newName === sub.name) { setEditingSubGroup(null); return; }
     setSaving(true);
-    const { error } = await adminService.updateSubGroup(sub.id, sub.name, newName, group.name, company.id);
+    const { error } = await adminService.updateSubGroup(sub.id, sub.name, newName, group.name, adminCompany.id);
     if (error) {
       showError("Failed to rename sub group: " + error.message);
     } else {
       showSuccess(`Sub group renamed from "${sub.name}" to "${newName}" — products updated.`);
       setEditingSubGroup(null);
       await loadGroups();
-      dispatchGroupsUpdated(company.id);
+      dispatchGroupsUpdated(adminCompany.id);
     }
     setSaving(false);
   }
@@ -323,13 +320,13 @@ const MaterialGroupSettings = () => {
     const msg = `Delete sub group "${sub.name}" from "${group.name}"?\n\nProducts assigned to this sub group will have their sub group cleared (not deleted).\n\nThis cannot be undone.`;
     if (!confirm(msg)) return;
     setSaving(true);
-    const { error } = await adminService.deleteSubGroup(sub.id, sub.name, group.name, company.id);
+    const { error } = await adminService.deleteSubGroup(sub.id, sub.name, group.name, adminCompany.id);
     if (error) {
       showError("Failed to delete sub group: " + error.message);
     } else {
       showSuccess(`Sub group "${sub.name}" deleted.`);
       await loadGroups();
-      dispatchGroupsUpdated(company.id);
+      dispatchGroupsUpdated(adminCompany.id);
     }
     setSaving(false);
   }
