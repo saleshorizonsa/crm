@@ -12,10 +12,12 @@ import UserAuthorization from "./components/UserAuthorization";
 import LostReasonSettings from "./components/LostReasonSettings";
 import MaterialGroupSettings from "./components/MaterialGroupSettings";
 import CompanyLogoManager from "./components/CompanyLogoManager";
+import AdminCompanySelector from "./components/AdminCompanySelector";
 import { useLanguage } from "../../i18n";
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState("users");
+  const [adminCompany, setAdminCompany] = useState(null);
   const { signOut, userProfile, company } = useAuth();
   const { t } = useLanguage();
   const [isRecalculating, setIsRecalculating] = useState(false);
@@ -127,10 +129,34 @@ const AdminDashboard = () => {
           {activeTab === "authorization" && <UserAuthorization />}
           {activeTab === "companies"     && <CompanyManagement />}
           {activeTab === "branding"      && <CompanyLogoManager />}
-          {activeTab === "products"      && <ProductMaster />}
-          {activeTab === "targets"       && <SalesTarget />}
+          {activeTab === "products" && (
+            <>
+              <AdminCompanySelector value={adminCompany} onSelect={setAdminCompany} />
+              {adminCompany
+                ? <ProductMaster adminCompany={adminCompany} />
+                : <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">Select a company above to manage products</div>
+              }
+            </>
+          )}
+          {activeTab === "targets" && (
+            <>
+              <AdminCompanySelector value={adminCompany} onSelect={setAdminCompany} />
+              {adminCompany
+                ? <SalesTarget companyId={adminCompany.id} />
+                : <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">Select a company above to manage sales targets</div>
+              }
+            </>
+          )}
           {activeTab === "lost-reasons"     && <LostReasonSettings />}
-          {activeTab === "material-groups"  && <MaterialGroupSettings />}
+          {activeTab === "material-groups" && (
+            <>
+              <AdminCompanySelector value={adminCompany} onSelect={setAdminCompany} />
+              {adminCompany
+                ? <MaterialGroupSettings adminCompany={adminCompany} />
+                : <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">Select a company above to manage material groups</div>
+              }
+            </>
+          )}
           {activeTab === "settings"         && <UomSettings />}
         </div>
       </div>
