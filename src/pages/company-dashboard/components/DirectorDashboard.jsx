@@ -2306,33 +2306,36 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               />
             </div>
 
-            {/* Quick Date Selector */}
-            <QuickDateSelector
-              activeDateRange={activeDateRange}
-              onRangeChange={(range) => {
-                setActiveDateRange(range);
-                if (range.type === 'monthly') {
-                  const d = new Date(range.from);
-                  setSelectedMonth(d.getMonth());
-                  setSelectedQuarter(Math.floor(d.getMonth() / 3));
-                  setSelectedYear(d.getFullYear());
-                } else if (range.type === 'quarterly') {
-                  const d = new Date(range.from);
-                  setSelectedMonth(null);
-                  setSelectedQuarter(Math.floor(d.getMonth() / 3));
-                  setSelectedYear(d.getFullYear());
-                } else if (range.type === 'yearly') {
-                  setSelectedMonth(null);
-                  setSelectedQuarter(null);
-                  setSelectedYear(new Date(range.from).getFullYear());
-                } else {
-                  setSelectedMonth(null);
-                  setSelectedQuarter(null);
-                  setSelectedYear(null);
-                }
-                setRange({ from: range.from, to: range.to });
-              }}
-            />
+            {/* Quick Date Selector — hidden when viewing as an employee
+                (employee dashboards carry their own date filter) */}
+            {!selectedEmployee && (
+              <QuickDateSelector
+                activeDateRange={activeDateRange}
+                onRangeChange={(range) => {
+                  setActiveDateRange(range);
+                  if (range.type === 'monthly') {
+                    const d = new Date(range.from);
+                    setSelectedMonth(d.getMonth());
+                    setSelectedQuarter(Math.floor(d.getMonth() / 3));
+                    setSelectedYear(d.getFullYear());
+                  } else if (range.type === 'quarterly') {
+                    const d = new Date(range.from);
+                    setSelectedMonth(null);
+                    setSelectedQuarter(Math.floor(d.getMonth() / 3));
+                    setSelectedYear(d.getFullYear());
+                  } else if (range.type === 'yearly') {
+                    setSelectedMonth(null);
+                    setSelectedQuarter(null);
+                    setSelectedYear(new Date(range.from).getFullYear());
+                  } else {
+                    setSelectedMonth(null);
+                    setSelectedQuarter(null);
+                    setSelectedYear(null);
+                  }
+                  setRange({ from: range.from, to: range.to });
+                }}
+              />
+            )}
 
             {/* Viewing As Badge */}
             {selectedEmployee && (
