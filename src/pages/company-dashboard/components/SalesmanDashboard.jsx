@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { format } from 'date-fns';
 import MetricsCard from "./MetricsCard";
 import SalesChart from "./SalesChart";
 import ActivityFeed from "./ActivityFeed";
@@ -18,7 +19,7 @@ import {
 } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
 import {
-  buildDateRange,
+  getQuickRanges,
   getPreviousPeriod,
   calcChange,
   isPositiveChange,
@@ -27,9 +28,6 @@ import {
 const SalesmanDashboard = ({
   viewAsUser = null,
   readOnly = false,
-  filterMonth = undefined,
-  filterQuarter = undefined,
-  filterYear = undefined,
 }) => {
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
@@ -50,50 +48,11 @@ const SalesmanDashboard = ({
   const [isLoading, setIsLoading] = useState(true);
   const [activeView, setActiveView] = useState("overview");
 
-  // Time filter states
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-  const [selectedQuarter, setSelectedQuarter] = useState(null);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-
-  // Sync from parent filter props when the manager controls filters via "View As"
-  useEffect(() => {
-    if (filterMonth !== undefined) {
-      setSelectedMonth(filterMonth ?? null);
-      setSelectedQuarter(filterQuarter ?? null);
-      setSelectedYear(filterYear ?? null);
-    }
-  }, [filterMonth, filterQuarter, filterYear]);
-
-  const monthOptions = useMemo(() => {
-    const months = [];
-    const startMonth = selectedQuarter !== null ? selectedQuarter * 3 : 0;
-    const endMonth = selectedQuarter !== null ? startMonth + 3 : 12;
-    for (let m = startMonth; m < endMonth; m++) {
-      const date = new Date(2000, m, 1);
-      months.push({
-        value: m,
-        label: date.toLocaleString("default", { month: "short" }),
-      });
-    }
-    return months;
-  }, [selectedQuarter]);
-
-  const quarterOptions = useMemo(() => {
-    const quarters = [
-      { value: 0, label: "Q1" },
-      { value: 1, label: "Q2" },
-      { value: 2, label: "Q3" },
-      { value: 3, label: "Q4" },
-    ];
-    if (selectedMonth !== null)
-      return quarters.filter((q) => q.value === Math.floor(selectedMonth / 3));
-    return quarters;
-  }, [selectedMonth]);
-
-  const yearOptions = [
-    { value: 2025, label: "2025" },
-    { value: 2026, label: "2026" },
-  ];
+  // Active date range — defaults to "This Month"
+  const [activeDateRange, setActiveDateRange] = useState(() => getQuickRanges()[0]);
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [metrics, setMetrics] = useState(null);
   const [salesData, setSalesData] = useState([]);
   const [activities, setActivities] = useState([]);
@@ -102,27 +61,20 @@ const SalesmanDashboard = ({
   const [myContacts, setMyContacts] = useState([]);
   const [performanceGoals, setPerformanceGoals] = useState(null);
 
-  // Deals filtered by the selected time period
+  // Deals filtered by activeDateRange
   const filteredDeals = useMemo(() => {
-    return myDeals.filter((deal) => {
-      // For won deals use closed_at (when revenue was realised); otherwise created_at
-      const dateField =
-        deal.stage === "won"
-          ? deal.closed_at || deal.created_at
-          : deal.created_at;
-      const date = new Date(dateField);
-      const dealYear = date.getFullYear();
-      const dealMonth = date.getMonth();
-      if (selectedYear !== null && dealYear !== selectedYear) return false;
-      if (
-        selectedQuarter !== null &&
-        Math.floor(dealMonth / 3) !== selectedQuarter
-      )
-        return false;
-      if (selectedMonth !== null && dealMonth !== selectedMonth) return false;
-      return true;
+    if (!activeDateRange?.from || !activeDateRange?.to) return myDeals;
+    const from = new Date(activeDateRange.from + 'T00:00:00');
+    const to   = new Date(activeDateRange.to   + 'T23:59:59');
+    return myDeals.filter(deal => {
+      const dateField = deal.stage === 'won'
+        ? (deal.closed_at || deal.created_at)
+        : deal.created_at;
+      if (!dateField) return false;
+      const d = new Date(dateField);
+      return d >= from && d <= to;
     });
-  }, [myDeals, selectedYear, selectedQuarter, selectedMonth]);
+  }, [myDeals, activeDateRange?.from, activeDateRange?.to]);
 
   // Revenue computed from filtered won deals with currency conversion
   const filteredRevenue = useMemo(() => {
@@ -133,33 +85,34 @@ const SalesmanDashboard = ({
 
   // Percentage change vs previous equivalent period
   const changes = useMemo(() => {
-    if (!myDeals.length || selectedYear === null) {
-      return { activeDeals: null };
-    }
-    const curr  = buildDateRange(selectedMonth, selectedQuarter, selectedYear);
-    const prev  = getPreviousPeriod(curr.from, curr.to);
+    if (!myDeals.length || !activeDateRange?.from) return { activeDeals: null };
+    const prev  = getPreviousPeriod(activeDateRange.from, activeDateRange.to);
     const pFrom = new Date(prev.from + 'T00:00:00');
     const pTo   = new Date(prev.to   + 'T23:59:59');
-
     const prevFiltered = myDeals.filter(deal => {
       const dt = deal.stage === 'won'
-        ? deal.closed_at || deal.created_at
+        ? (deal.closed_at || deal.created_at)
         : deal.created_at;
       if (!dt) return false;
       const d = new Date(dt);
       return d >= pFrom && d <= pTo;
     });
-
     return {
       activeDeals: calcChange(filteredDeals.length, prevFiltered.length),
     };
-  }, [myDeals, filteredDeals, selectedMonth, selectedQuarter, selectedYear]);
+  }, [myDeals, filteredDeals, activeDateRange?.from, activeDateRange?.to]);
 
   useEffect(() => {
     if (company?.id && effectiveUserProfile?.id) {
+      setMyDeals([]);
+      setActivities([]);
+      setUpcomingTasks([]);
+      setMyContacts([]);
+      setMetrics(null);
+      setPerformanceGoals(null);
       loadSalesmanData();
     }
-  }, [company, effectiveUserProfile]);
+  }, [company?.id, effectiveUserProfile?.id]);
 
   const loadSalesmanData = async () => {
     setIsLoading(true);
@@ -569,99 +522,92 @@ const SalesmanDashboard = ({
     );
   }
 
+  const viewingLabel = activeDateRange?.type === 'custom'
+    ? `${format(new Date(activeDateRange.from + 'T00:00:00'), 'd MMM yyyy')} – ${format(new Date(activeDateRange.to + 'T00:00:00'), 'd MMM yyyy')}`
+    : activeDateRange?.label || activeDateRange?.period || 'This Month';
+
   return (
     <div className="salesman-dashboard">
-      {/* Time Filter Dropdowns — hidden when parent controls the filters */}
-      {filterMonth === undefined && (
-        <div className="flex items-center gap-4 flex-wrap mb-6">
-          <label className="text-sm font-medium text-gray-700">
-            {t("dashboard.filterBy")}:
-          </label>
-
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">{t("dashboard.monthLabel")}:</label>
-            <select
-              value={selectedMonth !== null ? selectedMonth : ""}
-              onChange={(e) => {
-                const v =
-                  e.target.value === "" ? null : parseInt(e.target.value);
-                setSelectedMonth(v);
-                if (v !== null) setSelectedQuarter(Math.floor(v / 3));
-              }}
-              className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[140px]"
+      {/* Quick date selector */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-6">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-500 mr-1 hidden sm:block">Viewing:</span>
+          <div className="flex items-center gap-1 flex-wrap">
+            {getQuickRanges().map(range => {
+              const isActive = activeDateRange?.from === range.from && activeDateRange?.to === range.to;
+              return (
+                <button
+                  key={range.label}
+                  onClick={() => { setActiveDateRange(range); setShowCustomPicker(false); }}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors whitespace-nowrap ${
+                    isActive
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
+                  }`}
+                >
+                  {range.label}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => setShowCustomPicker(p => !p)}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors whitespace-nowrap border ${
+                activeDateRange?.type === 'custom'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200'
+              }`}
             >
-              <option value="">{t("dashboard.allMonths")}</option>
-              {monthOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              Custom
+            </button>
           </div>
+          <span className="text-xs font-medium text-gray-500 ml-1 hidden md:block">
+            {viewingLabel}
+          </span>
+        </div>
 
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">{t("dashboard.quarterLabel")}:</label>
-            <select
-              value={selectedQuarter !== null ? selectedQuarter : ""}
-              onChange={(e) => {
-                const v =
-                  e.target.value === "" ? null : parseInt(e.target.value);
-                setSelectedQuarter(v);
-                if (
-                  v !== null &&
-                  selectedMonth !== null &&
-                  Math.floor(selectedMonth / 3) !== v
-                )
-                  setSelectedMonth(null);
-              }}
-              className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[120px]"
-            >
-              <option value="">{t("dashboard.allQuarters")}</option>
-              {quarterOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">{t("dashboard.yearLabel")}:</label>
-            <select
-              value={selectedYear !== null ? selectedYear : ""}
-              onChange={(e) =>
-                setSelectedYear(
-                  e.target.value === "" ? null : parseInt(e.target.value),
-                )
-              }
-              className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[100px]"
-            >
-              <option value="">{t("dashboard.allYears")}</option>
-              {yearOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {(selectedMonth !== null ||
-            selectedQuarter !== null ||
-            selectedYear !== null) && (
+        {showCustomPicker && (
+          <div className="flex items-center gap-3 mt-2 p-3 bg-gray-50 rounded-xl border border-gray-200 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-600">From</label>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={e => setCustomFrom(e.target.value)}
+                max={customTo || undefined}
+                className="text-sm px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-600">To</label>
+              <input
+                type="date"
+                value={customTo}
+                onChange={e => setCustomTo(e.target.value)}
+                min={customFrom || undefined}
+                max={format(new Date(), 'yyyy-MM-dd')}
+                className="text-sm px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+              />
+            </div>
             <button
               onClick={() => {
-                setSelectedMonth(null);
-                setSelectedQuarter(null);
-                setSelectedYear(null);
+                if (!customFrom || !customTo) return;
+                setActiveDateRange({ from: customFrom, to: customTo, label: `${customFrom} – ${customTo}`, type: 'custom' });
+                setShowCustomPicker(false);
               }}
-              className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+              disabled={!customFrom || !customTo}
+              className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-40 transition-colors"
             >
-              <Icon name="X" size={14} />
-              {t("errors.clearFilters")}
+              Apply
             </button>
-          )}
-        </div>
-      )}
+            <button
+              onClick={() => { setShowCustomPicker(false); setCustomFrom(''); setCustomTo(''); }}
+              className="text-xs px-3 py-1.5 text-gray-500 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Navigation Tabs */}
       <div className="flex space-x-1 mb-6 border-b border-gray-200">
