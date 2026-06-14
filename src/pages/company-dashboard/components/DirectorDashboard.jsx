@@ -90,7 +90,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   };
 
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedCompany, setSelectedCompany] = useState(null);
+  const [selectedCompany, setSelectedCompany] = useState(propCompany || null);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [allEmployees, setAllEmployees] = useState([]);
   const [companies, setCompanies] = useState([]);
@@ -1785,6 +1785,20 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
   const renderOverview = () => (
     <div className="space-y-8">
+      {/* Empty state for companies with no data yet */}
+      {!isLoading && allDealsData.length === 0 && allContacts.length === 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-8 text-center">
+          <Icon name="Building2" size={40} className="mx-auto mb-4 text-blue-300" />
+          <h3 className="text-base font-semibold text-blue-900 mb-2">
+            {selectedCompany?.name} — Not Yet Active
+          </h3>
+          <p className="text-sm text-blue-600">
+            No deals or contacts have been created for this company yet.
+            Start by adding contacts or creating your first deal.
+          </p>
+        </div>
+      )}
+
       {/* Executive Metrics */}
       {executiveMetrics && (
         <ExecutiveMetrics
