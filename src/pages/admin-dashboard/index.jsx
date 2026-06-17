@@ -13,6 +13,7 @@ import LostReasonSettings from "./components/LostReasonSettings";
 import MaterialGroupSettings from "./components/MaterialGroupSettings";
 import CompanyLogoManager from "./components/CompanyLogoManager";
 import AdminCompanySelector from "./components/AdminCompanySelector";
+import CustomerMaster from "./components/CustomerMaster";
 import { useLanguage } from "../../i18n";
 
 const AdminDashboard = () => {
@@ -42,11 +43,12 @@ const AdminDashboard = () => {
     { id: "authorization", label: t("admin.authorization"),  icon: "ShieldCheck" },
     { id: "companies",     label: t("admin.companyManagement"), icon: "Building2" },
     { id: "branding",      label: "Company Branding",        icon: "Palette"   },
-    { id: "products",      label: t("admin.productMaster"),  icon: "Package"     },
-    { id: "targets",       label: t("admin.salesTargets"),   icon: "Target"      },
-    { id: "lost-reasons",     label: t("admin.lostReasons"),    icon: "XCircle"  },
-    { id: "material-groups",  label: "Material Groups",         icon: "Layers"   },
-    { id: "settings",         label: t("admin.settings"),       icon: "Settings" },
+    { id: "products",         label: t("admin.productMaster"),  icon: "Package"     },
+    { id: "customer_master",  label: "Customer Master",         icon: "Building"    },
+    { id: "targets",          label: t("admin.salesTargets"),   icon: "Target"      },
+    { id: "lost-reasons",     label: t("admin.lostReasons"),    icon: "XCircle"     },
+    { id: "material-groups",  label: "Material Groups",         icon: "Layers"      },
+    { id: "settings",         label: t("admin.settings"),       icon: "Settings"    },
   ];
 
   const handleLogout = async () => {
@@ -136,6 +138,12 @@ const AdminDashboard = () => {
                 ? <ProductMaster adminCompany={adminCompany} />
                 : <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">Select a company above to manage products</div>
               }
+            </>
+          )}
+          {activeTab === "customer_master" && (
+            <>
+              <AdminCompanySelector value={adminCompany} onSelect={setAdminCompany} />
+              <CustomerMaster adminCompany={adminCompany} />
             </>
           )}
           {activeTab === "targets" && (
