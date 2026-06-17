@@ -3,9 +3,15 @@ import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
 import Input from "components/ui/Input";
 import { adminService } from "../../../services/supabaseService";
+import { supabase } from "../../../lib/supabase";
 import { useMaterialGroups } from "../../../hooks/useMaterialGroups";
 import ProductModal from "./ProductModal";
 import ProductUploadModal from "./ProductUploadModal";
+import ProductImportModal from "./ProductImportModal";
+import {
+  downloadProductTemplate,
+  exportProductsToExcel,
+} from "../../../utils/importExportUtils";
 import { useLanguage } from "../../../i18n";
 
 const ProductMaster = ({ adminCompany }) => {
@@ -16,8 +22,10 @@ const ProductMaster = ({ adminCompany }) => {
   // ── existing CRUD state (untouched) ──────────────────────────────────────────
   const [showModal, setShowModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [viewingProduct, setViewingProduct] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   // ── filter state ─────────────────────────────────────────────────────────────
   const [searchTerm, setSearchTerm] = useState("");
@@ -86,6 +94,38 @@ const ProductMaster = ({ adminCompany }) => {
     setShowUploadModal(false);
     loadProducts();
   };
+
+  async function handleDownloadTemplate() {
+    if (!adminCompany?.id) return;
+    const { data: groups } = await supabase
+      .from("material_groups")
+      .select("name")
+      .eq("company_id", adminCompany.id)
+      .eq("is_active", true)
+      .order("name");
+    downloadProductTemplate(adminCompany.name, (groups || []).map(g => g.name));
+  }
+
+  async function exportCurrentProducts() {
+    if (!adminCompany?.id) return;
+    setExporting(true);
+    try {
+      const { data } = await supabase
+        .from("products")
+        .select("material, description, material_group, material_subgroup, base_unit_of_measure, unit_price, cost_price, price_per_ton, price_per_pc, price_per_meter, is_active")
+        .eq("company_id", adminCompany.id)
+        .order("material_group")
+        .order("material");
+
+      if (!data?.length) {
+        alert(`No products found for ${adminCompany.name}`);
+        return;
+      }
+      exportProductsToExcel(data, adminCompany.name);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // ── derived filter options ────────────────────────────────────────────────────
   const { groups: uniqueGroups } = useMaterialGroups();
@@ -233,7 +273,35 @@ const ProductMaster = ({ adminCompany }) => {
           )}
         </button>
 
-        {/* Upload CSV & Add Product — untouched */}
+        {/* Download Template */}
+        <button
+          onClick={handleDownloadTemplate}
+          className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-green-200 text-green-700 bg-green-50 hover:bg-green-100 dark:border-green-800 dark:text-green-400 dark:bg-green-950/20 dark:hover:bg-green-950/30 transition-colors whitespace-nowrap"
+        >
+          <Icon name="Download" size={15} />
+          Download Template
+        </button>
+
+        {/* Export Current Data */}
+        <button
+          onClick={exportCurrentProducts}
+          disabled={exporting || products.length === 0}
+          className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-200 text-gray-700 bg-gray-50 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800/30 dark:hover:bg-gray-800/50 disabled:opacity-40 transition-colors whitespace-nowrap"
+        >
+          <Icon name={exporting ? "Loader2" : "FileDown"} size={15} className={exporting ? "animate-spin" : ""} />
+          Export Current Data
+        </button>
+
+        {/* Import Products */}
+        <button
+          onClick={() => setShowImportModal(true)}
+          className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 dark:border-blue-800 dark:text-blue-400 dark:bg-blue-950/20 dark:hover:bg-blue-950/30 transition-colors whitespace-nowrap"
+        >
+          <Icon name="Upload" size={15} />
+          Import Products
+        </button>
+
+        {/* Upload CSV & Add Product */}
         <Button onClick={() => setShowUploadModal(true)} variant="outline">
           <Icon name="Upload" size={16} />
           {t("adminProductMaster.uploadCSV")}
@@ -684,6 +752,13 @@ const ProductMaster = ({ adminCompany }) => {
           onSuccess={handleUploadSuccess}
         />
       )}
+
+      <ProductImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={() => { setShowImportModal(false); loadProducts(); }}
+        adminCompany={adminCompany}
+      />
     </div>
   );
 };
