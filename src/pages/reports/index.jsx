@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useCurrency } from "../../contexts/CurrencyContext";
 import { reportService, computeDateRange } from "../../services/reportService";
@@ -29,6 +30,7 @@ const STAGE_OPTIONS = [
 const ReportsPage = () => {
   const { t } = useLanguage();
   const { userProfile, company } = useAuth();
+  const navigate = useNavigate();
   const { formatCurrency } = useCurrency();
   const reportRef = useRef(null);
 
@@ -219,9 +221,21 @@ const ReportsPage = () => {
 
           {/* Title row */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">{t("reportsPage.title")}</h1>
-              <p className="text-xs text-gray-400 mt-0.5">{roleLabel()}</p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => navigate(-1)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors no-print"
+                title="Back"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Back
+              </button>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">{t("reportsPage.title")}</h1>
+                <p className="text-xs text-gray-400 mt-0.5">{roleLabel()}</p>
+              </div>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
               <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
