@@ -60,7 +60,7 @@ import SalesmanDashboard from "./SalesmanDashboard";
 import UserManagement from "../../../pages/admin-dashboard/components/UserManagement";
 import ProductMaster from "../../../pages/admin-dashboard/components/ProductMaster";
 import SalesTarget from "../../../pages/admin-dashboard/components/SalesTarget";
-import { Edit2Icon } from "lucide-react";
+import { Edit2Icon, ArrowUpRight } from "lucide-react";
 import { capitalize } from "utils/helper";
 import {
   LineChart,
@@ -1743,10 +1743,37 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   };
 
   const handleMetricClick = (metricType) => {
-    setMetricInsightModal({
-      isOpen: true,
-      metricType,
-    });
+    const navState = {
+      company: selectedCompany?.id,
+      dateFrom: activeDateRange.from,
+      dateTo: activeDateRange.to,
+    };
+    switch (metricType) {
+      case 'revenue':
+      case 'winRate':
+      case 'dealsWon':
+      case 'conversionRate':
+        navigate('/reports', { state: { ...navState, tab: 'revenue' } });
+        break;
+      case 'pipeline':
+      case 'activePipeline':
+      case 'pipelineValue':
+        navigate('/sales-pipeline', { state: navState });
+        break;
+      case 'contacts':
+        navigate('/contact-management', { state: navState });
+        break;
+      case 'leads':
+        navigate('/lead-management', { state: navState });
+        break;
+      case 'team':
+      case 'teamPerformance':
+      case 'activities':
+        navigate('/reports', { state: { ...navState, tab: 'team' } });
+        break;
+      default:
+        navigate('/reports', { state: navState });
+    }
   };
 
   const handleCloseMetricModal = () => {
@@ -1841,6 +1868,20 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           isLoading={isLoading}
         />
       </div>
+      <div className="flex justify-end gap-4 -mt-4">
+        <button
+          onClick={() => navigate('/sales-pipeline', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to } })}
+          className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1"
+        >
+          View all deals <ArrowUpRight size={12} />
+        </button>
+        <button
+          onClick={() => navigate('/reports', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, tab: 'team' } })}
+          className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1"
+        >
+          View leaderboard <ArrowUpRight size={12} />
+        </button>
+      </div>
 
       {/* Pipeline and Action Items */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -1856,7 +1897,12 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
       {/* Legacy Components */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
-        <div className="bg-white rounded-lg shadow p-6 h-full">
+        <div
+          className="bg-white rounded-lg shadow p-6 h-full group cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 relative"
+          onClick={() => navigate('/reports', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, tab: 'revenue' } })}
+          title="View full sales report"
+        >
+          <ArrowUpRight size={14} className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500" />
           <SalesChart
             data={salesData}
             pipelineData={pipelineData}
@@ -1865,7 +1911,12 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             showTypeSelector={true}
           />
         </div>
-        <div className="bg-white rounded-lg shadow p-6 h-full">
+        <div
+          className="bg-white rounded-lg shadow p-6 h-full group cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 relative"
+          onClick={() => navigate('/reports', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, tab: 'team' } })}
+          title="View team performance report"
+        >
+          <ArrowUpRight size={14} className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500" />
           <TeamPerformance data={teamData} />
         </div>
       </div>
@@ -1900,6 +1951,14 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           companyId={selectedCompany?.id}
           users={allEmployees}
         />
+        <div className="px-4 pb-3 flex justify-end border-t border-gray-100 pt-3">
+          <button
+            onClick={() => navigate('/reports', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, tab: 'activities' } })}
+            className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1"
+          >
+            View all activities <ArrowUpRight size={12} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1991,7 +2050,12 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       {/* Pipeline Origin KPI Cards */}
       {originMetrics && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-          <div className="bg-white rounded-xl border border-border-tertiary p-5">
+          <div
+            className="bg-white rounded-xl border border-border-tertiary p-5 group cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 relative"
+            onClick={() => navigate('/sales-pipeline', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, origin: 'new' } })}
+            title="View new pipeline deals"
+          >
+            <ArrowUpRight size={14} className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500" />
             <div className="flex items-center justify-between mb-3">
               <div className="w-9 h-9 rounded-lg bg-green-50 flex items-center justify-center">
                 <Icon name="Sparkles" size={18} className="text-green-500" />
@@ -2004,7 +2068,12 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             <div className="text-xs text-text-tertiary mt-1">New Pipeline This Period</div>
             <div className="text-xs text-green-600 mt-1">{originMetrics.newCount || 0} new deals</div>
           </div>
-          <div className="bg-white rounded-xl border border-border-tertiary p-5">
+          <div
+            className="bg-white rounded-xl border border-border-tertiary p-5 group cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 relative"
+            onClick={() => navigate('/sales-pipeline', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, origin: 'carry' } })}
+            title="View carried forward pipeline deals"
+          >
+            <ArrowUpRight size={14} className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500" />
             <div className="flex items-center justify-between mb-3">
               <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center">
                 <Icon name="RefreshCw" size={18} className="text-amber-500" />
@@ -2062,7 +2131,14 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         </div>
         {performanceTrendData.length > 0 ? (
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={performanceTrendData}>
+            <BarChart
+              data={performanceTrendData}
+              onClick={(data) => {
+                if (data?.activePayload?.[0]) {
+                  navigate('/reports', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, period: data.activePayload[0].payload.period } });
+                }
+              }}
+            >
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="period" />
               <YAxis
