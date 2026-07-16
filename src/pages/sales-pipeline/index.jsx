@@ -45,11 +45,12 @@ const SalesPipeline = () => {
   // Read active stage + active filter from navigation state (dashboard click) OR ?stage= URL param.
   const filtersFromLocation = (loc) => {
     const params = new URLSearchParams(loc.search);
-    const activeStage = loc.state?.activeStage || params.get("stage") || "";
+    const activeStage = loc.state?.activeStage || loc.state?.filterStage || params.get("stage") || "";
     const activeFilter = loc.state?.activeFilter;
     return {
       ...buildFilters(activeStage),
       ...(activeFilter === "showOverdue" ? { showOverdue: true } : {}),
+      ...(loc.state?.filterSalesman ? { owner_id: loc.state.filterSalesman } : {}),
     };
   };
 
@@ -73,19 +74,27 @@ const SalesPipeline = () => {
   if (trackedKey !== location.key) {
     setTrackedKey(location.key);
     setFilters(filtersFromLocation(location));
+    setDrillDownContext(null);
   }
 
   // Detect drill-down from Sales Performance Card and clear navigation state.
   useEffect(() => {
     const state = location.state;
+    const stageLabels = {
+      lead: t("deals.lead"), contact_made: t("deals.qualified"), proposal_sent: t("deals.proposal"),
+      negotiation: t("deals.negotiation"), won: t("deals.won"), lost: t("deals.lost"),
+    };
     if (state?.source === "performance-card" && state?.activeStage) {
-      const stageLabels = {
-        lead: t("deals.lead"), contact_made: t("deals.qualified"), proposal_sent: t("deals.proposal"),
-        negotiation: t("deals.negotiation"), won: t("deals.won"), lost: t("deals.lost"),
-      };
       setDrillDownContext({
         stage: state.activeStage,
         label: stageLabels[state.activeStage] || state.activeStage,
+      });
+    }
+    if (state?.source === "director-stage-click" && state?.filterStage) {
+      setDrillDownContext({
+        stage: state.filterStage,
+        label: stageLabels[state.filterStage] || state.filterStage,
+        salesmanName: state.filterSalesmanName || "",
       });
     }
     if (state?.activeStage || state?.activeFilter || state?.source) {
@@ -568,12 +577,15 @@ const SalesPipeline = () => {
             <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg text-sm text-blue-700 border border-blue-100">
               <Icon name="Filter" size={16} />
               <span>
-                {t("pipeline.showing")} <strong>{drillDownContext.label}</strong> {t("pipeline.dealsFromPerformanceCard")}
+                {t("pipeline.showing")} <strong>{drillDownContext.label}</strong>{" "}
+                {drillDownContext.salesmanName
+                  ? `deals for ${drillDownContext.salesmanName}`
+                  : t("pipeline.dealsFromPerformanceCard")}
               </span>
               <button
                 onClick={() => {
                   setDrillDownContext(null);
-                  setFilters((f) => ({ ...f, stage: "" }));
+                  setFilters((f) => ({ ...f, stage: "", owner_id: "" }));
                 }}
                 className="ml-auto text-blue-400 hover:text-blue-600 font-medium"
               >

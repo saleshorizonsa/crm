@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { format } from 'date-fns';
 import MetricsCard from "./MetricsCard";
 import SalesChart from "./SalesChart";
@@ -32,6 +33,7 @@ const SalesmanDashboard = ({
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { t } = useLanguage();
+  const navigate = useNavigate();
 
   // Helper to convert deal amount to user's preferred currency
   const getConvertedAmount = (deal) => {
@@ -391,8 +393,23 @@ const SalesmanDashboard = ({
               return (
                 <div
                   key={stage}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded"
+                  onClick={() =>
+                    navigate("/sales-pipeline", {
+                      state: {
+                        filterSalesman: effectiveUserProfile?.id,
+                        filterSalesmanName: effectiveUserProfile?.full_name || effectiveUserProfile?.email || "",
+                        filterStage: stage,
+                        company: company?.id,
+                        source: "director-stage-click",
+                      },
+                    })
+                  }
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 group relative"
+                  title={`View ${stage.replace("_", " ")} deals for ${effectiveUserProfile?.full_name || "this salesman"}`}
                 >
+                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Icon name="ArrowUpRight" size={13} className="text-gray-400" />
+                  </div>
                   <div>
                     <div className="font-medium text-sm capitalize">
                       {stage.replace("_", " ")}
