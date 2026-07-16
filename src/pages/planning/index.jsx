@@ -16,7 +16,7 @@ const PlanningPage = () => {
   }, [company]);
 
   const tabs = [
-    { id: "customer_master", label: "Customer Master", icon: "Users" },
+    { id: "customer_master", label: "Customer Base", icon: "Users" },
   ];
 
   if (!userProfile) {
@@ -35,7 +35,7 @@ const PlanningPage = () => {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground">Planning</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage customer assignments and distribution
+            Customer Base — Import, assign and manage your customer accounts
           </p>
         </div>
 
