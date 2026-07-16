@@ -364,8 +364,8 @@ const SalesmanDashboard = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
         <div className="bg-white rounded-lg shadow p-6">
           <SalesChart
-            data={salesData}
-            title={t("dashboard.mySalesPerformance")}
+            allDeals={myDeals}
+            title={viewAsUser ? `${viewAsUser.full_name || viewAsUser.email}'s Performance` : t("dashboard.mySalesPerformance")}
             showTypeSelector={true}
             readOnly={readOnly}
           />

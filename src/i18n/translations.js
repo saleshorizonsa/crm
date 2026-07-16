@@ -789,6 +789,8 @@ export const translations = {
       contactAdminForCompany: "Please contact your administrator to assign you to a company.",
       noCompaniesAvailable: "No Companies Available",
       createCompanyFirst: "Please create a company first or select one from the dropdown above.",
+      noSalesData: "No sales data available",
+      createDealsToSeeMetrics: "Create deals to see performance metrics",
     },
 
     // Contacts
@@ -3478,6 +3480,8 @@ export const translations = {
       contactAdminForCompany: "يرجى التواصل مع المسؤول لتعيينك في شركة.",
       noCompaniesAvailable: "لا توجد شركات متاحة",
       createCompanyFirst: "يرجى إنشاء شركة أولاً أو اختيار واحدة من القائمة أعلاه.",
+      noSalesData: "لا تتوفر بيانات مبيعات",
+      createDealsToSeeMetrics: "أنشئ صفقات لعرض مقاييس الأداء",
     },
 
     // Contacts
