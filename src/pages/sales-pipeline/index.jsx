@@ -577,10 +577,14 @@ const SalesPipeline = () => {
             <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg text-sm text-blue-700 border border-blue-100">
               <Icon name="Filter" size={16} />
               <span>
-                {t("pipeline.showing")} <strong>{drillDownContext.label}</strong>{" "}
+                {t("pipeline.showing")}{" "}
+                {drillDownContext.label && (
+                  <strong className="font-semibold">{drillDownContext.label}</strong>
+                )}{" "}
+                deals
                 {drillDownContext.salesmanName
-                  ? `deals for ${drillDownContext.salesmanName}`
-                  : t("pipeline.dealsFromPerformanceCard")}
+                  ? <> for <strong className="font-semibold">{drillDownContext.salesmanName}</strong></>
+                  : <> {t("pipeline.dealsFromPerformanceCard")}</>}
               </span>
               <button
                 onClick={() => {
