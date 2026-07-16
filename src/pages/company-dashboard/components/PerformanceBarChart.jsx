@@ -20,6 +20,7 @@ const PerformanceBarChart = ({
   timePeriod = "month", // month, quarter, year
   year = new Date().getFullYear(),
   isLoading = false,
+  totalSalesmen = 1,
 }) => {
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { t } = useLanguage();
@@ -138,10 +139,11 @@ const PerformanceBarChart = ({
         revenue,
         target,
         deals,
+        avg: totalSalesmen > 0 ? revenue / totalSalesmen : 0,
         achievement: target > 0 ? Math.round((revenue / target) * 100) : 0,
       };
     });
-  }, [dealsData, targetsData, timePeriod, year]);
+  }, [dealsData, targetsData, timePeriod, year, totalSalesmen]);
 
   // Calculate summary stats
   const summaryStats = useMemo(() => {
@@ -151,6 +153,12 @@ const PerformanceBarChart = ({
     const avgAchievement =
       totalTarget > 0 ? Math.round((totalRevenue / totalTarget) * 100) : 0;
     const remainingRevenue = Math.max(0, totalTarget - totalRevenue);
+    const avgPerSalesman = totalSalesmen > 0 ? totalRevenue / totalSalesmen : 0;
+    const proRatedTargetPerSalesman = totalSalesmen > 0 ? totalTarget / totalSalesmen : 0;
+    const avgSalesmanAchievement =
+      proRatedTargetPerSalesman > 0
+        ? (avgPerSalesman / proRatedTargetPerSalesman) * 100
+        : 0;
 
     return {
       totalRevenue,
@@ -158,8 +166,10 @@ const PerformanceBarChart = ({
       totalDeals,
       avgAchievement,
       remainingRevenue,
+      avgPerSalesman,
+      avgSalesmanAchievement,
     };
-  }, [chartData]);
+  }, [chartData, totalSalesmen]);
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
@@ -175,6 +185,10 @@ const PerformanceBarChart = ({
             <p className="text-sm text-blue-600">
               <span className="font-medium">Target:</span>{" "}
               {formatCurrency(data.target)}
+            </p>
+            <p className="text-sm text-teal-600">
+              <span className="font-medium">Avg / Salesman:</span>{" "}
+              {formatCurrency(data.avg || 0)}
             </p>
             <p className="text-sm text-purple-600">
               <span className="font-medium">Deals Won:</span> {data.deals}
@@ -226,13 +240,22 @@ const PerformanceBarChart = ({
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="bg-green-50 rounded-lg p-3 text-center">
           <div className="text-xs text-green-600 mb-1">
             {t("dashboard.totalRevenue") || "Total Revenue"}
           </div>
           <div className="text-lg font-bold text-green-700">
             {formatCurrency(summaryStats.totalRevenue)}
+          </div>
+        </div>
+        <div className="bg-teal-50 rounded-lg p-3 text-center">
+          <div className="text-xs text-teal-600 mb-1">Avg per Salesman</div>
+          <div className="text-lg font-bold text-teal-700">
+            {formatCurrency(summaryStats.avgPerSalesman)}
+          </div>
+          <div className="text-xs text-teal-500 mt-1">
+            {totalSalesmen} salesman{totalSalesmen !== 1 ? "s" : ""}
           </div>
         </div>
         <div className="bg-blue-50 rounded-lg p-3 text-center">
@@ -290,7 +313,9 @@ const PerformanceBarChart = ({
                     ? t("dashboard.totalRevenue") || "Revenue"
                     : value === "target"
                       ? t("common.target") || "Target"
-                      : value}
+                      : value === "avg"
+                        ? "Avg / Salesman"
+                        : value}
                 </span>
               )}
             />
@@ -299,14 +324,21 @@ const PerformanceBarChart = ({
               name="revenue"
               fill="#10b981"
               radius={[4, 4, 0, 0]}
-              maxBarSize={50}
+              maxBarSize={40}
             />
             <Bar
               dataKey="target"
               name="target"
               fill="#3b82f6"
               radius={[4, 4, 0, 0]}
-              maxBarSize={50}
+              maxBarSize={40}
+            />
+            <Bar
+              dataKey="avg"
+              name="avg"
+              fill="#0D9488"
+              radius={[3, 3, 0, 0]}
+              maxBarSize={28}
             />
           </BarChart>
         </ResponsiveContainer>
@@ -337,6 +369,42 @@ const PerformanceBarChart = ({
           ></div>
         </div>
         <div className="flex justify-between mt-1 text-xs text-gray-500">
+          <span>0%</span>
+          <span>50%</span>
+          <span>100%</span>
+        </div>
+      </div>
+
+      {/* Avg Achievement per Salesman */}
+      <div className="mt-3">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-sm font-medium text-gray-700">
+            Avg Achievement per Salesman
+          </span>
+          <span
+            className="text-sm font-bold"
+            style={{
+              color:
+                summaryStats.avgSalesmanAchievement >= 100
+                  ? "#059669"
+                  : summaryStats.avgSalesmanAchievement >= 50
+                    ? "#D97706"
+                    : "#DC2626",
+            }}
+          >
+            {summaryStats.avgSalesmanAchievement.toFixed(1)}%
+          </span>
+        </div>
+        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${Math.min(summaryStats.avgSalesmanAchievement, 100)}%`,
+              background: "#0D9488",
+            }}
+          />
+        </div>
+        <div className="flex justify-between text-xs text-gray-500 mt-1">
           <span>0%</span>
           <span>50%</span>
           <span>100%</span>

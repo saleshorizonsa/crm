@@ -1843,6 +1843,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         timePeriod={timePeriod}
         year={new Date().getFullYear()}
         isLoading={isLoading}
+        totalSalesmen={allEmployees.filter(e => e.role === 'salesman' && e.is_active !== false).length || 1}
       />
 
       {/* Company Performance Grid */}
