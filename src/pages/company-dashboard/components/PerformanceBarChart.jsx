@@ -21,6 +21,7 @@ const PerformanceBarChart = ({
   year = new Date().getFullYear(),
   isLoading = false,
   totalSalesmen = 1,
+  showAvg = true,
 }) => {
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { t } = useLanguage();
@@ -186,10 +187,12 @@ const PerformanceBarChart = ({
               <span className="font-medium">Target:</span>{" "}
               {formatCurrency(data.target)}
             </p>
-            <p className="text-sm text-teal-600">
-              <span className="font-medium">Avg / Salesman:</span>{" "}
-              {formatCurrency(data.avg || 0)}
-            </p>
+            {showAvg && (
+              <p className="text-sm text-teal-600">
+                <span className="font-medium">Avg / Salesman:</span>{" "}
+                {formatCurrency(data.avg || 0)}
+              </p>
+            )}
             <p className="text-sm text-purple-600">
               <span className="font-medium">Deals Won:</span> {data.deals}
             </p>
@@ -240,7 +243,7 @@ const PerformanceBarChart = ({
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
+      <div className={`grid ${showAvg ? "grid-cols-5" : "grid-cols-4"} gap-4 mb-6`}>
         <div className="bg-green-50 rounded-lg p-3 text-center">
           <div className="text-xs text-green-600 mb-1">
             {t("dashboard.totalRevenue") || "Total Revenue"}
@@ -249,15 +252,17 @@ const PerformanceBarChart = ({
             {formatCurrency(summaryStats.totalRevenue)}
           </div>
         </div>
-        <div className="bg-teal-50 rounded-lg p-3 text-center">
-          <div className="text-xs text-teal-600 mb-1">Avg per Salesman</div>
-          <div className="text-lg font-bold text-teal-700">
-            {formatCurrency(summaryStats.avgPerSalesman)}
+        {showAvg && (
+          <div className="bg-teal-50 rounded-lg p-3 text-center">
+            <div className="text-xs text-teal-600 mb-1">Avg per Salesman</div>
+            <div className="text-lg font-bold text-teal-700">
+              {formatCurrency(summaryStats.avgPerSalesman)}
+            </div>
+            <div className="text-xs text-teal-500 mt-1">
+              {totalSalesmen} salesman{totalSalesmen !== 1 ? "s" : ""}
+            </div>
           </div>
-          <div className="text-xs text-teal-500 mt-1">
-            {totalSalesmen} salesman{totalSalesmen !== 1 ? "s" : ""}
-          </div>
-        </div>
+        )}
         <div className="bg-blue-50 rounded-lg p-3 text-center">
           <div className="text-xs text-blue-600 mb-1">
             {t("common.target") || "Total Target"}
@@ -333,13 +338,15 @@ const PerformanceBarChart = ({
               radius={[4, 4, 0, 0]}
               maxBarSize={40}
             />
-            <Bar
-              dataKey="avg"
-              name="avg"
-              fill="#0D9488"
-              radius={[3, 3, 0, 0]}
-              maxBarSize={28}
-            />
+            {showAvg && (
+              <Bar
+                dataKey="avg"
+                name="avg"
+                fill="#0D9488"
+                radius={[3, 3, 0, 0]}
+                maxBarSize={28}
+              />
+            )}
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -376,7 +383,7 @@ const PerformanceBarChart = ({
       </div>
 
       {/* Avg Achievement per Salesman */}
-      <div className="mt-3">
+      {showAvg && <div className="mt-3">
         <div className="flex items-center justify-between mb-1">
           <span className="text-sm font-medium text-gray-700">
             Avg Achievement per Salesman
@@ -409,7 +416,7 @@ const PerformanceBarChart = ({
           <span>50%</span>
           <span>100%</span>
         </div>
-      </div>
+      </div>}
     </div>
   );
 };
