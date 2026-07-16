@@ -88,20 +88,22 @@ const CustomerImportModal = ({ isOpen, onClose, onSuccess, adminCompany }) => {
       setImportProgress(Math.round((i / validRows.length) * 100));
 
       const insertData = chunk.map(row => ({
-        company_id:   adminCompany.id,
-        company_name: row.company_name,
-        first_name:   row.first_name   || null,
-        last_name:    row.last_name    || null,
-        email:        row.email        || null,
-        phone:        row.phone        || null,
-        mobile:       row.mobile       || null,
-        city:         row.city         || null,
-        region:       row.region       || null,
-        country:      row.country      || "Saudi Arabia",
-        industry:     row.industry     || null,
-        notes:        row.notes        || null,
-        status:       row.status       || "active",
-        owner_id:     row.owner_email
+        company_id:      adminCompany.id,
+        company_name:    row.company_name,
+        first_name:      row.first_name      || null,
+        last_name:       row.last_name       || null,
+        email:           row.email           || null,
+        phone:           row.phone           || null,
+        mobile:          row.mobile          || null,
+        city:            row.city            || null,
+        region:          row.region          || null,
+        country:         row.country         || "Saudi Arabia",
+        notes:           row.notes           || null,
+        customer_type:   row.customer_type   || "active",
+        last_order_date: row.last_order_date || null,
+        status:          "active",
+        source:          "import",
+        owner_id:        row.owner_email
           ? (emailToId[row.owner_email] || null)
           : null,
       }));

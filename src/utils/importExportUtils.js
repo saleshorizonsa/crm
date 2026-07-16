@@ -68,19 +68,19 @@ export function downloadProductTemplate(companyName, existingGroups = []) {
 // ── CUSTOMER MASTER ────────────────────────────────────────────────────────────
 
 export const CUSTOMER_TEMPLATE_COLUMNS = [
-  { header: 'Company Name *',           key: 'company_name', example: 'Namaa Building Materials', note: 'Required. Customer company name.' },
-  { header: 'First Name',               key: 'first_name',   example: 'Ahmed',                   note: 'Optional. Contact person first name.' },
-  { header: 'Last Name',                key: 'last_name',    example: 'Al-Rashidi',               note: 'Optional. Contact person last name.' },
-  { header: 'Email',                    key: 'email',        example: 'ahmed@namaa.com',          note: 'Optional. Must be valid email format.' },
-  { header: 'Phone',                    key: 'phone',        example: '+966501234567',             note: 'Optional. Include country code.' },
-  { header: 'Mobile',                   key: 'mobile',       example: '+966501234567',             note: 'Optional.' },
-  { header: 'City',                     key: 'city',         example: 'Jeddah',                   note: 'Optional.' },
-  { header: 'Region',                   key: 'region',       example: 'Mecca',                    note: 'Optional.' },
-  { header: 'Country',                  key: 'country',      example: 'Saudi Arabia',             note: 'Optional. Default: Saudi Arabia.' },
-  { header: 'Industry',                 key: 'industry',     example: 'Construction',             note: 'Optional.' },
-  { header: 'Assigned Salesman Email',  key: 'owner_email',  example: 'amer@jasco.com',           note: 'Optional. Must match a CRM user email.' },
-  { header: 'Notes',                    key: 'notes',        example: 'Regular customer since 2020', note: 'Optional. Any relevant notes.' },
-  { header: 'Status',                   key: 'status',       example: 'active',                   note: 'active or inactive. Default: active.' },
+  { header: 'Company Name *',          key: 'company_name',     example: 'Namaa Building Materials',    note: 'Required. Unique per company — duplicates are updated.' },
+  { header: 'First Name',              key: 'first_name',       example: 'Ahmed',                       note: 'Optional. Contact person first name.' },
+  { header: 'Last Name',               key: 'last_name',        example: 'Al-Rashidi',                  note: 'Optional. Contact person last name.' },
+  { header: 'Phone',                   key: 'phone',            example: '+966501234567',                note: 'Optional. Include country code.' },
+  { header: 'Mobile',                  key: 'mobile',           example: '+966501234567',                note: 'Optional.' },
+  { header: 'Email',                   key: 'email',            example: 'ahmed@namaa.com',             note: 'Optional. Must be valid email format.' },
+  { header: 'City',                    key: 'city',             example: 'Jeddah',                      note: 'Optional.' },
+  { header: 'Region',                  key: 'region',           example: 'Mecca',                       note: 'Optional.' },
+  { header: 'Country',                 key: 'country',          example: 'Saudi Arabia',                note: 'Optional. Default: Saudi Arabia.' },
+  { header: 'Customer Type *',         key: 'customer_type',    example: 'active',                      note: 'active | inactive | dormant | prospect | blocked. Default: active.' },
+  { header: 'Last Order Date',         key: 'last_order_date',  example: '2025-12-01',                  note: 'Optional. Format: YYYY-MM-DD.' },
+  { header: 'Notes',                   key: 'notes',            example: 'Regular customer since 2020', note: 'Optional. Any relevant notes.' },
+  { header: 'Assigned Salesman Email', key: 'owner_email',      example: 'amer@jasco.com',              note: 'Optional. Must match a CRM user email. Leave blank to assign later.' },
 ];
 
 export function downloadCustomerTemplate(companyName, salesmen = []) {
@@ -89,15 +89,15 @@ export function downloadCustomerTemplate(companyName, salesmen = []) {
   // Sheet 1: Customers
   const headers = CUSTOMER_TEMPLATE_COLUMNS.map(c => c.header);
   const sampleRows = [
-    ['Namaa Building Materials', 'Ahmed', 'Al-Rashidi', 'ahmed@namaa.com',  '+966501234567', '+966501234567', 'Jeddah', 'Mecca',  'Saudi Arabia', 'Construction', 'amer@jasco.com', 'Regular customer',       'active'],
-    ['Ali Al Hamdi Est.',        'Ali',   'Al Hamdi',   '',                 '',              '+966509876543', 'Jeddah', 'Mecca',  'Saudi Arabia', 'Contracting',  '',               'A-class customer',       'active'],
-    ['Ghazer United Company',    '',      '',           '',                 '',              '+966555123456', 'Riyadh', 'Riyadh', 'Saudi Arabia', 'Wholesale',    'diba@jasco.com', '',                       'active'],
+    ['Namaa Building Materials', 'Ahmed', 'Al-Rashidi', '+96621234567', '+966501234567', 'ahmed@namaa.com',  'Jeddah',  'Mecca',  'Saudi Arabia', 'active',    '2025-12-01', 'Regular customer',  'amer@jasco.com'],
+    ['Ali Al Hamdi Est.',        'Ali',   'Al Hamdi',   '+96621234568', '',              '',                  'Jeddah',  'Mecca',  'Saudi Arabia', 'inactive',  '',           'A-class customer',  ''],
+    ['Ghazer United Company',    '',      '',           '+96621234569', '',              '',                  'Riyadh',  'Riyadh', 'Saudi Arabia', 'prospect',  '',           'New prospect',      'diba@jasco.com'],
   ];
 
   const ws1 = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
   ws1['!cols'] = [
-    {wch:30},{wch:15},{wch:15},{wch:28},{wch:18},{wch:18},
-    {wch:15},{wch:15},{wch:15},{wch:18},{wch:25},{wch:30},{wch:12},
+    {wch:30},{wch:15},{wch:15},{wch:16},{wch:16},{wch:28},
+    {wch:12},{wch:12},{wch:14},{wch:14},{wch:14},{wch:25},{wch:28},
   ];
   XLSX.utils.book_append_sheet(wb, ws1, 'Customers');
 
@@ -111,9 +111,11 @@ export function downloadCustomerTemplate(companyName, salesmen = []) {
     ['2. Do not change or delete the header row (row 1)'],
     ['3. Delete the 3 sample rows before importing'],
     ['4. Required fields are marked with *'],
-    ['5. Assigned Salesman Email must match a user in CRM'],
-    ['6. Company Name must be unique — duplicates will be updated'],
-    ['7. Save as .xlsx before uploading'],
+    ['5. Customer Type must be one of: active | inactive | dormant | prospect | blocked'],
+    ['6. Assigned Salesman Email must match a user in CRM (leave blank to assign later)'],
+    ['7. Company Name must be unique — duplicates will be updated, not duplicated'],
+    ['8. Last Order Date format: YYYY-MM-DD'],
+    ['9. Save as .xlsx before uploading'],
     [''],
     ['COLUMN GUIDE'],
     ...CUSTOMER_TEMPLATE_COLUMNS.map(c => [c.header, c.note, `Example: ${c.example}`]),
@@ -121,11 +123,12 @@ export function downloadCustomerTemplate(companyName, salesmen = []) {
   if (salesmen.length > 0) {
     instructions.push(['']);
     instructions.push([`SALESMEN IN ${companyName.toUpperCase()}`]);
+    instructions.push(['Name', 'Email']);
     salesmen.forEach(s => instructions.push([s.full_name, s.email]));
   }
 
   const ws2 = XLSX.utils.aoa_to_sheet(instructions);
-  ws2['!cols'] = [{wch:30},{wch:50},{wch:30}];
+  ws2['!cols'] = [{wch:35},{wch:55},{wch:30}];
   XLSX.utils.book_append_sheet(wb, ws2, 'Instructions');
 
   XLSX.writeFile(wb, `JASCO_Customer_Master_Template_${companyName.replace(/\s/g,'_')}.xlsx`);
@@ -177,20 +180,21 @@ export function parseCustomerFile(file) {
         const rows = XLSX.utils.sheet_to_json(ws, { raw: false, defval: '' });
 
         const customers = rows.map((row, i) => ({
-          rowNum:       i + 2,
-          company_name: (row['Company Name *'] || row['Company Name'] || '').trim(),
-          first_name:   (row['First Name']     || '').trim(),
-          last_name:    (row['Last Name']      || '').trim(),
-          email:        (row['Email']          || '').trim().toLowerCase(),
-          phone:        (row['Phone']          || '').trim(),
-          mobile:       (row['Mobile']         || '').trim(),
-          city:         (row['City']           || '').trim(),
-          region:       (row['Region']         || '').trim(),
-          country:      (row['Country']        || 'Saudi Arabia').trim(),
-          industry:     (row['Industry']       || '').trim(),
-          owner_email:  (row['Assigned Salesman Email'] || '').trim().toLowerCase(),
-          notes:        (row['Notes']          || '').trim(),
-          status:       (row['Status']         || 'active').trim().toLowerCase(),
+          rowNum:          i + 2,
+          company_name:    (row['Company Name *'] || row['Company Name'] || '').trim(),
+          first_name:      (row['First Name']     || '').trim(),
+          last_name:       (row['Last Name']      || '').trim(),
+          phone:           (row['Phone']          || '').trim(),
+          mobile:          (row['Mobile']         || '').trim(),
+          email:           (row['Email']          || '').trim().toLowerCase(),
+          city:            (row['City']           || '').trim(),
+          region:          (row['Region']         || '').trim(),
+          country:         (row['Country']        || 'Saudi Arabia').trim(),
+          // Support both new "Customer Type *" column and legacy "Status" column
+          customer_type:   (row['Customer Type *'] || row['Customer Type'] || row['Status'] || 'active').trim().toLowerCase(),
+          last_order_date: (row['Last Order Date'] || '').trim() || null,
+          notes:           (row['Notes']          || '').trim(),
+          owner_email:     (row['Assigned Salesman Email'] || '').trim().toLowerCase(),
         }));
 
         resolve(customers);
@@ -245,6 +249,8 @@ export function validateProductRows(rows, validGroups = []) {
   return { valid, errors, warnings };
 }
 
+const VALID_CUSTOMER_TYPES = ['active', 'inactive', 'dormant', 'prospect', 'blocked'];
+
 export function validateCustomerRows(rows) {
   const errors   = [];
   const warnings = [];
@@ -257,13 +263,18 @@ export function validateCustomerRows(rows) {
     if (!row.company_name) {
       rowErrors.push('Company Name is required');
     } else if (seenNames.has(row.company_name.toLowerCase())) {
-      rowErrors.push(`Duplicate: ${row.company_name}`);
+      warnings.push({ row: row.rowNum, message: `Duplicate in file: ${row.company_name} — will update existing record` });
+      seenNames.add(row.company_name.toLowerCase());
     } else {
       seenNames.add(row.company_name.toLowerCase());
     }
 
     if (row.email && !row.email.includes('@')) {
       rowErrors.push(`Invalid email: ${row.email}`);
+    }
+
+    if (row.customer_type && !VALID_CUSTOMER_TYPES.includes(row.customer_type)) {
+      rowErrors.push(`Invalid Customer Type: "${row.customer_type}" — must be active / inactive / dormant / prospect / blocked`);
     }
 
     if (rowErrors.length > 0) {

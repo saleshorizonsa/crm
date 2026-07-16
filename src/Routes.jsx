@@ -33,6 +33,7 @@ import ForecastPage from "./pages/forecast";
 import ReportsPage from "./pages/reports";
 import CalendarPage from "./pages/calendar";
 import PipelineView from "./pages/pipeline-view";
+import PlanningPage from "./pages/planning";
 
 const Routes = () => {
   return (
@@ -168,6 +169,14 @@ const Routes = () => {
                   element={
                     <ProtectedRoute>
                       <PipelineView />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/planning"
+                  element={
+                    <ProtectedRoute>
+                      <PlanningPage />
                     </ProtectedRoute>
                   }
                 />

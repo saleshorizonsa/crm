@@ -58,6 +58,7 @@ const Header = ({
     { label: t("nav.reports"),  path: "/reports",  icon: "FileBarChart" },
     { label: t("nav.clients"), path: "/contact-management", icon: "Users" },
     { label: t("nav.tasks"), path: "/task-management", icon: "ListTodo" },
+    { label: "Planning", path: "/planning", icon: "ClipboardList" },
   ];
 
   // Add user management for admins and managers only
