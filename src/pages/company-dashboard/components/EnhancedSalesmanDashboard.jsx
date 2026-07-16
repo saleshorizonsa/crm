@@ -768,7 +768,7 @@ const EnhancedSalesmanDashboard = ({
       try {
         const todayStr = format(new Date(), 'yyyy-MM-dd');
         const { data: actData } = await activityService.getMyActivities({
-          userId:    user.id,
+          userId:    effectiveUser.id,
           companyId: company.id,
           dateFrom:  todayStr,
           dateTo:    todayStr + 'T23:59:59',
@@ -1473,7 +1473,7 @@ const EnhancedSalesmanDashboard = ({
               data={salesData}
               pipelineData={pipelineData}
               allDeals={allDeals}
-              title="My Sales Performance"
+              title={viewAsUser ? `${viewAsUser.full_name || viewAsUser.email}'s Performance` : "My Sales Performance"}
               showTypeSelector={true}
             />
           </div>
