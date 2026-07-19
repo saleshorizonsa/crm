@@ -5531,7 +5531,7 @@ export const forecastService = {
    *
    * @returns {{ deals: Array, target: Object|null, error: Error|null }}
    */
-  async getForecastData({ companyId, userId, role, periodStart, periodEnd }) {
+  async getForecastData({ companyId, userId, role, periodStart, periodEnd, ownerId = null }) {
     try {
       // ── 1. Resolve owner scope ─────────────────────────────────────────
       let ownerIds = null; // null → no owner filter (manager+ sees all company deals)
@@ -5550,6 +5550,12 @@ export const forecastService = {
         ownerIds = [userId, ...(reports || []).map((u) => u.id)];
       }
       // manager, director, admin, head → ownerIds stays null
+
+      // Explicit salesman filter (e.g. director drilling into one rep) overrides
+      // the role-based scope for both deals AND targets.
+      if (ownerId) {
+        ownerIds = [ownerId];
+      }
 
       // ── 2. Build deals query ───────────────────────────────────────────
       let dealsQuery = supabase
@@ -5581,20 +5587,25 @@ export const forecastService = {
       const { data: deals, error: dealsError } = await dealsQuery;
       if (dealsError) throw dealsError;
 
-      // ── 3. Fetch active sales target overlapping this period ───────────
-      // Overlap condition: target.period_start <= periodEnd
-      //               AND target.period_end   >= periodStart
-      // When isAllTime (periodStart/periodEnd are null) we skip the overlap
-      // filter and just return the most recent active target.
+      // ── 3. Sum active revenue targets overlapping this period ──────────
+      // Managers/directors have no personal target — the period target is the
+      // SUM of every active "total_value" (revenue) target assigned to the
+      // salesmen in scope. Scoping mirrors the deals query (ownerIds), so:
+      //   salesman   → their own target
+      //   supervisor → their team's targets
+      //   manager+   → all company targets (ownerIds null → no assignee filter)
+      // Overlap: target.period_start <= periodEnd AND target.period_end >= periodStart.
+      // We keep By-Value (total_value) targets AND legacy rows where target_type
+      // was never set (NULL) — the latter predate the target_type column and
+      // still represent revenue targets. By-Clients / By-Product targets are the
+      // only ones excluded, so they are never double-counted into revenue.
+      // (This is why the Forecast page previously showed "No target set": the
+      // strict .eq("target_type","total_value") dropped every legacy/NULL row.)
       let targetQuery = supabase
         .from("sales_targets")
-        .select(
-          "id, target_amount, currency, period_start, period_end, period_type, target_type, status",
-        )
-        .eq("assigned_to", userId)
+        .select("target_amount")
         .eq("status", "active")
-        .order("period_start", { ascending: false })
-        .limit(1);
+        .or("target_type.eq.total_value,target_type.is.null");
 
       if (periodStart && periodEnd) {
         targetQuery = targetQuery
@@ -5603,18 +5614,125 @@ export const forecastService = {
       }
 
       if (companyId) targetQuery = targetQuery.eq("company_id", companyId);
+      if (ownerIds)  targetQuery = targetQuery.in("assigned_to", ownerIds);
 
-      const { data: targets, error: targetError } = await targetQuery;
+      const { data: targetRows, error: targetError } = await targetQuery;
       if (targetError) throw targetError;
 
+      const totalTarget = (targetRows || []).reduce(
+        (sum, t) => sum + (parseFloat(t.target_amount) || 0),
+        0,
+      );
+
+      console.log(
+        "[forecast] Total target found:",
+        totalTarget,
+        "from",
+        (targetRows || []).length,
+        "target row(s) for period",
+        periodStart,
+        "→",
+        periodEnd,
+        "| company",
+        companyId,
+        "| ownerIds",
+        ownerIds,
+      );
+
       return {
-        deals:  deals        || [],
-        target: targets?.[0] ?? null,
+        deals:  deals || [],
+        // Preserve the "no target" state (null) so cards fall back gracefully.
+        target: totalTarget > 0 ? { target_amount: totalTarget } : null,
         error:  null,
       };
     } catch (error) {
       console.error("Error in getForecastData:", error);
       return { deals: [], target: null, error };
+    }
+  },
+
+  /**
+   * getForecastGroupBreakdown({ companyId, userId, role, ownerId })
+   *
+   * Weighted open-pipeline value grouped by product material group.
+   * Scoping mirrors getForecastData (salesman → own, supervisor → team,
+   * manager+ → all company). Only OPEN deals (not won/lost) are considered,
+   * weighted by DEFAULT_STAGE_WEIGHTS. material_group lives on the related
+   * product, so each deal_products line is attributed to its product's group.
+   *
+   * @returns {{ groups: Array<{name,dealCount,totalValue,weightedValue}>, error }}
+   */
+  async getForecastGroupBreakdown({ companyId, userId, role, ownerId = null }) {
+    // Stage weights kept local to avoid a circular import from forecastEngine.
+    const STAGE_WEIGHTS = {
+      lead: 0.10, contact_made: 0.25, proposal_sent: 0.50, negotiation: 0.75,
+    };
+    try {
+      // Resolve owner scope (same rules as getForecastData)
+      let ownerIds = null;
+      if (role === "salesman") {
+        ownerIds = [userId];
+      } else if (role === "supervisor") {
+        const { data: reports } = await supabase
+          .from("users")
+          .select("id")
+          .eq("supervisor_id", userId)
+          .eq("is_active", true);
+        ownerIds = [userId, ...(reports || []).map((u) => u.id)];
+      }
+      if (ownerId) ownerIds = [ownerId];
+
+      let query = supabase
+        .from("deals")
+        .select(
+          `id, stage, owner_id, company_id,
+           deal_products(
+             id, line_total, uom_value, unit_price,
+             product:products(id, material_group)
+           )`,
+        )
+        .not("stage", "in", "(won,lost)");
+
+      if (companyId) query = query.eq("company_id", companyId);
+      if (ownerIds)  query = query.in("owner_id", ownerIds);
+
+      const { data: deals, error } = await query;
+      if (error) throw error;
+
+      // Aggregate line values by material group, weighted by deal stage.
+      const groupMap = {};
+      (deals || []).forEach((deal) => {
+        const stagePct = STAGE_WEIGHTS[deal.stage] ?? 0.10;
+        (deal.deal_products || []).forEach((dp) => {
+          const group = dp.product?.material_group || "Uncategorized";
+          const lineVal = parseFloat(dp.line_total || 0);
+          if (!groupMap[group]) {
+            groupMap[group] = {
+              name: group,
+              dealIds: new Set(),
+              totalValue: 0,
+              weightedValue: 0,
+            };
+          }
+          groupMap[group].dealIds.add(deal.id);
+          groupMap[group].totalValue    += lineVal;
+          groupMap[group].weightedValue += lineVal * stagePct;
+        });
+      });
+
+      const groups = Object.values(groupMap)
+        .map((g) => ({
+          name:          g.name,
+          dealCount:     g.dealIds.size,
+          totalValue:    Math.round(g.totalValue * 100) / 100,
+          weightedValue: Math.round(g.weightedValue * 100) / 100,
+        }))
+        .sort((a, b) => b.weightedValue - a.weightedValue);
+
+      return { groups, error: null };
+    } catch (error) {
+      console.error("Error in getForecastGroupBreakdown:", error);
+      return { groups: [], error };
     }
   },
 };
