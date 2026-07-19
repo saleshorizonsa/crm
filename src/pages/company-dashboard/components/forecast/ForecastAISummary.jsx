@@ -18,27 +18,15 @@ const ROLE_CONTEXT = {
 
 // ── API call ──────────────────────────────────────────────────────────────────
 
+// Calls the same-origin Vercel serverless proxy (/api/ai-assistant), NOT the
+// Anthropic API directly. The proxy holds the key server-side, so this avoids
+// (a) shipping the API key in the browser bundle and (b) the CORS failures that
+// direct browser→Anthropic calls hit — which is why the summary previously
+// showed "Could not generate summary". A 30s timeout guards against hangs.
 async function callAnthropicAPI(pipelineData, role, currency) {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("VITE_ANTHROPIC_API_KEY is not configured");
-
   const roleCtx = ROLE_CONTEXT[role] || ROLE_CONTEXT.manager;
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 400,
-      messages: [
-        {
-          role: "user",
-          content: `You are a sales performance analyst for a CRM used by a Steel, PVC, and Trading company in Saudi Arabia and the GCC region.
+  const prompt = `You are a sales performance analyst for a CRM used by a Steel, PVC, and Trading company in Saudi Arabia and the GCC region.
 
 Analyse this sales pipeline data and write a concise forecast summary. Be direct, specific, and actionable. Use the actual numbers from the data.
 
@@ -61,26 +49,49 @@ Rules:
 - Under 120 words total
 - No bullet points, no headers — flowing paragraphs only
 - Speak directly to the manager ("you have", "your team")
-- Attainment > 90 %: confident but note risks. Attainment < 50 %: urgent but constructive. No target set: focus on pipeline health.`,
-        },
-      ],
-    }),
-  });
+- Attainment > 90 %: confident but note risks. Attainment < 50 %: urgent but constructive. No target set: focus on pipeline health.`;
 
-  if (!response.ok) {
-    const errBody = await response.json().catch(() => ({}));
-    throw new Error(errBody.error?.message || `Anthropic API error ${response.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const response = await fetch("/api/ai-assistant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: prompt }],
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      const detail =
+        errBody?.error?.message || errBody?.error || response.statusText;
+      console.error(
+        "[ForecastAISummary] Proxy error:",
+        response.status,
+        detail,
+      );
+      throw new Error(`API error ${response.status}: ${detail}`);
+    }
+
+    const data = await response.json();
+    const text = (data.content || [])
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("\n")
+      .trim();
+
+    if (!text) throw new Error("Empty response from API");
+    return text;
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === "AbortError") throw new Error("Request timed out");
+    console.error("[ForecastAISummary] error:", err);
+    throw err;
   }
-
-  const data = await response.json();
-  const text = data.content
-    ?.filter((b) => b.type === "text")
-    .map((b) => b.text)
-    .join("\n")
-    .trim();
-
-  if (!text) throw new Error("Empty response from API");
-  return text;
 }
 
 // ── Pipeline data builder ─────────────────────────────────────────────────────
@@ -212,9 +223,19 @@ const ForecastAISummary = ({
         sessionStorage.setItem(cacheKey, JSON.stringify({ summary: text, generatedAt: now }));
       } catch (_) {}
     } catch (err) {
-      const msg = err.message?.includes("VITE_ANTHROPIC_API_KEY")
-        ? "API key not configured — add VITE_ANTHROPIC_API_KEY to .env"
-        : "Could not generate summary";
+      const raw = err.message || "";
+      let msg;
+      if (/not configured|not set/i.test(raw) || raw.includes("500")) {
+        msg = "AI service not configured — set the Anthropic API key in the Vercel project settings";
+      } else if (raw.includes("401") || raw.includes("403") || /authentication|invalid.*key/i.test(raw)) {
+        msg = "AI service key is invalid — check the server configuration";
+      } else if (raw.includes("429")) {
+        msg = "Rate limit reached — try again in a moment";
+      } else if (/timed out/i.test(raw)) {
+        msg = "Request timed out — try again";
+      } else {
+        msg = "Could not generate summary";
+      }
       setError(msg);
     } finally {
       setLoading(false);
