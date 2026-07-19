@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -22,9 +22,22 @@ const PerformanceBarChart = ({
   isLoading = false,
   totalSalesmen = 1,
   showAvg = true,
+  employees = [],
 }) => {
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { t } = useLanguage();
+
+  // Default open so the director sees the breakdown on load
+  const [showBreakdown, setShowBreakdown] = useState(true);
+
+  // Active salesmen only (matches the totalSalesmen prop derivation)
+  const salesmenList = useMemo(
+    () =>
+      (employees || []).filter(
+        (e) => e.role === "salesman" && e.is_active !== false,
+      ),
+    [employees],
+  );
 
   // Helper to convert deal amount to user's preferred currency
   const getConvertedAmount = (deal) => {
@@ -77,6 +90,8 @@ const PerformanceBarChart = ({
       let revenue = 0;
       let target = 0;
       let deals = 0;
+      // Unique salesmen who won a deal in THIS period — used as the avg divisor
+      const activeOwners = new Set();
 
       // Calculate revenue from deals
       dealsData.forEach((deal) => {
@@ -84,14 +99,19 @@ const PerformanceBarChart = ({
         const dealYear = dealDate.getFullYear();
         const dealMonth = dealDate.getMonth();
 
+        const countDeal = () => {
+          revenue += getConvertedAmount(deal);
+          deals += 1;
+          if (deal.owner_id) activeOwners.add(deal.owner_id);
+        };
+
         if (
           timePeriod === "month" &&
           dealYear === year &&
           dealMonth === period.month
         ) {
           if (deal.stage === "won") {
-            revenue += getConvertedAmount(deal);
-            deals += 1;
+            countDeal();
           }
         } else if (
           timePeriod === "quarter" &&
@@ -99,13 +119,11 @@ const PerformanceBarChart = ({
           period.quarters.includes(dealMonth)
         ) {
           if (deal.stage === "won") {
-            revenue += getConvertedAmount(deal);
-            deals += 1;
+            countDeal();
           }
         } else if (timePeriod === "year" && dealYear === period.year) {
           if (deal.stage === "won") {
-            revenue += getConvertedAmount(deal);
-            deals += 1;
+            countDeal();
           }
         }
       });
@@ -140,11 +158,50 @@ const PerformanceBarChart = ({
         revenue,
         target,
         deals,
-        avg: totalSalesmen > 0 ? revenue / totalSalesmen : 0,
+        // Avg for THIS period based on who was actually active that period
+        avg: activeOwners.size > 0 ? revenue / activeOwners.size : 0,
         achievement: target > 0 ? Math.round((revenue / target) * 100) : 0,
       };
     });
-  }, [dealsData, targetsData, timePeriod, year, totalSalesmen]);
+  }, [dealsData, targetsData, timePeriod, year]);
+
+  // Per-salesman revenue breakdown for the displayed range.
+  // Includes every active salesman (zeros for non-performers) and counts
+  // only the salesmen who actually won a deal as "active".
+  const { salesmenBreakdown, activeSalesmenCount } = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const inRange = (deal) => {
+      const dealDate = new Date(deal.closed_at || deal.created_at);
+      const dealYear = dealDate.getFullYear();
+      if (timePeriod === "year") {
+        return dealYear >= currentYear - 4 && dealYear <= currentYear;
+      }
+      return dealYear === year;
+    };
+
+    const revenueMap = {};
+    const dealCountMap = {};
+    const activeIds = new Set();
+
+    dealsData.forEach((deal) => {
+      if (deal.stage !== "won" || !deal.owner_id || !inRange(deal)) return;
+      const val = getConvertedAmount(deal);
+      revenueMap[deal.owner_id] = (revenueMap[deal.owner_id] || 0) + val;
+      dealCountMap[deal.owner_id] = (dealCountMap[deal.owner_id] || 0) + 1;
+      activeIds.add(deal.owner_id);
+    });
+
+    const breakdown = salesmenList
+      .map((s) => ({
+        id: s.id,
+        name: s.full_name || s.email,
+        revenue: revenueMap[s.id] || 0,
+        dealCount: dealCountMap[s.id] || 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    return { salesmenBreakdown: breakdown, activeSalesmenCount: activeIds.size };
+  }, [dealsData, salesmenList, timePeriod, year, preferredCurrency]);
 
   // Calculate summary stats
   const summaryStats = useMemo(() => {
@@ -154,8 +211,11 @@ const PerformanceBarChart = ({
     const avgAchievement =
       totalTarget > 0 ? Math.round((totalRevenue / totalTarget) * 100) : 0;
     const remainingRevenue = Math.max(0, totalTarget - totalRevenue);
-    const avgPerSalesman = totalSalesmen > 0 ? totalRevenue / totalSalesmen : 0;
-    const proRatedTargetPerSalesman = totalSalesmen > 0 ? totalTarget / totalSalesmen : 0;
+    // Avg is over salesmen who actually won a deal, not the whole headcount
+    const avgPerSalesman =
+      activeSalesmenCount > 0 ? totalRevenue / activeSalesmenCount : 0;
+    const proRatedTargetPerSalesman =
+      activeSalesmenCount > 0 ? totalTarget / activeSalesmenCount : 0;
     const avgSalesmanAchievement =
       proRatedTargetPerSalesman > 0
         ? (avgPerSalesman / proRatedTargetPerSalesman) * 100
@@ -170,7 +230,7 @@ const PerformanceBarChart = ({
       avgPerSalesman,
       avgSalesmanAchievement,
     };
-  }, [chartData, totalSalesmen]);
+  }, [chartData, activeSalesmenCount]);
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
@@ -259,7 +319,7 @@ const PerformanceBarChart = ({
               {formatCurrency(summaryStats.avgPerSalesman)}
             </div>
             <div className="text-xs text-teal-500 mt-1">
-              {totalSalesmen} salesman{totalSalesmen !== 1 ? "s" : ""}
+              {activeSalesmenCount} active of {totalSalesmen} salesmen
             </div>
           </div>
         )}
@@ -286,6 +346,156 @@ const PerformanceBarChart = ({
           </div>
         </div>
       </div>
+
+      {/* Salesman Revenue Breakdown — consolidated view only */}
+      {showAvg && salesmenBreakdown.length > 0 && (
+        <div className="mb-6">
+          {/* Collapsible header */}
+          <button
+            onClick={() => setShowBreakdown((b) => !b)}
+            className="flex items-center justify-between w-full px-4 py-2.5 bg-gray-50 rounded-xl border border-gray-200 hover:bg-gray-100 transition-colors mb-2"
+          >
+            <div className="flex items-center gap-2">
+              <Icon name="Users" size={15} className="text-gray-400" />
+              <span className="text-sm font-medium text-gray-900">
+                Salesman Revenue Breakdown
+              </span>
+              <span className="text-xs text-gray-400">
+                ({activeSalesmenCount} active · {salesmenBreakdown.length} total)
+              </span>
+            </div>
+            <Icon
+              name={showBreakdown ? "ChevronUp" : "ChevronDown"}
+              size={15}
+              className="text-gray-400"
+            />
+          </button>
+
+          {showBreakdown && (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              {/* Table header */}
+              <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-400 border-b border-gray-200">
+                <div className="col-span-1">#</div>
+                <div className="col-span-4">Salesman</div>
+                <div className="col-span-2 text-center">Deals</div>
+                <div className="col-span-3">Revenue</div>
+                <div className="col-span-2 text-right">% of Total</div>
+              </div>
+
+              {/* Salesman rows */}
+              {salesmenBreakdown.map((s, idx) => {
+                const pct =
+                  summaryStats.totalRevenue > 0
+                    ? (s.revenue / summaryStats.totalRevenue) * 100
+                    : 0;
+                const isActive = s.revenue > 0;
+
+                return (
+                  <div
+                    key={s.id}
+                    className={`grid grid-cols-12 gap-2 px-4 py-3 border-b border-gray-100 last:border-0 items-center transition-colors hover:bg-gray-50 ${
+                      !isActive ? "opacity-50" : ""
+                    }`}
+                  >
+                    {/* Rank */}
+                    <div className="col-span-1 text-xs font-bold text-gray-400">
+                      {isActive ? `#${idx + 1}` : "—"}
+                    </div>
+
+                    {/* Name + avatar */}
+                    <div className="col-span-4 flex items-center gap-2">
+                      <div
+                        className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                          isActive
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-gray-100 text-gray-400"
+                        }`}
+                      >
+                        {s.name?.charAt(0).toUpperCase()}
+                      </div>
+                      <span
+                        className={`text-sm truncate ${
+                          isActive
+                            ? "text-gray-900 font-medium"
+                            : "text-gray-400"
+                        }`}
+                      >
+                        {s.name}
+                      </span>
+                      {!isActive && (
+                        <span className="text-xs text-red-400 flex-shrink-0">
+                          0 deals
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Deal count */}
+                    <div className="col-span-2 text-center">
+                      <span
+                        className={`text-sm font-medium ${
+                          isActive ? "text-gray-900" : "text-gray-400"
+                        }`}
+                      >
+                        {s.dealCount}
+                      </span>
+                    </div>
+
+                    {/* Revenue + bar */}
+                    <div className="col-span-3">
+                      <div
+                        className="text-sm font-medium tabular-nums mb-1"
+                        style={{ color: isActive ? "#0D9488" : "#9CA3AF" }}
+                      >
+                        {formatCurrency(s.revenue)}
+                      </div>
+                      <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${Math.min(pct, 100)}%`,
+                            background: isActive ? "#0D9488" : "#E5E7EB",
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* % of total */}
+                    <div
+                      className="col-span-2 text-right text-sm font-medium"
+                      style={{
+                        color: isActive
+                          ? pct >= 20
+                            ? "#059669"
+                            : pct >= 10
+                              ? "#D97706"
+                              : "#6B7280"
+                          : "#9CA3AF",
+                      }}
+                    >
+                      {isActive ? `${pct.toFixed(1)}%` : "—"}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Summary footer */}
+              <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-gray-50 border-t-2 border-gray-200 text-sm font-semibold">
+                <div className="col-span-1"></div>
+                <div className="col-span-4 text-gray-900">Total</div>
+                <div className="col-span-2 text-center text-gray-900">
+                  {salesmenBreakdown.reduce((sum, r) => sum + r.dealCount, 0)}
+                </div>
+                <div className="col-span-3 tabular-nums" style={{ color: "#0D9488" }}>
+                  {formatCurrency(summaryStats.totalRevenue)}
+                </div>
+                <div className="col-span-2 text-right text-gray-900">
+                  {summaryStats.totalRevenue > 0 ? "100%" : "—"}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Chart */}
       <div className="h-80">

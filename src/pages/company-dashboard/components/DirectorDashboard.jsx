@@ -1845,6 +1845,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         isLoading={isLoading}
         totalSalesmen={allEmployees.filter(e => e.role === 'salesman' && e.is_active !== false).length || 1}
         showAvg={!selectedEmployee}
+        employees={allEmployees}
       />
 
       {/* Company Performance Grid */}
