@@ -54,7 +54,7 @@ import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 // Employee-specific dashboards - use Enhanced versions for full features
 import EnhancedManagerDashboard from "./EnhancedManagerDashboard";
 import EnhancedSupervisorDashboard from "./EnhancedSupervisorDashboard";
-import SalesmanDashboard from "./SalesmanDashboard";
+import EnhancedSalesmanDashboard from "./EnhancedSalesmanDashboard";
 
 // Admin components
 import UserManagement from "../../../pages/admin-dashboard/components/UserManagement";
@@ -2454,7 +2454,13 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           )}
           {(selectedEmployee.role === "salesman" ||
             selectedEmployee.role === "agent") && (
-            <SalesmanDashboard viewAsUser={selectedEmployee} readOnly={true} />
+            <EnhancedSalesmanDashboard
+              viewAsUser={selectedEmployee}
+              readOnly={true}
+              filterMonth={selectedMonth}
+              filterQuarter={selectedQuarter}
+              filterYear={selectedYear}
+            />
           )}
         </div>
       ) : (
