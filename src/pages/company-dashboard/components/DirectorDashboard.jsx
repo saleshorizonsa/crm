@@ -238,6 +238,15 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     }
   }, [selectedEmployee]);
 
+  // Recompute the executive KPI cards when the active date range changes, so the
+  // metric values respect the selected period (current month by default) instead
+  // of showing all-time totals. (Company/employee changes are handled above.)
+  useEffect(() => {
+    if (selectedCompany?.id) loadExecutiveMetrics(selectedCompany.id);
+    else loadExecutiveMetrics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDateRange.from, activeDateRange.to]);
+
   // Fetch director's own monthly target + company-level monthly summary
   useEffect(() => {
     if (activeView !== 'targets') return;
@@ -1253,9 +1262,16 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         await salesTargetService.getAssignedTargets(companyId);
 
       if (!dealsError && deals) {
+        // Restrict to the active date range (current month by default) so the KPI
+        // cards reflect the selected period instead of all-time. Won deals count
+        // by close date, everything else by creation date — same rule as filteredDeals.
+        const rangedDeals = deals.filter((d) =>
+          isInSelectedPeriod(d.stage === "won" ? d.closed_at : d.created_at),
+        );
+
         // Calculate executive metrics - convert each deal to preferred currency
-        const wonDeals = deals.filter((d) => d.stage === "won");
-        const lostDeals = deals.filter((d) => d.stage === "lost");
+        const wonDeals = rangedDeals.filter((d) => d.stage === "won");
+        const lostDeals = rangedDeals.filter((d) => d.stage === "lost");
         const totalRevenue = wonDeals.reduce((sum, d) => {
           const amount = parseFloat(d.amount) || 0;
           const dealCurrency = d.currency || preferredCurrency;
@@ -1266,7 +1282,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               : amount;
           return sum + convertedAmount;
         }, 0);
-        const activePipeline = deals
+        const activePipeline = rangedDeals
           .filter((d) => !["won", "lost"].includes(d.stage))
           .reduce((sum, d) => {
             const amount = parseFloat(d.amount) || 0;
@@ -1286,7 +1302,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
         // Team performance: count of active team members with deals
         const activeTeamMembers = new Set();
-        deals.forEach((deal) => {
+        rangedDeals.forEach((deal) => {
           if (deal.owner_id) {
             activeTeamMembers.add(deal.owner_id);
           }
@@ -1359,9 +1375,9 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           dealsWon: wonDeals.length,
           dealsChange: dealsChangeResult.change || 0,
           conversionRate:
-            deals.length > 0 ? (closedDeals / deals.length) * 100 : 0,
+            rangedDeals.length > 0 ? (closedDeals / rangedDeals.length) * 100 : 0,
           conversionChange: winRateChangeResult.change || 0,
-          dealsThisMonth: deals.filter(
+          dealsThisMonth: rangedDeals.filter(
             (d) => new Date(d.created_at).getMonth() === new Date().getMonth(),
           ).length,
           avgDealCycle: velocityResult.velocityDays || 0,
