@@ -1945,6 +1945,8 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             allDeals={allDealsData}
             title="Sales Performance"
             showTypeSelector={true}
+            salesmanId={selectedEmployee?.id}
+            salesmanName={selectedEmployee?.full_name || selectedEmployee?.email}
           />
         </div>
         <div
@@ -2239,6 +2241,8 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             allDeals={allDealsData}
             title={t("dashboard.salesOverview")}
             showTypeSelector={true}
+            salesmanId={selectedEmployee?.id}
+            salesmanName={selectedEmployee?.full_name || selectedEmployee?.email}
           />
         </div>
         <div className="bg-white rounded-lg shadow p-6 h-full">

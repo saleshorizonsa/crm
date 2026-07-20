@@ -32,6 +32,8 @@ const SalesChart = ({
   isLoading = false,
   showTypeSelector = true,
   readOnly = false,
+  salesmanId = null,     // when the card is scoped to one salesman (director "View As")
+  salesmanName = "",     // that salesman's display name, carried into the drill-down
 }) => {
   const { formatCurrency } = useCurrency();
   const { t } = useLanguage();
@@ -84,9 +86,23 @@ const SalesChart = ({
   }, [allDeals, pipelineData, dateRange.from, dateRange.to, dateRange.isAllTime]);
 
   const handleStageClick = (stage) => {
-    navigate("/sales-pipeline", {
-      state: { activeStage: stage, source: "performance-card" },
-    });
+    // When scoped to a specific salesman (director "View As"), carry that
+    // salesman through so the pipeline filters by owner AND the banner names
+    // them — instead of the generic "from Sales Performance Card" drill-down.
+    if (salesmanId) {
+      navigate("/sales-pipeline", {
+        state: {
+          filterStage: stage,
+          filterSalesman: salesmanId,
+          filterSalesmanName: salesmanName || "",
+          source: "director-stage-click",
+        },
+      });
+    } else {
+      navigate("/sales-pipeline", {
+        state: { activeStage: stage, source: "performance-card" },
+      });
+    }
   };
 
   // Build stage data once; views derive their shape from this.
