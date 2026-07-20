@@ -1,11 +1,15 @@
 import React, { useMemo } from "react";
-import Icon from "../../../components/AppIcon";
 
+// Colour per event type (meetings + logged deal activities)
 const TYPE_COLORS = {
   meeting:  "bg-blue-500",
   call:     "bg-green-500",
+  visit:    "bg-amber-500",
+  whatsapp: "bg-emerald-500",
+  email:    "bg-indigo-500",
   demo:     "bg-purple-500",
   followup: "bg-orange-500",
+  note:     "bg-slate-400",
   other:    "bg-gray-400",
 };
 
@@ -15,14 +19,34 @@ const STATUS_OPACITY = {
   cancelled: "opacity-30 line-through",
 };
 
-const DAYS  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-const MONTHS = ["January","February","March","April","May","June",
-                "July","August","September","October","November","December"];
+const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-const CalendarGrid = ({ meetings, currentDate, onDateSelect, onMeetingClick, selectedDate }) => {
+const dateKey = (iso) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+};
+
+// Backward compatible: accept a normalised `events` list, or fall back to raw
+// `meetings` (shaped into events) so older callers keep working.
+const toEvents = (events, meetings) => {
+  if (events) return events;
+  return (meetings || []).map((m) => ({
+    id: `meeting-${m.id}`,
+    kind: "meeting",
+    type: m.type || "meeting",
+    title: m.title,
+    date: m.start_time,
+    status: m.status,
+    raw: m,
+  }));
+};
+
+const CalendarGrid = ({ events, meetings, currentDate, onDateSelect, onEventClick, onMeetingClick, selectedDate }) => {
   const now   = new Date();
   const year  = currentDate.getFullYear();
   const month = currentDate.getMonth();
+  const calEvents = toEvents(events, meetings);
+  const handleClick = onEventClick || ((ev) => onMeetingClick && onMeetingClick(ev.raw));
 
   const { cells } = useMemo(() => {
     const firstDay   = new Date(year, month, 1).getDay();
@@ -30,13 +54,13 @@ const CalendarGrid = ({ meetings, currentDate, onDateSelect, onMeetingClick, sel
     const daysInPrev = new Date(year, month, 0).getDate();
     const today      = new Date();
 
-    // Group meetings by date string YYYY-MM-DD
+    // Group events by date string YYYY-MM-DD
     const byDate = {};
-    meetings.forEach((m) => {
-      const d = new Date(m.start_time);
-      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    calEvents.forEach((ev) => {
+      if (!ev.date) return;
+      const key = dateKey(ev.date);
       if (!byDate[key]) byDate[key] = [];
-      byDate[key].push(m);
+      byDate[key].push(ev);
     });
 
     const cells = [];
@@ -44,7 +68,7 @@ const CalendarGrid = ({ meetings, currentDate, onDateSelect, onMeetingClick, sel
     // Prev month trailing days
     for (let i = firstDay - 1; i >= 0; i--) {
       const d = daysInPrev - i;
-      cells.push({ day: d, currentMonth: false, dateStr: null, meetings: [] });
+      cells.push({ day: d, currentMonth: false, dateStr: null, events: [] });
     }
 
     // Current month
@@ -58,7 +82,7 @@ const CalendarGrid = ({ meetings, currentDate, onDateSelect, onMeetingClick, sel
         day: d,
         currentMonth: true,
         dateStr: key,
-        meetings: byDate[key] || [],
+        events: byDate[key] || [],
         isToday,
         isSelected: selectedDate === key,
       });
@@ -67,11 +91,11 @@ const CalendarGrid = ({ meetings, currentDate, onDateSelect, onMeetingClick, sel
     // Next month leading days
     const remaining = 42 - cells.length;
     for (let d = 1; d <= remaining; d++) {
-      cells.push({ day: d, currentMonth: false, dateStr: null, meetings: [] });
+      cells.push({ day: d, currentMonth: false, dateStr: null, events: [] });
     }
 
     return { cells };
-  }, [meetings, year, month, selectedDate]);
+  }, [calEvents, year, month, selectedDate]);
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -109,26 +133,27 @@ const CalendarGrid = ({ meetings, currentDate, onDateSelect, onMeetingClick, sel
               </span>
             </div>
 
-            {/* Meeting pills */}
+            {/* Event pills */}
             <div className="space-y-0.5">
-              {cell.meetings.slice(0, 3).map((m) => {
-                const isPastScheduled = m.status === "scheduled" && new Date(m.start_time) < now;
+              {cell.events.slice(0, 3).map((ev) => {
+                const isMeeting = ev.kind === "meeting";
+                const isPastScheduled = isMeeting && ev.status === "scheduled" && new Date(ev.date) < now;
                 return (
                   <div
-                    key={m.id}
-                    onClick={(e) => { e.stopPropagation(); onMeetingClick && onMeetingClick(m); }}
+                    key={ev.id}
+                    onClick={(e) => { e.stopPropagation(); handleClick(ev); }}
                     className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-white truncate cursor-pointer hover:opacity-80 transition-opacity ${
-                      TYPE_COLORS[m.type] || TYPE_COLORS.other
-                    } ${STATUS_OPACITY[m.status] || ""} ${isPastScheduled ? "opacity-50 italic" : ""}`}
-                    title={m.title}
+                      TYPE_COLORS[ev.type] || TYPE_COLORS.other
+                    } ${isMeeting ? (STATUS_OPACITY[ev.status] || "") : ""} ${isPastScheduled ? "opacity-50 italic" : ""}`}
+                    title={ev.title}
                   >
-                    <span className="truncate">{m.title}</span>
+                    <span className="truncate">{ev.title}</span>
                   </div>
                 );
               })}
-              {cell.meetings.length > 3 && (
+              {cell.events.length > 3 && (
                 <div className="text-[10px] text-muted-foreground pl-1">
-                  +{cell.meetings.length - 3} more
+                  +{cell.events.length - 3} more
                 </div>
               )}
             </div>

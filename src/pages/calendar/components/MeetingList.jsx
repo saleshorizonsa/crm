@@ -1,12 +1,17 @@
 import React from "react";
 import Icon from "../../../components/AppIcon";
 
+// Icon + colour per event type (meetings and logged deal activities)
 const TYPE_CONFIG = {
-  meeting:  { color: "bg-blue-100 text-blue-700",   dot: "bg-blue-500",   icon: "Users"     },
-  call:     { color: "bg-green-100 text-green-700",  dot: "bg-green-500",  icon: "Phone"     },
-  demo:     { color: "bg-purple-100 text-purple-700",dot: "bg-purple-500", icon: "Monitor"   },
-  followup: { color: "bg-orange-100 text-orange-700",dot: "bg-orange-500", icon: "RefreshCw" },
-  other:    { color: "bg-gray-100 text-gray-600",    dot: "bg-gray-400",   icon: "Calendar"  },
+  meeting:  { color: "bg-blue-100 text-blue-700",     dot: "bg-blue-500",    icon: "Users"         },
+  call:     { color: "bg-green-100 text-green-700",   dot: "bg-green-500",   icon: "Phone"         },
+  visit:    { color: "bg-amber-100 text-amber-700",   dot: "bg-amber-500",   icon: "MapPin"        },
+  whatsapp: { color: "bg-emerald-100 text-emerald-700", dot: "bg-emerald-500", icon: "MessageCircle" },
+  email:    { color: "bg-indigo-100 text-indigo-700", dot: "bg-indigo-500",  icon: "Mail"          },
+  demo:     { color: "bg-purple-100 text-purple-700", dot: "bg-purple-500",  icon: "Monitor"       },
+  followup: { color: "bg-orange-100 text-orange-700", dot: "bg-orange-500",  icon: "RefreshCw"     },
+  note:     { color: "bg-slate-100 text-slate-600",   dot: "bg-slate-400",   icon: "FileText"      },
+  other:    { color: "bg-gray-100 text-gray-600",     dot: "bg-gray-400",    icon: "Calendar"      },
 };
 
 const STATUS_CONFIG = {
@@ -22,26 +27,51 @@ const fmtDate = (iso) =>
   new Date(iso).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
 const fmtDuration = (start, end) => {
+  if (!end) return null;
   const mins = Math.round((new Date(end) - new Date(start)) / 60000);
+  if (mins <= 0) return null;
   if (mins < 60) return `${mins}m`;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m ? `${h}h ${m}m` : `${h}h`;
 };
 
-const groupByDate = (meetings) => {
+// Backward compatible: accept a normalised `events` list, or fall back to raw
+// `meetings` (shaped into events).
+const toEvents = (events, meetings) => {
+  if (events) return events;
+  return (meetings || []).map((m) => ({
+    id: `meeting-${m.id}`,
+    kind: "meeting",
+    type: m.type || "meeting",
+    title: m.title,
+    date: m.start_time,
+    endDate: m.end_time || null,
+    status: m.status,
+    deal: m.deal,
+    contact: m.contact,
+    attendees: m.attendees,
+    location: m.location,
+    meetingUrl: m.meeting_url,
+    raw: m,
+  }));
+};
+
+const groupByDate = (events) => {
   const groups = {};
-  meetings.forEach((m) => {
-    const d  = new Date(m.start_time);
-    const key= d.toDateString();
-    if (!groups[key]) groups[key] = { label: fmtDate(m.start_time), items: [] };
-    groups[key].items.push(m);
+  events.forEach((ev) => {
+    const key = new Date(ev.date).toDateString();
+    if (!groups[key]) groups[key] = { label: fmtDate(ev.date), items: [] };
+    groups[key].items.push(ev);
   });
   return Object.values(groups);
 };
 
-const MeetingList = ({ meetings, onMeetingClick, emptyMessage = "No meetings" }) => {
-  if (!meetings.length) {
+const MeetingList = ({ events, meetings, onEventClick, onMeetingClick, emptyMessage = "No events" }) => {
+  const calEvents = toEvents(events, meetings);
+  const handleClick = onEventClick || ((ev) => onMeetingClick && onMeetingClick(ev.raw));
+
+  if (!calEvents.length) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <Icon name="CalendarX" size={36} className="text-gray-200 mb-3" />
@@ -50,7 +80,7 @@ const MeetingList = ({ meetings, onMeetingClick, emptyMessage = "No meetings" })
     );
   }
 
-  const groups = groupByDate(meetings);
+  const groups = groupByDate(calEvents);
 
   return (
     <div className="space-y-4">
@@ -60,57 +90,63 @@ const MeetingList = ({ meetings, onMeetingClick, emptyMessage = "No meetings" })
             {group.label}
           </div>
           <div className="space-y-1.5">
-            {group.items.map((m) => {
-              const tc = TYPE_CONFIG[m.type] || TYPE_CONFIG.other;
-              const sc = STATUS_CONFIG[m.status] || STATUS_CONFIG.scheduled;
+            {group.items.map((ev) => {
+              const tc = TYPE_CONFIG[ev.type] || TYPE_CONFIG.other;
+              const isMeeting = ev.kind === "meeting";
+              const sc = STATUS_CONFIG[ev.status] || null;
+              const duration = fmtDuration(ev.date, ev.endDate);
               return (
                 <div
-                  key={m.id}
-                  onClick={() => onMeetingClick && onMeetingClick(m)}
+                  key={ev.id}
+                  onClick={() => handleClick(ev)}
                   className="flex items-start gap-3 p-3 rounded-lg border border-border bg-card hover:bg-accent/50 cursor-pointer transition-colors"
                 >
-                  {/* Type dot */}
-                  <div className={`mt-1 w-2.5 h-2.5 rounded-full flex-shrink-0 ${tc.dot}`} />
+                  {/* Type icon */}
+                  <div className={`mt-0.5 w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${tc.color}`}>
+                    <Icon name={tc.icon} size={14} />
+                  </div>
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
-                      <p className={`text-sm font-medium text-foreground ${m.status === "cancelled" ? "line-through text-muted-foreground" : ""}`}>
-                        {m.title}
+                      <p className={`text-sm font-medium text-foreground ${ev.status === "cancelled" ? "line-through text-muted-foreground" : ""}`}>
+                        {ev.title}
                       </p>
-                      <span className={`flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${sc.color}`}>
-                        {sc.label}
-                      </span>
+                      {isMeeting && sc && (
+                        <span className={`flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${sc.color}`}>
+                          {sc.label}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-1">
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <Icon name="Clock" size={10} />
-                        {fmtTime(m.start_time)} · {fmtDuration(m.start_time, m.end_time)}
+                        {fmtTime(ev.date)}{duration ? ` · ${duration}` : ""}
                       </span>
-                      {(m.location || m.meeting_url) && (
+                      {isMeeting && (ev.location || ev.meetingUrl) && (
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Icon name={m.meeting_url ? "Video" : "MapPin"} size={10} />
-                          {m.location || "Video call"}
+                          <Icon name={ev.meetingUrl ? "Video" : "MapPin"} size={10} />
+                          {ev.location || "Video call"}
                         </span>
                       )}
-                      {m.deal && (
+                      {ev.deal && (
                         <span className="text-xs text-blue-600 flex items-center gap-1">
-                          <Icon name="Briefcase" size={10} />{m.deal.title}
+                          <Icon name="Briefcase" size={10} />{ev.deal.title}
                         </span>
                       )}
-                      {m.contact && (
+                      {ev.contact && (
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                           <Icon name="User" size={10} />
-                          {m.contact.first_name} {m.contact.last_name}
+                          {ev.contact.first_name} {ev.contact.last_name}
                         </span>
                       )}
                     </div>
 
-                    {/* Attendees */}
-                    {(m.attendees || []).length > 0 && (
+                    {/* Attendees (meetings only) */}
+                    {isMeeting && (ev.attendees || []).length > 0 && (
                       <div className="flex items-center gap-1 mt-1.5">
-                        {m.attendees.slice(0, 4).map((a) => (
+                        {ev.attendees.slice(0, 4).map((a) => (
                           <div key={a.id}
                             className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary"
                             title={a.user?.full_name || a.name || a.email}
@@ -118,8 +154,8 @@ const MeetingList = ({ meetings, onMeetingClick, emptyMessage = "No meetings" })
                             {(a.user?.full_name || a.name || "?")[0]?.toUpperCase()}
                           </div>
                         ))}
-                        {m.attendees.length > 4 && (
-                          <span className="text-[10px] text-muted-foreground">+{m.attendees.length - 4}</span>
+                        {ev.attendees.length > 4 && (
+                          <span className="text-[10px] text-muted-foreground">+{ev.attendees.length - 4}</span>
                         )}
                       </div>
                     )}
@@ -127,7 +163,7 @@ const MeetingList = ({ meetings, onMeetingClick, emptyMessage = "No meetings" })
 
                   {/* Type badge */}
                   <span className={`flex-shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full capitalize ${tc.color}`}>
-                    {m.type}
+                    {ev.type}
                   </span>
                 </div>
               );

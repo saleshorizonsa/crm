@@ -9,8 +9,27 @@ import MeetingList from "./components/MeetingList";
 import MeetingModal from "./components/MeetingModal";
 import { useAuth } from "../../contexts/AuthContext";
 import { meetingService } from "../../services/meetingService";
+import { activityService } from "../../services/supabaseService";
 import { supabase } from "../../lib/supabase";
 import { useLanguage } from "../../i18n";
+
+// Local date key YYYY-MM-DD (used to bucket events into calendar days)
+const dateKey = (iso) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+// Deal-engagement activity types shown on the calendar (excludes system logs like "task")
+const CALENDAR_ACTIVITY_TYPES = ["visit", "call", "whatsapp", "email", "meeting", "demo", "followup", "note"];
+
+const TYPE_FILTERS = [
+  { id: "all",      label: "All"      },
+  { id: "meeting",  label: "Meetings" },
+  { id: "call",     label: "Calls"    },
+  { id: "visit",    label: "Visits"   },
+  { id: "whatsapp", label: "WhatsApp" },
+  { id: "email",    label: "Email"    },
+];
 
 const CalendarPage = () => {
   const { t } = useLanguage();
@@ -20,6 +39,8 @@ const CalendarPage = () => {
   // ── State ──────────────────────────────────────────────────────────────────
   const [currentDate,  setCurrentDate]  = useState(new Date());
   const [meetings,     setMeetings]     = useState([]);
+  const [activities,   setActivities]   = useState([]);
+  const [typeFilter,   setTypeFilter]   = useState("all");
   const [loading,      setLoading]      = useState(true);
   const [stats,        setStats]        = useState({ today: 0, upcoming: 0, total: 0, completed: 0 });
   const [view,         setView]         = useState("month"); // month | list
@@ -43,8 +64,28 @@ const CalendarPage = () => {
     // Fetch ±1 month buffer
     const from = new Date(year, month - 1, 1).toISOString();
     const to   = new Date(year, month + 2, 0).toISOString();
-    const { data } = await meetingService.getMeetings(company.id, { from, to });
-    setMeetings(data || []);
+
+    // Meetings (start_time) + logged deal activities (created_at) in the window.
+    // Activities have no scheduled_at column — created_at is the date they occurred.
+    const [meetingsRes, activitiesRes] = await Promise.all([
+      meetingService.getMeetings(company.id, { from, to }),
+      supabase
+        .from("activities")
+        .select(
+          `id, type, title, description, created_at, deal_id, contact_id,
+           deal:deals!deal_id(id, title),
+           contact:contacts!contact_id(id, first_name, last_name, company_name),
+           owner:users!owner_id(id, full_name)`,
+        )
+        .eq("company_id", company.id)
+        .in("type", CALENDAR_ACTIVITY_TYPES)
+        .gte("created_at", from)
+        .lte("created_at", to)
+        .order("created_at", { ascending: true }),
+    ]);
+
+    setMeetings(meetingsRes.data || []);
+    setActivities(activitiesRes.data || []);
     setLoading(false);
   }, [company?.id, currentDate]);
 
@@ -108,25 +149,76 @@ const CalendarPage = () => {
   }, [location.search]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const visibleMeetings = useMemo(() => {
-    let list = meetings;
-    if (statusFilter) list = list.filter((m) => m.status === statusFilter);
-    if (selectedDate) {
-      list = list.filter((m) => {
-        const d = new Date(m.start_time);
-        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-        return key === selectedDate;
-      });
-    }
-    return list;
-  }, [meetings, statusFilter, selectedDate]);
+  // Unified event stream: meetings (start_time) + logged activities (created_at)
+  const calendarEvents = useMemo(() => {
+    const meetingEvents = meetings.map((m) => ({
+      id:         `meeting-${m.id}`,
+      kind:       "meeting",
+      type:       m.type || "meeting",
+      title:      m.title || "Meeting",
+      date:       m.start_time,
+      endDate:    m.end_time || null,
+      status:     m.status,
+      deal:       m.deal,
+      contact:    m.contact,
+      attendees:  m.attendees,
+      location:   m.location,
+      meetingUrl: m.meeting_url,
+      raw:        m,
+    }));
 
-  const upcomingMeetings = useMemo(() => {
+    const activityEvents = activities.map((a) => ({
+      id:      `activity-${a.id}`,
+      kind:    "activity",
+      type:    a.type || "note",
+      title:
+        a.title ||
+        a.description?.slice(0, 60) ||
+        `${activityService.getTypeConfig(a.type)?.label || "Activity"}${a.deal?.title ? ` — ${a.deal.title}` : ""}`,
+      date:    a.created_at,
+      endDate: null,
+      status:  null,
+      deal:    a.deal,
+      contact: a.contact,
+      owner:   a.owner,
+      raw:     a,
+    }));
+
+    return [...meetingEvents, ...activityEvents].sort(
+      (x, y) => new Date(x.date) - new Date(y.date),
+    );
+  }, [meetings, activities]);
+
+  // statusFilter applies to meetings only; typeFilter applies to everything.
+  const filteredEvents = useMemo(() => {
+    return calendarEvents.filter((ev) => {
+      if (ev.kind === "meeting" && statusFilter && ev.status !== statusFilter) return false;
+      if (typeFilter !== "all" && ev.type !== typeFilter) return false;
+      return true;
+    });
+  }, [calendarEvents, statusFilter, typeFilter]);
+
+  const dayEvents = useMemo(() => {
+    if (!selectedDate) return [];
+    return filteredEvents.filter((ev) => dateKey(ev.date) === selectedDate);
+  }, [filteredEvents, selectedDate]);
+
+  const upcomingEvents = useMemo(() => {
     const now = new Date().toISOString();
-    return meetings
-      .filter((m) => m.start_time >= now && m.status === "scheduled")
-      .slice(0, 20);
-  }, [meetings]);
+    return filteredEvents.filter((ev) => ev.date >= now).slice(0, 20);
+  }, [filteredEvents]);
+
+  // Stats include logged activities alongside meetings
+  const combinedStats = useMemo(() => {
+    const todayKey = dateKey(new Date().toISOString());
+    const todaysActivities = activities.filter((a) => dateKey(a.created_at) === todayKey).length;
+    return {
+      today:     stats.today + todaysActivities,
+      upcoming:  stats.upcoming,
+      total:     stats.total + activities.length,
+      completed: stats.completed,
+    };
+  }, [stats, activities]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handlePrevMonth = () =>
@@ -155,6 +247,11 @@ const CalendarPage = () => {
   const handleMeetingClick = (m) => {
     setEditMeeting(m);
     setShowModal(true);
+  };
+
+  // Meetings open the edit modal; logged activities are read-only history.
+  const handleEventClick = (ev) => {
+    if (ev?.kind === "meeting") handleMeetingClick(ev.raw);
   };
 
   const handleSaveMeeting = async (data, attendeeIds) => {
@@ -233,10 +330,10 @@ const CalendarPage = () => {
         {/* Stats bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: t("calendarPage.today"),     value: stats.today,     icon: "CalendarCheck", color: "text-blue-600",   bg: "bg-blue-50"  },
-            { label: t("calendarPage.thisWeek"),  value: stats.upcoming,  icon: "Clock",         color: "text-amber-600",  bg: "bg-amber-50" },
-            { label: t("calendarPage.scheduled"), value: stats.total,     icon: "Calendar",      color: "text-primary",    bg: "bg-primary/10"},
-            { label: t("calendarPage.completed"), value: stats.completed, icon: "CheckCircle2",  color: "text-green-600",  bg: "bg-green-50" },
+            { label: t("calendarPage.today"),     value: combinedStats.today,     icon: "CalendarCheck", color: "text-blue-600",   bg: "bg-blue-50"  },
+            { label: t("calendarPage.thisWeek"),  value: combinedStats.upcoming,  icon: "Clock",         color: "text-amber-600",  bg: "bg-amber-50" },
+            { label: t("calendarPage.scheduled"), value: combinedStats.total,     icon: "Calendar",      color: "text-primary",    bg: "bg-primary/10"},
+            { label: t("calendarPage.completed"), value: combinedStats.completed, icon: "CheckCircle2",  color: "text-green-600",  bg: "bg-green-50" },
           ].map(({ label, value, icon, color, bg }) => (
             <div key={label} className="bg-card border border-border rounded-lg p-4 flex items-center gap-3">
               <div className={`w-10 h-10 ${bg} rounded-lg flex items-center justify-center flex-shrink-0`}>
@@ -301,6 +398,23 @@ const CalendarPage = () => {
           </div>
         </div>
 
+        {/* Type filter — meetings + logged activity types */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {TYPE_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setTypeFilter(f.id)}
+              className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors ${
+                typeFilter === f.id
+                  ? "bg-primary text-white border-primary"
+                  : "border-border text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
         {/* Selected date chip */}
         {selectedDate && (
           <div className="flex items-center gap-2">
@@ -321,11 +435,11 @@ const CalendarPage = () => {
             {/* Calendar grid — 2/3 width */}
             <div className="xl:col-span-2">
               <CalendarGrid
-                meetings={statusFilter ? meetings.filter(m => m.status === statusFilter) : meetings}
+                events={filteredEvents}
                 currentDate={currentDate}
                 selectedDate={selectedDate}
                 onDateSelect={handleDateSelect}
-                onMeetingClick={handleMeetingClick}
+                onEventClick={handleEventClick}
               />
             </div>
 
@@ -348,8 +462,8 @@ const CalendarPage = () => {
                 </div>
                 <div className="p-3 max-h-[450px] overflow-y-auto">
                   <MeetingList
-                    meetings={selectedDate ? visibleMeetings : upcomingMeetings}
-                    onMeetingClick={handleMeetingClick}
+                    events={selectedDate ? dayEvents : upcomingEvents}
+                    onEventClick={handleEventClick}
                     emptyMessage={selectedDate ? t("calendarPage.noMeetingsDay") : t("calendarPage.noUpcomingMeetings")}
                   />
                 </div>
@@ -360,11 +474,12 @@ const CalendarPage = () => {
                 <p className="text-xs font-semibold text-muted-foreground mb-2.5 uppercase tracking-wider">{t("calendarPage.legend")}</p>
                 <div className="space-y-1.5">
                   {[
-                    { color: "bg-blue-500",   label: t("calendarPage.meeting")  },
-                    { color: "bg-green-500",  label: t("calendarPage.call")     },
-                    { color: "bg-purple-500", label: t("calendarPage.demo")     },
-                    { color: "bg-orange-500", label: t("calendarPage.followUp") },
-                    { color: "bg-gray-400",   label: t("calendarPage.other")    },
+                    { color: "bg-blue-500",    label: t("calendarPage.meeting") },
+                    { color: "bg-green-500",   label: t("calendarPage.call")    },
+                    { color: "bg-amber-500",   label: "Visit"    },
+                    { color: "bg-emerald-500", label: "WhatsApp" },
+                    { color: "bg-indigo-500",  label: "Email"    },
+                    { color: "bg-gray-400",    label: t("calendarPage.other")   },
                   ].map((item) => (
                     <div key={item.label} className="flex items-center gap-2">
                       <div className={`w-2.5 h-2.5 rounded-full ${item.color}`} />
@@ -379,8 +494,8 @@ const CalendarPage = () => {
           /* List view */
           <div className="bg-card border border-border rounded-xl p-5">
             <MeetingList
-              meetings={selectedDate ? visibleMeetings : upcomingMeetings}
-              onMeetingClick={handleMeetingClick}
+              events={selectedDate ? dayEvents : filteredEvents}
+              onEventClick={handleEventClick}
               emptyMessage={t("calendarPage.noMeetingsFilter")}
             />
           </div>
