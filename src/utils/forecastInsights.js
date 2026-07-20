@@ -194,5 +194,7 @@ export function generatePrediction(forecast, deals = [], targetAmount = 0) {
     topDeals,
     narrative,
     attainmentPct,
+    targetAmount,             // raw target for above/below comparison
+    openDealsCount: openDeals.length,
   };
 }

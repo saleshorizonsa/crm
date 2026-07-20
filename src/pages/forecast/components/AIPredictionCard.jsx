@@ -66,6 +66,8 @@ const AIPredictionCard = ({ prediction }) => {
     topDeals,
     narrative,
     attainmentPct,
+    targetAmount = 0,
+    openDealsCount = 0,
   } = prediction;
 
   const attainmentColor =
@@ -74,6 +76,16 @@ const AIPredictionCard = ({ prediction }) => {
     attainmentPct >= 75    ? "text-blue-600"    :
     attainmentPct >= 50    ? "text-amber-600"   :
                              "text-red-600";
+
+  // Plain-language read on the confidence score
+  const confidenceLabel =
+    confidence >= 70 ? "High confidence forecast" :
+    confidence >= 50 ? "Moderate confidence"      :
+                       "Low confidence — limited data";
+
+  // Whether the predicted revenue clears the (summed) target
+  const aboveTarget = targetAmount > 0 && predictedRevenue >= targetAmount;
+  const targetDelta = Math.abs(predictedRevenue - targetAmount);
 
   return (
     <div className="bg-card border border-border rounded-lg p-6 enterprise-shadow flex flex-col gap-5">
@@ -84,13 +96,16 @@ const AIPredictionCard = ({ prediction }) => {
         </div>
         <div>
           <h3 className="text-sm font-semibold text-card-foreground">AI Prediction</h3>
-          <p className="text-xs text-muted-foreground">Statistical forecast model</p>
+          <p className="text-xs text-muted-foreground">
+            Based on {openDealsCount} open deal{openDealsCount !== 1 ? "s" : ""} · historical win rates
+          </p>
         </div>
       </div>
 
       {/* Confidence gauge + predicted revenue */}
       <div className="flex flex-col items-center gap-1">
         <ConfidenceGauge value={confidence} />
+        <p className="text-xs text-muted-foreground -mt-1 mb-1">{confidenceLabel}</p>
         <p className="text-2xl font-bold text-card-foreground tabular-nums mt-1">
           {formatCurrency(predictedRevenue)}
         </p>
@@ -98,6 +113,16 @@ const AIPredictionCard = ({ prediction }) => {
         {attainmentPct !== null && (
           <span className={`text-sm font-semibold ${attainmentColor}`}>
             {attainmentPct}% of target
+          </span>
+        )}
+        {targetAmount > 0 && (
+          <span
+            className="text-xs font-medium mt-0.5"
+            style={{ color: aboveTarget ? "#059669" : "#DC2626" }}
+          >
+            {aboveTarget
+              ? `✓ Above target by ${formatCurrency(targetDelta)}`
+              : `${formatCurrency(targetDelta)} below target`}
           </span>
         )}
       </div>

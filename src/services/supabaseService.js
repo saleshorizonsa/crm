@@ -5691,7 +5691,7 @@ export const forecastService = {
              product:products(id, material_group)
            )`,
         )
-        .not("stage", "in", "(won,lost)");
+        .not("stage", "in", '("won","lost")');
 
       if (companyId) query = query.eq("company_id", companyId);
       if (ownerIds)  query = query.in("owner_id", ownerIds);

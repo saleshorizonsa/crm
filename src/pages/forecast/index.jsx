@@ -2,9 +2,10 @@ import React, { useState, useEffect, useMemo } from "react";
 import Icon from "../../components/AppIcon";
 import Header from "../../components/ui/Header";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
+import { format, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, startOfYear, endOfYear } from "date-fns";
 import { useAuth } from "../../contexts/AuthContext";
 import { useDateRange } from "../../contexts/DateRangeContext";
-import { forecastService } from "../../services/supabaseService";
+import { forecastService, userService } from "../../services/supabaseService";
 import { buildForecast } from "../../utils/forecastEngine";
 import { generateInsights, generatePrediction } from "../../utils/forecastInsights";
 import ForecastKPIBar     from "./components/ForecastKPIBar";
@@ -12,10 +13,46 @@ import AIInsightsPanel    from "./components/AIInsightsPanel";
 import AIPredictionCard   from "./components/AIPredictionCard";
 import StageBreakdown     from "./components/StageBreakdown";
 import ForecastDealTable  from "./components/ForecastDealTable";
+import ForecastGroupBreakdown from "./components/ForecastGroupBreakdown";
 import ProjectionChart    from "../company-dashboard/components/forecast/ProjectionChart";
 import ForecastAISummary  from "../company-dashboard/components/forecast/ForecastAISummary";
 import { useCurrency }    from "../../contexts/CurrencyContext";
 import { useLanguage }   from "../../i18n";
+
+// ── Period presets ──────────────────────────────────────────────────────────
+
+const PERIOD_PRESETS = [
+  { id: "this_month",   label: "This Month" },
+  { id: "last_month",   label: "Last Month" },
+  { id: "this_quarter", label: "This Quarter" },
+  { id: "this_year",    label: "This Year" },
+];
+
+const ymd = (d) => format(d, "yyyy-MM-dd");
+
+function getPeriodDates(period) {
+  const now = new Date();
+  switch (period) {
+    case "last_month":   { const d = subMonths(now, 1); return { from: startOfMonth(d), to: endOfMonth(d) }; }
+    case "this_quarter": return { from: startOfQuarter(now), to: endOfQuarter(now) };
+    case "this_year":    return { from: startOfYear(now),    to: endOfYear(now) };
+    case "this_month":
+    default:             return { from: startOfMonth(now),   to: endOfMonth(now) };
+  }
+}
+
+// Match the active date range back to a preset id (or "custom") for button highlight
+function matchPeriod(dateRange) {
+  if (!dateRange?.from || !dateRange?.to) return "custom";
+  for (const p of PERIOD_PRESETS) {
+    const { from, to } = getPeriodDates(p.id);
+    if (ymd(from) === dateRange.from && ymd(to) === dateRange.to) return p.id;
+  }
+  return "custom";
+}
+
+// Roles that oversee multiple salesmen and can drill into one
+const MULTI_REP_ROLES = ["director", "manager", "admin", "head"];
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
@@ -45,43 +82,84 @@ const ForecastPage = () => {
   const { user, userProfile, company } = useAuth();
   const { preferredCurrency } = useCurrency();
 
-  const { dateRange } = useDateRange();
+  const { dateRange, setRange } = useDateRange();
   const [rawData, setRawData] = useState({ deals: [], target: null });
+  const [groupBreakdown, setGroupBreakdown] = useState([]);
   const [isLoading, setIsLoading]     = useState(false);
   const [fetchError, setFetchError]   = useState(null);
+
+  const role = userProfile?.role;
+  const canFilterSalesman = MULTI_REP_ROLES.includes(role);
+
+  // Salesman filter (only meaningful for multi-rep roles)
+  const [selectedSalesman, setSelectedSalesman] = useState("all");
+  const [salesmen, setSalesmen] = useState([]);
+
+  // Active period preset (drives button highlight); derived from the shared range
+  const activePeriod = matchPeriod(dateRange);
+
+  const applyPeriod = (periodId) => {
+    const { from, to } = getPeriodDates(periodId);
+    setRange({ from: ymd(from), to: ymd(to) });
+  };
+
+  // Load the company's active salesmen for the drill-down dropdown
+  useEffect(() => {
+    if (!company?.id || !canFilterSalesman) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await userService.getCompanyUsers(company.id, {
+        role: "salesman",
+        status: "active",
+      });
+      if (!cancelled) setSalesmen(data || []);
+    })();
+    return () => { cancelled = true; };
+  }, [company?.id, canFilterSalesman]);
 
   useEffect(() => {
     if (!user?.id) return;
     if (!dateRange.isAllTime && !dateRange.from) return;
 
     let cancelled = false;
+    const ownerId = selectedSalesman !== "all" ? selectedSalesman : null;
 
     const load = async () => {
       setIsLoading(true);
       setFetchError(null);
 
-      const { deals, target, error } = await forecastService.getForecastData({
-        companyId:   company?.id,
-        userId:      user.id,
-        role:        userProfile?.role,
-        periodStart: dateRange.from || null,
-        periodEnd:   dateRange.to   || null,
-      });
+      const [forecastResult, groupResult] = await Promise.all([
+        forecastService.getForecastData({
+          companyId:   company?.id,
+          userId:      user.id,
+          role,
+          periodStart: dateRange.from || null,
+          periodEnd:   dateRange.to   || null,
+          ownerId,
+        }),
+        forecastService.getForecastGroupBreakdown({
+          companyId: company?.id,
+          userId:    user.id,
+          role,
+          ownerId,
+        }),
+      ]);
 
       if (cancelled) return;
 
-      if (error) {
-        setFetchError(error);
+      if (forecastResult.error) {
+        setFetchError(forecastResult.error);
       } else {
-        setRawData({ deals: deals || [], target });
+        setRawData({ deals: forecastResult.deals || [], target: forecastResult.target });
       }
+      setGroupBreakdown(groupResult.groups || []);
       setIsLoading(false);
     };
 
     load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [company?.id, user?.id, userProfile?.role, dateRange.from, dateRange.to, dateRange.isAllTime]);
+  }, [company?.id, user?.id, role, dateRange.from, dateRange.to, dateRange.isAllTime, selectedSalesman]);
 
   const forecast   = useMemo(() => buildForecast(rawData.deals, rawData.target?.target_amount ?? 0), [rawData]);
   const insights   = useMemo(() => generateInsights(forecast, rawData.deals, rawData.target?.target_amount ?? 0), [forecast, rawData]);
@@ -122,6 +200,47 @@ const ForecastPage = () => {
 
             </div>
           </div>
+        </div>
+
+        {/* Filters: period presets + salesman drill-down */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground">Period:</span>
+          {PERIOD_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => applyPeriod(p.id)}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors border ${
+                activePeriod === p.id
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:bg-muted/60"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+          {activePeriod === "custom" && (
+            <span className="text-xs px-3 py-1.5 rounded-lg font-medium border border-border bg-muted/40 text-muted-foreground">
+              Custom
+            </span>
+          )}
+
+          {canFilterSalesman && salesmen.length > 0 && (
+            <div className="flex items-center gap-2 ml-auto">
+              <Icon name="User" size={13} className="text-muted-foreground" />
+              <select
+                value={selectedSalesman}
+                onChange={(e) => setSelectedSalesman(e.target.value)}
+                className="text-xs px-3 py-1.5 border border-border rounded-lg bg-card text-card-foreground focus:outline-none focus:border-primary"
+              >
+                <option value="all">All Salesmen</option>
+                {salesmen.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.full_name || s.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* No period */}
@@ -185,6 +304,11 @@ const ForecastPage = () => {
                 <AIPredictionCard prediction={prediction} />
               </div>
             </div>
+
+            {/* Product Group breakdown — bar chart + table */}
+            {groupBreakdown.length > 0 && (
+              <ForecastGroupBreakdown groups={groupBreakdown} />
+            )}
 
             {/* Row 2: AI Insights + Stage Breakdown */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
