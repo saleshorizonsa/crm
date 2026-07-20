@@ -4,8 +4,12 @@ import { activityService } from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import { format } from 'date-fns';
 
-export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, contactId, contactName }) {
+export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, contactId, contactName, ownerId }) {
   const { user, company } = useAuth();
+  // Owner of the activity. In a director's "View As" of a salesman this is the
+  // salesman's id (passed via ownerId); otherwise it falls back to the
+  // logged-in user. Maps to activities.owner_id in activityService.logActivity.
+  const effectiveOwnerId = ownerId || user?.id;
   const [form, setForm] = useState({
     activityType: 'visit', description: '', outcome: '',
     nextAction: '', nextActionDate: '', durationMinutes: '',
@@ -29,7 +33,7 @@ export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, con
     setSaving(true);
     const { data, error: err } = await activityService.logActivity({
       companyId:       company.id,
-      userId:          user.id,
+      userId:          effectiveOwnerId,
       contactId,
       dealId,
       activityType:    form.activityType,

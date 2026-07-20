@@ -1297,6 +1297,10 @@ const EnhancedSalesmanDashboard = ({
                 dealId={null}
                 contactId={null}
                 contactName=""
+                // In "View As" this is the viewed salesman's id, so the logged
+                // activity is owned by them — not the director. Falls back to
+                // the director's own id on their own dashboard.
+                ownerId={effectiveUser?.id}
               />
 
             {!targetMetrics?.hasActiveTarget && (
@@ -1725,7 +1729,9 @@ const EnhancedSalesmanDashboard = ({
               title="My Recent Activity"
               companyId={company?.id}
               users={[]}
-              currentUserId={user?.id}
+              // View-As consistency: the "all activities" viewer must filter to
+              // the salesman being viewed, not the director's own id.
+              currentUserId={effectiveUser?.id}
             />
           </div>
         </div>
