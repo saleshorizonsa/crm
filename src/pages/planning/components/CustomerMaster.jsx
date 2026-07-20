@@ -31,6 +31,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
   const canImport = ['manager', 'admin', 'director'].includes(role);
 
   const [customers, setCustomers] = useState([]);
+  const [allCustomers, setAllCustomers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -48,6 +49,13 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
     }
     setLoading(true);
     try {
+      // Salesmen only ever see customers assigned to them, so there is no
+      // "unassigned" bucket for them — short-circuit to an empty list.
+      if (statusFilter === 'unassigned' && role === 'salesman') {
+        setCustomers([]);
+        return;
+      }
+
       let query = supabase
         .from('contacts')
         .select(
@@ -56,30 +64,73 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
         .eq('company_id', adminCompany.id)
         .order('company_name', { ascending: true });
 
-      if (role === 'salesman') {
-        query = query.eq('owner_id', user.id);
-      } else if (role === 'supervisor') {
-        const { data: teamMembers } = await supabase
-          .from('users')
-          .select('id')
-          .eq('reports_to', user.id)
-          .eq('is_active', true);
-        const teamIds = (teamMembers || []).map((m) => m.id);
-        query = query.in('owner_id', [user.id, ...teamIds]);
-      }
-
       if (statusFilter === 'unassigned') {
+        // Unassigned = no owner. This is company-wide and must NOT be combined
+        // with an owner-scope filter (owner_id IN [...] AND owner_id IS NULL
+        // can never both be true — that was the 0-results bug). Managers,
+        // supervisors, admins and directors can all see/assign these.
         query = query.is('owner_id', null);
-      } else if (statusFilter !== 'all') {
-        query = query.eq('customer_type', statusFilter);
+      } else {
+        // Role-based owner scope
+        if (role === 'salesman') {
+          query = query.eq('owner_id', user.id);
+        } else if (role === 'supervisor') {
+          const { data: teamMembers } = await supabase
+            .from('users')
+            .select('id')
+            .eq('reports_to', user.id)
+            .eq('is_active', true);
+          const teamIds = (teamMembers || []).map((m) => m.id);
+          query = query.in('owner_id', [user.id, ...teamIds]);
+        }
+        // manager / admin / director → no owner filter (all company customers)
+
+        // customer_type facet (active / inactive / dormant / prospect)
+        if (statusFilter !== 'all') {
+          query = query.eq('customer_type', statusFilter);
+        }
       }
 
-      const { data } = await query;
+      const { data, error } = await query;
+      if (error) console.error('fetchCustomers error:', error);
       setCustomers(data || []);
     } finally {
       setLoading(false);
     }
   }, [adminCompany?.id, statusFilter, role, user?.id]);
+
+  // Stats are computed from the full list of customers the user can access,
+  // independent of the active status filter — so the numbers stay stable when
+  // the user clicks between tabs (Total does not shrink to the filtered view).
+  const fetchStats = useCallback(async () => {
+    if (!adminCompany?.id) {
+      setAllCustomers([]);
+      return;
+    }
+    let query = supabase
+      .from('contacts')
+      .select('id,owner_id,customer_type')
+      .eq('company_id', adminCompany.id);
+
+    if (role === 'salesman') {
+      query = query.eq('owner_id', user.id);
+    } else if (role === 'supervisor') {
+      const { data: teamMembers } = await supabase
+        .from('users')
+        .select('id')
+        .eq('reports_to', user.id)
+        .eq('is_active', true);
+      const teamIds = (teamMembers || []).map((m) => m.id);
+      const scopeIds = [user.id, ...teamIds];
+      // Own + team, PLUS unassigned (supervisors can see/assign those too), so
+      // the Unassigned stat reflects what the Unassigned filter actually shows.
+      query = query.or(`owner_id.in.(${scopeIds.join(',')}),owner_id.is.null`);
+    }
+    // manager / admin / director → all company customers (unassigned included)
+
+    const { data } = await query;
+    setAllCustomers(data || []);
+  }, [adminCompany?.id, role, user?.id]);
 
   const fetchSalesmen = useCallback(async () => {
     if (!adminCompany?.id || !canAssign) return;
@@ -98,6 +149,10 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
   }, [fetchCustomers]);
 
   useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  useEffect(() => {
     if (canAssign) fetchSalesmen();
   }, [fetchSalesmen, canAssign]);
 
@@ -111,14 +166,14 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
       c.owner?.full_name?.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Stats from full customers array
+  // Stats from the full accessible list (unaffected by the active filter)
   const stats = {
-    total: customers.length,
-    unassigned: customers.filter((c) => !c.owner_id).length,
-    active: customers.filter((c) => c.customer_type === 'active').length,
-    inactive: customers.filter((c) => c.customer_type === 'inactive').length,
-    dormant: customers.filter((c) => c.customer_type === 'dormant').length,
-    prospect: customers.filter((c) => c.customer_type === 'prospect').length,
+    total: allCustomers.length,
+    unassigned: allCustomers.filter((c) => !c.owner_id).length,
+    active: allCustomers.filter((c) => c.customer_type === 'active').length,
+    inactive: allCustomers.filter((c) => c.customer_type === 'inactive').length,
+    dormant: allCustomers.filter((c) => c.customer_type === 'dormant').length,
+    prospect: allCustomers.filter((c) => c.customer_type === 'prospect').length,
   };
 
   const handleBulkAssign = async () => {
@@ -135,6 +190,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
     setSelected(new Set());
     setBulkOwner('');
     fetchCustomers();
+    fetchStats();
   };
 
   const handleDownloadTemplate = async () => {
@@ -249,24 +305,35 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
 
           {/* Stats row */}
           <div className="grid grid-cols-6 gap-3">
-            {statCards.map(({ key, label, value, color, ring }) => (
-              <button
-                key={key}
-                onClick={() => { setStatusFilter(key); setSelected(new Set()); }}
-                className={`rounded-xl border p-3 text-center transition-all ${
-                  statusFilter === key
-                    ? `bg-primary text-primary-foreground ring-2 ${ring}`
-                    : 'bg-card hover:bg-accent/40 border-border'
-                }`}
-              >
-                <p className={`text-xl font-bold ${statusFilter === key ? 'text-primary-foreground' : color}`}>
-                  {value}
-                </p>
-                <p className={`text-xs mt-0.5 ${statusFilter === key ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                  {label}
-                </p>
-              </button>
-            ))}
+            {statCards.map(({ key, label, value, color, ring }) => {
+              const isActive = statusFilter === key;
+              // Unassigned customers need attention — flag the card red when any exist
+              const unassignedAlert = key === 'unassigned' && value > 0 && !isActive;
+              return (
+                <button
+                  key={key}
+                  onClick={() => { setStatusFilter(key); setSelected(new Set()); }}
+                  className={`rounded-xl border p-3 text-center transition-all ${
+                    isActive
+                      ? `bg-primary text-primary-foreground ring-2 ${ring}`
+                      : unassignedAlert
+                        ? 'bg-red-50 border-red-200 hover:border-red-300'
+                        : 'bg-card hover:bg-accent/40 border-border'
+                  }`}
+                >
+                  <p className={`text-xl font-bold ${
+                    isActive ? 'text-primary-foreground' : unassignedAlert ? 'text-red-600' : color
+                  }`}>
+                    {value}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${
+                    isActive ? 'text-primary-foreground/80' : unassignedAlert ? 'text-red-500' : 'text-muted-foreground'
+                  }`}>
+                    {label}
+                  </p>
+                </button>
+              );
+            })}
           </div>
 
           {/* Bulk assign bar */}
@@ -409,14 +476,14 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
       <CustomerImportModal
         isOpen={showImport}
         onClose={() => setShowImport(false)}
-        onSuccess={() => { setShowImport(false); fetchCustomers(); }}
+        onSuccess={() => { setShowImport(false); fetchCustomers(); fetchStats(); }}
         adminCompany={adminCompany}
       />
 
       <AddCustomerModal
         isOpen={showAdd}
         onClose={() => setShowAdd(false)}
-        onSuccess={() => { setShowAdd(false); fetchCustomers(); }}
+        onSuccess={() => { setShowAdd(false); fetchCustomers(); fetchStats(); }}
         adminCompany={adminCompany}
         canAssign={canAssign}
       />
@@ -425,7 +492,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
         customer={activeCustomer}
         isOpen={!!activeCustomer}
         onClose={() => setActiveCustomer(null)}
-        onUpdated={() => { setActiveCustomer(null); fetchCustomers(); }}
+        onUpdated={() => { setActiveCustomer(null); fetchCustomers(); fetchStats(); }}
         canAssign={canAssign}
         companyId={adminCompany?.id}
       />
