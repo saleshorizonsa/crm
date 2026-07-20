@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useCurrency } from "../../contexts/CurrencyContext";
 import { reportService, computeDateRange } from "../../services/reportService";
@@ -51,6 +51,7 @@ const ReportsPage = () => {
   const { userProfile, company } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const { formatCurrency } = useCurrency();
   const reportRef = useRef(null);
 
@@ -152,9 +153,11 @@ const ReportsPage = () => {
   // touch window.history.state (that was corrupting React Router's own history
   // bookkeeping). Dashboard hints map to real tab ids via TAB_ALIASES.
   useEffect(() => {
-    const tabParam = searchParams.get("tab");
-    if (!tabParam) return;
-    const key = String(tabParam).toLowerCase();
+    // URL query param is primary (robust, survives refresh/back-forward);
+    // location.state.tab is a fallback for any state-based navigation.
+    const incoming = searchParams.get("tab") || location.state?.tab;
+    if (!incoming) return;
+    const key = String(incoming).toLowerCase();
     const mapped = TAB_ALIASES[key] || key;
     if (TABS.some((tt) => tt.id === mapped)) {
       setActiveTab(mapped);

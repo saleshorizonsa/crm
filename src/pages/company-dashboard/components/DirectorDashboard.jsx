@@ -1777,17 +1777,35 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       dateFrom: activeDateRange.from,
       dateTo: activeDateRange.to,
     };
+    // metricType values come from ExecutiveMetrics: totalRevenue, activePipeline,
+    // winRate, teamPerformance, dealsClosed, conversionRate (+ legacy aliases).
     switch (metricType) {
+      // Total Revenue → Reports "By Value"
+      case 'totalRevenue':
       case 'revenue':
-      case 'winRate':
-      case 'dealsWon':
-      case 'conversionRate':
-        navigate('/reports?tab=revenue');
+        navigate('/reports?tab=value');
         break;
-      case 'pipeline':
+      // Win Rate / Conversion / Team Performance → Reports "By Salesman"
+      case 'winRate':
+      case 'conversionRate':
+      case 'conversion':
+      case 'teamPerformance':
+      case 'team':
+      case 'activities':
+        navigate('/reports?tab=salesman');
+        break;
+      // Active Pipeline → Sales Pipeline (all open deals, no stage filter)
       case 'activePipeline':
+      case 'pipeline':
       case 'pipelineValue':
         navigate('/sales-pipeline', { state: navState });
+        break;
+      // Deals Closed → Sales Pipeline filtered to Won (with drill-down banner)
+      case 'dealsClosed':
+      case 'dealsWon':
+        navigate('/sales-pipeline', {
+          state: { ...navState, filterStage: 'won', source: 'director-stage-click' },
+        });
         break;
       case 'contacts':
         navigate('/contact-management', { state: navState });
@@ -1795,13 +1813,8 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       case 'leads':
         navigate('/lead-management', { state: navState });
         break;
-      case 'team':
-      case 'teamPerformance':
-      case 'activities':
-        navigate('/reports?tab=team');
-        break;
       default:
-        navigate('/reports', { state: navState });
+        navigate('/reports');
     }
   };
 
