@@ -14,6 +14,8 @@ import { useAuth } from "../../contexts/AuthContext";
 import { contactService, activityService } from "../../services/supabaseService";
 import { useLanguage } from "../../i18n";
 
+const DEFAULT_FILTERS = { search: "", status: "", tags: [], owner: "", sort: "" };
+
 const ContactManagement = () => {
   const { company, user, userProfile } = useAuth();
   const { t } = useLanguage();
@@ -23,51 +25,69 @@ const ContactManagement = () => {
   const [selectedContact, setSelectedContact] = useState(null);
   const [showContactModal, setShowContactModal] = useState(false);
   const [selectedRows, setSelectedRows] = useState([]);
-  const [filters, setFilters] = useState({
-    search: "",
-    status: "",
-    tags: [],
-    owner: "",
-    sort: "",
-  });
-  const loadingRef = React.useRef(false);
+  const [filters, setFilters] = useState({ ...DEFAULT_FILTERS });
+  // Tracks the company whose data is currently "active" so that a slower
+  // in-flight response from a company the user has switched away from is
+  // ignored instead of overwriting the current company's contacts.
+  const activeCompanyRef = React.useRef(null);
 
+  // Reload whenever the authenticated user OR the active company changes.
+  // The CompanySwitcher changes company?.id, so it MUST be in the deps —
+  // otherwise the effect never re-runs and the previous company's contacts
+  // stay on screen. (Previously the deps were [user?.id] only — the bug.)
   useEffect(() => {
-    if (user?.id) {
-      loadContacts();
-      loadStats();
-    }
-  }, [user?.id]); // Depend on user ID instead of company
+    if (!user?.id || !company?.id) return;
 
-  const loadContacts = async () => {
-    // Prevent concurrent loads
-    if (loadingRef.current) return;
+    // Mark this company as the active one for the race guard below.
+    activeCompanyRef.current = company.id;
 
-    loadingRef.current = true;
+    // Clear stale data, selections and filters immediately on switch so the
+    // previous company's contacts are never shown while the new fetch runs.
+    setContacts([]);
+    setStats(null);
+    setSelectedRows([]);
+    setSelectedContact(null);
+    setShowContactModal(false);
+    setFilters({ ...DEFAULT_FILTERS });
+
+    loadContacts(company.id, DEFAULT_FILTERS);
+    loadStats(company.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, company?.id]);
+
+  const loadContacts = async (companyId = company?.id, activeFilters = filters) => {
+    if (!companyId) return;
     setIsLoading(true);
     try {
       const { data, error } = await contactService.getContacts(
-        company.id,
-        filters
+        companyId,
+        activeFilters
       );
+      // Ignore the response if the user has since switched companies.
+      if (companyId !== activeCompanyRef.current) return;
       if (error) throw error;
       setContacts(data || []);
     } catch (error) {
-      console.error("Error loading contacts:", error);
+      if (companyId === activeCompanyRef.current) {
+        console.error("Error loading contacts:", error);
+      }
     } finally {
-      setIsLoading(false);
-      loadingRef.current = false;
+      if (companyId === activeCompanyRef.current) setIsLoading(false);
     }
   };
 
-  const loadStats = async () => {
+  const loadStats = async (companyId = company?.id) => {
+    if (!companyId) return;
     try {
-      const { data, error } = await contactService.getContactStats(company.id);
-      console.log(data);
+      const { data, error } = await contactService.getContactStats(companyId);
+      // Ignore stats for a company the user has since switched away from.
+      if (companyId !== activeCompanyRef.current) return;
       if (error) throw error;
       setStats(data);
     } catch (error) {
-      console.error("Error loading contact stats:", error);
+      if (companyId === activeCompanyRef.current) {
+        console.error("Error loading contact stats:", error);
+      }
     }
   };
 
