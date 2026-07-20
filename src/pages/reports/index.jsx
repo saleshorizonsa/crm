@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useCurrency } from "../../contexts/CurrencyContext";
 import { reportService, computeDateRange } from "../../services/reportService";
@@ -50,7 +50,7 @@ const ReportsPage = () => {
   const { t } = useLanguage();
   const { userProfile, company } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { formatCurrency } = useCurrency();
   const reportRef = useRef(null);
 
@@ -146,19 +146,21 @@ const ReportsPage = () => {
 
   useEffect(() => { fetchDeals(); }, []); // eslint-disable-line
 
-  // Pre-select the tab when arriving from a dashboard card click (location.state.tab).
-  // Dashboard hints are mapped to this page's real tab ids via TAB_ALIASES.
+  // Pre-select the tab from the URL query (?tab=...) when arriving from a
+  // dashboard card click. URL params survive refresh, back/forward and remounts
+  // — unlike location.state, which was being lost (BUG-14). We also no longer
+  // touch window.history.state (that was corrupting React Router's own history
+  // bookkeeping). Dashboard hints map to real tab ids via TAB_ALIASES.
   useEffect(() => {
-    const tabHint = location.state?.tab;
-    if (!tabHint) return;
-    const key = String(tabHint).toLowerCase();
+    const tabParam = searchParams.get("tab");
+    if (!tabParam) return;
+    const key = String(tabParam).toLowerCase();
     const mapped = TAB_ALIASES[key] || key;
     if (TABS.some((tt) => tt.id === mapped)) {
       setActiveTab(mapped);
     }
-    // Clear navigation state so a manual refresh doesn't re-apply the tab jump.
-    window.history.replaceState({}, document.title);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Filter options derived from raw deals
   const salesmanOptions = useMemo(() => {

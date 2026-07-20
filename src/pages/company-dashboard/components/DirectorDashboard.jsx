@@ -1782,7 +1782,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       case 'winRate':
       case 'dealsWon':
       case 'conversionRate':
-        navigate('/reports', { state: { ...navState, tab: 'revenue' } });
+        navigate('/reports?tab=revenue');
         break;
       case 'pipeline':
       case 'activePipeline':
@@ -1798,7 +1798,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       case 'team':
       case 'teamPerformance':
       case 'activities':
-        navigate('/reports', { state: { ...navState, tab: 'team' } });
+        navigate('/reports?tab=team');
         break;
       default:
         navigate('/reports', { state: navState });
@@ -1912,7 +1912,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           View all deals <ArrowUpRight size={12} />
         </button>
         <button
-          onClick={() => navigate('/reports', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, tab: 'team' } })}
+          onClick={() => navigate('/reports?tab=team')}
           className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1"
         >
           View leaderboard <ArrowUpRight size={12} />
@@ -1935,7 +1935,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
         <div
           className="bg-white rounded-lg shadow p-6 h-full group cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 relative"
-          onClick={() => navigate('/reports', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, tab: 'revenue' } })}
+          onClick={() => navigate('/reports?tab=revenue')}
           title="View full sales report"
         >
           <ArrowUpRight size={14} className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500" />
@@ -1951,7 +1951,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         </div>
         <div
           className="bg-white rounded-lg shadow p-6 h-full group cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 relative"
-          onClick={() => navigate('/reports', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, tab: 'team' } })}
+          onClick={() => navigate('/reports?tab=team')}
           title="View team performance report"
         >
           <ArrowUpRight size={14} className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500" />
@@ -1991,7 +1991,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         />
         <div className="px-4 pb-3 flex justify-end border-t border-gray-100 pt-3">
           <button
-            onClick={() => navigate('/reports', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, tab: 'activities' } })}
+            onClick={() => navigate('/reports?tab=activities')}
             className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1"
           >
             View all activities <ArrowUpRight size={12} />
