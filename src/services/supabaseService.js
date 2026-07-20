@@ -2886,6 +2886,25 @@ export const taskService = {
     }
   },
 
+  // Get tasks linked to a specific deal (used inside the Deal modal)
+  async getTasksForDeal(dealId) {
+    try {
+      if (!dealId) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from("tasks")
+        .select(
+          `id, title, description, due_date, priority, status, created_at, deal_id, contact_id,
+           assigned_user:users!tasks_assigned_to_fkey(id, full_name)`,
+        )
+        .eq("deal_id", dealId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      return { data: [], error };
+    }
+  },
+
   // Get task statistics
   async getTaskStats(companyId, userId = null) {
     try {

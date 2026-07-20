@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
@@ -19,6 +20,7 @@ import {
   salesTargetService,
   adminService,
   activityService,
+  taskService,
 } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
 import { useMaterialGroups } from '../../../hooks/useMaterialGroups';
@@ -357,6 +359,7 @@ const DealModal = ({
   const { formatCurrency, preferredCurrency } = useCurrency();
   const { user, userProfile, company } = useAuth();
   const { t, isRTL } = useLanguage();
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     title: deal?.title || "",
     description: deal?.description || "",
@@ -422,6 +425,15 @@ const DealModal = ({
   const [dealActivities,        setDealActivities]        = useState([]);
   const [activitiesLoading,     setActivitiesLoading]     = useState(false);
   const [showActivityLog,       setShowActivityLog]       = useState(false);
+
+  // Tasks state
+  const [dealTasks,       setDealTasks]       = useState([]);
+  const [loadingTasks,    setLoadingTasks]    = useState(false);
+  const [showTaskSection, setShowTaskSection] = useState(false);
+  const [showAddTask,     setShowAddTask]     = useState(false);
+  const [savingTask,      setSavingTask]      = useState(false);
+  const emptyTaskForm = { title: "", description: "", due_date: "", priority: "medium", assigned_to: "" };
+  const [taskForm,        setTaskForm]        = useState(emptyTaskForm);
   const [showLogActivityModal,  setShowLogActivityModal]  = useState(false);
 
   // Filter by search only — group filtering is done at the DB query level
@@ -1165,6 +1177,63 @@ const DealModal = ({
   useEffect(() => {
     if (isOpen && deal?.id && showActivityLog) loadDealActivities();
   }, [isOpen, deal?.id, showActivityLog]); // eslint-disable-line
+
+  // ── Tasks ───────────────────────────────────────────────────────────────────
+  async function loadDealTasks() {
+    if (!deal?.id) return;
+    setLoadingTasks(true);
+    const { data } = await taskService.getTasksForDeal(deal.id);
+    setDealTasks(data || []);
+    setLoadingTasks(false);
+  }
+
+  useEffect(() => {
+    if (isOpen && deal?.id && showTaskSection) loadDealTasks();
+  }, [isOpen, deal?.id, showTaskSection]); // eslint-disable-line
+
+  const openTaskCount = dealTasks.filter((tk) => tk.status !== "completed").length;
+
+  async function handleAddTask(e) {
+    e?.preventDefault?.();
+    if (!taskForm.title.trim() || !deal?.id) return;
+    setSavingTask(true);
+    try {
+      // upsertTask sets company_id, created_by (on create), updated_at and
+      // fires the assignment notifications.
+      const { error } = await taskService.upsertTask(
+        {
+          title:       taskForm.title.trim(),
+          description: taskForm.description.trim() || null,
+          due_date:    taskForm.due_date || null,
+          priority:    taskForm.priority,
+          status:      "pending",
+          task_type:   "general",
+          deal_id:     deal.id,
+          contact_id:  deal.contact_id || null,
+          assigned_to: taskForm.assigned_to || user?.id,
+        },
+        user?.id,
+        company?.id,
+      );
+      if (error) throw error;
+      setTaskForm(emptyTaskForm);
+      setShowAddTask(false);
+      await loadDealTasks();
+    } catch (err) {
+      console.error("handleAddTask:", err);
+    } finally {
+      setSavingTask(false);
+    }
+  }
+
+  async function handleToggleTaskStatus(taskId, currentStatus) {
+    const newStatus = currentStatus === "completed" ? "pending" : "completed";
+    const { error } = await taskService.updateTask(taskId, {
+      status:       newStatus,
+      completed_at: newStatus === "completed" ? new Date().toISOString() : null,
+    });
+    if (!error) loadDealTasks();
+  }
 
   // Feature 3: populate final value fields from existing deal data
   useEffect(() => {
@@ -1915,6 +1984,166 @@ const DealModal = ({
                         loadDealActivities();
                       }}
                     />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tasks — create & view deal-linked tasks inline (existing deals only) */}
+          {deal?.id && (
+            <div className="border border-border rounded-xl overflow-hidden">
+              {/* Toggle header */}
+              <button
+                type="button"
+                onClick={() => setShowTaskSection(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <Icon name="CheckSquare" size={15} className="text-blue-600" />
+                  <span className="text-sm font-medium text-card-foreground">Tasks</span>
+                  {openTaskCount > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">
+                      {openTaskCount} open
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {showTaskSection && (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); setShowAddTask(v => !v); }}
+                      className="text-xs px-2.5 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1"
+                    >
+                      <Icon name="Plus" size={12} /> Add Task
+                    </button>
+                  )}
+                  <Icon name={showTaskSection ? 'ChevronUp' : 'ChevronDown'} size={14} className="text-muted-foreground" />
+                </div>
+              </button>
+
+              {showTaskSection && (
+                <div className="p-4 bg-white space-y-3">
+                  {/* Add task form */}
+                  {showAddTask && (
+                    <form onSubmit={handleAddTask} className="bg-muted/30 border border-border rounded-xl p-3 space-y-2">
+                      <input
+                        type="text"
+                        placeholder="Task title *"
+                        value={taskForm.title}
+                        onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))}
+                        className="w-full text-sm px-3 py-2 border border-border rounded-lg bg-white focus:outline-none focus:border-blue-400"
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="date"
+                          value={taskForm.due_date}
+                          onChange={e => setTaskForm(f => ({ ...f, due_date: e.target.value }))}
+                          className="flex-1 text-sm px-3 py-2 border border-border rounded-lg bg-white focus:outline-none focus:border-blue-400"
+                        />
+                        <select
+                          value={taskForm.priority}
+                          onChange={e => setTaskForm(f => ({ ...f, priority: e.target.value }))}
+                          className="flex-1 text-sm px-3 py-2 border border-border rounded-lg bg-white focus:outline-none focus:border-blue-400"
+                        >
+                          <option value="low">Low</option>
+                          <option value="medium">Medium</option>
+                          <option value="high">High</option>
+                        </select>
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => { setShowAddTask(false); setTaskForm(emptyTaskForm); }}
+                          className="text-xs px-3 py-1.5 text-muted-foreground hover:text-card-foreground"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={!taskForm.title.trim() || savingTask}
+                          className="text-xs px-4 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 font-medium"
+                        >
+                          {savingTask ? "Saving…" : "Save Task"}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Task list */}
+                  {loadingTasks ? (
+                    <div className="text-xs text-muted-foreground py-2 text-center">Loading tasks…</div>
+                  ) : dealTasks.length === 0 ? (
+                    <div className="text-xs text-muted-foreground py-3 text-center bg-muted/30 rounded-lg">
+                      No tasks for this deal. Click "Add Task" to create one.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {dealTasks.map(task => {
+                        const isDone = task.status === "completed";
+                        const isOverdue = task.due_date && !isDone && new Date(task.due_date) < new Date();
+                        return (
+                          <div
+                            key={task.id}
+                            className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
+                              isDone ? "bg-muted/40 border-border opacity-60" : "bg-white border-border"
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTaskStatus(task.id, task.status)}
+                              className="mt-0.5 flex-shrink-0"
+                              title={isDone ? "Mark as pending" : "Mark as completed"}
+                            >
+                              <Icon
+                                name={isDone ? "CheckSquare" : "Square"}
+                                size={16}
+                                className={isDone ? "text-green-500" : "text-gray-300"}
+                              />
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-sm font-medium ${isDone ? "line-through text-muted-foreground" : "text-card-foreground"}`}>
+                                {task.title}
+                              </p>
+                              <div className="flex items-center flex-wrap gap-3 mt-1">
+                                {task.due_date && (
+                                  <span className={`text-xs flex items-center gap-1 ${isOverdue ? "text-red-500" : "text-muted-foreground"}`}>
+                                    <Icon name="Calendar" size={11} />
+                                    {new Date(task.due_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                                  </span>
+                                )}
+                                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                                  task.priority === "high"
+                                    ? "bg-red-50 text-red-600"
+                                    : task.priority === "medium"
+                                    ? "bg-amber-50 text-amber-600"
+                                    : "bg-gray-100 text-gray-500"
+                                }`}>
+                                  {task.priority}
+                                </span>
+                                {task.assigned_user && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {task.assigned_user.full_name?.split(" ")[0]}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Link to full task page, pre-filtered to this deal */}
+                  {dealTasks.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/task-management?dealId=${deal.id}`)}
+                      className="w-full text-center text-xs text-muted-foreground hover:text-blue-600 pt-2 mt-1 border-t border-border transition-colors"
+                    >
+                      View all tasks for this deal in Task Management →
+                    </button>
                   )}
                 </div>
               )}

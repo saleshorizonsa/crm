@@ -238,8 +238,22 @@ const TaskManagement = () => {
     }
   };
 
+  // Optional pre-filter by deal (set when arriving from a Deal modal's
+  // "View all tasks for this deal" link: /task-management?dealId=<id>)
+  const dealFilterId = searchParams.get("dealId");
+  const dealFilterTitle = useMemo(
+    () => deals.find((d) => d.id === dealFilterId)?.title || null,
+    [deals, dealFilterId],
+  );
+
   const filteredTasks = useMemo(() => {
     let filtered = [...tasks];
+
+    if (dealFilterId) {
+      filtered = filtered.filter(
+        (task) => (task.deal_id || task.deal?.id) === dealFilterId,
+      );
+    }
 
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
@@ -265,7 +279,7 @@ const TaskManagement = () => {
     }
 
     return filtered;
-  }, [tasks, filters]);
+  }, [tasks, filters, dealFilterId]);
 
   // Defence-in-depth: viewer must not reach task management
   if (userProfile?.role === "viewer") {
@@ -325,6 +339,25 @@ const TaskManagement = () => {
         </div>
 
         <div className="space-y-6">
+          {/* Deal pre-filter banner (from a Deal modal's "View all tasks" link) */}
+          {dealFilterId && (
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-blue-50 border border-blue-100 rounded-xl">
+              <div className="flex items-center gap-2 text-sm text-blue-700 min-w-0">
+                <Icon name="Briefcase" size={15} className="flex-shrink-0 text-blue-500" />
+                <span className="truncate">
+                  Showing tasks for deal
+                  {dealFilterTitle ? <> <strong className="font-semibold">{dealFilterTitle}</strong></> : ""}
+                </span>
+              </div>
+              <button
+                onClick={() => { searchParams.delete("dealId"); setSearchParams(searchParams); }}
+                className="flex-shrink-0 text-xs text-blue-500 hover:text-blue-700 font-medium flex items-center gap-1"
+              >
+                Clear ✕
+              </button>
+            </div>
+          )}
+
           {/* Task Stats */}
           <TaskStats stats={stats} />
 
