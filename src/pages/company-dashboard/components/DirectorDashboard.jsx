@@ -178,6 +178,19 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const [companyMonthlyTotal, setCompanyMonthlyTotal] = useState(0);
   const [companyMonthlyAchieved, setCompanyMonthlyAchieved] = useState(0);
 
+  // Guards the Performance Summary against showing the previous company's data.
+  // loadCompanyFetchId invalidates in-flight fetches when the user switches
+  // companies rapidly; loadedCompanyId records which company the current
+  // allDealsData/allEmployees belong to, so we can gate the summary until the
+  // new company's data has actually arrived.
+  const loadCompanyFetchId = React.useRef(0);
+  const [loadedCompanyId, setLoadedCompanyId] = useState(null);
+
+  // True while a company switch is in progress and the loaded data still
+  // belongs to the previous company — used to show the skeleton instead of
+  // stale Performance Summary data for even a single frame.
+  const summaryStale = !!selectedCompany && loadedCompanyId !== selectedCompany.id;
+
   useEffect(() => {
     loadAllCompanies();
   }, []);
@@ -199,6 +212,13 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       loadAllEmployees();
     }
   }, [selectedCompany]);
+
+  // When the company changes, the previously selected salesman belongs to the
+  // OLD company — reset the "View Dashboard As" selection back to consolidated
+  // so the Performance Summary never mixes companies.
+  useEffect(() => {
+    setSelectedEmployee(null);
+  }, [selectedCompany?.id]);
 
   // Reload metrics when selected employee changes
   useEffect(() => {
@@ -1002,6 +1022,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   };
 
   const loadCompanyData = async (companyId) => {
+    const fetchId = ++loadCompanyFetchId.current;
     setIsLoading(true);
     try {
       // Determine which user's data to load based on selectedEmployee
@@ -1032,6 +1053,10 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         tasksResult,
       ] = results;
 
+      // Discard results if the user switched companies while this was in flight
+      // (rapid switching): a slower earlier fetch must not overwrite newer data.
+      if (fetchId !== loadCompanyFetchId.current) return;
+
       if (metricsResult.status === "fulfilled") {
         setMetrics(metricsResult.value.data);
       }
@@ -1059,10 +1084,14 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         const users = usersResult.value.data || [];
         setAllEmployees(users);
       }
+
+      // Mark whose data is now loaded so the Performance Summary can un-gate.
+      setLoadedCompanyId(companyId);
     } catch (error) {
       console.error("Error loading company data:", error);
     } finally {
-      setIsLoading(false);
+      // Only the latest fetch owns the loading flag.
+      if (fetchId === loadCompanyFetchId.current) setIsLoading(false);
     }
   };
 
@@ -1837,12 +1866,16 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       )}
 
       {/* Performance Bar Chart - Revenue vs Target by Time Period */}
+      {/* key remounts the chart on company switch so its internal breakdown
+          state resets cleanly; isLoading||summaryStale shows the skeleton
+          instead of the previous company's data during the switch. */}
       <PerformanceBarChart
+        key={selectedCompany?.id ?? "all"}
         dealsData={filteredDeals}
         targetsData={filteredAssignedTargets}
         timePeriod={timePeriod}
         year={new Date().getFullYear()}
-        isLoading={isLoading}
+        isLoading={isLoading || summaryStale}
         totalSalesmen={allEmployees.filter(e => e.role === 'salesman' && e.is_active !== false).length || 1}
         showAvg={!selectedEmployee}
         employees={allEmployees}
