@@ -167,6 +167,12 @@ const ForecastPage = () => {
 
   const targetAmount = rawData.target?.target_amount ?? 0;
 
+  // Name of the drilled-into salesman ("" when viewing all) — labels the KPI cards
+  const selectedSalesmanName =
+    selectedSalesman !== "all"
+      ? salesmen.find((s) => s.id === selectedSalesman)?.full_name || ""
+      : "";
+
   const breadcrumbs = [
     { label: t("forecastPage.breadcrumbDashboard"), path: "/company-dashboard" },
     { label: t("forecastPage.breadcrumbForecast") },
@@ -282,7 +288,11 @@ const ForecastPage = () => {
         {!isLoading && !fetchError && (dateRange.from || dateRange.isAllTime) && rawData.deals.length > 0 && (
           <div className="space-y-6">
             {/* KPI Bar */}
-            <ForecastKPIBar forecast={forecast} targetAmount={targetAmount} />
+            <ForecastKPIBar
+              forecast={forecast}
+              targetAmount={targetAmount}
+              salesmanName={selectedSalesmanName}
+            />
 
             {/* AI Forecast Summary */}
             <ForecastAISummary

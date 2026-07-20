@@ -5624,20 +5624,16 @@ export const forecastService = {
         0,
       );
 
-      console.log(
-        "[forecast] Total target found:",
+      const _from = periodStart ? new Date(periodStart) : new Date();
+      console.log("[forecast] Total target:", {
         totalTarget,
-        "from",
-        (targetRows || []).length,
-        "target row(s) for period",
-        periodStart,
-        "→",
-        periodEnd,
-        "| company",
+        ownerId: ownerId ?? null,        // null = company total (all salesmen)
+        ownerIds,                        // resolved scope actually queried
+        rows: (targetRows || []).length, // # of target rows summed
+        month: _from.getMonth() + 1,
+        year: _from.getFullYear(),
         companyId,
-        "| ownerIds",
-        ownerIds,
-      );
+      });
 
       return {
         deals:  deals || [],

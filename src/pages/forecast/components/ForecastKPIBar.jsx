@@ -35,8 +35,15 @@ const CARDS = [
   },
 ];
 
-const ForecastKPIBar = ({ forecast, targetAmount = 0 }) => {
+const ForecastKPIBar = ({ forecast, targetAmount = 0, salesmanName = "" }) => {
   const { formatCurrency } = useCurrency();
+
+  // When drilling into one salesman, label the target-related cards as personal
+  const isIndividual = !!salesmanName;
+  const firstName = salesmanName.split(" ")[0];
+  const attainmentLabel = isIndividual ? `${firstName}'s Attainment` : "Attainment";
+  // Whose target the Attainment % and Gap are measured against
+  const targetOwnerLabel = isIndividual ? `${firstName}'s target` : "company target";
 
   const attainmentColor =
     forecast.attainment >= 75 ? "text-emerald-600" :
@@ -77,7 +84,7 @@ const ForecastKPIBar = ({ forecast, targetAmount = 0 }) => {
       <div className="bg-card border-l-4 border-l-violet-500 border border-border rounded-lg p-4 enterprise-shadow">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Attainment
+            {attainmentLabel}
           </span>
           <span className="w-7 h-7 rounded-md flex items-center justify-center bg-violet-100">
             <Icon name="Percent" size={14} className="text-violet-600" />
@@ -94,6 +101,7 @@ const ForecastKPIBar = ({ forecast, targetAmount = 0 }) => {
                 style={{ width: `${Math.min(forecast.attainment, 100)}%` }}
               />
             </div>
+            <p className="text-xs text-muted-foreground mt-1 truncate">of {targetOwnerLabel}</p>
           </>
         ) : (
           <>
@@ -122,8 +130,8 @@ const ForecastKPIBar = ({ forecast, targetAmount = 0 }) => {
             <p className={`text-xl font-bold tabular-nums ${gapPositive ? "text-red-600" : "text-emerald-600"}`}>
               {gapPositive ? formatCurrency(forecast.gap) : "Exceeded"}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {gapPositive ? "remaining to target" : `+${formatCurrency(Math.abs(forecast.gap))}`}
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+              {gapPositive ? `remaining to ${targetOwnerLabel}` : `+${formatCurrency(Math.abs(forecast.gap))} over`}
             </p>
           </>
         ) : (
