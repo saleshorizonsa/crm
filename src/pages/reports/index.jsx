@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useCurrency } from "../../contexts/CurrencyContext";
 import { reportService, computeDateRange } from "../../services/reportService";
@@ -18,6 +18,25 @@ import { useMaterialGroups } from "../../hooks/useMaterialGroups";
 const today = () => new Date().toISOString().split("T")[0];
 const firstOfYear = () => `${new Date().getFullYear()}-01-01`;
 
+// Dashboard cards navigate with semantic tab hints (e.g. "revenue", "team")
+// that don't match this page's actual tab ids. Map them to real tab ids.
+// Real ids: value | product | client | location | salesman | origin | margin | activity
+const TAB_ALIASES = {
+  revenue:    "value",     // Revenue / Sales Performance card → By Value
+  value:      "value",
+  product:    "product",
+  client:     "client",
+  location:   "location",
+  company:    "location",  // "By Company" tab id is "location"
+  salesman:   "salesman",
+  team:       "salesman",  // Team Performance card → By Salesman
+  origin:     "origin",
+  pipeline:   "origin",    // Pipeline Origin
+  margin:     "margin",
+  activity:   "activity",
+  activities: "activity",  // Activities card → Deal Activity
+};
+
 const STAGE_OPTIONS = [
   { value: 'lead',          label: 'Lead'        },
   { value: 'contact_made',  label: 'Qualified'   },
@@ -31,6 +50,7 @@ const ReportsPage = () => {
   const { t } = useLanguage();
   const { userProfile, company } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { formatCurrency } = useCurrency();
   const reportRef = useRef(null);
 
@@ -125,6 +145,20 @@ const ReportsPage = () => {
   }, [period]); // eslint-disable-line
 
   useEffect(() => { fetchDeals(); }, []); // eslint-disable-line
+
+  // Pre-select the tab when arriving from a dashboard card click (location.state.tab).
+  // Dashboard hints are mapped to this page's real tab ids via TAB_ALIASES.
+  useEffect(() => {
+    const tabHint = location.state?.tab;
+    if (!tabHint) return;
+    const key = String(tabHint).toLowerCase();
+    const mapped = TAB_ALIASES[key] || key;
+    if (TABS.some((tt) => tt.id === mapped)) {
+      setActiveTab(mapped);
+    }
+    // Clear navigation state so a manual refresh doesn't re-apply the tab jump.
+    window.history.replaceState({}, document.title);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filter options derived from raw deals
   const salesmanOptions = useMemo(() => {
