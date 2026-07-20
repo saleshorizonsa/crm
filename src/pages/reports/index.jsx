@@ -77,7 +77,7 @@ const ReportsPage = () => {
   ];
 
   const [activeTab, setActiveTab]   = useState("value");
-  const [period, setPeriod]         = useState("this_year");
+  const [period, setPeriod]         = useState("this_month");
   const [customFrom, setCustomFrom] = useState(firstOfYear);
   const [customTo, setCustomTo]     = useState(today);
   const [deals, setDeals]           = useState([]);
