@@ -1071,6 +1071,28 @@ const EnhancedSalesmanDashboard = ({
     );
   }
 
+  // When a director is viewing a specific employee ("View Dashboard As"),
+  // the Total Revenue card deep-links into the By Salesman report pre-filtered
+  // to that employee. On the employee's own dashboard the card is inert.
+  const isViewingEmployee = !!viewAsUser;
+  const viewedEmployeeName =
+    viewAsUser?.full_name || effectiveUserProfile?.full_name || effectiveUserProfile?.email;
+
+  const handleRevenueCardClick = () => {
+    if (!isViewingEmployee) return;
+    const employeeId = viewAsUser?.id || effectiveUser?.id;
+    navigate("/reports?tab=salesman", {
+      state: {
+        tab: "salesman",
+        salesmanId: employeeId,
+        salesmanName: viewedEmployeeName,
+        company: company?.id,
+        dateFrom: activeDateRange?.from,
+        dateTo: activeDateRange?.to,
+      },
+    });
+  };
+
   return (
     <div className={`space-y-8 transition-opacity duration-200 ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
       {/* Header */}
@@ -1172,8 +1194,25 @@ const EnhancedSalesmanDashboard = ({
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Total Revenue */}
-              <div className="text-center p-4 bg-green-50 rounded-lg min-w-0 overflow-hidden">
+              {/* Total Revenue — clickable deep-link when a director is viewing an employee */}
+              <div
+                onClick={isViewingEmployee ? handleRevenueCardClick : undefined}
+                title={
+                  isViewingEmployee
+                    ? `View ${viewedEmployeeName?.split(" ")[0] || "salesman"}'s full report`
+                    : undefined
+                }
+                className={`text-center p-4 bg-green-50 rounded-lg min-w-0 overflow-hidden transition-all duration-150 ${
+                  isViewingEmployee
+                    ? "cursor-pointer group relative hover:shadow-md hover:-translate-y-0.5"
+                    : ""
+                }`}
+              >
+                {isViewingEmployee && (
+                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Icon name="ArrowUpRight" size={13} className="text-green-500" />
+                  </div>
+                )}
                 <div className="text-xl font-bold tabular-nums truncate leading-tight text-green-600">
                   {formatCurrency(
                     targetMetrics?.progressAmount ||

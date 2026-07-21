@@ -96,6 +96,12 @@ const ReportsPage = () => {
   const [filterContact,  setFilterContact]  = useState('');
   const [showFilters,    setShowFilters]    = useState(false);
 
+  // Salesman pre-selected via navigation from a dashboard "View Dashboard As"
+  // card. Held in a ref and applied AFTER deals load, because fetchDeals() calls
+  // clearAllFilters() on mount which would otherwise wipe a filter set here.
+  const [navSalesmanName, setNavSalesmanName] = useState('');
+  const pendingSalesmanRef = useRef(null);
+
   const activeFilterCount = [
     filterSalesman !== 'all' ? 1 : 0,
     filterStage    !== 'all' ? 1 : 0,
@@ -156,14 +162,36 @@ const ReportsPage = () => {
     // URL query param is primary (robust, survives refresh/back-forward);
     // location.state.tab is a fallback for any state-based navigation.
     const incoming = searchParams.get("tab") || location.state?.tab;
-    if (!incoming) return;
-    const key = String(incoming).toLowerCase();
-    const mapped = TAB_ALIASES[key] || key;
-    if (TABS.some((tt) => tt.id === mapped)) {
-      setActiveTab(mapped);
+    if (incoming) {
+      const key = String(incoming).toLowerCase();
+      const mapped = TAB_ALIASES[key] || key;
+      if (TABS.some((tt) => tt.id === mapped)) {
+        setActiveTab(mapped);
+      }
+    }
+
+    // Salesman pre-selection from a dashboard "View As" card (e.g. Total Revenue).
+    // Stored in a ref; applied after deals load (see effect below).
+    const salesmanId = searchParams.get("salesman") || location.state?.salesmanId;
+    const salesmanName = location.state?.salesmanName;
+    if (salesmanId) {
+      pendingSalesmanRef.current = salesmanId;
+      if (salesmanName) setNavSalesmanName(salesmanName);
+      // eslint-disable-next-line no-console
+      console.log("Reports pre-filtered to:", salesmanId, salesmanName || "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  // Apply the navigation-selected salesman once deals are available. One-shot:
+  // fetchDeals() clears filters on load, so we (re)apply here right after, then
+  // clear the ref so the director can freely change the filter afterwards.
+  useEffect(() => {
+    if (pendingSalesmanRef.current && deals.length > 0) {
+      setFilterSalesman(pendingSalesmanRef.current);
+      pendingSalesmanRef.current = null;
+    }
+  }, [deals]);
 
   // Filter options derived from raw deals
   const salesmanOptions = useMemo(() => {
@@ -534,7 +562,34 @@ const ReportsPage = () => {
             {activeTab === "product"  && <ByProduct  deals={filteredDeals} formatCurrency={formatCurrency} />}
             {activeTab === "client"   && <ByClient   deals={filteredDeals} formatCurrency={formatCurrency} />}
             {activeTab === "location" && <ByLocation deals={filteredDeals} formatCurrency={formatCurrency} />}
-            {activeTab === "salesman" && <BySalesman deals={filteredDeals} formatCurrency={formatCurrency} />}
+            {activeTab === "salesman" && (
+              <>
+                {filterSalesman !== "all" && navSalesmanName && (
+                  <div className="flex items-center justify-between px-4 py-2.5 bg-blue-50 border border-blue-100 rounded-xl mb-4">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L15 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 019 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                      </svg>
+                      <span className="text-sm text-blue-700">
+                        Showing report for{" "}
+                        <strong className="font-semibold">{navSalesmanName}</strong>
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setFilterSalesman("all");
+                        setNavSalesmanName("");
+                        pendingSalesmanRef.current = null;
+                      }}
+                      className="text-xs text-blue-500 hover:text-blue-700 font-medium flex-shrink-0 ml-4"
+                    >
+                      Show all ×
+                    </button>
+                  </div>
+                )}
+                <BySalesman deals={filteredDeals} formatCurrency={formatCurrency} />
+              </>
+            )}
             {activeTab === "origin"   && <OriginReport   deals={filteredDeals} formatCurrency={formatCurrency} dateFrom={dateFrom} />}
             {activeTab === "margin"   && <MarginReport   deals={filteredDeals} formatCurrency={formatCurrency} />}
             {activeTab === "activity" && <ActivityReport deals={filteredDeals} formatCurrency={formatCurrency} />}

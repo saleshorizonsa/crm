@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import MetricsCard from "./MetricsCard";
 import SalesChart from "./SalesChart";
 import ActivityFeed from "./ActivityFeed";
@@ -174,7 +175,25 @@ const EnhancedSupervisorDashboard = ({
   const [monthlyTarget, setMonthlyTarget] = useState(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
 
+  const navigate = useNavigate();
+
   const handleMetricClick = (metricType) => {
+    // When a director is viewing this supervisor ("View Dashboard As"), the Total
+    // Revenue card deep-links into that supervisor's By Salesman report instead
+    // of opening the local insights modal.
+    if (viewAsUser && metricType === "totalRevenue") {
+      navigate("/reports?tab=salesman", {
+        state: {
+          tab: "salesman",
+          salesmanId: viewAsUser.id,
+          salesmanName: viewAsUser.full_name || viewAsUser.email,
+          company: company?.id,
+          dateFrom: activeDateRange?.from,
+          dateTo: activeDateRange?.to,
+        },
+      });
+      return;
+    }
     setMetricInsightModal({
       isOpen: true,
       metricType,
