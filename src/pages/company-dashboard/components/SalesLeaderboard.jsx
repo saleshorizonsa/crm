@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
@@ -67,7 +67,6 @@ const SalesLeaderboard = ({
 }) => {
   const { formatCurrency } = useCurrency();
   const { t, isRTL } = useLanguage();
-  const [showAll, setShowAll] = useState(false);
 
   const leaderboard = useMemo(() => {
     // Build per-person stats
@@ -111,8 +110,6 @@ const SalesLeaderboard = ({
   const totalWon = leaderboard.reduce((s, e) => s + e.wonAmount, 0);
   const totalTarget = leaderboard.reduce((s, e) => s + e.targetAmount, 0);
   const overallProgress = totalTarget > 0 ? Math.min((totalWon / totalTarget) * 100, 100) : null;
-
-  const visible = showAll ? leaderboard : leaderboard.slice(0, 7);
 
   if (isLoading) {
     return (
@@ -181,9 +178,12 @@ const SalesLeaderboard = ({
         <span className="text-right">{t("leaderboard.rate")}</span>
       </div>
 
-      {/* Rows */}
-      <div className="divide-y divide-border">
-        {visible.map((person, idx) => {
+      {/* Rows — cap height so ~5 show, the rest scroll (keeps the dashboard short) */}
+      <div
+        className="divide-y divide-border overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
+        style={{ maxHeight: "340px", scrollbarWidth: "thin" }}
+      >
+        {leaderboard.map((person, idx) => {
           const rank = idx + 1;
           const isTop3 = rank <= 3;
           return (
@@ -265,18 +265,11 @@ const SalesLeaderboard = ({
         })}
       </div>
 
-      {/* Show more / less */}
-      {leaderboard.length > 7 && (
-        <div className="border-t border-border">
-          <button
-            onClick={() => setShowAll((p) => !p)}
-            className="w-full py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors flex items-center justify-center gap-1.5"
-          >
-            <Icon name={showAll ? "ChevronUp" : "ChevronDown"} size={13} />
-            {showAll
-              ? t("common.showLess")
-              : t("leaderboard.showMore", { count: leaderboard.length - 7 })}
-          </button>
+      {/* Scroll hint — shown when more than 5 rows exist below the fold */}
+      {leaderboard.length > 5 && (
+        <div className="border-t border-border py-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+          <Icon name="ChevronDown" size={13} />
+          {t("leaderboard.showMore", { count: leaderboard.length - 5 })}
         </div>
       )}
     </div>

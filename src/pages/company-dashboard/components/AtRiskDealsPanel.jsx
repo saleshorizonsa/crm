@@ -59,7 +59,6 @@ const AtRiskDealsPanel = ({ companyId }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [expanded, setExpanded] = useState(null);
-  const [showAll, setShowAll] = useState(false);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -81,7 +80,9 @@ const AtRiskDealsPanel = ({ companyId }) => {
 
   const filtered =
     filter === "all" ? deals : deals.filter((d) => d.risk_level === filter);
-  const visible = showAll ? filtered : filtered.slice(0, 8);
+  // Render the full filtered list inside a fixed-height scroll area (below),
+  // so ~5 show and the rest scroll instead of expanding the whole dashboard.
+  const visible = filtered;
 
   const totalRisk = counts.critical + counts.warning + counts.watch;
 
@@ -160,8 +161,11 @@ const AtRiskDealsPanel = ({ companyId }) => {
         ))}
       </div>
 
-      {/* Content */}
-      <div className="divide-y divide-border">
+      {/* Content — cap height so ~5 deals show, the rest scroll */}
+      <div
+        className="divide-y divide-border overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
+        style={{ maxHeight: "400px", scrollbarWidth: "thin" }}
+      >
         {isLoading ? (
           <div className="py-10 flex items-center justify-center gap-2 text-muted-foreground">
             <Icon name="Loader2" size={16} className="animate-spin" />
@@ -281,18 +285,11 @@ const AtRiskDealsPanel = ({ companyId }) => {
         )}
       </div>
 
-      {/* Show more / less */}
-      {!isLoading && filtered.length > 8 && (
-        <div className="border-t border-border">
-          <button
-            onClick={() => setShowAll((p) => !p)}
-            className="w-full py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors flex items-center justify-center gap-1.5"
-          >
-            <Icon name={showAll ? "ChevronUp" : "ChevronDown"} size={13} />
-            {showAll
-              ? t("common.showLess")
-              : `+${filtered.length - 8} ${t("atRisk.more")}`}
-          </button>
+      {/* Scroll hint — shown when more than 5 at-risk deals exist below the fold */}
+      {!isLoading && filtered.length > 5 && (
+        <div className="border-t border-border py-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+          <Icon name="ChevronDown" size={13} />
+          +{filtered.length - 5} {t("atRisk.more")}
         </div>
       )}
 
