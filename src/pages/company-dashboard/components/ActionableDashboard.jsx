@@ -39,9 +39,16 @@ const ActionableDashboard = ({ actionItems = [], onActionClick }) => {
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">
-            {t("dashboard.actionItems")}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {t("dashboard.actionItems")}
+            </h3>
+            {items.length > 0 && (
+              <span className="text-xs font-medium px-2 py-0.5 bg-orange-100 text-orange-600 rounded-full">
+                {items.length}
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-500 mt-1">
             {items.filter((item) => item.priority === "high").length}{" "}
             {t("dashboard.highPriorityItemsRequiringAttention")}
@@ -50,8 +57,13 @@ const ActionableDashboard = ({ actionItems = [], onActionClick }) => {
         <Icon name="AlertCircle" size={24} className="text-orange-500" />
       </div>
 
-      <div className="space-y-3">
-        {items.slice(0, 8).map((item, index) => {
+      {/* Cap the list height so ~5 items show and the rest scroll (keeps the
+          dashboard short) instead of expanding the full list. */}
+      <div
+        className="space-y-3 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
+        style={{ maxHeight: "400px", scrollbarWidth: "thin" }}
+      >
+        {items.map((item, index) => {
           const priority =
             priorityConfig[item.priority] || priorityConfig.medium;
           const actionType =
@@ -112,12 +124,10 @@ const ActionableDashboard = ({ actionItems = [], onActionClick }) => {
         })}
       </div>
 
-      {items.length > 8 && (
-        <div className="mt-4 pt-3 border-t border-gray-200">
-          <button className="w-full text-center text-sm text-blue-600 hover:text-blue-800 font-medium">
-            {t("common.viewAll")} {items.length}{" "}
-            {t("dashboard.actionItems").toLowerCase()}
-          </button>
+      {items.length > 5 && (
+        <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-center gap-1.5 text-xs text-gray-400">
+          <Icon name="ChevronDown" size={13} />
+          +{items.length - 5} more — scroll to view
         </div>
       )}
 

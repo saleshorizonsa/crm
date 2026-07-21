@@ -67,7 +67,12 @@ const PipelineChart = ({ pipelineData = [], selectedCompany }) => {
         <Icon name="TrendingUp" size={24} className="text-blue-600" />
       </div>
 
-      <div className="space-y-4">
+      {/* Cap the list height so ~5 stages show and the rest scroll, keeping the
+          card compact instead of expanding the full list. */}
+      <div
+        className="space-y-4 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent"
+        style={{ maxHeight: "320px", scrollbarWidth: "thin" }}
+      >
         {data.map((stage, index) => {
           const config = stageConfig[stage.stage] || stageConfig.lead;
           const percentage =
@@ -118,6 +123,13 @@ const PipelineChart = ({ pipelineData = [], selectedCompany }) => {
           );
         })}
       </div>
+
+      {data.length > 5 && (
+        <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-center gap-1.5 text-xs text-gray-400">
+          <Icon name="ChevronDown" size={13} />
+          +{data.length - 5} more — scroll to view
+        </div>
+      )}
 
       <p className="mt-3 text-xs text-muted-foreground text-center opacity-60">
         Click any stage to open the pipeline filtered to that stage
