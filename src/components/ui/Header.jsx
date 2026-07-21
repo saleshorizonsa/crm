@@ -57,7 +57,6 @@ const Header = ({
     { label: t("nav.forecast"), path: "/forecast",        icon: "LineChart"   },
     { label: t("nav.reports"),  path: "/reports",  icon: "FileBarChart" },
     { label: t("nav.clients"), path: "/contact-management", icon: "Users" },
-    { label: t("nav.tasks"), path: "/task-management", icon: "ListTodo" },
     { label: "Customer Base", path: "/planning", icon: "ClipboardList" },
   ];
 
@@ -66,6 +65,7 @@ const Header = ({
 
   const secondaryItems = [
     ...adminItems,
+    { label: t("nav.tasks"), path: "/task-management", icon: "ListTodo" },
     { label: t("nav.settings"), path: "/settings", icon: "Settings" },
     { label: t("dashboard.help"), path: "/help", icon: "Info" },
     ...(userProfile?.role === "admin"
@@ -118,6 +118,8 @@ const Header = ({
   };
 
   const currentPath = window.location?.pathname;
+  // Highlight "More" when the current page lives inside its dropdown (e.g. Tasks)
+  const moreIsActive = secondaryItems?.some((item) => currentPath === item?.path);
 
   return (
     <>
@@ -173,7 +175,7 @@ const Header = ({
             {/* More Menu */}
             <div className="relative" ref={mobileMenuRef}>
               <Button
-                variant="ghost"
+                variant={moreIsActive ? "default" : "ghost"}
                 size="sm"
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                 className="transition-enterprise"
