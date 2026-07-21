@@ -88,6 +88,7 @@ const SalesPipeline = () => {
       setDrillDownContext({
         stage: state.activeStage,
         label: stageLabels[state.activeStage] || state.activeStage,
+        companyName: state.companyName || "",
       });
     }
     if (state?.source === "director-stage-click" && state?.filterStage) {
@@ -95,6 +96,7 @@ const SalesPipeline = () => {
         stage: state.filterStage,
         label: stageLabels[state.filterStage] || state.filterStage,
         salesmanName: state.filterSalesmanName || "",
+        companyName: state.companyName || "",
       });
     }
     if (state?.activeStage || state?.activeFilter || state?.source) {
@@ -582,9 +584,12 @@ const SalesPipeline = () => {
                   <strong className="font-semibold">{drillDownContext.label}</strong>
                 )}{" "}
                 deals
-                {drillDownContext.salesmanName
-                  ? <> for <strong className="font-semibold">{drillDownContext.salesmanName}</strong></>
-                  : <> {t("pipeline.dealsFromPerformanceCard")}</>}
+                {drillDownContext.salesmanName && (
+                  <> {" "}for <strong className="font-semibold">{drillDownContext.salesmanName}</strong></>
+                )}
+                {drillDownContext.companyName && (
+                  <> {" "}· <span className="text-blue-600">{drillDownContext.companyName}</span></>
+                )}
               </span>
               <button
                 onClick={() => {

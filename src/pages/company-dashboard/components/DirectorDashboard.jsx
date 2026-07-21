@@ -1790,6 +1790,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const handleMetricClick = (metricType) => {
     const navState = {
       company: selectedCompany?.id,
+      companyName: selectedCompany?.name,
       dateFrom: activeDateRange.from,
       dateTo: activeDateRange.to,
     };
@@ -1976,6 +1977,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             showTypeSelector={true}
             salesmanId={selectedEmployee?.id}
             salesmanName={selectedEmployee?.full_name || selectedEmployee?.email}
+            companyName={selectedCompany?.name}
           />
         </div>
         <div
@@ -2272,6 +2274,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             showTypeSelector={true}
             salesmanId={selectedEmployee?.id}
             salesmanName={selectedEmployee?.full_name || selectedEmployee?.email}
+            companyName={selectedCompany?.name}
           />
         </div>
         <div className="bg-white rounded-lg shadow p-6 h-full">

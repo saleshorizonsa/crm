@@ -61,49 +61,23 @@ const PipelineFilters = ({
   }, [company?.id, userProfile?.id, userProfile?.role]);
 
   const loadMembers = async () => {
-    // For supervisors, managers, and directors - load their subordinates based on role
-    const { data, error } = await userService.getUserSubordinates(
-      userProfile.id,
-    );
+    // Scope the member filter to the CURRENTLY selected company (company.id from
+    // auth, which the CompanySwitcher keeps in sync) and to roles that actually
+    // own pipeline deals — salesmen, supervisors, managers. Directors, heads,
+    // admins and viewers are excluded (they don't own deals), and users from
+    // other companies never appear.
+    const { data, error } = await userService.getCompanyUsers(company.id, {
+      status: "active",
+    });
 
     if (!error && data) {
-      let filteredMembers = [];
-
-      // Filter subordinates based on user's role
-      if (userProfile?.role === "director") {
-        // Directors see heads and managers
-        filteredMembers = data.filter(
-          (user) => user.role === "head" || user.role === "manager",
-        );
-      } else if (userProfile?.role === "head") {
-        // Heads see managers
-        filteredMembers = data.filter((user) => user.role === "manager");
-      } else if (userProfile?.role === "manager") {
-        // Managers see supervisors and salesmen
-        filteredMembers = data.filter(
-          (user) =>
-            user.role === "supervisor" ||
-            user.role === "salesman" ||
-            user.role === "sales_rep",
-        );
-      } else if (userProfile?.role === "supervisor") {
-        // Supervisors see salesmen only
-        filteredMembers = data.filter(
-          (user) => user.role === "salesman" || user.role === "sales_rep",
-        );
-      }
+      const DEAL_OWNER_ROLES = ["salesman", "sales_rep", "supervisor", "manager"];
+      const scoped = data.filter((u) => DEAL_OWNER_ROLES.includes(u.role));
 
       setMembers([
         { value: "", label: t("pipeline.allMembers") },
-        // Add current user first
-        {
-          value: userProfile.id,
-          label: `${userProfile.full_name || userProfile.email} (${formatRole(
-            userProfile.role,
-          )})`,
-        },
-        // Add subordinates with role in brackets
-        ...filteredMembers.map((user) => ({
+        // Company members who can own deals, with role in brackets
+        ...scoped.map((user) => ({
           value: user.id,
           label: `${user.full_name || user.email} (${formatRole(user.role)})`,
         })),

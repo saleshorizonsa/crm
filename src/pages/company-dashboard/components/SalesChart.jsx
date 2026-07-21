@@ -34,6 +34,7 @@ const SalesChart = ({
   readOnly = false,
   salesmanId = null,     // when the card is scoped to one salesman (director "View As")
   salesmanName = "",     // that salesman's display name, carried into the drill-down
+  companyName = "",      // selected company name, shown in the pipeline drill-down banner
 }) => {
   const { formatCurrency } = useCurrency();
   const { t } = useLanguage();
@@ -95,12 +96,13 @@ const SalesChart = ({
           filterStage: stage,
           filterSalesman: salesmanId,
           filterSalesmanName: salesmanName || "",
+          companyName: companyName || "",
           source: "director-stage-click",
         },
       });
     } else {
       navigate("/sales-pipeline", {
-        state: { activeStage: stage, source: "performance-card" },
+        state: { activeStage: stage, companyName: companyName || "", source: "performance-card" },
       });
     }
   };
