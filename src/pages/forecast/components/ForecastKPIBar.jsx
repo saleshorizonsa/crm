@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import ForecastFormulaModal from "./ForecastFormulaModal";
 
 const CARDS = [
   {
@@ -35,8 +36,23 @@ const CARDS = [
   },
 ];
 
-const ForecastKPIBar = ({ forecast, targetAmount = 0, salesmanName = "" }) => {
+const ForecastKPIBar = ({ forecast, targetAmount = 0, salesmanName = "", deals = [], periodLabel = "This period" }) => {
   const { formatCurrency } = useCurrency();
+  const [formulaModal, setFormulaModal] = useState(null); // card key or null
+
+  // Shared props for the clickable-card affordance (pointer, hover lift, group).
+  const clickableCard = (key) => ({
+    onClick: () => setFormulaModal(key),
+    title: "Click to see how this is calculated",
+    role: "button",
+    tabIndex: 0,
+  });
+  const clickableClass = "cursor-pointer group relative hover:shadow-md hover:-translate-y-0.5 transition-all duration-150";
+  const InfoDot = () => (
+    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+      <Icon name="Info" size={13} className="text-muted-foreground" />
+    </div>
+  );
 
   // When drilling into one salesman, label the target-related cards as personal
   const isIndividual = !!salesmanName;
@@ -58,13 +74,16 @@ const ForecastKPIBar = ({ forecast, targetAmount = 0, salesmanName = "" }) => {
   const gapPositive = forecast.gap > 0;
 
   return (
+    <>
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
       {/* Committed / Weighted / Best Case */}
       {CARDS.map((c) => (
         <div
           key={c.key}
-          className={`bg-card ${c.border} border border-border rounded-lg p-4 enterprise-shadow`}
+          {...clickableCard(c.key)}
+          className={`bg-card ${c.border} border border-border rounded-lg p-4 enterprise-shadow ${clickableClass}`}
         >
+          <InfoDot />
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {c.label}
@@ -81,7 +100,11 @@ const ForecastKPIBar = ({ forecast, targetAmount = 0, salesmanName = "" }) => {
       ))}
 
       {/* Target Attainment */}
-      <div className="bg-card border-l-4 border-l-violet-500 border border-border rounded-lg p-4 enterprise-shadow">
+      <div
+        {...(targetAmount > 0 ? clickableCard("attainment") : {})}
+        className={`bg-card border-l-4 border-l-violet-500 border border-border rounded-lg p-4 enterprise-shadow ${targetAmount > 0 ? clickableClass : ""}`}
+      >
+        {targetAmount > 0 && <InfoDot />}
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {attainmentLabel}
@@ -112,7 +135,11 @@ const ForecastKPIBar = ({ forecast, targetAmount = 0, salesmanName = "" }) => {
       </div>
 
       {/* Gap to Target */}
-      <div className={`bg-card border-l-4 ${gapPositive ? "border-l-red-400" : "border-l-emerald-500"} border border-border rounded-lg p-4 enterprise-shadow`}>
+      <div
+        {...(targetAmount > 0 ? clickableCard("gap") : {})}
+        className={`bg-card border-l-4 ${gapPositive ? "border-l-red-400" : "border-l-emerald-500"} border border-border rounded-lg p-4 enterprise-shadow ${targetAmount > 0 ? clickableClass : ""}`}
+      >
+        {targetAmount > 0 && <InfoDot />}
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Gap to Target
@@ -142,6 +169,19 @@ const ForecastKPIBar = ({ forecast, targetAmount = 0, salesmanName = "" }) => {
         )}
       </div>
     </div>
+
+    {formulaModal && (
+      <ForecastFormulaModal
+        type={formulaModal}
+        forecast={forecast}
+        targetAmount={targetAmount}
+        deals={deals}
+        periodLabel={periodLabel}
+        salesmanName={salesmanName}
+        onClose={() => setFormulaModal(null)}
+      />
+    )}
+    </>
   );
 };
 

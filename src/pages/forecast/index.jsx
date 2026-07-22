@@ -321,6 +321,8 @@ const ForecastPage = () => {
               forecast={forecast}
               targetAmount={targetAmount}
               salesmanName={selectedSalesmanName}
+              deals={rawData.deals}
+              periodLabel={PERIOD_PRESETS.find((p) => p.id === activePeriod)?.label || "Custom range"}
             />
 
             {/* AI Forecast Summary */}
