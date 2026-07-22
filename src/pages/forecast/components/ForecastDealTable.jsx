@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 
@@ -28,6 +28,13 @@ const ForecastDealTable = ({ deals = [] }) => {
   const [stageFilter, setStageFilter] = useState("all");
   const [sortKey, setSortKey]         = useState("amount");
   const [sortDir, setSortDir]         = useState("desc");
+
+  // Reset the scroll position to the top whenever the filter or sort changes,
+  // so switching stages doesn't leave the list scrolled halfway down.
+  const scrollRef = useRef(null);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [stageFilter, sortKey, sortDir]);
 
   const filtered = useMemo(() => {
     const base = stageFilter === "all"
@@ -77,10 +84,18 @@ const ForecastDealTable = ({ deals = [] }) => {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-border">
         <div>
-          <h3 className="text-sm font-semibold text-card-foreground">Deal Details</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-card-foreground">Deal Details</h3>
+            {filtered.length > 0 && (
+              <span className="text-xs font-medium px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
+                {filtered.length} deal{filtered.length !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {filtered.length} deal{filtered.length !== 1 ? "s" : ""}
-            {stageFilter !== "all" ? ` in ${STAGE_CONFIG[stageFilter]?.label}` : ""}
+            {stageFilter !== "all"
+              ? `Filtered to ${STAGE_CONFIG[stageFilter]?.label}`
+              : "All deals in this period"}
           </p>
         </div>
 
@@ -113,9 +128,14 @@ const ForecastDealTable = ({ deals = [] }) => {
           No deals match this filter
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div
+          ref={scrollRef}
+          className="overflow-auto"
+          style={{ maxHeight: "560px", scrollbarWidth: "thin", scrollbarColor: "#E2E8F0 transparent" }}
+        >
           <table className="w-full text-sm">
-            <thead>
+            {/* Sticky header keeps column labels visible while the body scrolls */}
+            <thead className="sticky top-0 z-10 bg-card">
               <tr className="border-b border-border">
                 <th className="px-6 py-3 text-left">
                   <button
@@ -204,6 +224,15 @@ const ForecastDealTable = ({ deals = [] }) => {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Scroll hint when the list is capped */}
+      {filtered.length > 10 && (
+        <div className="px-6 py-3 border-t border-border">
+          <p className="text-xs text-center text-muted-foreground">
+            Showing all {filtered.length} deals · Scroll to view more
+          </p>
         </div>
       )}
     </div>
