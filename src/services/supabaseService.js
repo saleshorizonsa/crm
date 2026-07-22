@@ -5608,23 +5608,31 @@ export const forecastService = {
 
       // ── 3. Sum active revenue targets overlapping this period ──────────
       // Managers/directors have no personal target — the period target is the
-      // SUM of every active "total_value" (revenue) target assigned to the
-      // salesmen in scope. Scoping mirrors the deals query (ownerIds), so:
+      // SUM of every active target assigned to the salesmen in scope. Scoping
+      // mirrors the deals query (ownerIds), so:
       //   salesman   → their own target
       //   supervisor → their team's targets
       //   manager+   → all company targets (ownerIds null → no assignee filter)
       // Overlap: target.period_start <= periodEnd AND target.period_end >= periodStart.
-      // We keep By-Value (total_value) targets AND legacy rows where target_type
-      // was never set (NULL) — the latter predate the target_type column and
-      // still represent revenue targets. By-Clients / By-Product targets are the
-      // only ones excluded, so they are never double-counted into revenue.
-      // (This is why the Forecast page previously showed "No target set": the
-      // strict .eq("target_type","total_value") dropped every legacy/NULL row.)
+      //
+      // BUSINESS RULE: attainment is always Won Revenue ÷ target_amount,
+      // regardless of how the target was assigned. A salesman may have their
+      // monthly goal recorded under any target_type (total_value, by_clients,
+      // or by_products) — these are different VIEWS of the SAME monthly goal,
+      // not additive separate targets. So we intentionally do NOT filter by
+      // target_type here (that filter is what made the Forecast page show
+      // "No target set" for by_clients / by_products salesmen).
+      //
+      // Because the unique constraint allows up to one row per target_type for
+      // the same (assigned_to, period_start, period_end), we de-duplicate by
+      // taking the MAX target_amount within each (salesman, period) group, then
+      // SUM across groups. That way multiple type-rows for the same month are
+      // not double-counted, while distinct monthly rows inside a selected
+      // quarter/year still add up correctly.
       let targetQuery = supabase
         .from("sales_targets")
-        .select("target_amount")
-        .eq("status", "active")
-        .or("target_type.eq.total_value,target_type.is.null");
+        .select("target_amount, assigned_to, period_start, period_end")
+        .eq("status", "active");
 
       if (periodStart && periodEnd) {
         targetQuery = targetQuery
@@ -5638,10 +5646,14 @@ export const forecastService = {
       const { data: targetRows, error: targetError } = await targetQuery;
       if (targetError) throw targetError;
 
-      const totalTarget = (targetRows || []).reduce(
-        (sum, t) => sum + (parseFloat(t.target_amount) || 0),
-        0,
-      );
+      // MAX per (salesman, period) → dedupes multiple target_type rows for the
+      // same goal; SUM across groups → totals distinct periods and salesmen.
+      const perGroup = {};
+      (targetRows || []).forEach((row) => {
+        const key = `${row.assigned_to || "all"}|${row.period_start || ""}|${row.period_end || ""}`;
+        perGroup[key] = Math.max(perGroup[key] || 0, parseFloat(row.target_amount) || 0);
+      });
+      const totalTarget = Object.values(perGroup).reduce((sum, v) => sum + v, 0);
 
       const _from = periodStart ? new Date(periodStart) : new Date();
       console.log("[forecast] Total target:", {
