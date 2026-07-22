@@ -242,7 +242,7 @@ const ReportsPage = () => {
 
   const roleLabel = () => {
     const role = userProfile?.role;
-    if (["director", "admin", "ceo"].includes(role)) return t("reportsPage.allCompanyDeals");
+    if (["director", "admin", "ceo", "head"].includes(role)) return t("reportsPage.allCompanyDeals");
     if (role === "salesman") return t("reportsPage.yourDealsOnly");
     return t("reportsPage.yourTeamDeals");
   };

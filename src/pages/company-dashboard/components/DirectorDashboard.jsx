@@ -963,9 +963,16 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     try {
       const { data, error } = await companyService.getAllCompanies();
       if (!error && data && Array.isArray(data)) {
-        setCompanies(data);
-        if (data.length > 0 && !selectedCompany) {
-          setSelectedCompany(data[0]);
+        // Head role is locked to their own company — never expose other companies
+        // in the performance grid, company selectors, or the company count.
+        const headCompanyId = propCompany?.id || userProfile?.company_id;
+        const scoped =
+          userProfile?.role === "head" && headCompanyId
+            ? data.filter((c) => c.id === headCompanyId)
+            : data;
+        setCompanies(scoped);
+        if (scoped.length > 0 && !selectedCompany) {
+          setSelectedCompany(scoped[0]);
         }
       } else {
         console.error("Error loading companies:", error);
@@ -2436,6 +2443,19 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
   return (
     <div className={`director-dashboard transition-opacity duration-200 ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
+      {/* Head role: greeting + company-scoped subtitle (directors don't need this
+          — they have the company switcher and cross-company grid). */}
+      {userProfile?.role === "head" && (
+        <div className="mb-6">
+          <h1 className="text-xl font-bold text-gray-900">
+            Hello, {user?.full_name?.split(" ")[0] || user?.email}
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            National Sales Manager · {selectedCompany?.name || propCompany?.name || ""}
+          </p>
+        </div>
+      )}
+
       {/* Employee Selector and Filter Dropdowns */}
       <div className="mb-6">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">

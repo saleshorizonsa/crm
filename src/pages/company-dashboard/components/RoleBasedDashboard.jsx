@@ -10,8 +10,10 @@ const RoleBasedDashboard = ({ userRole, ...props }) => {
       case "director":
         return <DirectorDashboard {...props} />;
       case "head":
-        // Head role uses same dashboard as Manager
-        return <EnhancedManagerDashboard {...props} />;
+        // Head = Director-level dashboard, but company switching is blocked
+        // (CompanySwitcher only lets admin/director switch) and the company list
+        // is scoped to their own company inside DirectorDashboard.
+        return <DirectorDashboard {...props} />;
       case "manager":
         return <EnhancedManagerDashboard {...props} />;
       case "supervisor":

@@ -123,8 +123,8 @@ const SalesPipeline = () => {
   const loadDeals = async (force = false) => {
     try {
       // For salesmen: Load deals owned by them
-      // For supervisors/managers/directors: Load deals from their subordinates
-      const isManagementRole = ["supervisor", "manager", "director"].includes(
+      // For supervisors/managers/directors/head/admin: Load all company deals
+      const isManagementRole = ["supervisor", "manager", "director", "head", "admin"].includes(
         userProfile?.role,
       );
 

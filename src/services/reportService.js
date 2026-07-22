@@ -17,7 +17,8 @@ const DEAL_SELECT = `
 `;
 
 async function getTeamUserIds(userId, role, companyId) {
-  if (['director', 'admin', 'ceo'].includes(role)) return null;
+  // head = company-wide access (scoped to their own company via companyId).
+  if (['director', 'admin', 'ceo', 'head'].includes(role)) return null;
   if (role === 'salesman') return [userId];
 
   // supervisor / manager / sales_manager → own team + self
