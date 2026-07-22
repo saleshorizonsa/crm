@@ -6,7 +6,7 @@ import { format, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuart
 import { useAuth } from "../../contexts/AuthContext";
 import { useDateRange } from "../../contexts/DateRangeContext";
 import { forecastService, userService } from "../../services/supabaseService";
-import { buildForecast } from "../../utils/forecastEngine";
+import { buildForecast, DEFAULT_STAGE_WEIGHTS } from "../../utils/forecastEngine";
 import { generateInsights, generatePrediction } from "../../utils/forecastInsights";
 import ForecastKPIBar     from "./components/ForecastKPIBar";
 import AIInsightsPanel    from "./components/AIInsightsPanel";
@@ -14,6 +14,7 @@ import AIPredictionCard   from "./components/AIPredictionCard";
 import StageBreakdown     from "./components/StageBreakdown";
 import ForecastDealTable  from "./components/ForecastDealTable";
 import ForecastGroupBreakdown from "./components/ForecastGroupBreakdown";
+import SalesmanContribution   from "./components/SalesmanContribution";
 import ProjectionChart    from "../company-dashboard/components/forecast/ProjectionChart";
 import ForecastAISummary  from "../company-dashboard/components/forecast/ForecastAISummary";
 import { useCurrency }    from "../../contexts/CurrencyContext";
@@ -167,6 +168,34 @@ const ForecastPage = () => {
 
   const targetAmount = rawData.target?.target_amount ?? 0;
 
+  // Per-salesman share of the weighted OPEN pipeline. Derived from the deals
+  // already loaded (they carry owner info), so no extra fetch is needed and the
+  // weighting matches the forecast (DEFAULT_STAGE_WEIGHTS, same as buildForecast
+  // is called here without historical rates). Only meaningful in the company-wide
+  // "All Salesmen" view — hidden when a single salesman is selected.
+  const salesmanContribution = useMemo(() => {
+    if (selectedSalesman !== "all") return [];
+    const openDeals = (rawData.deals || []).filter(
+      (d) => !["won", "lost"].includes(d.stage) && d.owner_id,
+    );
+    const map = {};
+    openDeals.forEach((d) => {
+      const id = d.owner_id;
+      const weight = DEFAULT_STAGE_WEIGHTS[d.stage] ?? 0.1;
+      const value = parseFloat(d.amount) || 0;
+      if (!map[id]) {
+        map[id] = { id, name: d.owner?.full_name || "Unknown", dealCount: 0, totalValue: 0, weightedValue: 0 };
+      }
+      map[id].dealCount += 1;
+      map[id].totalValue += value;
+      map[id].weightedValue += value * weight;
+    });
+    const totalWeighted = Object.values(map).reduce((s, x) => s + x.weightedValue, 0);
+    return Object.values(map)
+      .map((s) => ({ ...s, pct: totalWeighted > 0 ? (s.weightedValue / totalWeighted) * 100 : 0 }))
+      .sort((a, b) => b.weightedValue - a.weightedValue);
+  }, [rawData.deals, selectedSalesman]);
+
   // Name of the drilled-into salesman ("" when viewing all) — labels the KPI cards
   const selectedSalesmanName =
     selectedSalesman !== "all"
@@ -314,6 +343,11 @@ const ForecastPage = () => {
                 <AIPredictionCard prediction={prediction} />
               </div>
             </div>
+
+            {/* Salesman forecast contribution — company-wide view only */}
+            {salesmanContribution.length > 0 && (
+              <SalesmanContribution contribution={salesmanContribution} />
+            )}
 
             {/* Product Group breakdown — bar chart + table */}
             {groupBreakdown.length > 0 && (
