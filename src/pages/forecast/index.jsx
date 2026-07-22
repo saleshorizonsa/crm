@@ -334,20 +334,20 @@ const ForecastPage = () => {
               companyId={company?.id}
             />
 
-            {/* Row 1: Projection chart + AI Prediction */}
+            {/* Row 1: Projection chart (+ salesman contribution below it) + AI Prediction */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2">
+              <div className="lg:col-span-2 space-y-6">
                 <ProjectionChart projection={forecast.projection} target={targetAmount} />
+                {/* Fills the empty left-column space below the chart, above
+                    Pipeline Insights (company-wide "All Salesmen" view only). */}
+                {salesmanContribution.length > 0 && (
+                  <SalesmanContribution contribution={salesmanContribution} />
+                )}
               </div>
               <div>
                 <AIPredictionCard prediction={prediction} />
               </div>
             </div>
-
-            {/* Salesman forecast contribution — company-wide view only */}
-            {salesmanContribution.length > 0 && (
-              <SalesmanContribution contribution={salesmanContribution} />
-            )}
 
             {/* Product Group breakdown — bar chart + table */}
             {groupBreakdown.length > 0 && (
