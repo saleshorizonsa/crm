@@ -212,6 +212,46 @@ const EnhancedSalesmanDashboard = ({
     );
   }, [allDeals, activeDateRange.from, activeDateRange.to]);
 
+  // ── View-mode stat-card drill-down modal ──────────────────────────────────
+  // Only active when a director is viewing an employee (viewAsUser set). The
+  // modal reuses filteredDeals — the same array the stat cards are computed
+  // from — so the row counts always match the card numbers exactly.
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [modalType, setModalType]         = useState(null);
+
+  const cardModalConfig = useMemo(() => {
+    const first =
+      (viewAsUser?.full_name || effectiveUserProfile?.full_name || "")
+        ?.split(" ")[0] || "salesman";
+    if (!viewAsUser || !modalType) return { title: "", deals: [] };
+    const all = filteredDeals || [];
+    switch (modalType) {
+      case "pipeline":
+        return { title: `Active Pipeline — ${first}`, deals: all.filter((d) => !["won", "lost"].includes(d.stage)) };
+      case "won":
+        return { title: `Won Deals — ${first}`, deals: all.filter((d) => d.stage === "won") };
+      case "total":
+        return { title: `All Deals — ${first}`, deals: all };
+      case "winRate":
+        return { title: `Win Rate Details — ${first}`, deals: all.filter((d) => ["won", "lost"].includes(d.stage)) };
+      default:
+        return { title: "", deals: [] };
+    }
+  }, [modalType, filteredDeals, viewAsUser, effectiveUserProfile]);
+
+  const openCardModal = (type) => {
+    if (!viewAsUser) return; // director-viewing-employee only
+    setModalType(type);
+    setShowCardModal(true);
+  };
+
+  useEffect(() => {
+    if (!showCardModal) return;
+    const onKey = (e) => { if (e.key === "Escape") setShowCardModal(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showCardModal]);
+
   // Origin classification: new pipeline vs carry-forward
   const originMetrics = useMemo(() => {
     if (!filteredDeals?.length || !activeDateRange?.from) return null;
@@ -1353,7 +1393,18 @@ const EnhancedSalesmanDashboard = ({
           {/* Quick Stats Row */}
           {executiveMetrics && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
+              <div
+                onClick={isViewingEmployee ? () => openCardModal("pipeline") : undefined}
+                title={isViewingEmployee ? "Click to view pipeline deals" : undefined}
+                className={`bg-white rounded-lg shadow p-4 flex items-center gap-3 transition-all duration-150 ${
+                  isViewingEmployee ? "cursor-pointer group relative hover:shadow-md hover:-translate-y-0.5" : ""
+                }`}
+              >
+                {isViewingEmployee && (
+                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Icon name="ArrowUpRight" size={13} className="text-blue-400" />
+                  </div>
+                )}
                 <div className="p-3 bg-blue-100 rounded-lg">
                   <Icon name="TrendingUp" size={24} className="text-blue-600" />
                 </div>
@@ -1364,7 +1415,18 @@ const EnhancedSalesmanDashboard = ({
                   <div className="text-sm text-gray-500">{t("dashboard.activePipeline")}</div>
                 </div>
               </div>
-              <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
+              <div
+                onClick={isViewingEmployee ? () => openCardModal("winRate") : undefined}
+                title={isViewingEmployee ? "Click to view win/loss details" : undefined}
+                className={`bg-white rounded-lg shadow p-4 flex items-center gap-3 transition-all duration-150 ${
+                  isViewingEmployee ? "cursor-pointer group relative hover:shadow-md hover:-translate-y-0.5" : ""
+                }`}
+              >
+                {isViewingEmployee && (
+                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Icon name="ArrowUpRight" size={13} className="text-purple-400" />
+                  </div>
+                )}
                 <div className="p-3 bg-purple-100 rounded-lg">
                   <Icon name="Target" size={24} className="text-purple-600" />
                 </div>
@@ -1375,7 +1437,18 @@ const EnhancedSalesmanDashboard = ({
                   <div className="text-sm text-gray-500">{t("dashboard.winRate")}</div>
                 </div>
               </div>
-              <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
+              <div
+                onClick={isViewingEmployee ? () => openCardModal("won") : undefined}
+                title={isViewingEmployee ? "Click to view won deals" : undefined}
+                className={`bg-white rounded-lg shadow p-4 flex items-center gap-3 transition-all duration-150 ${
+                  isViewingEmployee ? "cursor-pointer group relative hover:shadow-md hover:-translate-y-0.5" : ""
+                }`}
+              >
+                {isViewingEmployee && (
+                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Icon name="ArrowUpRight" size={13} className="text-green-400" />
+                  </div>
+                )}
                 <div className="p-3 bg-green-100 rounded-lg">
                   <Icon
                     name="CheckCircle"
@@ -1390,7 +1463,18 @@ const EnhancedSalesmanDashboard = ({
                   <div className="text-sm text-gray-500">{t("dashboard.wonDeals")}</div>
                 </div>
               </div>
-              <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
+              <div
+                onClick={isViewingEmployee ? () => openCardModal("total") : undefined}
+                title={isViewingEmployee ? "Click to view all deals" : undefined}
+                className={`bg-white rounded-lg shadow p-4 flex items-center gap-3 transition-all duration-150 ${
+                  isViewingEmployee ? "cursor-pointer group relative hover:shadow-md hover:-translate-y-0.5" : ""
+                }`}
+              >
+                {isViewingEmployee && (
+                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Icon name="ArrowUpRight" size={13} className="text-orange-400" />
+                  </div>
+                )}
                 <div className="p-3 bg-orange-100 rounded-lg">
                   <Icon
                     name="Briefcase"
@@ -2071,6 +2155,140 @@ const EnhancedSalesmanDashboard = ({
           )}
           </div>{/* end grid */}
         </div>
+      )}
+
+      {/* View-mode stat-card drill-down modal */}
+      {showCardModal && isViewingEmployee && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-[600] bg-black/40 backdrop-blur-sm"
+            onClick={() => setShowCardModal(false)}
+          />
+          {/* Panel wrapper — pointer-events-none lets outside clicks fall through
+              to the backdrop; the panel itself re-enables pointer events. */}
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden pointer-events-auto">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900">
+                    {cardModalConfig.title}
+                  </h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {cardModalConfig.deals.length} deal{cardModalConfig.deals.length !== 1 ? "s" : ""}
+                    {" · "}
+                    {activeDateRange?.label || activeDateRange?.period || "This Month"}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowCardModal(false)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors"
+                >
+                  <Icon name="X" size={16} className="text-gray-500" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto px-6 py-4">
+                {cardModalConfig.deals.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+                      <Icon name="Briefcase" size={20} className="text-gray-400" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-600">No deals found</p>
+                    <p className="text-xs text-gray-400 mt-1">Try changing the date range</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* Win/Loss summary for the Win Rate modal */}
+                    {modalType === "winRate" && (() => {
+                      const won  = cardModalConfig.deals.filter((d) => d.stage === "won").length;
+                      const lost = cardModalConfig.deals.filter((d) => d.stage === "lost").length;
+                      const wr   = cardModalConfig.deals.length > 0
+                        ? ((won / cardModalConfig.deals.length) * 100).toFixed(1)
+                        : "0";
+                      return (
+                        <div className="flex gap-3 mb-4">
+                          <div className="flex-1 bg-green-50 rounded-xl p-3 text-center">
+                            <p className="text-lg font-bold text-green-600">{won}</p>
+                            <p className="text-xs text-green-600">Won</p>
+                          </div>
+                          <div className="flex-1 bg-red-50 rounded-xl p-3 text-center">
+                            <p className="text-lg font-bold text-red-600">{lost}</p>
+                            <p className="text-xs text-red-600">Lost</p>
+                          </div>
+                          <div className="flex-1 bg-purple-50 rounded-xl p-3 text-center">
+                            <p className="text-lg font-bold text-purple-600">{wr}%</p>
+                            <p className="text-xs text-purple-600">Win Rate</p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Deal rows */}
+                    {cardModalConfig.deals.map((deal) => (
+                      <div
+                        key={deal.id}
+                        className="flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
+                      >
+                        <span
+                          className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 capitalize ${
+                            deal.stage === "won"
+                              ? "bg-green-100 text-green-700"
+                              : deal.stage === "lost"
+                              ? "bg-red-100 text-red-700"
+                              : deal.stage === "negotiation"
+                              ? "bg-amber-100 text-amber-700"
+                              : deal.stage === "proposal_sent"
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          {deal.stage?.replace("_", " ") || "—"}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {deal.title || "—"}
+                          </p>
+                          <p className="text-xs text-gray-400 truncate">
+                            {deal.contact?.company_name || "—"}
+                          </p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-sm font-semibold text-gray-900 tabular-nums">
+                            {formatCurrency(convertDealAmount(deal))}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {deal.expected_close_date
+                              ? new Date(deal.expected_close_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+                              : "—"}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-400">Total value</p>
+                  <p className="text-sm font-bold text-gray-900 tabular-nums">
+                    {formatCurrency(cardModalConfig.deals.reduce((sum, d) => sum + convertDealAmount(d), 0))}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowCardModal(false)}
+                  className="px-4 py-2 text-sm border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
