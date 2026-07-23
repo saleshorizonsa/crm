@@ -3,6 +3,7 @@ import { useAuth } from "contexts/AuthContext";
 import Header from "components/ui/Header";
 import Icon from "components/AppIcon";
 import CustomerMaster from "./components/CustomerMaster";
+import OpportunitiesModule from "./components/OpportunitiesModule";
 
 const PlanningPage = () => {
   const { company, userProfile } = useAuth();
@@ -16,7 +17,8 @@ const PlanningPage = () => {
   }, [company]);
 
   const tabs = [
-    { id: "customer_master", label: "Customer Base", icon: "Users" },
+    { id: "customer_master", label: "Customer Base",  icon: "Users"  },
+    { id: "opportunities",   label: "Opportunities",  icon: "Target" },
   ];
 
   if (!userProfile) {
@@ -35,7 +37,9 @@ const PlanningPage = () => {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground">Planning</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Customer Base — Import, assign and manage your customer accounts
+            {activeTab === "opportunities"
+              ? "Opportunities — Plan how you'll hit your monthly target, then convert to deals"
+              : "Customer Base — Import, assign and manage your customer accounts"}
           </p>
         </div>
 
@@ -63,6 +67,10 @@ const PlanningPage = () => {
             adminCompany={adminCompany}
             onCompanyChange={setAdminCompany}
           />
+        )}
+
+        {activeTab === "opportunities" && (
+          <OpportunitiesModule adminCompany={adminCompany} />
         )}
       </main>
     </div>
