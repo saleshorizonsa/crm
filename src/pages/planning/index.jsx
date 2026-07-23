@@ -17,8 +17,8 @@ const PlanningPage = () => {
   }, [company]);
 
   const tabs = [
-    { id: "customer_master", label: "Customer Base",  icon: "Users"  },
-    { id: "opportunities",   label: "Opportunities",  icon: "Target" },
+    { id: "customer_master", label: "Customer Master", icon: "Users"  },
+    { id: "opportunities",   label: "Opportunities",   icon: "Target" },
   ];
 
   if (!userProfile) {
@@ -39,7 +39,7 @@ const PlanningPage = () => {
           <p className="text-sm text-muted-foreground mt-1">
             {activeTab === "opportunities"
               ? "Opportunities — Plan how you'll hit your monthly target, then convert to deals"
-              : "Customer Base — Import, assign and manage your customer accounts"}
+              : "Customer Master — Import, assign and manage your customer accounts"}
           </p>
         </div>
 
