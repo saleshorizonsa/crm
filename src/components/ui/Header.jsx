@@ -57,7 +57,7 @@ const Header = ({
     { label: t("nav.forecast"), path: "/forecast",        icon: "LineChart"   },
     { label: t("nav.reports"),  path: "/reports",  icon: "FileBarChart" },
     { label: t("nav.clients"), path: "/contact-management", icon: "Users" },
-    { label: "Customer Base", path: "/planning", icon: "ClipboardList" },
+    { label: t("nav.planning"), path: "/planning", icon: "ClipboardList" },
   ];
 
   // Add user management for admins and managers only
