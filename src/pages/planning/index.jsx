@@ -4,6 +4,7 @@ import Header from "components/ui/Header";
 import Icon from "components/AppIcon";
 import CustomerMaster from "./components/CustomerMaster";
 import OpportunitiesModule from "./components/OpportunitiesModule";
+import HistoricalDataModule from "./components/HistoricalDataModule";
 
 const PlanningPage = () => {
   const { company, userProfile } = useAuth();
@@ -16,9 +17,15 @@ const PlanningPage = () => {
     }
   }, [company]);
 
+  // Historical sales upload is a director/admin/head-only tool
+  const canUploadHistory = ["director", "admin", "head"].includes(userProfile?.role);
+
   const tabs = [
     { id: "customer_master", label: "Customer Master", icon: "Users"  },
     { id: "opportunities",   label: "Opportunities",   icon: "Target" },
+    ...(canUploadHistory
+      ? [{ id: "historical_data", label: "Historical Data", icon: "Upload" }]
+      : []),
   ];
 
   if (!userProfile) {
@@ -39,6 +46,8 @@ const PlanningPage = () => {
           <p className="text-sm text-muted-foreground mt-1">
             {activeTab === "opportunities"
               ? "Opportunities — Plan how you'll hit your monthly target, then convert to deals"
+              : activeTab === "historical_data"
+              ? "Historical Data — Import past SAP/ERP sales to power forecasting and year-over-year comparisons"
               : "Customer Master — Import, assign and manage your customer accounts"}
           </p>
         </div>
@@ -71,6 +80,10 @@ const PlanningPage = () => {
 
         {activeTab === "opportunities" && (
           <OpportunitiesModule adminCompany={adminCompany} />
+        )}
+
+        {activeTab === "historical_data" && canUploadHistory && (
+          <HistoricalDataModule adminCompany={adminCompany} />
         )}
       </main>
     </div>
