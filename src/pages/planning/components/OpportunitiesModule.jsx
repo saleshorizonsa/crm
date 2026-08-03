@@ -143,27 +143,41 @@ export default function OpportunitiesModule({ adminCompany }) {
   }, [company?.id, isDirector, isTeamLead, user?.id, filterOwner, filterStatus]);
 
   // ── Fetch: contacts + team ────────────────────────────────────────────────
+  // Contacts are scoped by OWNER, not company: contacts.company_id is null in
+  // this database and the real company link is the owner (users.company_id), so
+  // a salesman sees their own customers and a director/team lead sees the team's.
   const fetchSupport = useCallback(async () => {
     if (!company?.id) return;
-    const [contactsRes, teamRes] = await Promise.all([
-      supabase
-        .from('contacts')
-        .select('id, first_name, last_name, company_name')
+
+    // 1) Team members (director/manager/supervisor) — also feeds the owner filter.
+    let team = [];
+    if (isDirector || isTeamLead) {
+      const { data } = await supabase
+        .from('users')
+        .select('id, full_name, role')
         .eq('company_id', company.id)
-        .order('company_name'),
-      (isDirector || isTeamLead)
-        ? supabase
-            .from('users')
-            .select('id, full_name, role')
-            .eq('company_id', company.id)
-            .eq('is_active', true)
-            .in('role', ['salesman', 'supervisor', 'manager'])
-            .order('full_name')
-        : Promise.resolve({ data: [] }),
-    ]);
-    setContacts(contactsRes.data || []);
-    setTeamMembers(teamRes.data || []);
-  }, [company?.id, isDirector, isTeamLead]);
+        .eq('is_active', true)
+        .in('role', ['salesman', 'supervisor', 'manager'])
+        .order('full_name');
+      team = data || [];
+    }
+    setTeamMembers(team);
+
+    // 2) Contacts scoped to the visible owner set.
+    const ownerIds = (isDirector || isTeamLead)
+      ? Array.from(new Set([user?.id, ...team.map((m) => m.id)].filter(Boolean)))
+      : [user?.id].filter(Boolean);
+
+    let cq = supabase
+      .from('contacts')
+      .select('id, first_name, last_name, company_name')
+      .order('company_name');
+    if (ownerIds.length) cq = cq.in('owner_id', ownerIds);
+
+    const { data: contactData, error: contactErr } = await cq;
+    if (contactErr) console.error('fetchContacts:', contactErr);
+    setContacts(contactData || []);
+  }, [company?.id, isDirector, isTeamLead, user?.id]);
 
   useEffect(() => { fetchSupport(); }, [fetchSupport]);
   useEffect(() => { fetchOpportunities(); }, [fetchOpportunities]);
