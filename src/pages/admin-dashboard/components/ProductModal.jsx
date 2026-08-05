@@ -8,8 +8,11 @@ import { adminService } from "../../../services/supabaseService";
 import { useAuth } from "contexts/AuthContext";
 import { useMaterialGroups } from "../../../hooks/useMaterialGroups";
 
-const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
+const ProductModal = ({ product, adminCompany, onClose, onSuccess, viewOnly = false }) => {
   const { company } = useAuth();
+  // Manage groups/subgroups/products under the admin-selected company, not the
+  // logged-in user's header company (they can differ in the admin dashboard).
+  const effectiveCompanyId = adminCompany?.id || company?.id;
 
   const [formData, setFormData] = useState({
     material: "",
@@ -26,7 +29,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
     is_active: true,
   });
   const [loading, setLoading] = useState(false);
-  const { groups } = useMaterialGroups();
+  const { groups } = useMaterialGroups(effectiveCompanyId);
   const [subgroups, setSubgroups] = useState([]);
   const [addingNewGroup, setAddingNewGroup] = useState(false);
   const [newGroupInput, setNewGroupInput] = useState("");
@@ -35,10 +38,10 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
   // Subgroups: from material_sub_groups table, with localStorage fallback
   useEffect(() => {
     const groupName = formData.material_group;
-    if (!groupName || !company?.id) { setSubgroups([]); return; }
+    if (!groupName || !effectiveCompanyId) { setSubgroups([]); return; }
 
     const load = async () => {
-      const allGroups = await adminService.getMaterialGroups(company.id);
+      const allGroups = await adminService.getMaterialGroups(effectiveCompanyId);
       const group = (allGroups || []).find((g) => g.name === groupName);
       if (group?.sub_groups?.length) {
         setSubgroups(group.sub_groups.map((s) => ({ name: s.name })));
@@ -57,7 +60,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
       setSubgroups(subs.map((name) => ({ name })));
     };
     load();
-  }, [formData.material_group, company?.id]);
+  }, [formData.material_group, effectiveCompanyId]);
 
   useEffect(() => {
     if (product) {
@@ -101,7 +104,7 @@ const ProductModal = ({ product, onClose, onSuccess, viewOnly = false }) => {
 
       const { data, error } = product
         ? await adminService.updateProduct(product.id, payload)
-        : await adminService.createProduct(payload);
+        : await adminService.createProduct({ ...payload, company_id: effectiveCompanyId });
 
       if (error) {
         alert(`Failed to ${product ? "update" : "create"} product: ` + error.message);

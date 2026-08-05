@@ -128,7 +128,9 @@ const ProductMaster = ({ adminCompany }) => {
   }
 
   // ── derived filter options ────────────────────────────────────────────────────
-  const { groups: uniqueGroups } = useMaterialGroups();
+  // Scope to the managed company (admin selector), NOT the header/auth company —
+  // otherwise groups for a different company than the products are shown.
+  const { groups: uniqueGroups } = useMaterialGroups(adminCompany?.id);
 
   const uniqueSubGroups = useMemo(() => {
     return [
@@ -732,6 +734,7 @@ const ProductMaster = ({ adminCompany }) => {
       {viewingProduct && (
         <ProductModal
           product={viewingProduct}
+          adminCompany={adminCompany}
           onClose={() => setViewingProduct(null)}
           onSuccess={() => setViewingProduct(null)}
           viewOnly
@@ -741,6 +744,7 @@ const ProductMaster = ({ adminCompany }) => {
       {showModal && (
         <ProductModal
           product={editingProduct}
+          adminCompany={adminCompany}
           onClose={handleModalClose}
           onSuccess={handleModalSuccess}
         />

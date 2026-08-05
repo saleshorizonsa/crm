@@ -2,19 +2,23 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
-export function useMaterialGroups() {
+// companyIdOverride: use when the managed company differs from the logged-in
+// user's company (e.g. Admin → Products manages a company chosen in the admin
+// selector, not the header company). Falls back to the auth company.
+export function useMaterialGroups(companyIdOverride) {
   const { company } = useAuth();
+  const companyId = companyIdOverride || company?.id;
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const loadGroups = useCallback(async () => {
-    if (!company?.id) return;
+    if (!companyId) return;
     setLoading(true);
 
     const { data, error } = await supabase
       .from('material_groups')
       .select('id, name')
-      .eq('company_id', company.id)
+      .eq('company_id', companyId)
       .eq('is_active', true)
       .order('name', { ascending: true });
 
@@ -27,14 +31,14 @@ export function useMaterialGroups() {
       setGroups(names);
     }
     setLoading(false);
-  }, [company?.id]);
+  }, [companyId]);
 
   useEffect(() => {
-    if (!company?.id) return;
+    if (!companyId) return;
 
     loadGroups();
 
-    const channelName = `mg_${company.id}_${Math.random().toString(36).slice(2)}`;
+    const channelName = `mg_${companyId}_${Math.random().toString(36).slice(2)}`;
     const subscription = supabase
       .channel(channelName)
       .on(
@@ -43,7 +47,7 @@ export function useMaterialGroups() {
           event: '*',
           schema: 'public',
           table: 'material_groups',
-          filter: `company_id=eq.${company.id}`,
+          filter: `company_id=eq.${companyId}`,
         },
         (payload) => {
           console.log('[useMaterialGroups] Realtime change:', payload.eventType);
@@ -55,18 +59,18 @@ export function useMaterialGroups() {
     return () => {
       supabase.removeChannel(subscription);
     };
-  }, [company?.id, loadGroups]);
+  }, [companyId, loadGroups]);
 
   useEffect(() => {
     function handleGroupsUpdated(e) {
-      if (!e.detail?.companyId || e.detail.companyId === company?.id) {
+      if (!e.detail?.companyId || e.detail.companyId === companyId) {
         loadGroups();
       }
     }
 
     window.addEventListener('material-groups-updated', handleGroupsUpdated);
     return () => window.removeEventListener('material-groups-updated', handleGroupsUpdated);
-  }, [company?.id, loadGroups]);
+  }, [companyId, loadGroups]);
 
   return { groups, loading, reload: loadGroups };
 }
