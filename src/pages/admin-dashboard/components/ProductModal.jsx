@@ -48,7 +48,7 @@ const ProductModal = ({ product, adminCompany, onClose, onSuccess, viewOnly = fa
         return;
       }
       // Fallback: derive from products
-      const { data: products } = await adminService.getAllProducts();
+      const { data: products } = await adminService.getAllProducts(effectiveCompanyId);
       const subs = [
         ...new Set(
           (products || [])

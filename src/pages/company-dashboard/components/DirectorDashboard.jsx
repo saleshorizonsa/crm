@@ -2627,7 +2627,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           {activeView === "team" && renderTeamManagement()}
           {activeView === "targets" && renderSalesTargets()}
           {activeView === "users" && <UserManagement />}
-          {activeView === "products" && <ProductMaster />}
+          {activeView === "products" && <ProductMaster adminCompany={selectedCompany} />}
           {activeView === "sales-targets" && <SalesTarget />}
         </>
       )}

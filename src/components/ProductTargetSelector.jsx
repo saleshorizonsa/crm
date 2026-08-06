@@ -3,6 +3,7 @@ import Icon from "./AppIcon";
 import Input from "./ui/Input";
 import { productService } from "../services/supabaseService";
 import { calculateProductTargetValue } from "../utils/productTargetUtils";
+import { useAuth } from "../contexts/AuthContext";
 
 // Resolve the best unit price from product based on its base UOM
 const resolveUnitPrice = (product) => {
@@ -20,7 +21,11 @@ const ProductTargetSelector = ({
   formatCurrency,
   accentClass = "text-blue-600",
   selectedBgClass = "bg-blue-50 dark:bg-blue-950",
+  companyId = null,
 }) => {
+  const { company } = useAuth();
+  // Products are company-specific; scope to the passed company or the auth one.
+  const scopeCompanyId = companyId || company?.id;
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [products, setProducts] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -32,7 +37,7 @@ const ProductTargetSelector = ({
 
       setLoadingProducts(true);
       try {
-        const { data, error } = await productService.getProducts();
+        const { data, error } = await productService.getProducts(scopeCompanyId);
         if (error) throw error;
 
         setProducts(data || []);
@@ -65,7 +70,7 @@ const ProductTargetSelector = ({
     };
 
     loadProducts();
-  }, [active, setProductTargets]);
+  }, [active, setProductTargets, scopeCompanyId]);
 
   const groupedTargets = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();

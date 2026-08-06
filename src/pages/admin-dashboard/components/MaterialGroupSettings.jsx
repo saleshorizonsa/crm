@@ -46,7 +46,8 @@ const MaterialGroupSettings = ({ adminCompany }) => {
     try {
       const { data: products } = await supabase
         .from("products")
-        .select("material_group, material_subgroup");
+        .select("material_group, material_subgroup")
+        .eq("company_id", adminCompany.id);
 
       const groupMap = {};
       (products || []).forEach((p) => {
@@ -105,7 +106,8 @@ const MaterialGroupSettings = ({ adminCompany }) => {
 
       const { data: products } = await supabase
         .from("products")
-        .select("material_group, material_subgroup");
+        .select("material_group, material_subgroup")
+        .eq("company_id", adminCompany.id);
 
       const uniqueGroups = [
         ...new Set(

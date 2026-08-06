@@ -3975,14 +3975,16 @@ export async function getMonthlyTarget({ userId, companyId, dateFrom, dateTo }) 
 
 export const productService = {
   // Get all products
-  async getProducts() {
+  async getProducts(companyId = null) {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("products")
         .select("*")
         .eq("is_active", true)
         .order("material", { ascending: true });
+      if (companyId) query = query.eq("company_id", companyId);
 
+      const { data, error } = await query;
       if (error) throw error;
       return { data: data || [], error: null };
     } catch (error) {
@@ -4560,13 +4562,15 @@ export const adminService = {
   },
 
   // Get all products (for product master)
-  async getAllProducts() {
+  async getAllProducts(companyId = null) {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("products")
         .select("*")
         .order("material", { ascending: true });
+      if (companyId) query = query.eq("company_id", companyId);
 
+      const { data, error } = await query;
       return { data, error };
     } catch (error) {
       return { data: null, error };
@@ -6004,10 +6008,12 @@ export const materialGroupService = {
 
   async getGroupUsageCount(companyId, groupName) {
     try {
-      const { count, error } = await supabase
+      let query = supabase
         .from("products")
         .select("*", { count: "exact", head: true })
         .eq("material_group", groupName);
+      if (companyId) query = query.eq("company_id", companyId);
+      const { count, error } = await query;
       return { count: count || 0, error };
     } catch (error) {
       return { count: 0, error };

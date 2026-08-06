@@ -13,9 +13,15 @@ import {
   exportProductsToExcel,
 } from "../../../utils/importExportUtils";
 import { useLanguage } from "../../../i18n";
+import { useAuth } from "contexts/AuthContext";
 
 const ProductMaster = ({ adminCompany }) => {
   const { t } = useLanguage();
+  const { company: authCompany } = useAuth();
+  // Products are company-specific. Prefer the admin-selected company (admin
+  // dashboard); fall back to the auth/header company (Director dashboard renders
+  // <ProductMaster> without adminCompany).
+  const effectiveCompany = adminCompany || authCompany;
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -42,11 +48,13 @@ const ProductMaster = ({ adminCompany }) => {
     // Reload when MaterialGroupSettings renames/deletes a group
     window.addEventListener("material-groups-updated", loadProducts);
     return () => window.removeEventListener("material-groups-updated", loadProducts);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveCompany?.id]); // reload when the company switches
 
   const loadProducts = async () => {
+    if (!effectiveCompany?.id) { setProducts([]); setLoading(false); return; }
     setLoading(true);
-    const { data, error } = await adminService.getAllProducts();
+    const { data, error } = await adminService.getAllProducts(effectiveCompany.id);
     if (error) {
       console.error("Error loading products:", error);
       alert("Failed to load products: " + error.message);
@@ -96,32 +104,32 @@ const ProductMaster = ({ adminCompany }) => {
   };
 
   async function handleDownloadTemplate() {
-    if (!adminCompany?.id) return;
+    if (!effectiveCompany?.id) return;
     const { data: groups } = await supabase
       .from("material_groups")
       .select("name")
-      .eq("company_id", adminCompany.id)
+      .eq("company_id", effectiveCompany.id)
       .eq("is_active", true)
       .order("name");
-    downloadProductTemplate(adminCompany.name, (groups || []).map(g => g.name));
+    downloadProductTemplate(effectiveCompany.name, (groups || []).map(g => g.name));
   }
 
   async function exportCurrentProducts() {
-    if (!adminCompany?.id) return;
+    if (!effectiveCompany?.id) return;
     setExporting(true);
     try {
       const { data } = await supabase
         .from("products")
         .select("material, description, material_group, material_subgroup, base_unit_of_measure, unit_price, cost_price, price_per_ton, price_per_pc, price_per_meter, is_active")
-        .eq("company_id", adminCompany.id)
+        .eq("company_id", effectiveCompany.id)
         .order("material_group")
         .order("material");
 
       if (!data?.length) {
-        alert(`No products found for ${adminCompany.name}`);
+        alert(`No products found for ${effectiveCompany.name}`);
         return;
       }
-      exportProductsToExcel(data, adminCompany.name);
+      exportProductsToExcel(data, effectiveCompany.name);
     } finally {
       setExporting(false);
     }
@@ -130,7 +138,7 @@ const ProductMaster = ({ adminCompany }) => {
   // ── derived filter options ────────────────────────────────────────────────────
   // Scope to the managed company (admin selector), NOT the header/auth company —
   // otherwise groups for a different company than the products are shown.
-  const { groups: uniqueGroups } = useMaterialGroups(adminCompany?.id);
+  const { groups: uniqueGroups } = useMaterialGroups(effectiveCompany?.id);
 
   const uniqueSubGroups = useMemo(() => {
     return [
@@ -734,7 +742,7 @@ const ProductMaster = ({ adminCompany }) => {
       {viewingProduct && (
         <ProductModal
           product={viewingProduct}
-          adminCompany={adminCompany}
+          adminCompany={effectiveCompany}
           onClose={() => setViewingProduct(null)}
           onSuccess={() => setViewingProduct(null)}
           viewOnly
@@ -744,7 +752,7 @@ const ProductMaster = ({ adminCompany }) => {
       {showModal && (
         <ProductModal
           product={editingProduct}
-          adminCompany={adminCompany}
+          adminCompany={effectiveCompany}
           onClose={handleModalClose}
           onSuccess={handleModalSuccess}
         />
@@ -761,7 +769,7 @@ const ProductMaster = ({ adminCompany }) => {
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
         onSuccess={() => { setShowImportModal(false); loadProducts(); }}
-        adminCompany={adminCompany}
+        adminCompany={effectiveCompany}
       />
     </div>
   );

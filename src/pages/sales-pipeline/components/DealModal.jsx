@@ -548,6 +548,7 @@ const DealModal = ({
       const { data, error } = await supabase
         .from('products')
         .select('id, material, description, material_group, material_subgroup, base_unit_of_measure, unit_price, is_active')
+        .eq('company_id', company?.id)
         .eq('material_group', pickerGroup)
         .eq('is_active', true)
         .order('material', { ascending: true });
@@ -576,6 +577,7 @@ const DealModal = ({
       const { data } = await supabase
         .from('products')
         .select('id, material, description, material_group, unit_price, base_unit_of_measure, is_active')
+        .eq('company_id', company?.id)
         .or('is_active.eq.true,is_active.is.null')
         .order('material', { ascending: true })
         .limit(50);
@@ -587,6 +589,7 @@ const DealModal = ({
     const { data, error } = await supabase
       .from('products')
       .select('id, material, description, material_group, unit_price, base_unit_of_measure, is_active')
+      .eq('company_id', company?.id)
       .or(`is_active.eq.true,is_active.is.null`)
       .or(`material.ilike.%${query}%,description.ilike.%${query}%,material_group.ilike.%${query}%`)
       .order('material', { ascending: true })
