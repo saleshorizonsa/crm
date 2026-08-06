@@ -81,13 +81,26 @@ const CustomerImportModal = ({ isOpen, onClose, onSuccess, adminCompany }) => {
       if (s.email) emailToId[s.email.toLowerCase().trim()] = s.id;
     });
 
+    // Collapse rows sharing the upsert conflict key (company_id, company_name) to
+    // their last occurrence. Otherwise a batch containing the same company name
+    // twice fails the whole batch with Postgres 21000 (ON CONFLICT cannot affect
+    // a row twice). Rows with no company name are kept as-is (NULLs don't collide).
+    const byName = new Map();
+    const noName = [];
+    validRows.forEach(row => {
+      const key = (row.company_name || "").trim().toLowerCase();
+      if (key) byName.set(key, row);
+      else noName.push(row);
+    });
+    const importRows = [...byName.values(), ...noName];
+
     let imported = 0;
     let skipped  = 0;
     const chunkSize = 50;
 
-    for (let i = 0; i < validRows.length; i += chunkSize) {
-      const chunk = validRows.slice(i, i + chunkSize);
-      setImportProgress(Math.round((i / validRows.length) * 100));
+    for (let i = 0; i < importRows.length; i += chunkSize) {
+      const chunk = importRows.slice(i, i + chunkSize);
+      setImportProgress(Math.round((i / importRows.length) * 100));
 
       const insertData = chunk.map(row => {
         // Match the salesman by email; no match (or blank) → import as UNASSIGNED
@@ -96,8 +109,11 @@ const CustomerImportModal = ({ isOpen, onClose, onSuccess, adminCompany }) => {
         return {
           company_id:      adminCompany.id,
           company_name:    row.company_name    || null,
-          first_name:      row.first_name      || null,
-          last_name:       row.last_name       || null,
+          // contacts.first_name / last_name are NOT NULL in the DB, but SAP
+          // business-customer rows often have only a company name — default to
+          // "" so those rows import instead of failing the constraint.
+          first_name:      row.first_name      || "",
+          last_name:       row.last_name       || "",
           email:           row.email           || null,
           phone:           row.phone           || null,
           mobile:          row.mobile          || null,
