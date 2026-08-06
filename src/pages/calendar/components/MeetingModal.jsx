@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
+import ContactSearchInput from "../../../components/ui/ContactSearchInput";
 import { useLanguage } from "../../../i18n";
 
 const TYPE_KEYS = [
@@ -275,15 +276,12 @@ const MeetingModal = ({
                 </div>
               )}
               {contacts.length > 0 && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">{t("calendarPage.linkedContact")}</label>
-                  <select value={form.contact_id} onChange={(e) => set("contact_id", e.target.value)} className={selClass}>
-                    <option value="">{t("common.none")}</option>
-                    {contacts.map((c) => (
-                      <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>
-                    ))}
-                  </select>
-                </div>
+                <ContactSearchInput
+                  label={t("calendarPage.linkedContact")}
+                  contacts={contacts}
+                  value={form.contact_id || null}
+                  onChange={(c) => set("contact_id", c?.id || "")}
+                />
               )}
             </div>
 

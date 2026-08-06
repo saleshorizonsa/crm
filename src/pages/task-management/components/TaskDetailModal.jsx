@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
+import ContactSearchInput from "../../../components/ui/ContactSearchInput";
 import { useAuth } from "../../../contexts/AuthContext";
 import { userService } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
@@ -337,21 +338,13 @@ const TaskDetailModal = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Related Contact */}
             <div>
-              <label className="block text-sm font-medium text-card-foreground mb-2">
-                {t("tasks.relatedClient")}
-              </label>
-              <select
-                value={formData.contact_id}
-                onChange={(e) => handleChange("contact_id", e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="">{t("tasks.noClient")}</option>
-                {contacts.map((contact) => (
-                  <option key={contact.id} value={contact.id}>
-                    {contact.first_name} {contact.last_name}
-                  </option>
-                ))}
-              </select>
+              <ContactSearchInput
+                label={t("tasks.relatedClient")}
+                contacts={contacts}
+                value={formData.contact_id || null}
+                onChange={(c) => handleChange("contact_id", c?.id || "")}
+                placeholder={t("tasks.noClient")}
+              />
             </div>
 
             {/* Related Deal */}

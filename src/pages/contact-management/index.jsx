@@ -189,7 +189,9 @@ const ContactManagement = () => {
           contact.first_name?.toLowerCase().includes(searchLower) ||
           contact.last_name?.toLowerCase().includes(searchLower) ||
           contact.email?.toLowerCase().includes(searchLower) ||
-          contact.company_name?.toLowerCase().includes(searchLower)
+          contact.company_name?.toLowerCase().includes(searchLower) ||
+          contact.phone?.toLowerCase().includes(searchLower) ||
+          contact.mobile?.toLowerCase().includes(searchLower)
       );
     }
 

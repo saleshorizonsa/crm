@@ -4,6 +4,7 @@ import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
 import Select from "../../../components/ui/Select";
+import ContactSearchInput from "../../../components/ui/ContactSearchInput";
 import LostReasonModal from "./LostReasonModal";
 import MeetingModal from "../../calendar/components/MeetingModal";
 import LogActivityModal from "../../../components/LogActivityModal";
@@ -1369,17 +1370,15 @@ const DealModal = ({
 
             {/* Contact */}
             <div>
-              <Select
+              <ContactSearchInput
                 label={t("common.client")}
-                options={[
-                  { value: "", label: t("deals.selectClient") },
-                  ...contactOptions,
-                ]}
-                value={formData?.contact_id || ""}
-                onChange={(value) => {
-                  handleInputChange("contact_id", value);
+                contacts={contacts}
+                value={formData?.contact_id || null}
+                onChange={(contact) => {
+                  handleInputChange("contact_id", contact?.id || "");
                   if (errors.contact_id) setErrors((prev) => ({ ...prev, contact_id: "" }));
                 }}
+                placeholder={t("deals.selectClient")}
               />
               {errors.contact_id && (
                 <p className="mt-1 text-xs text-destructive flex items-center gap-1">
