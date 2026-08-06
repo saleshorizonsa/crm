@@ -13,11 +13,15 @@ export const useCurrency = () => {
 };
 
 export const CurrencyProvider = ({ children }) => {
-  const { user } = useAuth();
+  const { user, company } = useAuth();
   const [preferredCurrency, setPreferredCurrency] = useState(() => {
-    // Initialize from localStorage
-    return localStorage.getItem("preferredCurrency") || "USD";
+    // Initialize from localStorage; default to SAR (the company currency) rather
+    // than USD. The real value is resolved from settings/company below.
+    return localStorage.getItem("preferredCurrency") || "SAR";
   });
+  // Tracks whether the user has an explicit currency preference of their own.
+  // When they don't, we follow the active company's currency.
+  const [hasUserChoice, setHasUserChoice] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // Load currency from database on mount and save to localStorage
@@ -27,15 +31,34 @@ export const CurrencyProvider = ({ children }) => {
     } else {
       setIsLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
+
+  // Follow the active company's currency when the user has no explicit
+  // preference (and hasn't changed it this session) — e.g. a director switching
+  // between companies, or a user with no saved setting.
+  useEffect(() => {
+    if (!hasUserChoice && company?.currency) {
+      setPreferredCurrency(company.currency);
+      localStorage.setItem("preferredCurrency", company.currency);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company?.currency, hasUserChoice]);
 
   const loadUserCurrency = async () => {
     try {
       const { data, error } = await settingsService.getUserSettings(user.id);
       if (!error && data?.preferred_currency) {
-        const currency = data.preferred_currency;
-        setPreferredCurrency(currency);
-        localStorage.setItem("preferredCurrency", currency);
+        // The user has an explicit preference — honour it.
+        setPreferredCurrency(data.preferred_currency);
+        localStorage.setItem("preferredCurrency", data.preferred_currency);
+        setHasUserChoice(true);
+      } else {
+        // No explicit preference → use the active company's currency (SAR here).
+        const fallback = company?.currency || "SAR";
+        setPreferredCurrency(fallback);
+        localStorage.setItem("preferredCurrency", fallback);
+        setHasUserChoice(false);
       }
     } catch (error) {
       console.error("Error loading currency settings:", error);
@@ -44,10 +67,11 @@ export const CurrencyProvider = ({ children }) => {
     }
   };
 
-  // Update localStorage when currency changes
+  // Update localStorage when currency changes (an explicit user choice)
   const updatePreferredCurrency = (newCurrency) => {
     setPreferredCurrency(newCurrency);
     localStorage.setItem("preferredCurrency", newCurrency);
+    setHasUserChoice(true);
   };
 
   // Format currency - if fromCurrency is provided, convert it first
@@ -75,9 +99,11 @@ export const CurrencyProvider = ({ children }) => {
     return currencyService.format(amount, preferredCurrency);
   };
 
-  const convertCurrency = (amount, fromCurrency = "USD", toCurrency = null) => {
+  const convertCurrency = (amount, fromCurrency = null, toCurrency = null) => {
     const targetCurrency = toCurrency || preferredCurrency;
-    const sourceCurrency = fromCurrency || "USD";
+    // Default the source to the preferred currency so an unspecified source
+    // doesn't trigger a spurious USD→SAR conversion.
+    const sourceCurrency = fromCurrency || preferredCurrency;
     return currencyService.convert(amount, sourceCurrency, targetCurrency);
   };
 

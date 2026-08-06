@@ -284,7 +284,7 @@ const SalesPipeline = () => {
           ? `${deal.contact.first_name || ""} ${deal.contact.last_name || ""}`.trim()
           : "",
         deal.amount || 0,
-        deal.currency || "USD",
+        deal.currency || "SAR",
         deal.stage || "",
         deal.owner ? deal.owner.full_name || deal.owner.email : "",
         deal.expected_close_date || "",
@@ -339,7 +339,7 @@ const SalesPipeline = () => {
       Company:          d.contact?.company_name || "",
       Stage:            d.stage || "",
       Amount:           d.amount || 0,
-      Currency:         d.currency || "USD",
+      Currency:         d.currency || "SAR",
       Owner:            d.owner?.full_name || d.owner?.email || "",
       "Expected Close": d.expected_close_date || "",
       "Created At":     d.created_at ? new Date(d.created_at).toLocaleDateString() : "",

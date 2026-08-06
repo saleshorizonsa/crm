@@ -26,7 +26,7 @@ export const AuthProvider = ({ children }) => {
     if (role === "admin") {
       const { data } = await supabase
         .from("companies")
-        .select("id, name, logo_url, is_active")
+        .select("id, name, logo_url, is_active, currency")
         .eq("is_active", true)
         .order("name");
       setAvailableCompanies(data || []);
@@ -35,14 +35,14 @@ export const AuthProvider = ({ children }) => {
       try {
         const { data, error } = await supabase
           .from("director_companies")
-          .select("company:companies(id, name, logo_url, is_active)")
+          .select("company:companies(id, name, logo_url, is_active, currency)")
           .eq("user_id", userId);
         if (!error && data?.length > 0) {
           setAvailableCompanies(data.map((d) => d.company).filter(Boolean));
         } else {
           const { data: all } = await supabase
             .from("companies")
-            .select("id, name, logo_url, is_active")
+            .select("id, name, logo_url, is_active, currency")
             .eq("is_active", true)
             .order("name");
           setAvailableCompanies(all || []);
@@ -50,7 +50,7 @@ export const AuthProvider = ({ children }) => {
       } catch {
         const { data: all } = await supabase
           .from("companies")
-          .select("id, name, logo_url, is_active")
+          .select("id, name, logo_url, is_active, currency")
           .eq("is_active", true)
           .order("name");
         setAvailableCompanies(all || []);

@@ -8,7 +8,7 @@ const CurrencySettings = ({ settings, onSave, isSaving }) => {
   const { setPreferredCurrency } = useCurrency();
   const { t } = useLanguage();
   const [formData, setFormData] = useState({
-    preferred_currency: "USD",
+    preferred_currency: "SAR",
   });
 
   const [preview, setPreview] = useState({
@@ -20,7 +20,7 @@ const CurrencySettings = ({ settings, onSave, isSaving }) => {
   useEffect(() => {
     if (settings) {
       setFormData({
-        preferred_currency: settings.preferred_currency || "USD",
+        preferred_currency: settings.preferred_currency || "SAR",
       });
     }
   }, [settings]);

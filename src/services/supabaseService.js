@@ -830,7 +830,7 @@ export const dealService = {
         const ownerName = data.owner?.full_name || data.owner?.email || "User";
         const dealTitle = data.title || oldDeal.title || "Deal";
         const dealAmount = parseFloat(data.amount || oldDeal.amount || 0);
-        const currency = data.currency || oldDeal.currency || "USD";
+        const currency = data.currency || oldDeal.currency || "SAR";
 
         // Format currency
         const formattedAmount = new Intl.NumberFormat("en-US", {
@@ -1044,7 +1044,7 @@ export const dealService = {
         const ownerName = data.owner?.full_name || data.owner?.email || "User";
         const dealTitle = data.title || "New Deal";
         const dealAmount = parseFloat(data.amount || 0);
-        const currency = data.currency || "USD";
+        const currency = data.currency || "SAR";
 
         const formattedAmount = new Intl.NumberFormat("en-US", {
           style: "currency",
@@ -1073,7 +1073,7 @@ export const dealService = {
         const ownerName = data.owner?.full_name || data.owner?.email || "User";
         const dealTitle = data.title || "Deal";
         const dealAmount = parseFloat(data.amount || 0);
-        const currency = data.currency || "USD";
+        const currency = data.currency || "SAR";
 
         const formattedAmount = new Intl.NumberFormat("en-US", {
           style: "currency",
@@ -1939,7 +1939,7 @@ export const settingsService = {
       const defaultSettings = {
         user_id: userId,
         company_id: userData.company_id,
-        preferred_currency: "USD",
+        preferred_currency: "SAR",
         date_format: "MM/DD/YYYY",
         timezone: "UTC",
         language: "en",
@@ -2034,7 +2034,7 @@ export const currencyService = {
   },
 
   // Format amount with currency (NO conversion, just formatting)
-  format(amount, currencyCode = "USD", showSymbol = true) {
+  format(amount, currencyCode = "SAR", showSymbol = true) {
     const symbol = this.getSymbol(currencyCode);
     const formatted = new Intl.NumberFormat("en-US", {
       minimumFractionDigits: 2,
