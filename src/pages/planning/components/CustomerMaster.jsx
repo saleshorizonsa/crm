@@ -3,8 +3,6 @@ import { supabase } from 'lib/supabase';
 import { useAuth } from 'contexts/AuthContext';
 import Icon from 'components/AppIcon';
 import AdminCompanySelector from 'pages/admin-dashboard/components/AdminCompanySelector';
-import { downloadCustomerTemplate } from 'utils/importExportUtils';
-import CustomerImportModal from './CustomerImportModal';
 import CustomerDetailDrawer from './CustomerDetailDrawer';
 import AddCustomerModal from './AddCustomerModal';
 
@@ -28,7 +26,6 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
   const { user, userProfile } = useAuth();
   const role = userProfile?.role;
   const canAssign = ['manager', 'supervisor', 'admin', 'director'].includes(role);
-  const canImport = ['manager', 'admin', 'director'].includes(role);
 
   const [customers, setCustomers] = useState([]);
   const [allCustomers, setAllCustomers] = useState([]);
@@ -38,7 +35,6 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
   const [selected, setSelected] = useState(new Set());
   const [bulkOwner, setBulkOwner] = useState('');
   const [salesmen, setSalesmen] = useState([]);
-  const [showImport, setShowImport] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [activeCustomer, setActiveCustomer] = useState(null);
 
@@ -202,16 +198,6 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
     fetchStats();
   };
 
-  const handleDownloadTemplate = async () => {
-    const { data } = await supabase
-      .from('users')
-      .select('id,full_name,email')
-      .eq('company_id', adminCompany.id)
-      .eq('is_active', true)
-      .order('full_name', { ascending: true });
-    downloadCustomerTemplate(adminCompany.name, data || []);
-  };
-
   const handleSelectAll = (checked) => {
     if (checked) {
       setSelected(new Set(filtered.map((c) => c.id)));
@@ -242,7 +228,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
     if (search) return `No customers match "${search}"`;
     if (statusFilter === 'unassigned') return 'No unassigned customers';
     if (statusFilter !== 'all') return `No ${statusFilter} customers`;
-    return 'No customers yet. Import or add your first customer.';
+    return 'No customers yet. Add your first customer.';
   };
 
   return (
@@ -283,25 +269,6 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
                 className="w-full text-sm pl-9 pr-3 py-2 border border-border rounded-xl bg-background focus:outline-none focus:ring-2 focus:ring-primary/40"
               />
             </div>
-
-            {canImport && (
-              <>
-                <button
-                  onClick={handleDownloadTemplate}
-                  className="flex items-center gap-1.5 px-3 py-2 text-sm border border-green-500 text-green-700 rounded-xl hover:bg-green-50 transition-colors whitespace-nowrap"
-                >
-                  <Icon name="FileDown" size={14} />
-                  Download Template
-                </button>
-                <button
-                  onClick={() => setShowImport(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 text-sm border border-blue-500 text-blue-700 rounded-xl hover:bg-blue-50 transition-colors whitespace-nowrap"
-                >
-                  <Icon name="Upload" size={14} />
-                  Import Excel
-                </button>
-              </>
-            )}
 
             <button
               onClick={() => setShowAdd(true)}
@@ -482,13 +449,6 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
       )}
 
       {/* Modals */}
-      <CustomerImportModal
-        isOpen={showImport}
-        onClose={() => setShowImport(false)}
-        onSuccess={() => { setShowImport(false); fetchCustomers(); fetchStats(); }}
-        adminCompany={adminCompany}
-      />
-
       <AddCustomerModal
         isOpen={showAdd}
         onClose={() => setShowAdd(false)}
