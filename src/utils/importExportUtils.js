@@ -179,23 +179,43 @@ export function parseCustomerFile(file) {
         const ws   = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { raw: false, defval: '' });
 
-        const customers = rows.map((row, i) => ({
-          rowNum:          i + 2,
-          company_name:    (row['Company Name *'] || row['Company Name'] || '').trim(),
-          first_name:      (row['First Name']     || '').trim(),
-          last_name:       (row['Last Name']      || '').trim(),
-          phone:           (row['Phone']          || '').trim(),
-          mobile:          (row['Mobile']         || '').trim(),
-          email:           (row['Email']          || '').trim().toLowerCase(),
-          city:            (row['City']           || '').trim(),
-          region:          (row['Region']         || '').trim(),
-          country:         (row['Country']        || 'Saudi Arabia').trim(),
-          // Support both new "Customer Type *" column and legacy "Status" column
-          customer_type:   (row['Customer Type *'] || row['Customer Type'] || row['Status'] || 'active').trim().toLowerCase(),
-          last_order_date: (row['Last Order Date'] || '').trim() || null,
-          notes:           (row['Notes']          || '').trim(),
-          owner_email:     (row['Assigned Salesman Email'] || '').trim().toLowerCase(),
-        }));
+        const customers = rows.map((row, i) => {
+          // The SAP "Customer Type *" column actually carries the customer STATUS
+          // (Active / Inactive). Normalise it (case-insensitive) and default to
+          // "active" for blank/unknown values rather than rejecting the row.
+          const rawType = (
+            row['Customer Type *'] || row['Customer Type'] || row['Status'] || 'active'
+          ).toString().trim().toLowerCase();
+          const status = VALID_CUSTOMER_TYPES.includes(rawType) ? rawType : 'active';
+
+          // Last order date → yyyy-mm-dd (or null if blank/unparseable)
+          let lastOrder = null;
+          const rawDate = (row['Last Order Date'] || '').toString().trim();
+          if (rawDate) {
+            const d = new Date(rawDate);
+            if (!isNaN(d.getTime())) lastOrder = d.toISOString().split('T')[0];
+          }
+
+          return {
+            rowNum:          i + 2,
+            company_name:    (row['Company Name *'] || row['Company Name'] || '').trim(),
+            first_name:      (row['First Name']     || '').trim(),
+            last_name:       (row['Last Name']      || '').trim(),
+            phone:           (row['Phone']          || '').trim(),
+            mobile:          (row['Mobile']         || '').trim(),
+            email:           (row['Email']          || '').trim().toLowerCase(),
+            city:            (row['City']           || '').trim(),
+            region:          (row['Region']         || '').trim(),
+            country:         (row['Country']        || 'Saudi Arabia').trim(),
+            // Store the Active/Inactive value in status AND customer_type — the
+            // Customer Master UI displays/filters by customer_type.
+            status,
+            customer_type:   status,
+            last_order_date: lastOrder,
+            notes:           (row['Notes']          || '').trim(),
+            owner_email:     (row['Assigned Salesman Email'] || '').trim().toLowerCase(),
+          };
+        });
 
         resolve(customers);
       } catch(err) {
@@ -260,22 +280,23 @@ export function validateCustomerRows(rows) {
   rows.forEach(row => {
     const rowErrors = [];
 
-    if (!row.company_name) {
-      rowErrors.push('Company Name is required');
-    } else if (seenNames.has(row.company_name.toLowerCase())) {
-      warnings.push({ row: row.rowNum, message: `Duplicate in file: ${row.company_name} — will update existing record` });
-      seenNames.add(row.company_name.toLowerCase());
-    } else {
+    // Require a company name OR a contact name — a business customer may have
+    // only a company name, an individual only a person name. Skip only when both
+    // are blank (a truly empty row).
+    if (!row.company_name && !row.first_name) {
+      rowErrors.push('Company Name or First Name is required');
+    } else if (row.company_name) {
+      if (seenNames.has(row.company_name.toLowerCase())) {
+        warnings.push({ row: row.rowNum, message: `Duplicate in file: ${row.company_name} — will update existing record` });
+      }
       seenNames.add(row.company_name.toLowerCase());
     }
 
     if (row.email && !row.email.includes('@')) {
       rowErrors.push(`Invalid email: ${row.email}`);
     }
-
-    if (row.customer_type && !VALID_CUSTOMER_TYPES.includes(row.customer_type)) {
-      rowErrors.push(`Invalid Customer Type: "${row.customer_type}" — must be active / inactive / dormant / prospect / blocked`);
-    }
+    // Status/customer_type is normalised during parsing (unknown → active), so it
+    // never causes a row to be rejected.
 
     if (rowErrors.length > 0) {
       errors.push({ row: row.rowNum, messages: rowErrors, data: row });

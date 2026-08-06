@@ -1,12 +1,14 @@
 import React, { useState, useRef } from "react";
 import Icon from "components/AppIcon";
 import { supabase } from "../../../lib/supabase";
+import { useAuth } from "../../../contexts/AuthContext";
 import {
   parseCustomerFile,
   validateCustomerRows,
 } from "../../../utils/importExportUtils";
 
 const CustomerImportModal = ({ isOpen, onClose, onSuccess, adminCompany }) => {
+  const { user } = useAuth();
   const [step, setStep]               = useState("upload");
   const [file, setFile]               = useState(null);
   const [rows, setRows]               = useState([]);
@@ -76,7 +78,7 @@ const CustomerImportModal = ({ isOpen, onClose, onSuccess, adminCompany }) => {
 
     const emailToId = {};
     (salesmen || []).forEach(s => {
-      if (s.email) emailToId[s.email.toLowerCase()] = s.id;
+      if (s.email) emailToId[s.email.toLowerCase().trim()] = s.id;
     });
 
     let imported = 0;
@@ -87,26 +89,32 @@ const CustomerImportModal = ({ isOpen, onClose, onSuccess, adminCompany }) => {
       const chunk = validRows.slice(i, i + chunkSize);
       setImportProgress(Math.round((i / validRows.length) * 100));
 
-      const insertData = chunk.map(row => ({
-        company_id:      adminCompany.id,
-        company_name:    row.company_name,
-        first_name:      row.first_name      || null,
-        last_name:       row.last_name       || null,
-        email:           row.email           || null,
-        phone:           row.phone           || null,
-        mobile:          row.mobile          || null,
-        city:            row.city            || null,
-        region:          row.region          || null,
-        country:         row.country         || "Saudi Arabia",
-        notes:           row.notes           || null,
-        customer_type:   row.customer_type   || "active",
-        last_order_date: row.last_order_date || null,
-        status:          "active",
-        source:          "import",
-        owner_id:        row.owner_email
-          ? (emailToId[row.owner_email] || null)
-          : null,
-      }));
+      const insertData = chunk.map(row => {
+        // Match the salesman by email; no match (or blank) → import as UNASSIGNED
+        // (owner_id null), never skip the row.
+        const ownerId = row.owner_email ? (emailToId[row.owner_email] || null) : null;
+        return {
+          company_id:      adminCompany.id,
+          company_name:    row.company_name    || null,
+          first_name:      row.first_name      || null,
+          last_name:       row.last_name       || null,
+          email:           row.email           || null,
+          phone:           row.phone           || null,
+          mobile:          row.mobile          || null,
+          city:            row.city            || null,
+          region:          row.region          || null,
+          country:         row.country         || "Saudi Arabia",
+          notes:           row.notes           || null,
+          // "Customer Type *" from the sheet is the Active/Inactive status.
+          status:          row.status          || "active",
+          customer_type:   row.customer_type   || "active",
+          last_order_date: row.last_order_date || null,
+          source:          "import",
+          owner_id:        ownerId,
+          assigned_by:     ownerId ? (user?.id || null) : null,
+          assigned_at:     ownerId ? new Date().toISOString() : null,
+        };
+      });
 
       const { data, error } = await supabase
         .from("contacts")
