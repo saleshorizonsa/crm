@@ -42,6 +42,18 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
   const [showAdd, setShowAdd] = useState(false);
   const [activeCustomer, setActiveCustomer] = useState(null);
 
+  // A contact belongs to a company through its OWNER (contacts.company_id is not
+  // reliably populated in this DB), so "all customers of company X" means "owned
+  // by a user of company X". Unassigned customers have no owner, so they are
+  // scoped by contacts.company_id (which imports stamp).
+  const getCompanyUserIds = useCallback(async (cid) => {
+    const { data } = await supabase.from('users').select('id').eq('company_id', cid);
+    return (data || []).map((u) => u.id);
+  }, []);
+
+  const SELECT_COLS =
+    'id,company_name,first_name,last_name,phone,mobile,email,city,region,country,customer_type,last_order_date,notes,source,assigned_at,owner_id,created_at,company_id,owner:users!owner_id(id,full_name,email)';
+
   const fetchCustomers = useCallback(async () => {
     if (!adminCompany?.id) {
       setCustomers([]);
@@ -58,18 +70,12 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
 
       let query = supabase
         .from('contacts')
-        .select(
-          'id,company_name,first_name,last_name,phone,mobile,email,city,region,country,customer_type,last_order_date,notes,source,assigned_at,owner_id,created_at,owner:users!owner_id(id,full_name,email)'
-        )
-        .eq('company_id', adminCompany.id)
+        .select(SELECT_COLS)
         .order('company_name', { ascending: true });
 
       if (statusFilter === 'unassigned') {
-        // Unassigned = no owner. This is company-wide and must NOT be combined
-        // with an owner-scope filter (owner_id IN [...] AND owner_id IS NULL
-        // can never both be true — that was the 0-results bug). Managers,
-        // supervisors, admins and directors can all see/assign these.
-        query = query.is('owner_id', null);
+        // Unassigned = no owner, scoped to the company via company_id.
+        query = query.is('owner_id', null).eq('company_id', adminCompany.id);
       } else {
         // Role-based owner scope
         if (role === 'salesman') {
@@ -82,8 +88,12 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
             .eq('is_active', true);
           const teamIds = (teamMembers || []).map((m) => m.id);
           query = query.in('owner_id', [user.id, ...teamIds]);
+        } else {
+          // manager / admin / director → all of the company's assigned customers,
+          // scoped by the owner's company.
+          const ownerIds = await getCompanyUserIds(adminCompany.id);
+          query = query.in('owner_id', ownerIds.length ? ownerIds : ['00000000-0000-0000-0000-000000000000']);
         }
-        // manager / admin / director → no owner filter (all company customers)
 
         // customer_type facet (active / inactive / dormant / prospect)
         if (statusFilter !== 'all') {
@@ -97,7 +107,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
     } finally {
       setLoading(false);
     }
-  }, [adminCompany?.id, statusFilter, role, user?.id]);
+  }, [adminCompany?.id, statusFilter, role, user?.id, getCompanyUserIds]);
 
   // Stats are computed from the full list of customers the user can access,
   // independent of the active status filter — so the numbers stay stable when
@@ -107,30 +117,29 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
       setAllCustomers([]);
       return;
     }
-    let query = supabase
-      .from('contacts')
-      .select('id,owner_id,customer_type')
-      .eq('company_id', adminCompany.id);
+    const COLS = 'id,owner_id,customer_type';
+    const unassigned = async () =>
+      (await supabase.from('contacts').select(COLS).is('owner_id', null).eq('company_id', adminCompany.id)).data || [];
 
+    let rows = [];
     if (role === 'salesman') {
-      query = query.eq('owner_id', user.id);
+      rows = (await supabase.from('contacts').select(COLS).eq('owner_id', user.id)).data || [];
     } else if (role === 'supervisor') {
       const { data: teamMembers } = await supabase
-        .from('users')
-        .select('id')
-        .eq('reports_to', user.id)
-        .eq('is_active', true);
-      const teamIds = (teamMembers || []).map((m) => m.id);
-      const scopeIds = [user.id, ...teamIds];
-      // Own + team, PLUS unassigned (supervisors can see/assign those too), so
-      // the Unassigned stat reflects what the Unassigned filter actually shows.
-      query = query.or(`owner_id.in.(${scopeIds.join(',')}),owner_id.is.null`);
+        .from('users').select('id').eq('reports_to', user.id).eq('is_active', true);
+      const scopeIds = [user.id, ...(teamMembers || []).map((m) => m.id)];
+      const owned = (await supabase.from('contacts').select(COLS).in('owner_id', scopeIds)).data || [];
+      rows = [...owned, ...(await unassigned())];
+    } else {
+      // manager / admin / director → company's assigned (owner in company) + unassigned
+      const ownerIds = await getCompanyUserIds(adminCompany.id);
+      const owned = ownerIds.length
+        ? (await supabase.from('contacts').select(COLS).in('owner_id', ownerIds)).data || []
+        : [];
+      rows = [...owned, ...(await unassigned())];
     }
-    // manager / admin / director → all company customers (unassigned included)
-
-    const { data } = await query;
-    setAllCustomers(data || []);
-  }, [adminCompany?.id, role, user?.id]);
+    setAllCustomers(rows);
+  }, [adminCompany?.id, role, user?.id, getCompanyUserIds]);
 
   const fetchSalesmen = useCallback(async () => {
     if (!adminCompany?.id || !canAssign) return;
