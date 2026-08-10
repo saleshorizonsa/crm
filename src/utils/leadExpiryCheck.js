@@ -2,11 +2,10 @@ import { supabase } from '../lib/supabase';
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 
-// Returns the "last activity" reference time for a converted lead. The DB has no
-// deals.stage_changed_at column (add it to enable a true per-stage-change timer),
-// so we use converted_at — which is correct for the core rule: a lead that never
-// advances keeps stage='lead', and any lead that DOES advance is excluded by the
-// stage='lead' filter below.
+// Returns the "last activity" reference time for a converted lead: stage_changed_at
+// (updated whenever the deal's stage changes) with fallbacks to converted_at /
+// created_at. A lead that advances resets its timer via stage_changed_at; one that
+// never leaves stage='lead' is returned to Opportunities after 3 days.
 function referenceTime(lead) {
   return new Date(lead.stage_changed_at || lead.converted_at || lead.created_at);
 }
@@ -41,7 +40,7 @@ export async function checkExpiredLeads(companyId, _userId) {
     const { data: leads, error } = await supabase
       .from('deals')
       .select(`
-        id, title, amount, opportunity_id, converted_at, created_at,
+        id, title, amount, opportunity_id, stage_changed_at, converted_at, created_at,
         lead_warning_sent, owner_id,
         opportunity:opportunities!opportunity_id(id, customer_name, planned_amount, owner_id)
       `)

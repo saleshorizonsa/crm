@@ -744,6 +744,8 @@ export const dealService = {
     try {
       const payload = { ...dealData };
       if (!payload.initial_amount && payload.amount) payload.initial_amount = payload.amount;
+      // Baseline the stage-change timer at creation so it's never null.
+      if (!payload.stage_changed_at) payload.stage_changed_at = new Date().toISOString();
       const { data, error } = await supabase
         ?.from("deals")
         ?.insert(payload)
@@ -806,6 +808,13 @@ export const dealService = {
         updatePayload.closed_at = now;
       } else if (isReopeningDeal) {
         updatePayload.closed_at = null;
+      }
+      // Stamp the stage-change time whenever the stage actually changes (drives
+      // the 3-day lead-expiry timer) and reset the lead warning so a lead that
+      // moves — or returns to 'lead' later — starts a fresh cycle.
+      if (updates.stage && oldDeal && updates.stage !== oldDeal.stage) {
+        updatePayload.stage_changed_at = now;
+        updatePayload.lead_warning_sent = false;
       }
 
       const { data, error } = await supabase
@@ -1005,9 +1014,12 @@ export const dealService = {
         updated_at: new Date().toISOString(),
       };
 
-      // If it's a new deal (no id), set created_at
+      // If it's a new deal (no id), set created_at + baseline the stage timer.
+      // (Existing-deal stage changes go through updateDeal, which stamps
+      // stage_changed_at only when the stage actually changes.)
       if (!dealData.id) {
         payload.created_at = new Date().toISOString();
+        if (!payload.stage_changed_at) payload.stage_changed_at = payload.created_at;
       }
 
       // If stage is won or lost, set closed_at timestamp
@@ -1204,6 +1216,7 @@ export const dealService = {
         .from("deals")
         .update({
           stage:             "lost",
+          stage_changed_at:  now,
           lost_reason_code,
           lost_reason_notes: lost_reason_notes || null,
           lost_reason:       lost_reason_code, // backward compat

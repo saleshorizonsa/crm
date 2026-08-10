@@ -256,6 +256,7 @@ export default function OpportunitiesModule({ adminCompany }) {
           expected_close_date: opp.expected_month || null,
           opportunity_id: opp.id,
           converted_at: now,
+          stage_changed_at: now,
         })
         .select()
         .single();
