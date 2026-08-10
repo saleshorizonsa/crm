@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { settingsService } from "../services/supabaseService";
+import { checkExpiredLeads } from "../utils/leadExpiryCheck";
 
 const AuthContext = createContext({});
 
@@ -20,6 +21,18 @@ export const AuthProvider = ({ children }) => {
   const [company, setCompany] = useState(null);
   const [loading, setLoading] = useState(true);
   const [availableCompanies, setAvailableCompanies] = useState([]);
+
+  // On login / company load, return any leads that have sat 3+ days with no
+  // progress back to Opportunities. Throttled to once per 6h per browser so it
+  // doesn't run on every navigation, and fire-and-forget so it never blocks auth.
+  useEffect(() => {
+    if (!user?.id || !company?.id) return;
+    const key = `leadExpiryLastRun_${company.id}`;
+    const last = Number(localStorage.getItem(key) || 0);
+    if (Date.now() - last < 6 * 60 * 60 * 1000) return;
+    localStorage.setItem(key, String(Date.now()));
+    checkExpiredLeads(company.id, user.id).catch(() => {});
+  }, [user?.id, company?.id]);
 
   // Load all companies this user can switch to (admin = all, director = linked)
   const loadAvailableCompanies = async (role, userId) => {

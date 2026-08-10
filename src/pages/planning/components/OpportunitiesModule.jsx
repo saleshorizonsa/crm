@@ -236,21 +236,26 @@ export default function OpportunitiesModule({ adminCompany }) {
   }
 
   // ── Convert to a Lead-stage deal ──────────────────────────────────────────
-  // The opportunity → deal link is stored on opportunities.deal_id, so this does
-  // NOT depend on a deals.opportunity_id column existing.
+  // The deal amount is ALWAYS the opportunity's planned_amount (never the
+  // expected-close value). Links are two-way (opportunities.deal_id +
+  // deals.opportunity_id) so the 3-day lead-expiry check can find converted leads.
   async function handleConvert(opp) {
     try {
+      const now = new Date().toISOString();
       const { data: deal, error } = await supabase
         .from('deals')
         .insert({
           title:       opp.customer_name,
           stage:       'lead',
           amount:      parseFloat(opp.planned_amount) || 0,
+          final_amount: null,
           company_id:  company?.id,
           owner_id:    opp.owner_id || user?.id,
           contact_id:  opp.contact_id || null,
           description: opp.notes || null,
           expected_close_date: opp.expected_month || null,
+          opportunity_id: opp.id,
+          converted_at: now,
         })
         .select()
         .single();
@@ -261,7 +266,7 @@ export default function OpportunitiesModule({ adminCompany }) {
         .update({
           status:       'converted',
           deal_id:      deal.id,
-          converted_at: new Date().toISOString(),
+          converted_at: now,
         })
         .eq('id', opp.id);
       if (updErr) throw updErr;
@@ -504,6 +509,24 @@ export default function OpportunitiesModule({ adminCompany }) {
                             {opp.status}
                           </span>
                         )}
+                        {/* Converted leads with no progress are nearing/​past the
+                            3-day return-to-Opportunities cutoff. */}
+                        {opp.status === 'converted' && (() => {
+                          const d = opp.converted_at
+                            ? Math.floor((Date.now() - new Date(opp.converted_at).getTime()) / 86400000)
+                            : 0;
+                          if (d >= 3) return (
+                            <span className="flex items-center gap-1 text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-medium">
+                              <Icon name="AlertTriangle" size={10} /> Returning to plan…
+                            </span>
+                          );
+                          if (d >= 2) return (
+                            <span className="flex items-center gap-1 text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
+                              <Icon name="Clock" size={10} /> Expires tomorrow
+                            </span>
+                          );
+                          return null;
+                        })()}
                       </div>
 
                       <div className="flex items-center gap-4 mt-1.5 flex-wrap text-xs text-muted-foreground">
