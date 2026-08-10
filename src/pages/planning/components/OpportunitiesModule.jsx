@@ -3,6 +3,7 @@ import { supabase } from 'lib/supabase';
 import { useAuth } from 'contexts/AuthContext';
 import { useCurrency } from 'contexts/CurrencyContext';
 import Icon from 'components/AppIcon';
+import SalesmanSelector from 'components/ui/SalesmanSelector';
 
 const DIRECTOR_ROLES = ['director', 'head', 'admin'];
 const TEAM_ROLES     = ['manager', 'supervisor'];
@@ -126,8 +127,13 @@ export default function OpportunitiesModule({ adminCompany }) {
       if (!isDirector && !isTeamLead) {
         query = query.eq('owner_id', user?.id);      // salesman → own only
       } else if (filterOwner !== 'all') {
-        query = query.eq('owner_id', filterOwner);
+        query = query.eq('owner_id', filterOwner);   // drilled into one salesman
+      } else if (isTeamLead) {
+        // manager/supervisor "All" → their own team only (self + direct reports)
+        const ids = [user?.id, ...teamMembers.map((m) => m.id)].filter(Boolean);
+        query = query.in('owner_id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000']);
       }
+      // director/admin/head "All" → whole company (no owner filter)
       if (filterStatus !== 'all') query = query.eq('status', filterStatus);
 
       const { data, error } = await query;
@@ -140,7 +146,7 @@ export default function OpportunitiesModule({ adminCompany }) {
     } finally {
       setLoading(false);
     }
-  }, [company?.id, isDirector, isTeamLead, user?.id, filterOwner, filterStatus]);
+  }, [company?.id, isDirector, isTeamLead, user?.id, filterOwner, filterStatus, teamMembers]);
 
   // ── Fetch: contacts + team ────────────────────────────────────────────────
   // Contacts are scoped by OWNER, not company: contacts.company_id is null in
@@ -149,15 +155,24 @@ export default function OpportunitiesModule({ adminCompany }) {
   const fetchSupport = useCallback(async () => {
     if (!company?.id) return;
 
-    // 1) Team members (director/manager/supervisor) — also feeds the owner filter.
+    // 1) Team members (feeds the salesman drill-down). Director/admin/head see
+    //    the whole company; manager/supervisor see only their direct reports.
     let team = [];
-    if (isDirector || isTeamLead) {
+    if (isDirector) {
       const { data } = await supabase
         .from('users')
         .select('id, full_name, role')
         .eq('company_id', company.id)
         .eq('is_active', true)
         .in('role', ['salesman', 'supervisor', 'manager'])
+        .order('full_name');
+      team = data || [];
+    } else if (isTeamLead) {
+      const { data } = await supabase
+        .from('users')
+        .select('id, full_name, role')
+        .eq('reports_to', user?.id)
+        .eq('is_active', true)
         .order('full_name');
       team = data || [];
     }
@@ -418,16 +433,11 @@ export default function OpportunitiesModule({ adminCompany }) {
         </div>
 
         {(isDirector || isTeamLead) && teamMembers.length > 0 && (
-          <select
-            value={filterOwner}
-            onChange={(e) => setFilterOwner(e.target.value)}
-            className="text-xs border border-border rounded-xl px-3 py-2 bg-card text-foreground focus:outline-none focus:border-blue-400"
-          >
-            <option value="all">All Salesmen</option>
-            {teamMembers.map((m) => (
-              <option key={m.id} value={m.id}>{m.full_name}</option>
-            ))}
-          </select>
+          <SalesmanSelector
+            value={filterOwner === 'all' ? null : filterOwner}
+            onChange={(id) => setFilterOwner(id || 'all')}
+            teamMembers={teamMembers}
+          />
         )}
       </div>
 

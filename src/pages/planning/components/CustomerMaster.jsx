@@ -5,6 +5,7 @@ import Icon from 'components/AppIcon';
 import AdminCompanySelector from 'pages/admin-dashboard/components/AdminCompanySelector';
 import CustomerDetailDrawer from './CustomerDetailDrawer';
 import AddCustomerModal from './AddCustomerModal';
+import SalesmanSelector from 'components/ui/SalesmanSelector';
 
 function StatusBadge({ type }) {
   const map = {
@@ -26,6 +27,9 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
   const { user, userProfile } = useAuth();
   const role = userProfile?.role;
   const canAssign = ['manager', 'supervisor', 'admin', 'director'].includes(role);
+  // Who may drill into another salesman's book. A plain salesman never sees the
+  // selector (only their own data).
+  const canDrillDown = ['director', 'admin', 'manager', 'supervisor', 'head'].includes(role);
 
   const [customers, setCustomers] = useState([]);
   const [allCustomers, setAllCustomers] = useState([]);
@@ -37,6 +41,43 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
   const [salesmen, setSalesmen] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [activeCustomer, setActiveCustomer] = useState(null);
+  // Drill-down selector: null = "All Salesmen" (in scope); otherwise a user id.
+  const [selectedSalesman, setSelectedSalesman] = useState(null);
+  const [teamMembers, setTeamMembers] = useState([]);
+
+  // The role-scoped list the selector may offer: director/admin/head see every
+  // salesman in the company; manager/supervisor see only their direct reports.
+  const fetchTeamMembers = useCallback(async () => {
+    if (!adminCompany?.id || !canDrillDown) {
+      setTeamMembers([]);
+      return;
+    }
+    const isTeamLead = ['manager', 'supervisor'].includes(role);
+    let q;
+    if (isTeamLead) {
+      q = supabase
+        .from('users')
+        .select('id, full_name, role')
+        .eq('reports_to', user?.id)
+        .eq('is_active', true)
+        .order('full_name');
+    } else {
+      q = supabase
+        .from('users')
+        .select('id, full_name, role')
+        .eq('company_id', adminCompany.id)
+        .eq('is_active', true)
+        .in('role', ['salesman', 'supervisor'])
+        .order('full_name');
+    }
+    const { data } = await q;
+    setTeamMembers(data || []);
+  }, [adminCompany?.id, canDrillDown, role, user?.id]);
+
+  useEffect(() => { fetchTeamMembers(); }, [fetchTeamMembers]);
+
+  // Reset the drill-down when switching company so a stale id can't leak across.
+  useEffect(() => { setSelectedSalesman(null); }, [adminCompany?.id]);
 
   // A contact belongs to a company through its OWNER (contacts.company_id is not
   // reliably populated in this DB), so "all customers of company X" means "owned
@@ -72,21 +113,25 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
       if (statusFilter === 'unassigned') {
         // Unassigned = no owner, scoped to the company via company_id.
         query = query.is('owner_id', null).eq('company_id', adminCompany.id);
+      } else if (selectedSalesman) {
+        // Drilled into one salesman (the selector only offers in-scope members).
+        query = query.eq('owner_id', selectedSalesman);
+        if (statusFilter !== 'all') query = query.eq('customer_type', statusFilter);
       } else {
         // Role-based owner scope
         if (role === 'salesman') {
           query = query.eq('owner_id', user.id);
         } else if (role === 'supervisor') {
-          const { data: teamMembers } = await supabase
+          const { data: reports } = await supabase
             .from('users')
             .select('id')
             .eq('reports_to', user.id)
             .eq('is_active', true);
-          const teamIds = (teamMembers || []).map((m) => m.id);
+          const teamIds = (reports || []).map((m) => m.id);
           query = query.in('owner_id', [user.id, ...teamIds]);
         } else {
-          // manager / admin / director → all of the company's assigned customers,
-          // scoped by the owner's company.
+          // manager / admin / director / head → all of the company's assigned
+          // customers, scoped by the owner's company.
           const ownerIds = await getCompanyUserIds(adminCompany.id);
           query = query.in('owner_id', ownerIds.length ? ownerIds : ['00000000-0000-0000-0000-000000000000']);
         }
@@ -103,7 +148,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
     } finally {
       setLoading(false);
     }
-  }, [adminCompany?.id, statusFilter, role, user?.id, getCompanyUserIds]);
+  }, [adminCompany?.id, statusFilter, role, user?.id, getCompanyUserIds, selectedSalesman]);
 
   // Stats are computed from the full list of customers the user can access,
   // independent of the active status filter — so the numbers stay stable when
@@ -118,7 +163,10 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
       (await supabase.from('contacts').select(COLS).is('owner_id', null).eq('company_id', adminCompany.id)).data || [];
 
     let rows = [];
-    if (role === 'salesman') {
+    if (selectedSalesman) {
+      // Drilled into one salesman → their assigned book only (no unassigned).
+      rows = (await supabase.from('contacts').select(COLS).eq('owner_id', selectedSalesman)).data || [];
+    } else if (role === 'salesman') {
       rows = (await supabase.from('contacts').select(COLS).eq('owner_id', user.id)).data || [];
     } else if (role === 'supervisor') {
       const { data: teamMembers } = await supabase
@@ -135,7 +183,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
       rows = [...owned, ...(await unassigned())];
     }
     setAllCustomers(rows);
-  }, [adminCompany?.id, role, user?.id, getCompanyUserIds]);
+  }, [adminCompany?.id, role, user?.id, getCompanyUserIds, selectedSalesman]);
 
   const fetchSalesmen = useCallback(async () => {
     if (!adminCompany?.id || !canAssign) return;
@@ -269,6 +317,14 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
                 className="w-full text-sm pl-9 pr-3 py-2 border border-border rounded-xl bg-background focus:outline-none focus:ring-2 focus:ring-primary/40"
               />
             </div>
+
+            {canDrillDown && teamMembers.length > 0 && (
+              <SalesmanSelector
+                value={selectedSalesman}
+                onChange={(id) => { setSelectedSalesman(id); setSelected(new Set()); }}
+                teamMembers={teamMembers}
+              />
+            )}
 
             <button
               onClick={() => setShowAdd(true)}
