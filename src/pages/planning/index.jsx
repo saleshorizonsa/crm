@@ -75,6 +75,7 @@ const PlanningPage = () => {
           <CustomerMaster
             adminCompany={adminCompany}
             onCompanyChange={setAdminCompany}
+            onGoToOpportunities={() => setActiveTab("opportunities")}
           />
         )}
 
