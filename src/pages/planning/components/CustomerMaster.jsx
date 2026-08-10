@@ -5,6 +5,7 @@ import Icon from 'components/AppIcon';
 import AdminCompanySelector from 'pages/admin-dashboard/components/AdminCompanySelector';
 import CustomerDetailDrawer from './CustomerDetailDrawer';
 import AddCustomerModal from './AddCustomerModal';
+import AddToOpportunitiesModal from './AddToOpportunitiesModal';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
 
 function StatusBadge({ type }) {
@@ -30,6 +31,9 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
   // Who may drill into another salesman's book. A plain salesman never sees the
   // selector (only their own data).
   const canDrillDown = ['director', 'admin', 'manager', 'supervisor', 'head'].includes(role);
+  // Everyone who can see customers (including a plain salesman) can select rows
+  // to push into Opportunities.
+  const canSelect = true;
 
   const [customers, setCustomers] = useState([]);
   const [allCustomers, setAllCustomers] = useState([]);
@@ -40,6 +44,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
   const [bulkOwner, setBulkOwner] = useState('');
   const [salesmen, setSalesmen] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [showAddOpp, setShowAddOpp] = useState(false);
   const [activeCustomer, setActiveCustomer] = useState(null);
   // Drill-down selector: null = "All Salesmen" (in scope); otherwise a user id.
   const [selectedSalesman, setSelectedSalesman] = useState(null);
@@ -368,34 +373,49 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
             })}
           </div>
 
-          {/* Bulk assign bar */}
-          {selected.size > 0 && canAssign && (
-            <div className="flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-xl px-4 py-2.5">
+          {/* Selection action bar */}
+          {selected.size > 0 && (
+            <div className="flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-xl px-4 py-2.5 flex-wrap">
               <span className="text-sm font-medium text-primary">
                 {selected.size} selected
               </span>
-              <select
-                value={bulkOwner}
-                onChange={(e) => setBulkOwner(e.target.value)}
-                className="flex-1 text-sm border border-border rounded-lg px-2 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-primary/40"
-              >
-                <option value="">— Select salesman —</option>
-                {salesmen.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.full_name} ({s.email})
-                  </option>
-                ))}
-              </select>
+
               <button
-                onClick={handleBulkAssign}
-                disabled={!bulkOwner}
-                className="px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                onClick={() => setShowAddOpp(true)}
+                className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
-                Assign
+                <Icon name="Target" size={14} />
+                Add to Opportunities
               </button>
+
+              {canAssign && (
+                <>
+                  <div className="h-5 w-px bg-primary/20" />
+                  <select
+                    value={bulkOwner}
+                    onChange={(e) => setBulkOwner(e.target.value)}
+                    className="flex-1 min-w-40 text-sm border border-border rounded-lg px-2 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  >
+                    <option value="">— Assign to salesman —</option>
+                    {salesmen.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.full_name} ({s.email})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleBulkAssign}
+                    disabled={!bulkOwner}
+                    className="px-4 py-1.5 text-sm border border-primary/30 text-primary rounded-lg hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Assign
+                  </button>
+                </>
+              )}
+
               <button
                 onClick={() => { setSelected(new Set()); setBulkOwner(''); }}
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors ml-auto"
               >
                 Clear
               </button>
@@ -413,7 +433,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/40">
-                    {canAssign && (
+                    {canSelect && (
                       <th className="px-4 py-3 w-10">
                         <input
                           type="checkbox"
@@ -436,7 +456,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
                   {filtered.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={canAssign ? 8 : 7}
+                        colSpan={canSelect ? 8 : 7}
                         className="px-4 py-16 text-center text-muted-foreground text-sm"
                       >
                         <div className="flex flex-col items-center gap-2">
@@ -452,7 +472,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
                         onClick={() => setActiveCustomer(c)}
                         className="border-t border-border hover:bg-accent/30 cursor-pointer transition-colors"
                       >
-                        {canAssign && (
+                        {canSelect && (
                           <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
@@ -521,6 +541,24 @@ export default function CustomerMaster({ adminCompany, onCompanyChange }) {
         canAssign={canAssign}
         companyId={adminCompany?.id}
       />
+
+      {showAddOpp && (
+        <AddToOpportunitiesModal
+          customers={customers.filter((c) => selected.has(c.id))}
+          companyId={adminCompany?.id}
+          currentUserId={user?.id}
+          onClose={() => setShowAddOpp(false)}
+          onDone={(count) => {
+            setShowAddOpp(false);
+            setSelected(new Set());
+            fetchCustomers();
+            fetchStats();
+            if (count) {
+              window.alert(`${count} opportunit${count === 1 ? 'y' : 'ies'} created.`);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
