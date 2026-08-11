@@ -4,6 +4,7 @@ import Header from "components/ui/Header";
 import Icon from "components/AppIcon";
 import CustomerMaster from "./components/CustomerMaster";
 import OpportunitiesModule from "./components/OpportunitiesModule";
+import FutureOrdersModule from "./components/FutureOrdersModule";
 import HistoricalDataModule from "./components/HistoricalDataModule";
 
 const PlanningPage = () => {
@@ -23,6 +24,7 @@ const PlanningPage = () => {
   const tabs = [
     { id: "customer_master", label: "Customer Master", icon: "Users"  },
     { id: "opportunities",   label: "Opportunities",   icon: "Target" },
+    { id: "future_orders",   label: "Future Orders",   icon: "CalendarClock" },
     ...(canUploadHistory
       ? [{ id: "historical_data", label: "Historical Data", icon: "Upload" }]
       : []),
@@ -46,6 +48,8 @@ const PlanningPage = () => {
           <p className="text-sm text-muted-foreground mt-1">
             {activeTab === "opportunities"
               ? "Opportunities — Plan how you'll hit your monthly target, then convert to deals"
+              : activeTab === "future_orders"
+              ? "Future Orders — Plan orders for upcoming months; they auto-move to Opportunities when the month arrives"
               : activeTab === "historical_data"
               ? "Historical Data — Import past SAP/ERP sales to power forecasting and year-over-year comparisons"
               : "Customer Master — Import, assign and manage your customer accounts"}
@@ -81,6 +85,13 @@ const PlanningPage = () => {
 
         {activeTab === "opportunities" && (
           <OpportunitiesModule adminCompany={adminCompany} />
+        )}
+
+        {activeTab === "future_orders" && (
+          <FutureOrdersModule
+            adminCompany={adminCompany}
+            onGoToOpportunities={() => setActiveTab("opportunities")}
+          />
         )}
 
         {activeTab === "historical_data" && canUploadHistory && (
