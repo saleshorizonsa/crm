@@ -6,6 +6,7 @@ import AdminCompanySelector from 'pages/admin-dashboard/components/AdminCompanyS
 import CustomerDetailDrawer from './CustomerDetailDrawer';
 import AddCustomerModal from './AddCustomerModal';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
+import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 
 function StatusBadge({ type }) {
   const map = {
@@ -54,32 +55,19 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
   const inlineInputRef = useRef(null);
 
   // The role-scoped list the selector may offer: director/admin/head see every
-  // salesman in the company; manager/supervisor see only their direct reports.
+  // salesman/supervisor/manager in the company; manager/supervisor see their
+  // FULL downline (direct reports plus everyone recursively beneath them).
   const fetchTeamMembers = useCallback(async () => {
     if (!adminCompany?.id || !canDrillDown) {
       setTeamMembers([]);
       return;
     }
-    const isTeamLead = ['manager', 'supervisor'].includes(role);
-    let q;
-    if (isTeamLead) {
-      q = supabase
-        .from('users')
-        .select('id, full_name, role')
-        .eq('reports_to', user?.id)
-        .eq('is_active', true)
-        .order('full_name');
-    } else {
-      q = supabase
-        .from('users')
-        .select('id, full_name, role')
-        .eq('company_id', adminCompany.id)
-        .eq('is_active', true)
-        .in('role', ['salesman', 'supervisor'])
-        .order('full_name');
-    }
-    const { data } = await q;
-    setTeamMembers(data || []);
+    const team = await fetchTeamHierarchy({
+      companyId: adminCompany.id,
+      userId: user?.id,
+      role,
+    });
+    setTeamMembers(team);
   }, [adminCompany?.id, canDrillDown, role, user?.id]);
 
   useEffect(() => { fetchTeamMembers(); }, [fetchTeamMembers]);
@@ -150,29 +138,20 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
         // Drilled into one salesman (the selector only offers in-scope members).
         query = query.eq('owner_id', selectedSalesman);
         if (statusFilter !== 'all') query = query.eq('customer_type', statusFilter);
+      } else if (role === 'salesman') {
+        query = query.eq('owner_id', user.id);
+        if (statusFilter !== 'all') query = query.eq('customer_type', statusFilter);
+      } else if (['manager', 'supervisor'].includes(role)) {
+        // Team lead "All" → the full downline (self + every member below them).
+        const teamIds = [user.id, ...teamMembers.map((m) => m.id)].filter(Boolean);
+        query = query.in('owner_id', teamIds.length ? teamIds : ['00000000-0000-0000-0000-000000000000']);
+        if (statusFilter !== 'all') query = query.eq('customer_type', statusFilter);
       } else {
-        // Role-based owner scope
-        if (role === 'salesman') {
-          query = query.eq('owner_id', user.id);
-        } else if (role === 'supervisor') {
-          const { data: reports } = await supabase
-            .from('users')
-            .select('id')
-            .eq('reports_to', user.id)
-            .eq('is_active', true);
-          const teamIds = (reports || []).map((m) => m.id);
-          query = query.in('owner_id', [user.id, ...teamIds]);
-        } else {
-          // manager / admin / director / head → all of the company's assigned
-          // customers, scoped by the owner's company.
-          const ownerIds = await getCompanyUserIds(adminCompany.id);
-          query = query.in('owner_id', ownerIds.length ? ownerIds : ['00000000-0000-0000-0000-000000000000']);
-        }
-
-        // customer_type facet (active / inactive / dormant / prospect)
-        if (statusFilter !== 'all') {
-          query = query.eq('customer_type', statusFilter);
-        }
+        // admin / director / head → all of the company's assigned customers,
+        // scoped by the owner's company.
+        const ownerIds = await getCompanyUserIds(adminCompany.id);
+        query = query.in('owner_id', ownerIds.length ? ownerIds : ['00000000-0000-0000-0000-000000000000']);
+        if (statusFilter !== 'all') query = query.eq('customer_type', statusFilter);
       }
 
       const { data, error } = await query;
@@ -181,7 +160,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
     } finally {
       setLoading(false);
     }
-  }, [adminCompany?.id, statusFilter, role, user?.id, getCompanyUserIds, selectedSalesman]);
+  }, [adminCompany?.id, statusFilter, role, user?.id, getCompanyUserIds, selectedSalesman, teamMembers]);
 
   // Stats are computed from the full list of customers the user can access,
   // independent of the active status filter — so the numbers stay stable when
@@ -201,14 +180,15 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
       rows = (await supabase.from('contacts').select(COLS).eq('owner_id', selectedSalesman)).data || [];
     } else if (role === 'salesman') {
       rows = (await supabase.from('contacts').select(COLS).eq('owner_id', user.id)).data || [];
-    } else if (role === 'supervisor') {
-      const { data: teamMembers } = await supabase
-        .from('users').select('id').eq('reports_to', user.id).eq('is_active', true);
-      const scopeIds = [user.id, ...(teamMembers || []).map((m) => m.id)];
-      const owned = (await supabase.from('contacts').select(COLS).in('owner_id', scopeIds)).data || [];
+    } else if (['manager', 'supervisor'].includes(role)) {
+      // Team lead → full downline (self + everyone below) plus unassigned.
+      const scopeIds = [user.id, ...teamMembers.map((m) => m.id)].filter(Boolean);
+      const owned = scopeIds.length
+        ? (await supabase.from('contacts').select(COLS).in('owner_id', scopeIds)).data || []
+        : [];
       rows = [...owned, ...(await unassigned())];
     } else {
-      // manager / admin / director → company's assigned (owner in company) + unassigned
+      // admin / director / head → company's assigned (owner in company) + unassigned
       const ownerIds = await getCompanyUserIds(adminCompany.id);
       const owned = ownerIds.length
         ? (await supabase.from('contacts').select(COLS).in('owner_id', ownerIds)).data || []
@@ -216,7 +196,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
       rows = [...owned, ...(await unassigned())];
     }
     setAllCustomers(rows);
-  }, [adminCompany?.id, role, user?.id, getCompanyUserIds, selectedSalesman]);
+  }, [adminCompany?.id, role, user?.id, getCompanyUserIds, selectedSalesman, teamMembers]);
 
   const fetchSalesmen = useCallback(async () => {
     if (!adminCompany?.id || !canAssign) return;

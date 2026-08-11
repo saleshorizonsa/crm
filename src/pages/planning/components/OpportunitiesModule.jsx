@@ -4,6 +4,7 @@ import { useAuth } from 'contexts/AuthContext';
 import { useCurrency } from 'contexts/CurrencyContext';
 import Icon from 'components/AppIcon';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
+import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 
 const DIRECTOR_ROLES = ['director', 'head', 'admin'];
 const TEAM_ROLES     = ['manager', 'supervisor'];
@@ -156,26 +157,11 @@ export default function OpportunitiesModule({ adminCompany }) {
     if (!company?.id) return;
 
     // 1) Team members (feeds the salesman drill-down). Director/admin/head see
-    //    the whole company; manager/supervisor see only their direct reports.
-    let team = [];
-    if (isDirector) {
-      const { data } = await supabase
-        .from('users')
-        .select('id, full_name, role')
-        .eq('company_id', company.id)
-        .eq('is_active', true)
-        .in('role', ['salesman', 'supervisor', 'manager'])
-        .order('full_name');
-      team = data || [];
-    } else if (isTeamLead) {
-      const { data } = await supabase
-        .from('users')
-        .select('id, full_name, role')
-        .eq('reports_to', user?.id)
-        .eq('is_active', true)
-        .order('full_name');
-      team = data || [];
-    }
+    //    the whole company; manager/supervisor see their FULL downline (direct
+    //    reports plus every salesman/supervisor recursively beneath them).
+    const team = (isDirector || isTeamLead)
+      ? await fetchTeamHierarchy({ companyId: company.id, userId: user?.id, role })
+      : [];
     setTeamMembers(team);
 
     // 2) Contacts scoped to the visible owner set.
@@ -192,7 +178,7 @@ export default function OpportunitiesModule({ adminCompany }) {
     const { data: contactData, error: contactErr } = await cq;
     if (contactErr) console.error('fetchContacts:', contactErr);
     setContacts(contactData || []);
-  }, [company?.id, isDirector, isTeamLead, user?.id]);
+  }, [company?.id, isDirector, isTeamLead, user?.id, role]);
 
   useEffect(() => { fetchSupport(); }, [fetchSupport]);
   useEffect(() => { fetchOpportunities(); }, [fetchOpportunities]);
