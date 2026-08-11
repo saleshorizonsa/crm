@@ -7,6 +7,53 @@ import OpportunitiesModule from "./components/OpportunitiesModule";
 import FutureOrdersModule from "./components/FutureOrdersModule";
 import HistoricalDataModule from "./components/HistoricalDataModule";
 
+// Isolate each tab so a crash in one (e.g. a bad row of data) can't take down
+// the whole Planning page — the other tabs stay usable and the failing tab shows
+// the actual error message instead of a blank "Something went wrong".
+class TabErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error("Planning tab crashed:", error, info);
+  }
+
+  componentDidUpdate(prevProps) {
+    // Reset when the user switches tabs so a fixed/other tab renders fresh.
+    if (prevProps.tabKey !== this.props.tabKey && this.state.hasError) {
+      this.setState({ hasError: false, error: null });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 text-center bg-card rounded-2xl border border-destructive/30">
+          <p className="text-sm font-medium text-destructive mb-2">
+            Something went wrong in this tab
+          </p>
+          <p className="text-xs text-muted-foreground font-mono break-words max-w-lg mx-auto">
+            {this.state.error?.message || String(this.state.error)}
+          </p>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="mt-4 text-xs px-3 py-1.5 border border-border rounded-lg text-muted-foreground hover:bg-muted transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const PlanningPage = () => {
   const { company, userProfile } = useAuth();
   const [activeTab, setActiveTab] = useState("customer_master");
@@ -74,29 +121,31 @@ const PlanningPage = () => {
           ))}
         </div>
 
-        {/* Tab content */}
-        {activeTab === "customer_master" && (
-          <CustomerMaster
-            adminCompany={adminCompany}
-            onCompanyChange={setAdminCompany}
-            onGoToOpportunities={() => setActiveTab("opportunities")}
-          />
-        )}
+        {/* Tab content — each isolated so one tab's error can't blank the page */}
+        <TabErrorBoundary tabKey={activeTab}>
+          {activeTab === "customer_master" && (
+            <CustomerMaster
+              adminCompany={adminCompany}
+              onCompanyChange={setAdminCompany}
+              onGoToOpportunities={() => setActiveTab("opportunities")}
+            />
+          )}
 
-        {activeTab === "opportunities" && (
-          <OpportunitiesModule adminCompany={adminCompany} />
-        )}
+          {activeTab === "opportunities" && (
+            <OpportunitiesModule adminCompany={adminCompany} />
+          )}
 
-        {activeTab === "future_orders" && (
-          <FutureOrdersModule
-            adminCompany={adminCompany}
-            onGoToOpportunities={() => setActiveTab("opportunities")}
-          />
-        )}
+          {activeTab === "future_orders" && (
+            <FutureOrdersModule
+              adminCompany={adminCompany}
+              onGoToOpportunities={() => setActiveTab("opportunities")}
+            />
+          )}
 
-        {activeTab === "historical_data" && canUploadHistory && (
-          <HistoricalDataModule adminCompany={adminCompany} />
-        )}
+          {activeTab === "historical_data" && canUploadHistory && (
+            <HistoricalDataModule adminCompany={adminCompany} />
+          )}
+        </TabErrorBoundary>
       </main>
     </div>
   );

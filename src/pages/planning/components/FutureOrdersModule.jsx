@@ -349,7 +349,11 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities }
           {orders.map((order) => {
             const isMoving = movingId === order.id;
             const isMoved  = order.status === 'moved';
-            const expectedDate = new Date(order.expected_month);
+            // expected_month is a full date ("2026-09-01"); parse day 02 so a
+            // negative UTC offset can't roll it back into the previous month.
+            const expectedDate = order.expected_month
+              ? new Date(`${order.expected_month.substring(0, 7)}-02`)
+              : new Date();
             const monthLabel = expectedDate.toLocaleDateString('en-GB', {
               month: 'long', year: 'numeric',
             });
