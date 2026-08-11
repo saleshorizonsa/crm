@@ -105,12 +105,31 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
 
   useEffect(() => { fetchExistingOpps(); }, [fetchExistingOpps]);
 
+  // Close the "New This Month" modal on Escape.
+  useEffect(() => {
+    if (!showNewModal) return;
+    const onKey = (e) => { if (e.key === 'Escape') setShowNewModal(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [showNewModal]);
+
+  // A contact belongs to a company through its OWNER (contacts.company_id is not
+  // reliably populated in this DB), so "all customers of company X" means "owned
+  // by a user of company X". Unassigned customers have no owner, so they are
+  // scoped by contacts.company_id (which imports stamp).
+  const getCompanyUserIds = useCallback(async (cid) => {
+    const { data } = await supabase.from('users').select('id').eq('company_id', cid);
+    return (data || []).map((u) => u.id);
+  }, []);
+
   // Customers created in the CURRENT calendar month, role-scoped:
   //   salesman            → own customers
   //   manager/supervisor  → full downline (self + team)
   //   director/admin/head → whole company (owner-scoped + unassigned imports)
   // Scoped by OWNER (contacts.company_id is null for owned rows), so the company
   // view mirrors fetchStats rather than a naive contacts.company_id filter.
+  // NOTE: declared AFTER getCompanyUserIds — it references that callback in its
+  // dependency array, which is evaluated during render (a TDZ crash otherwise).
   const fetchNewThisMonth = useCallback(async () => {
     if (!adminCompany?.id) { setNewThisMonth([]); return; }
     const now = new Date();
@@ -147,23 +166,6 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
   }, [adminCompany?.id, role, user?.id, teamMembers, getCompanyUserIds]);
 
   useEffect(() => { fetchNewThisMonth(); }, [fetchNewThisMonth]);
-
-  // Close the "New This Month" modal on Escape.
-  useEffect(() => {
-    if (!showNewModal) return;
-    const onKey = (e) => { if (e.key === 'Escape') setShowNewModal(false); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [showNewModal]);
-
-  // A contact belongs to a company through its OWNER (contacts.company_id is not
-  // reliably populated in this DB), so "all customers of company X" means "owned
-  // by a user of company X". Unassigned customers have no owner, so they are
-  // scoped by contacts.company_id (which imports stamp).
-  const getCompanyUserIds = useCallback(async (cid) => {
-    const { data } = await supabase.from('users').select('id').eq('company_id', cid);
-    return (data || []).map((u) => u.id);
-  }, []);
 
   const SELECT_COLS =
     'id,company_name,first_name,last_name,phone,mobile,email,city,region,country,customer_type,last_order_date,notes,source,assigned_at,owner_id,created_at,company_id,owner:users!owner_id(id,full_name,email)';
