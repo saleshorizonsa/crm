@@ -1,11 +1,23 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "contexts/AuthContext";
+import { supabase } from "lib/supabase";
 import Header from "components/ui/Header";
 import Icon from "components/AppIcon";
 import CustomerMaster from "./components/CustomerMaster";
 import OpportunitiesModule from "./components/OpportunitiesModule";
 import FutureOrdersModule from "./components/FutureOrdersModule";
 import HistoricalDataModule from "./components/HistoricalDataModule";
+import { fetchWinRate3m } from "utils/winRate3m";
+import { fetchTeamHierarchy } from "utils/teamHierarchy";
+
+const DIRECTOR_ROLES = ["director", "admin", "head"];
+const TEAM_ROLES = ["manager", "supervisor"];
+
+// Whole-SAR integer formatter for the summary bar (e.g. 1,500,990).
+const fmtSAR = (n) =>
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(
+    Math.round(Number(n) || 0)
+  );
 
 // Isolate each tab so a crash in one (e.g. a bad row of data) can't take down
 // the whole Planning page — the other tabs stay usable and the failing tab shows
@@ -55,7 +67,7 @@ class TabErrorBoundary extends React.Component {
 }
 
 const PlanningPage = () => {
-  const { company, userProfile } = useAuth();
+  const { user, company, userProfile } = useAuth();
   const [activeTab, setActiveTab] = useState("customer_master");
   const [adminCompany, setAdminCompany] = useState(null);
 
@@ -65,8 +77,114 @@ const PlanningPage = () => {
     }
   }, [company]);
 
+  const role = userProfile?.role;
   // Historical sales upload is a director/admin/head-only tool
-  const canUploadHistory = ["director", "admin", "head"].includes(userProfile?.role);
+  const canUploadHistory = ["director", "admin", "head"].includes(role);
+
+  // ── Planning summary bar (visible on every tab) ─────────────────────────────
+  const [summaryData, setSummaryData] = useState({
+    target: 0,
+    winRate3m: 0,
+    winRateIsDefault: false,
+    requiredPlan: 0,
+    totalPlanned: 0,
+    plannedGap: 0,
+  });
+  const [summaryLoading, setSummaryLoading] = useState(true);
+
+  const companyId = adminCompany?.id;
+
+  const fetchPlanningSummary = useCallback(async () => {
+    if (!companyId) {
+      setSummaryData({
+        target: 0, winRate3m: 0, winRateIsDefault: false,
+        requiredPlan: 0, totalPlanned: 0, plannedGap: 0,
+      });
+      setSummaryLoading(false);
+      return;
+    }
+    setSummaryLoading(true);
+    try {
+      const isDirector = DIRECTOR_ROLES.includes(role);
+      const isTeamLead = TEAM_ROLES.includes(role);
+
+      // Owner scope: director/admin/head → whole company (null = no owner filter);
+      // manager/supervisor → self + full downline; salesman → self only.
+      let scope = null;
+      if (!isDirector) {
+        if (isTeamLead) {
+          const team = await fetchTeamHierarchy({ companyId, userId: user?.id, role });
+          scope = [user?.id, ...team.map((m) => m.id)].filter(Boolean);
+        } else {
+          scope = [user?.id].filter(Boolean);
+        }
+      }
+
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      const monthStartStr = monthStart.toISOString().split("T")[0];
+      const monthEndStr = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+        .toISOString().split("T")[0];
+
+      // ── TARGET ── sum of MAX target per person over the current month. Targets
+      // can be assigned as total/by-client/by-product (different views of ONE
+      // goal), so take the max per person then sum — never add the types.
+      let tq = supabase
+        .from("sales_targets")
+        .select("target_amount, assigned_to")
+        .eq("company_id", companyId)
+        .eq("status", "active")
+        .lte("period_start", monthEnd.toISOString())
+        .gte("period_end", monthStart.toISOString());
+      if (scope) tq = tq.in("assigned_to", scope.length ? scope : ["00000000-0000-0000-0000-000000000000"]);
+      const { data: targets } = await tq;
+      const perPerson = {};
+      (targets || []).forEach((r) => {
+        const k = r.assigned_to || "x";
+        perPerson[k] = Math.max(perPerson[k] || 0, parseFloat(r.target_amount) || 0);
+      });
+      const totalTarget = Object.values(perPerson).reduce((s, v) => s + v, 0);
+
+      // ── 3-MONTH WIN RATE ── reuse the shared util (won ÷ total created over the
+      // last 3 completed months). Default to 50% when there's no history.
+      const { winRate3m: raw, total3m } = await fetchWinRate3m({ companyId, ownerIds: scope });
+      const winRateIsDefault = total3m === 0;
+      const winRate3m = winRateIsDefault ? 50 : raw;
+
+      // ── REQUIRED PLAN ── Target ÷ Win Rate%
+      const requiredPlan = winRate3m > 0 ? totalTarget / (winRate3m / 100) : totalTarget * 2;
+
+      // ── TOTAL PLANNED ── open opportunities for the current month
+      let oq = supabase
+        .from("opportunities")
+        .select("planned_amount")
+        .eq("company_id", companyId)
+        .eq("status", "open")
+        .gte("expected_month", monthStartStr)
+        .lte("expected_month", monthEndStr);
+      if (scope) oq = oq.in("owner_id", scope.length ? scope : ["00000000-0000-0000-0000-000000000000"]);
+      const { data: opps } = await oq;
+      const totalPlanned = (opps || []).reduce((s, o) => s + (parseFloat(o.planned_amount) || 0), 0);
+
+      const plannedGap = Math.max(0, requiredPlan - totalPlanned);
+
+      setSummaryData({
+        target: totalTarget,
+        winRate3m,
+        winRateIsDefault,
+        requiredPlan,
+        totalPlanned,
+        plannedGap,
+      });
+    } catch (err) {
+      console.error("Planning summary:", err);
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [companyId, role, user?.id]);
+
+  useEffect(() => { fetchPlanningSummary(); }, [fetchPlanningSummary]);
 
   const tabs = [
     { id: "customer_master", label: "Customer Master", icon: "Users"  },
@@ -103,6 +221,102 @@ const PlanningPage = () => {
           </p>
         </div>
 
+        {/* Planning summary bar — shown on every tab */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          {/* Card 1 — TARGET */}
+          <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-blue-600" />
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Monthly Target
+            </p>
+            {summaryLoading ? (
+              <div className="h-7 w-24 bg-muted rounded animate-pulse" />
+            ) : (
+              <p className="text-xl font-bold text-foreground tabular-nums">
+                {fmtSAR(summaryData.target)}
+                <span className="text-sm font-normal text-muted-foreground ml-1">SAR</span>
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              {new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
+            </p>
+          </div>
+
+          {/* Card 2 — WIN RATE */}
+          <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-purple-500" />
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Win Rate
+            </p>
+            {summaryLoading ? (
+              <div className="h-7 w-16 bg-muted rounded animate-pulse" />
+            ) : (
+              <p className="text-xl font-bold text-purple-600 tabular-nums">
+                {summaryData.winRate3m.toFixed(1)}%
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              3-month average{summaryData.winRateIsDefault && " (default)"}
+            </p>
+          </div>
+
+          {/* Card 3 — REQUIRED PLAN */}
+          <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500" />
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Required Plan
+            </p>
+            {summaryLoading ? (
+              <div className="h-7 w-24 bg-muted rounded animate-pulse" />
+            ) : (
+              <p className="text-xl font-bold text-amber-600 tabular-nums">
+                {fmtSAR(summaryData.requiredPlan)}
+                <span className="text-sm font-normal text-muted-foreground ml-1">SAR</span>
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              Target ÷ {summaryData.winRate3m.toFixed(0)}% win rate
+            </p>
+          </div>
+
+          {/* Card 4 — PLANNED GAP */}
+          <div
+            className={`rounded-2xl border p-4 relative overflow-hidden ${
+              !summaryLoading && summaryData.plannedGap <= 0
+                ? "bg-green-50 border-green-200"
+                : "bg-card border-border"
+            }`}
+          >
+            <div
+              className={`absolute top-0 left-0 right-0 h-1 ${
+                !summaryLoading && summaryData.plannedGap <= 0 ? "bg-green-500" : "bg-red-500"
+              }`}
+            />
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Planned Gap
+            </p>
+            {summaryLoading ? (
+              <div className="h-7 w-24 bg-muted rounded animate-pulse" />
+            ) : summaryData.plannedGap <= 0 ? (
+              <p className="text-xl font-bold text-green-600">On Track ✓</p>
+            ) : (
+              <p className="text-xl font-bold text-red-600 tabular-nums">
+                {fmtSAR(summaryData.plannedGap)}
+                <span className="text-sm font-normal text-muted-foreground ml-1">SAR</span>
+              </p>
+            )}
+            <p
+              className={`text-xs mt-1 ${
+                !summaryLoading && summaryData.plannedGap <= 0 ? "text-green-600" : "text-muted-foreground"
+              }`}
+            >
+              {!summaryLoading && summaryData.plannedGap <= 0
+                ? `Planned: ${fmtSAR(summaryData.totalPlanned)} SAR`
+                : "Still need to plan this amount"}
+            </p>
+          </div>
+        </div>
+
         {/* Tab bar */}
         <div className="flex items-center gap-1 bg-muted rounded-xl p-1 mb-6 w-fit">
           {tabs.map((tab) => (
@@ -132,13 +346,17 @@ const PlanningPage = () => {
           )}
 
           {activeTab === "opportunities" && (
-            <OpportunitiesModule adminCompany={adminCompany} />
+            <OpportunitiesModule
+              adminCompany={adminCompany}
+              onOpportunityChange={fetchPlanningSummary}
+            />
           )}
 
           {activeTab === "future_orders" && (
             <FutureOrdersModule
               adminCompany={adminCompany}
               onGoToOpportunities={() => setActiveTab("opportunities")}
+              onOrderChange={fetchPlanningSummary}
             />
           )}
 

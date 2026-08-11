@@ -37,7 +37,7 @@ function nextMonthValue() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-export default function FutureOrdersModule({ adminCompany, onGoToOpportunities }) {
+export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, onOrderChange }) {
   const { user, company: authCompany, userProfile } = useAuth();
   const { formatCurrency } = useCurrency();
 
@@ -157,6 +157,7 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities }
     try {
       await createOppFromOrder(order);
       fetchOrders();
+      onOrderChange?.();
     } catch (err) {
       console.error('moveToOpportunities:', err);
       alert(`Could not move to Opportunities: ${err.message || err}`);
@@ -206,7 +207,8 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities }
       }
     }
     fetchOrders();
-  }, [company?.id, user?.id, createOppFromOrder, fetchOrders]);
+    onOrderChange?.();
+  }, [company?.id, user?.id, createOppFromOrder, fetchOrders, onOrderChange]);
 
   useEffect(() => { checkAutoMove(); }, [checkAutoMove]);
 
@@ -243,6 +245,7 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities }
       setShowAddModal(false);
       setForm(emptyForm());
       fetchOrders();
+      onOrderChange?.();
     } catch (err) {
       console.error('addFutureOrder:', err);
       setFormError(err.message || 'Could not save the future order.');

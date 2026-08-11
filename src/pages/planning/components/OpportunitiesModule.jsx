@@ -37,7 +37,7 @@ const emptyForm = (month) => ({
   notes:          '',
 });
 
-export default function OpportunitiesModule({ adminCompany }) {
+export default function OpportunitiesModule({ adminCompany, onOpportunityChange }) {
   const { user, company: authCompany, userProfile } = useAuth();
   const { formatCurrency } = useCurrency();
 
@@ -221,6 +221,7 @@ export default function OpportunitiesModule({ adminCompany }) {
 
       closeModal();
       fetchOpportunities();
+      onOpportunityChange?.();
     } catch (err) {
       console.error('saveOpportunity:', err);
       alert(`Could not save opportunity: ${err.message || err}`);
@@ -234,6 +235,7 @@ export default function OpportunitiesModule({ adminCompany }) {
     const { error } = await supabase.from('opportunities').delete().eq('id', id);
     if (error) { alert(`Could not delete: ${error.message}`); return; }
     fetchOpportunities();
+    onOpportunityChange?.();
   }
 
   // ── Convert to a Lead-stage deal ──────────────────────────────────────────
@@ -274,6 +276,7 @@ export default function OpportunitiesModule({ adminCompany }) {
       if (updErr) throw updErr;
 
       fetchOpportunities();
+      onOpportunityChange?.();
     } catch (err) {
       console.error('convertOpportunity:', err);
       alert(`Could not convert to lead: ${err.message || err}`);
