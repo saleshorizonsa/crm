@@ -45,6 +45,11 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
   // Drill-down selector: null = "All Salesmen" (in scope); otherwise a user id.
   const [selectedSalesman, setSelectedSalesman] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
+  // "New This Month" = customers created in the current calendar month, scoped
+  // by role. Clicking the stat card opens a modal listing them. Resets on its
+  // own each month because the query window is derived from today's date.
+  const [newThisMonth, setNewThisMonth] = useState([]);
+  const [showNewModal, setShowNewModal] = useState(false);
 
   // ── Inline "plan an opportunity" state (replaces the old bulk modal) ────────
   const [activeRow, setActiveRow] = useState(null);      // contact id whose SAR input is open
@@ -99,6 +104,57 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
   }, [adminCompany?.id]);
 
   useEffect(() => { fetchExistingOpps(); }, [fetchExistingOpps]);
+
+  // Customers created in the CURRENT calendar month, role-scoped:
+  //   salesman            → own customers
+  //   manager/supervisor  → full downline (self + team)
+  //   director/admin/head → whole company (owner-scoped + unassigned imports)
+  // Scoped by OWNER (contacts.company_id is null for owned rows), so the company
+  // view mirrors fetchStats rather than a naive contacts.company_id filter.
+  const fetchNewThisMonth = useCallback(async () => {
+    if (!adminCompany?.id) { setNewThisMonth([]); return; }
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+    const COLS =
+      'id,first_name,last_name,company_name,phone,city,customer_type,created_at,owner_id,owner:users!owner_id(id,full_name)';
+    const base = () =>
+      supabase
+        .from('contacts')
+        .select(COLS)
+        .gte('created_at', monthStart)
+        .lte('created_at', monthEnd)
+        .order('created_at', { ascending: false });
+
+    let rows = [];
+    if (role === 'salesman') {
+      rows = (await base().eq('owner_id', user.id)).data || [];
+    } else if (['manager', 'supervisor'].includes(role)) {
+      const teamIds = [user.id, ...teamMembers.map((m) => m.id)].filter(Boolean);
+      rows = teamIds.length ? (await base().in('owner_id', teamIds)).data || [] : [];
+    } else {
+      // director / admin / head → company's assigned (owner in company) + unassigned
+      const ownerIds = await getCompanyUserIds(adminCompany.id);
+      const owned = ownerIds.length ? (await base().in('owner_id', ownerIds)).data || [] : [];
+      const orphan = (await base().is('owner_id', null).eq('company_id', adminCompany.id)).data || [];
+      const merged = new Map();
+      [...owned, ...orphan].forEach((r) => merged.set(r.id, r));
+      rows = [...merged.values()].sort(
+        (a, b) => new Date(b.created_at) - new Date(a.created_at)
+      );
+    }
+    setNewThisMonth(rows);
+  }, [adminCompany?.id, role, user?.id, teamMembers, getCompanyUserIds]);
+
+  useEffect(() => { fetchNewThisMonth(); }, [fetchNewThisMonth]);
+
+  // Close the "New This Month" modal on Escape.
+  useEffect(() => {
+    if (!showNewModal) return;
+    const onKey = (e) => { if (e.key === 'Escape') setShowNewModal(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [showNewModal]);
 
   // A contact belongs to a company through its OWNER (contacts.company_id is not
   // reliably populated in this DB), so "all customers of company X" means "owned
@@ -406,7 +462,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
           </div>
 
           {/* Stats row */}
-          <div className="grid grid-cols-6 gap-3">
+          <div className="grid grid-cols-7 gap-3">
             {statCards.map(({ key, label, value, color, ring }) => {
               const isActive = statusFilter === key;
               // Unassigned customers need attention — flag the card red when any exist
@@ -436,6 +492,32 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
                 </button>
               );
             })}
+
+            {/* New This Month — opens a modal instead of filtering the table */}
+            <button
+              onClick={() => setShowNewModal(true)}
+              className={`rounded-xl border p-3 text-center transition-all ${
+                newThisMonth.length > 0
+                  ? 'bg-emerald-50 border-emerald-200 hover:border-emerald-300'
+                  : 'bg-card hover:bg-accent/40 border-border'
+              }`}
+            >
+              <p className={`text-xl font-bold ${
+                newThisMonth.length > 0 ? 'text-emerald-600' : 'text-gray-400'
+              }`}>
+                {newThisMonth.length}
+              </p>
+              <p className={`text-xs mt-0.5 ${
+                newThisMonth.length > 0 ? 'text-emerald-600' : 'text-muted-foreground'
+              }`}>
+                New This Month
+              </p>
+              {newThisMonth.length > 0 && (
+                <p className="text-[10px] mt-0.5 text-emerald-500">
+                  {new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+                </p>
+              )}
+            </button>
           </div>
 
           {/* Session summary — opportunities planned inline in this session */}
@@ -676,7 +758,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
       <AddCustomerModal
         isOpen={showAdd}
         onClose={() => setShowAdd(false)}
-        onSuccess={() => { setShowAdd(false); fetchCustomers(); fetchStats(); }}
+        onSuccess={() => { setShowAdd(false); fetchCustomers(); fetchStats(); fetchNewThisMonth(); }}
         adminCompany={adminCompany}
         canAssign={canAssign}
       />
@@ -685,10 +767,125 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
         customer={activeCustomer}
         isOpen={!!activeCustomer}
         onClose={() => setActiveCustomer(null)}
-        onUpdated={() => { setActiveCustomer(null); fetchCustomers(); fetchStats(); }}
+        onUpdated={() => { setActiveCustomer(null); fetchCustomers(); fetchStats(); fetchNewThisMonth(); }}
         canAssign={canAssign}
         companyId={adminCompany?.id}
       />
+
+      {/* New Customers This Month modal */}
+      {showNewModal && (
+        <>
+          <div
+            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
+            onClick={() => setShowNewModal(false)}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-card rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden border border-border">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between flex-shrink-0 bg-emerald-50">
+                <div>
+                  <h2 className="text-base font-semibold text-emerald-800">
+                    New Customers This Month
+                  </h2>
+                  <p className="text-xs text-emerald-600 mt-0.5">
+                    {new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+                    {' · '}
+                    {newThisMonth.length} customer{newThisMonth.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowNewModal(false)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-emerald-100 transition-colors"
+                >
+                  <Icon name="X" size={16} className="text-emerald-700" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto">
+                {newThisMonth.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Icon name="UserPlus" size={30} className="opacity-25 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">
+                      No new customers added this month
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="grid grid-cols-[1fr_1fr_90px_70px] gap-3 px-5 py-2.5 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide sticky top-0">
+                      <span>Customer</span>
+                      <span>Assigned To</span>
+                      <span>City</span>
+                      <span>Added</span>
+                    </div>
+                    {newThisMonth.map((customer, i) => (
+                      <div
+                        key={customer.id}
+                        className={`grid grid-cols-[1fr_1fr_90px_70px] gap-3 px-5 py-3.5 border-b border-border last:border-0 items-center ${
+                          i % 2 === 0 ? 'bg-card' : 'bg-muted/20'
+                        }`}
+                      >
+                        {/* Customer */}
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {customer.company_name ||
+                              `${customer.first_name || ''} ${customer.last_name || ''}`.trim() ||
+                              '—'}
+                          </p>
+                          {customer.phone && (
+                            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                              {customer.phone}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Assigned to */}
+                        <div className="flex items-center gap-2 min-w-0">
+                          {customer.owner ? (
+                            <>
+                              <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                {customer.owner.full_name?.charAt(0)?.toUpperCase() || '?'}
+                              </div>
+                              <span className="text-xs text-muted-foreground truncate">
+                                {customer.owner.full_name}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-xs text-red-500 font-medium">Unassigned</span>
+                          )}
+                        </div>
+
+                        {/* City */}
+                        <p className="text-xs text-muted-foreground truncate">
+                          {customer.city || '—'}
+                        </p>
+
+                        {/* Added */}
+                        <p className="text-xs text-muted-foreground whitespace-nowrap">
+                          {new Date(customer.created_at).toLocaleDateString('en-GB', {
+                            day: 'numeric',
+                            month: 'short',
+                          })}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-border flex-shrink-0 flex justify-end">
+                <button
+                  onClick={() => setShowNewModal(false)}
+                  className="px-4 py-2 text-sm border border-border rounded-xl text-muted-foreground hover:bg-accent transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
