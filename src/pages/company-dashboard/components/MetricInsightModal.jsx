@@ -162,6 +162,12 @@ const MetricInsightModal = ({
           color: "purple",
           mainValue: formatPercent(calculated.winRate),
           subtitle: `${calculated.wonDealsCount} won / ${calculated.closedDealsCount} closed`,
+          // 3-month rolling average (won ÷ total created, last 3 completed
+          // months) supplied by the parent dashboard via metrics.winRate3m.
+          secondaryValue:
+            metrics?.winRate3m != null
+              ? `3-Month Avg · ${formatPercent(metrics.winRate3m)}`
+              : null,
           contributors: calculated.contributors
             .filter((c) => c.wonDeals > 0 || c.lostDeals > 0)
             .map((c) => ({
@@ -281,6 +287,11 @@ const MetricInsightModal = ({
               <div className={`text-xl font-bold tabular-nums truncate leading-tight ${textColor}`}>
                 {config.mainValue}
               </div>
+              {config.secondaryValue && (
+                <div className="mt-1 text-sm font-semibold text-indigo-600 tabular-nums">
+                  {config.secondaryValue}
+                </div>
+              )}
             </div>
           </div>
 

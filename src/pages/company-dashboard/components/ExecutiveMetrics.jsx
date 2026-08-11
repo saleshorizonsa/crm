@@ -87,6 +87,11 @@ const ExecutiveMetrics = ({
       color: "bg-purple-500",
       metricType: "winRate",
       clickable: true,
+      // Current-month figure (value) shown beside the 3-month rolling average.
+      // The progress bar uses the 3-month average as the more stable signal.
+      secondaryValue: formatPercent(metrics.winRate3m),
+      progressValue:
+        typeof metrics.winRate3m === "number" ? metrics.winRate3m : null,
     },
     {
       title: t("reports.teamPerformance"),
@@ -192,9 +197,30 @@ const ExecutiveMetrics = ({
               <h3 className="text-sm font-medium text-gray-600 mb-1">
                 {metric.title}
               </h3>
-              <div className="text-2xl font-bold text-gray-900">
-                {metric.value}
-              </div>
+              {metric.secondaryValue != null ? (
+                <div className="grid grid-cols-2 gap-3 mt-1">
+                  <div className="bg-purple-50 rounded-lg p-2 text-center">
+                    <div className="text-xl font-bold text-purple-600 tabular-nums">
+                      {metric.value}
+                    </div>
+                    <div className="text-xs text-purple-500 mt-0.5 font-medium">
+                      {t("dashboard.thisMonth") || "This Month"}
+                    </div>
+                  </div>
+                  <div className="bg-indigo-50 rounded-lg p-2 text-center">
+                    <div className="text-xl font-bold text-indigo-600 tabular-nums">
+                      {metric.secondaryValue}
+                    </div>
+                    <div className="text-xs text-indigo-500 mt-0.5 font-medium">
+                      {t("dashboard.threeMonthAvg") || "3-Month Avg"}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-2xl font-bold text-gray-900">
+                  {metric.value}
+                </div>
+              )}
             </div>
 
             {/* Progress bar for percentage metrics */}
@@ -203,22 +229,42 @@ const ExecutiveMetrics = ({
             metric.title.includes(
               t("reports.teamPerformance") || "Performance",
             ) ? (
-              <div className="mt-3">
-                <div className="flex justify-between text-xs text-gray-500 mb-1">
-                  <span>{t("dashboard.target")}: 100%</span>
-                  <span>
-                    {formatPercent((parseFloat(metric.value) / 100) * 100)}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full ${metric.color} transition-all duration-500`}
-                    style={{
-                      width: `${Math.min(parseFloat(metric.value) || 0, 100)}%`,
-                    }}
-                  ></div>
-                </div>
-              </div>
+              (() => {
+                const barPct =
+                  metric.progressValue != null
+                    ? metric.progressValue
+                    : parseFloat(metric.value) || 0;
+                const dynamic = metric.progressValue != null;
+                return (
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                      <span>
+                        {dynamic
+                          ? t("dashboard.threeMonthAvg") || "3-Month Avg"
+                          : `${t("dashboard.target")}: 100%`}
+                      </span>
+                      <span>{formatPercent(barPct)}</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className={`h-2 rounded-full transition-all duration-500 ${
+                          dynamic ? "" : metric.color
+                        }`}
+                        style={{
+                          width: `${Math.min(barPct, 100)}%`,
+                          background: dynamic
+                            ? barPct >= 70
+                              ? "#059669"
+                              : barPct >= 40
+                                ? "#D97706"
+                                : "#DC2626"
+                            : undefined,
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                );
+              })()
             ) : null}
           </div>
         ))}

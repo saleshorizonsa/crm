@@ -50,6 +50,7 @@ import {
   isPositiveChange,
 } from "../../../utils/dashboardDateUtils";
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
+import { fetchWinRate3m } from "../../../utils/winRate3m";
 
 // Employee-specific dashboards - use Enhanced versions for full features
 import EnhancedManagerDashboard from "./EnhancedManagerDashboard";
@@ -171,6 +172,18 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     isOpen: false,
     metricType: null,
   });
+
+  // 3-month rolling win-rate average (won ÷ total deals created in the last 3
+  // completed calendar months). Company-wide by default; scoped to one salesman
+  // when the director drills into an employee. Independent of the date filter.
+  const [winRate3m, setWinRate3m] = useState(0);
+
+  useEffect(() => {
+    const companyId = selectedCompany?.id;
+    if (!companyId) { setWinRate3m(0); return; }
+    const ownerIds = selectedEmployee?.id ? [selectedEmployee.id] : null;
+    fetchWinRate3m({ companyId, ownerIds }).then((r) => setWinRate3m(r.winRate3m));
+  }, [selectedCompany?.id, selectedEmployee?.id]);
 
   // Monthly target state
   const [directorMonthlyTarget, setDirectorMonthlyTarget] = useState(null);
@@ -1895,7 +1908,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       {/* Executive Metrics */}
       {executiveMetrics && (
         <ExecutiveMetrics
-          metrics={executiveMetrics}
+          metrics={{ ...executiveMetrics, winRate3m }}
           selectedCompany={selectedCompany}
           timePeriod={timePeriod}
           onMetricClick={handleMetricClick}
@@ -2754,7 +2767,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         isOpen={metricInsightModal.isOpen}
         onClose={handleCloseMetricModal}
         metricType={metricInsightModal.metricType}
-        metrics={executiveMetrics}
+        metrics={{ ...executiveMetrics, winRate3m }}
         pipelineData={pipelineData}
         teamData={teamData}
         dealsData={filteredDeals}

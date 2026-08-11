@@ -28,6 +28,7 @@ import HotLeadsWidget from "./HotLeadsWidget";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
 import MetricInsightModal from "./MetricInsightModal";
+import { fetchWinRate3m } from "../../../utils/winRate3m";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
 import { useLanguage } from "../../../i18n";
@@ -170,6 +171,17 @@ const EnhancedSupervisorDashboard = ({
     isOpen: false,
     metricType: null,
   });
+
+  // 3-month rolling win-rate average (won ÷ total deals created in the last 3
+  // completed calendar months) for the supervisor's team. Independent of the
+  // dashboard date filter.
+  const [winRate3m, setWinRate3m] = useState(0);
+
+  useEffect(() => {
+    if (!company?.id) { setWinRate3m(0); return; }
+    const ownerIds = [effectiveUser.id, ...allSubordinates.map((s) => s.id)].filter(Boolean);
+    fetchWinRate3m({ companyId: company.id, ownerIds }).then((r) => setWinRate3m(r.winRate3m));
+  }, [company?.id, effectiveUser.id, allSubordinates]);
 
   // Monthly target state
   const [monthlyTarget, setMonthlyTarget] = useState(null);
@@ -2130,6 +2142,7 @@ const EnhancedSupervisorDashboard = ({
               <MetricsCard
                 title={t("dashboard.winRate")}
                 value={`${executiveMetrics.winRate.toFixed(1)}%`}
+                subtitle={`${t("dashboard.threeMonthAvg") || "3-Month Avg"}: ${winRate3m.toFixed(1)}%`}
                 icon="Target"
                 trend={5}
                 iconColor="text-purple-600"
@@ -3729,7 +3742,7 @@ const EnhancedSupervisorDashboard = ({
         isOpen={metricInsightModal.isOpen}
         onClose={handleCloseMetricModal}
         metricType={metricInsightModal.metricType}
-        metrics={executiveMetrics}
+        metrics={{ ...executiveMetrics, winRate3m }}
         teamData={[...subordinates, effectiveUserProfile]}
         dealsData={filteredDeals}
       />

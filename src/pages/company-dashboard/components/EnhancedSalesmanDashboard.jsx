@@ -45,6 +45,7 @@ import {
   syncDropdownsFromRange,
 } from "../../../utils/dashboardDateUtils";
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
+import { fetchWinRate3m } from "../../../utils/winRate3m";
 import LogActivityModal from '../../../components/LogActivityModal';
 
 const EnhancedSalesmanDashboard = ({
@@ -140,6 +141,17 @@ const EnhancedSalesmanDashboard = ({
   const [executiveMetrics, setExecutiveMetrics] = useState(null);
   const [pipelineData, setPipelineData] = useState([]);
   const [actionItems, setActionItems] = useState([]);
+
+  // 3-month rolling win-rate average (won ÷ total deals created in the last 3
+  // completed calendar months) for this salesman only. Independent of the
+  // dashboard date filter.
+  const [winRate3m, setWinRate3m] = useState(0);
+
+  useEffect(() => {
+    if (!company?.id || !effectiveUser.id) { setWinRate3m(0); return; }
+    fetchWinRate3m({ companyId: company.id, ownerIds: [effectiveUser.id] })
+      .then((r) => setWinRate3m(r.winRate3m));
+  }, [company?.id, effectiveUser.id]);
 
   // Monthly target state
   const [monthlyTarget, setMonthlyTarget] = useState(null);
@@ -1431,8 +1443,23 @@ const EnhancedSalesmanDashboard = ({
                   <Icon name="Target" size={24} className="text-purple-600" />
                 </div>
                 <div>
-                  <div className="text-lg font-bold text-gray-900">
-                    {executiveMetrics.winRate.toFixed(1)}%
+                  <div className="flex items-baseline gap-3">
+                    <div>
+                      <span className="text-lg font-bold text-purple-600 tabular-nums">
+                        {executiveMetrics.winRate.toFixed(1)}%
+                      </span>
+                      <span className="ml-1 text-[11px] font-medium text-purple-400">
+                        {t("dashboard.thisMonth") || "This Month"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-lg font-bold text-indigo-600 tabular-nums">
+                        {winRate3m.toFixed(1)}%
+                      </span>
+                      <span className="ml-1 text-[11px] font-medium text-indigo-400">
+                        {t("dashboard.threeMonthAvg") || "3-Month Avg"}
+                      </span>
+                    </div>
                   </div>
                   <div className="text-sm text-gray-500">{t("dashboard.winRate")}</div>
                 </div>
@@ -2220,7 +2247,11 @@ const EnhancedSalesmanDashboard = ({
                           </div>
                           <div className="flex-1 bg-purple-50 rounded-xl p-3 text-center">
                             <p className="text-lg font-bold text-purple-600">{wr}%</p>
-                            <p className="text-xs text-purple-600">Win Rate</p>
+                            <p className="text-xs text-purple-600">This Month</p>
+                          </div>
+                          <div className="flex-1 bg-indigo-50 rounded-xl p-3 text-center">
+                            <p className="text-lg font-bold text-indigo-600">{winRate3m.toFixed(1)}%</p>
+                            <p className="text-xs text-indigo-600">3-Month Avg</p>
                           </div>
                         </div>
                       );
