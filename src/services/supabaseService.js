@@ -746,6 +746,11 @@ export const dealService = {
       // Optional date columns reject "" — normalise blank strings to null.
       if (payload.expected_close_date === "") payload.expected_close_date = null;
       if (!payload.initial_amount && payload.amount) payload.initial_amount = payload.amount;
+      // Lock the original amount at creation — it never changes afterwards and is
+      // the baseline for "planned vs negotiated" comparisons.
+      if (payload.original_amount == null && payload.amount != null) {
+        payload.original_amount = payload.amount;
+      }
       // Baseline the stage-change timer at creation so it's never null.
       if (!payload.stage_changed_at) payload.stage_changed_at = new Date().toISOString();
       const { data, error } = await supabase
@@ -800,8 +805,8 @@ export const dealService = {
         oldDeal &&
         (oldDeal.stage === "won" || oldDeal.stage === "lost");
 
-      // Never allow initial_amount to be overwritten after creation
-      const { initial_amount: _ia, ...safeUpdates } = updates;
+      // Never allow initial_amount or original_amount to be overwritten after creation
+      const { initial_amount: _ia, original_amount: _oa, ...safeUpdates } = updates;
       const updatePayload = {
         ...safeUpdates,
         updated_at: now,

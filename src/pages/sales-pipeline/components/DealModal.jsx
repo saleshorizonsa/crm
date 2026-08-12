@@ -422,6 +422,14 @@ const DealModal = ({
   const [changeReason, setChangeReason] = useState('');
   const [changeNotes, setChangeNotes] = useState('');
 
+  // Amount-change audit: editing an existing deal's amount requires a reason.
+  // (Distinct from the won/final-value `changeReason` above.)
+  const [showEditReason, setShowEditReason] = useState(false);
+  const [editReason, setEditReason] = useState('');
+  const [editReasonError, setEditReasonError] = useState('');
+  const [changeHistory, setChangeHistory] = useState([]);
+  const pendingSaveRef = useRef(null);
+
   // Activity Log state
   const [dealActivities,        setDealActivities]        = useState([]);
   const [activitiesLoading,     setActivitiesLoading]     = useState(false);
@@ -956,12 +964,111 @@ const DealModal = ({
   }
 
   // Core save execution — called directly or after LostReasonModal confirms
-  const executeSave = async (dealData) => {
+  // Load the amount-change history for this deal (shown in the modal body).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!isOpen || !deal?.id) { setChangeHistory([]); return; }
+      const { data } = await supabase
+        .from('deal_amount_changes')
+        .select(
+          'id, change_type, old_amount, new_amount, old_value, new_value, reason, stage_at_change, created_at, changed_by_user:users!changed_by(full_name)'
+        )
+        .eq('deal_id', deal.id)
+        .order('created_at', { ascending: false });
+      if (!cancelled) setChangeHistory(data || []);
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen, deal?.id]);
+
+  // Insert the change record + notify the deal owner's manager. Best-effort:
+  // a logging/notification failure must never block the (already saved) deal.
+  const logAmountChange = async (dealObj, oldAmount, newAmount, reason, stageAtChange) => {
+    try {
+      await supabase.from('deal_amount_changes').insert({
+        deal_id:         dealObj.id,
+        company_id:      company?.id,
+        changed_by:      user?.id,
+        old_amount:      oldAmount,
+        new_amount:      newAmount,
+        change_type:     'amount',
+        old_value:       String(oldAmount),
+        new_value:       String(newAmount),
+        reason,
+        stage_at_change: stageAtChange || dealObj.stage || null,
+      });
+      await notifyManager(dealObj, oldAmount, newAmount, reason);
+    } catch (err) {
+      console.error('logAmountChange:', err);
+    }
+  };
+
+  const notifyManager = async (dealObj, oldAmount, newAmount, reason) => {
+    try {
+      const { data: owner } = await supabase
+        .from('users')
+        .select('id, full_name, reports_to')
+        .eq('id', dealObj.owner_id)
+        .single();
+      if (!owner?.reports_to) return;
+      const diff = newAmount - oldAmount;
+      const sign = diff > 0 ? '+' : '';
+      const desc = `Amount: ${formatCurrency(oldAmount, preferredCurrency)} → ${formatCurrency(
+        newAmount, preferredCurrency,
+      )} (${sign}${formatCurrency(diff, preferredCurrency)})`;
+      await supabase.from('notifications').insert({
+        user_id:    owner.reports_to,
+        company_id: company?.id,
+        type:       'deal_changed',
+        title:      '✏️ Deal Modified',
+        message: `${owner.full_name} changed deal "${dealObj.title || 'Unknown'}": ${desc}. Reason: "${reason}"`,
+        is_read:    false,
+        metadata:   { deal_id: dealObj.id, old_amount: oldAmount, new_amount: newAmount, reason },
+      });
+    } catch (_) { /* notifications are best-effort */ }
+  };
+
+  // Confirm the change reason, then resume the paused save with it.
+  const handleConfirmEditReason = async () => {
+    if (!editReason.trim()) {
+      setEditReasonError('Please explain why you are making this change');
+      return;
+    }
+    setEditReasonError('');
+    setShowEditReason(false);
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (pending) await executeSave(pending, editReason.trim());
+  };
+
+  const executeSave = async (dealData, reasonText = null) => {
+    // Amount-change gate: an existing deal whose amount differs from what's stored
+    // needs a free-text reason before saving (covers direct amount edits and any
+    // product/quantity change that alters the deal total, since amount is
+    // recalculated from the line items above).
+    // Round to halalas so the product-sum recalculation's float noise can't
+    // trigger a spurious "amount changed" prompt on an otherwise-unedited save.
+    const oldAmount = Math.round(parseFloat(deal?.amount || 0) * 100) / 100;
+    const newAmount = Math.round(parseFloat(dealData.amount || 0) * 100) / 100;
+    const amountChanged = !!deal?.id && oldAmount !== newAmount;
+    if (amountChanged && !reasonText) {
+      pendingSaveRef.current = dealData;
+      setEditReason('');
+      setEditReasonError('');
+      setShowEditReason(true);
+      return;
+    }
+
     setIsSaving(true);
     try {
       // Feature 3A: lock initial_amount on first creation — never overwrite after that
       if (!deal?.id) dealData.initial_amount = dealData.amount;
       const savedDeal = await onSave(dealData);
+
+      // Record the amount change + notify the owner's manager (best-effort).
+      if (amountChanged && reasonText && (savedDeal?.id || deal?.id)) {
+        await logAmountChange(deal, oldAmount, newAmount, reasonText, dealData.stage);
+      }
 
       console.log("Saved deal:", savedDeal);
 
@@ -1937,6 +2044,64 @@ const DealModal = ({
             </div>
           </div>
 
+          {/* Amount change history — existing deals that have recorded changes */}
+          {deal?.id && changeHistory.length > 0 && (
+            <div className="border border-border rounded-xl overflow-hidden">
+              <div className="px-4 py-3 bg-muted/30 flex items-center gap-2">
+                <Icon name="History" size={15} className="text-amber-600" />
+                <span className="text-sm font-medium text-card-foreground">Change History</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">
+                  {changeHistory.length}
+                </span>
+              </div>
+              <div className="p-3 space-y-2">
+                {changeHistory.map((change) => {
+                  const up = parseFloat(change.new_amount) > parseFloat(change.old_amount);
+                  const isAmount = change.change_type === 'amount';
+                  return (
+                    <div key={change.id} className="flex items-start gap-3 p-3 bg-muted/30 rounded-xl">
+                      <div
+                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                          isAmount
+                            ? up ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                            : 'bg-amber-100 text-amber-700'
+                        }`}
+                      >
+                        {isAmount ? (up ? '↑' : '↓') : '✎'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium text-foreground capitalize mb-0.5">
+                          {change.change_type} changed by {change.changed_by_user?.full_name || 'Unknown'}
+                        </div>
+                        {isAmount ? (
+                          <div className="text-xs text-muted-foreground tabular-nums">
+                            {formatCurrency(parseFloat(change.old_amount) || 0, preferredCurrency)}
+                            {' → '}
+                            {formatCurrency(parseFloat(change.new_amount) || 0, preferredCurrency)}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-muted-foreground">
+                            "{change.old_value}" → "{change.new_value}"
+                          </div>
+                        )}
+                        <div className="text-xs text-muted-foreground italic mt-1">"{change.reason}"</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {new Date(change.created_at).toLocaleDateString('en-GB', {
+                            day: 'numeric', month: 'short', year: 'numeric',
+                            hour: '2-digit', minute: '2-digit',
+                          })}
+                          {change.stage_at_change && (
+                            <> · Stage: <span className="capitalize">{change.stage_at_change}</span></>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Activity Log — only shown when editing an existing deal */}
           {deal?.id && (
             <div className="border border-border rounded-xl overflow-hidden">
@@ -2360,6 +2525,94 @@ const DealModal = ({
           pendingDealDataRef.current = null;
         }}
       />
+
+      {/* Amount-change reason modal — appears over the deal editor */}
+      {showEditReason && (
+        <>
+          <div
+            className="fixed inset-0 z-[700] bg-black/50 backdrop-blur-sm"
+            onClick={() => { setShowEditReason(false); pendingSaveRef.current = null; }}
+          />
+          <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md overflow-hidden pointer-events-auto border border-border">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-border bg-amber-50">
+                <h2 className="text-base font-semibold text-amber-800 flex items-center gap-2">
+                  <Icon name="Pencil" size={16} /> Reason for Change
+                </h2>
+                <p className="text-xs text-amber-600 mt-0.5">
+                  You changed the deal amount. Please explain why before saving.
+                </p>
+              </div>
+
+              {/* Change summary */}
+              <div className="px-6 py-4 border-b border-border bg-muted/30">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+                  Change Detected
+                </p>
+                {(() => {
+                  const oldA = parseFloat(deal?.amount || 0);
+                  const newA = parseFloat(pendingSaveRef.current?.amount ?? formData.amount ?? 0);
+                  const up = newA > oldA;
+                  const diff = newA - oldA;
+                  return (
+                    <div className="flex items-center gap-2 text-sm flex-wrap">
+                      <span className="text-muted-foreground line-through tabular-nums">
+                        {formatCurrency(oldA, preferredCurrency)}
+                      </span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className={`font-semibold tabular-nums ${up ? 'text-green-600' : 'text-red-600'}`}>
+                        {formatCurrency(newA, preferredCurrency)} ({up ? '+' : ''}
+                        {formatCurrency(diff, preferredCurrency)})
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Reason input */}
+              <div className="px-6 py-4">
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                  Reason for change *
+                </label>
+                <textarea
+                  value={editReason}
+                  onChange={(e) => { setEditReason(e.target.value); setEditReasonError(''); }}
+                  placeholder="e.g. Customer negotiated a lower price after seeing a competitor quote…"
+                  rows={4}
+                  autoFocus
+                  className={`w-full border rounded-xl px-3 py-2.5 text-sm resize-none bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 ${
+                    editReasonError ? 'border-destructive' : 'border-border'
+                  }`}
+                />
+                {editReasonError && (
+                  <p className="text-xs text-destructive mt-1.5">{editReasonError}</p>
+                )}
+                <p className="text-xs text-muted-foreground mt-2">
+                  This reason is visible to your manager and recorded in the deal history.
+                </p>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-border flex gap-3 justify-end">
+                <button
+                  onClick={() => { setShowEditReason(false); setEditReason(''); setEditReasonError(''); pendingSaveRef.current = null; }}
+                  className="px-4 py-2 text-sm border border-border rounded-xl text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  Go Back
+                </button>
+                <button
+                  onClick={handleConfirmEditReason}
+                  disabled={!editReason.trim()}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-500 text-white font-medium rounded-xl hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Icon name="Check" size={14} /> Save with Reason
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
