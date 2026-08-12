@@ -199,10 +199,10 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, showProductSummary = false,
             onClick={handleAmountEdit}
           >
             <span className="text-lg font-bold text-gray-900">
-              {formatCurrency(
-                deal?.amount,
-                deal?.currency || preferredCurrency,
-              )}
+              {/* Always treat the stored amount as the display currency — never
+                  convert by deal.currency, so a deal saved with a stray currency
+                  (e.g. USD) can't silently show a 3.75× exchange-converted value. */}
+              {formatCurrency(deal?.amount, preferredCurrency)}
             </span>
             <Icon
               name="Edit2"

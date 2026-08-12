@@ -251,7 +251,11 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
           title:       opp.customer_name,
           stage:       'lead',
           amount:      parseFloat(opp.planned_amount) || 0,
+          original_amount: parseFloat(opp.planned_amount) || 0,
           final_amount: null,
+          // Always the company currency — never inherit a stray currency, so the
+          // Funnel card never exchange-converts the planned amount.
+          currency:    company?.currency || 'SAR',
           company_id:  company?.id,
           owner_id:    opp.owner_id || user?.id,
           contact_id:  opp.contact_id || null,
