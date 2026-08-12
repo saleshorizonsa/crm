@@ -73,8 +73,8 @@ export async function checkExpiredLeads(companyId, _userId) {
             userId: lead.owner_id,
             companyId,
             type: 'lead_returned',
-            title: '🔄 Lead Returned to Opportunities',
-            message: `"${name}" had no activity for 3 days and has been returned to your Opportunities. Plan your next action and convert again when ready.`,
+            title: '🔄 Lead Returned to Current Sales Plan',
+            message: `"${name}" had no activity for 3 days and has been returned to your Current Sales Plan. Plan your next action and convert again when ready.`,
             metadata: { opportunity_id: lead.opportunity_id },
           });
         }
@@ -91,7 +91,7 @@ export async function checkExpiredLeads(companyId, _userId) {
             companyId,
             type: 'lead_expiry_warning',
             title: '⚠ Lead Expiring Soon',
-            message: `"${name}" has been in the Lead stage for ${daysSince} days with no progress. Move it forward or it returns to Opportunities tomorrow.`,
+            message: `"${name}" has been in the Lead stage for ${daysSince} days with no progress. Move it forward or it returns to your Current Sales Plan tomorrow.`,
             metadata: { deal_id: lead.id, opportunity_id: lead.opportunity_id },
           });
         }

@@ -326,7 +326,7 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
       <div className="bg-card rounded-2xl border border-border p-5 mb-6">
         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
           <div>
-            <h2 className="text-base font-semibold text-foreground">Opportunities</h2>
+            <h2 className="text-base font-semibold text-foreground">Current Sales Plan</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
               Plan your monthly target by customer ·{' '}
               {new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
@@ -337,7 +337,7 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors"
           >
             <Icon name="Plus" size={15} />
-            Add Opportunity
+            Add to Current Sales Plan
           </button>
         </div>
 
@@ -453,7 +453,7 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
           <div className="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
             <Icon name="Target" size={24} className="text-blue-400" />
           </div>
-          <h3 className="text-sm font-semibold text-foreground mb-2">No opportunities yet</h3>
+          <h3 className="text-sm font-semibold text-foreground mb-2">No plans yet</h3>
           <p className="text-xs text-muted-foreground mb-5 max-w-xs mx-auto">
             Start planning your monthly target by adding customers you plan to sell to this month.
           </p>
@@ -462,7 +462,7 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors"
           >
             <Icon name="Plus" size={15} />
-            Add First Opportunity
+            Add to Current Sales Plan
           </button>
         </div>
       ) : (
@@ -637,7 +637,7 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
             <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden pointer-events-auto">
               <div className="px-6 py-4 border-b border-border flex items-center justify-between flex-shrink-0">
                 <h2 className="text-base font-semibold text-foreground">
-                  {editingOpp ? 'Edit Opportunity' : 'Add Opportunity'}
+                  {editingOpp ? 'Edit Sales Plan Item' : 'Add to Current Sales Plan'}
                 </h2>
                 <button
                   onClick={closeModal}
@@ -804,7 +804,7 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
                   disabled={saving || !form.customer_name?.trim() || !form.planned_amount}
                   className="px-5 py-2 text-sm bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {saving ? 'Saving…' : editingOpp ? 'Save Changes' : 'Add Opportunity'}
+                  {saving ? 'Saving…' : editingOpp ? 'Save Changes' : 'Add to Current Sales Plan'}
                 </button>
               </div>
             </div>

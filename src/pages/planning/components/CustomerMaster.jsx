@@ -385,7 +385,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
       setInlineAmount('');
     } catch (err) {
       console.error('Save opp:', err);
-      alert(`Could not create opportunity: ${err.message || err}`);
+      alert(`Could not create sales plan item: ${err.message || err}`);
     } finally {
       setSavingId(null);
     }
@@ -528,14 +528,14 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
               <Icon name="CheckCircle2" size={15} className="text-emerald-600 flex-shrink-0" />
               <p className="text-sm text-emerald-700">
                 <strong>{addedIds.size}</strong>{' '}
-                opportunit{addedIds.size > 1 ? 'ies' : 'y'} added to Planning this session
+                sales plan item{addedIds.size > 1 ? 's' : ''} added to Planning this session
               </p>
               {onGoToOpportunities && (
                 <button
                   onClick={onGoToOpportunities}
                   className="ml-auto text-xs text-emerald-600 font-medium hover:text-emerald-800 flex items-center gap-1"
                 >
-                  View in Opportunities
+                  View in Current Sales Plan
                   <Icon name="ArrowRight" size={12} />
                 </button>
               )}
@@ -733,7 +733,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
                           ) : isExisting ? (
                             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600">
                               <Icon name="AlertTriangle" size={12} />
-                              In Opportunities
+                              In Current Sales Plan
                             </span>
                           ) : (
                             <button

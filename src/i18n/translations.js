@@ -1122,7 +1122,7 @@ export const translations = {
       dealTitleRequired: "Deal title is required",
       descriptionRequired: "Description is required",
       creationDateRequired: "Creation date is required",
-      createNewOpportunity: "Create a new sales opportunity",
+      createNewOpportunity: "Create a new deal",
       removeProductConfirm: "Remove this product from the deal?",
     },
 
@@ -3816,7 +3816,7 @@ export const translations = {
       dealTitleRequired: "عنوان الصفقة مطلوب",
       descriptionRequired: "الوصف مطلوب",
       creationDateRequired: "تاريخ الإنشاء مطلوب",
-      createNewOpportunity: "إنشاء فرصة مبيعات جديدة",
+      createNewOpportunity: "إنشاء صفقة جديدة",
       removeProductConfirm: "هل تريد إزالة هذا المنتج من الصفقة؟",
     },
 

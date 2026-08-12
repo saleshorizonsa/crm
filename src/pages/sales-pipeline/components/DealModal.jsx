@@ -430,6 +430,19 @@ const DealModal = ({
   const [changeHistory, setChangeHistory] = useState([]);
   const pendingSaveRef = useRef(null);
 
+  // Move-to-Future-Orders flow: schedule this deal as a future order and remove
+  // it from the Funnel. The salesman always picks the target month.
+  const [showMoveFuture, setShowMoveFuture] = useState(false);
+  const [moveMonth, setMoveMonth]           = useState('');
+  const [moveError, setMoveError]           = useState('');
+  const [movingFuture, setMovingFuture]     = useState(false);
+  const nextMonthStr = (() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  })();
+
   // Activity Log state
   const [dealActivities,        setDealActivities]        = useState([]);
   const [activitiesLoading,     setActivitiesLoading]     = useState(false);
@@ -1276,6 +1289,56 @@ const DealModal = ({
       alert("Failed to delete deal: " + error.message);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // Move this deal to Future Orders: create a pending future_orders row for the
+  // chosen month, then remove the deal from the Funnel (cascade if it has refs).
+  const handleMoveToFuture = async () => {
+    if (!deal?.id) return;
+    setMoveError('');
+    if (!moveMonth) { setMoveError('Please choose a target month.'); return; }
+    const selected = new Date(`${moveMonth}-01`);
+    const now = new Date();
+    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    if (selected <= currentMonth) {
+      setMoveError('Choose a future month (next month or later).');
+      return;
+    }
+    setMovingFuture(true);
+    try {
+      const c = contacts.find((x) => x.id === deal.contact_id);
+      const customerName =
+        (c && (c.company_name || `${c.first_name || ''} ${c.last_name || ''}`.trim())) ||
+        deal.title || 'Deal';
+
+      const { error: insErr } = await supabase.from('future_orders').insert({
+        company_id:     company?.id,
+        owner_id:       deal.owner_id || user?.id,
+        created_by:     user?.id,
+        contact_id:     deal.contact_id || null,
+        customer_name:  customerName,
+        planned_amount: parseFloat(deal.amount) || 0,
+        expected_month: `${moveMonth}-01`,
+        status:         'pending',
+      });
+      if (insErr) throw insErr;
+
+      // Remove the deal from the Funnel (cascade delete if it has references).
+      const { data: refs } = await dealService.checkDealReferences(deal.id);
+      const { error: delErr } = refs?.totalReferences > 0
+        ? await dealService.deleteDealWithCascade(deal.id)
+        : await dealService.deleteDeal(deal.id);
+      if (delErr) throw delErr;
+
+      setShowMoveFuture(false);
+      onDelete?.(deal.id); // funnel drops the card
+      onClose();
+    } catch (err) {
+      console.error('moveToFuture:', err);
+      setMoveError(err.message || 'Could not move to Future Orders.');
+    } finally {
+      setMovingFuture(false);
     }
   };
 
@@ -2430,6 +2493,18 @@ const DealModal = ({
               <Icon name="CalendarPlus" size={16} className={isRTL ? "ml-2" : "mr-2"} />
               {t("dashboard.scheduleMeeting")}
             </Button>
+            {deal?.id && !["won", "lost"].includes(formData.stage) && (
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={() => { setMoveMonth(''); setMoveError(''); setShowMoveFuture(true); }}
+                disabled={isSaving || isDeleting}
+                className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+              >
+                <Icon name="CalendarClock" size={16} className={isRTL ? "ml-2" : "mr-2"} />
+                Move to Future Orders
+              </Button>
+            )}
             {userProfile?.role === 'admin' && deal?.id && (
               <button
                 type="button"
@@ -2525,6 +2600,70 @@ const DealModal = ({
           pendingDealDataRef.current = null;
         }}
       />
+
+      {/* Move to Future Orders — pick a target month, then remove from the Funnel */}
+      {showMoveFuture && (
+        <>
+          <div
+            className="fixed inset-0 z-[700] bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowMoveFuture(false)}
+          />
+          <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md overflow-hidden pointer-events-auto border border-border">
+              <div className="px-6 py-4 border-b border-border">
+                <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+                  <Icon name="CalendarClock" size={16} className="text-amber-600" /> Move to Future Orders
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  This removes the deal from the Funnel and schedules it as a future order. It
+                  returns to your Current Sales Plan automatically when the month arrives.
+                </p>
+              </div>
+              <div className="px-6 py-5 space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                    Target month *
+                  </label>
+                  <input
+                    type="month"
+                    min={nextMonthStr}
+                    value={moveMonth}
+                    onChange={(e) => { setMoveMonth(e.target.value); setMoveError(''); }}
+                    className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background text-foreground focus:outline-none focus:border-amber-400"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Must be next month or later.</p>
+                </div>
+                {moveError && (
+                  <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+                    <Icon name="AlertTriangle" size={14} className="text-amber-500 flex-shrink-0" />
+                    <p className="text-xs text-amber-700">{moveError}</p>
+                  </div>
+                )}
+              </div>
+              <div className="px-6 py-4 border-t border-border flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowMoveFuture(false)}
+                  className="px-4 py-2 text-sm border border-border rounded-xl text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleMoveToFuture}
+                  disabled={!moveMonth || movingFuture}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-500 text-white font-medium rounded-xl hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {movingFuture ? (
+                    <Icon name="Loader2" size={14} className="animate-spin" />
+                  ) : (
+                    <Icon name="ArrowRight" size={14} />
+                  )}
+                  Move to Future Orders
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Amount-change reason modal — appears over the deal editor */}
       {showEditReason && (
