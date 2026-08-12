@@ -1,10 +1,14 @@
 import { supabase } from 'lib/supabase';
 
-// TEMP: set false to silence the KPI diagnostic logs (see end of the function).
-const KPI_DEBUG = true;
+// TEMP: set true to re-enable the KPI diagnostic logs (see end of the function).
+const KPI_DEBUG = false;
 
-// Roles that can own deals / carry a target — the rows shown in the KPI popups.
-const OWNER_ROLES = ['salesman', 'supervisor', 'manager'];
+// The KPI strip aggregates over individual contributors (salesmen) only. Manager
+// and supervisor targets are team roll-ups — including them double-counts the
+// team/company Target (a manager's rolled-up target dwarfs the salesmen's), which
+// is what made the Director/Manager/Supervisor cards wrong. So both the popup rows
+// and the totals are built from salesmen only.
+const CONTRIBUTOR_ROLES = ['salesman'];
 
 const EMPTY_TOTALS = {
   target: 0, achieved: 0, deficit: 0,
@@ -56,7 +60,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
     .select('id, full_name, role')
     .eq('company_id', companyId)
     .eq('is_active', true)
-    .in('role', OWNER_ROLES);
+    .in('role', CONTRIBUTOR_ROLES);
   if (Array.isArray(ownerIds)) uq = uq.in('id', ownerIds);
   const { data: users } = await uq;
   const userList = users || [];
