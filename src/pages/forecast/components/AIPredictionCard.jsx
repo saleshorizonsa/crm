@@ -155,7 +155,7 @@ const AIPredictionCard = ({ prediction }) => {
       {topDeals.length > 0 && (
         <div>
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2.5">
-            Top Opportunities
+            Top Deals
           </p>
           <div className="space-y-2">
             {topDeals.map((deal, i) => (
