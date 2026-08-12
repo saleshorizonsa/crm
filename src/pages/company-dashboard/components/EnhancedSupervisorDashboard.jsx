@@ -29,6 +29,8 @@ import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
 import MetricInsightModal from "./MetricInsightModal";
 import { fetchWinRate3m } from "../../../utils/winRate3m";
+import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
+import { computeKpiStripData } from "../../../utils/kpiStripData";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
 import { useLanguage } from "../../../i18n";
@@ -181,6 +183,20 @@ const EnhancedSupervisorDashboard = ({
     if (!company?.id) { setWinRate3m(0); return; }
     const ownerIds = [effectiveUser.id, ...allSubordinates.map((s) => s.id)].filter(Boolean);
     fetchWinRate3m({ companyId: company.id, ownerIds }).then((r) => setWinRate3m(r.winRate3m));
+  }, [company?.id, effectiveUser.id, allSubordinates]);
+
+  // KPI strip (Target · Achieved · Deficit · Win Rate · Planned Gap) — own team.
+  const [kpiStrip, setKpiStrip] = useState({ salesmanData: [], totals: null, loading: true });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!company?.id) return;
+      const ownerIds = [effectiveUser.id, ...allSubordinates.map((s) => s.id)].filter(Boolean);
+      setKpiStrip((s) => ({ ...s, loading: true }));
+      const res = await computeKpiStripData({ companyId: company.id, ownerIds });
+      if (!cancelled) setKpiStrip({ ...res, loading: false });
+    })();
+    return () => { cancelled = true; };
   }, [company?.id, effectiveUser.id, allSubordinates]);
 
   // Monthly target state
@@ -1494,6 +1510,12 @@ const EnhancedSupervisorDashboard = ({
 
   return (
     <div className={`space-y-8 transition-opacity duration-200 ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
+      <KPICardsStrip
+        salesmanData={kpiStrip.salesmanData}
+        totals={kpiStrip.totals}
+        role={userProfile?.role}
+        loading={kpiStrip.loading}
+      />
       {/* Header */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

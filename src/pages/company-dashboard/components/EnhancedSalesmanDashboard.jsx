@@ -46,6 +46,8 @@ import {
 } from "../../../utils/dashboardDateUtils";
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { fetchWinRate3m } from "../../../utils/winRate3m";
+import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
+import { computeKpiStripData } from "../../../utils/kpiStripData";
 import LogActivityModal from '../../../components/LogActivityModal';
 
 const EnhancedSalesmanDashboard = ({
@@ -151,6 +153,19 @@ const EnhancedSalesmanDashboard = ({
     if (!company?.id || !effectiveUser.id) { setWinRate3m(0); return; }
     fetchWinRate3m({ companyId: company.id, ownerIds: [effectiveUser.id] })
       .then((r) => setWinRate3m(r.winRate3m));
+  }, [company?.id, effectiveUser.id]);
+
+  // KPI strip (Target · Achieved · Deficit · Win Rate · Planned Gap) — own scope.
+  const [kpiStrip, setKpiStrip] = useState({ salesmanData: [], totals: null, loading: true });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!company?.id || !effectiveUser.id) return;
+      setKpiStrip((s) => ({ ...s, loading: true }));
+      const res = await computeKpiStripData({ companyId: company.id, ownerIds: [effectiveUser.id] });
+      if (!cancelled) setKpiStrip({ ...res, loading: false });
+    })();
+    return () => { cancelled = true; };
   }, [company?.id, effectiveUser.id]);
 
   // Monthly target state
@@ -1147,6 +1162,12 @@ const EnhancedSalesmanDashboard = ({
 
   return (
     <div className={`space-y-8 transition-opacity duration-200 ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
+      <KPICardsStrip
+        salesmanData={kpiStrip.salesmanData}
+        totals={kpiStrip.totals}
+        role={userProfile?.role}
+        loading={kpiStrip.loading}
+      />
       {/* Header */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

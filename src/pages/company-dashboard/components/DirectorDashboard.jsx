@@ -51,6 +51,8 @@ import {
 } from "../../../utils/dashboardDateUtils";
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { fetchWinRate3m } from "../../../utils/winRate3m";
+import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
+import { computeKpiStripData } from "../../../utils/kpiStripData";
 
 // Employee-specific dashboards - use Enhanced versions for full features
 import EnhancedManagerDashboard from "./EnhancedManagerDashboard";
@@ -183,6 +185,22 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     if (!companyId) { setWinRate3m(0); return; }
     const ownerIds = selectedEmployee?.id ? [selectedEmployee.id] : null;
     fetchWinRate3m({ companyId, ownerIds }).then((r) => setWinRate3m(r.winRate3m));
+  }, [selectedCompany?.id, selectedEmployee?.id]);
+
+  // KPI strip (Target · Achieved · Deficit · Win Rate · Planned Gap) — whole
+  // company (or the drilled-in employee).
+  const [kpiStrip, setKpiStrip] = useState({ salesmanData: [], totals: null, loading: true });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const companyId = selectedCompany?.id;
+      if (!companyId) { setKpiStrip({ salesmanData: [], totals: null, loading: false }); return; }
+      const ownerIds = selectedEmployee?.id ? [selectedEmployee.id] : null;
+      setKpiStrip((s) => ({ ...s, loading: true }));
+      const res = await computeKpiStripData({ companyId, ownerIds });
+      if (!cancelled) setKpiStrip({ ...res, loading: false });
+    })();
+    return () => { cancelled = true; };
   }, [selectedCompany?.id, selectedEmployee?.id]);
 
   // Monthly target state
@@ -2456,6 +2474,12 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
   return (
     <div className={`director-dashboard transition-opacity duration-200 ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
+      <KPICardsStrip
+        salesmanData={kpiStrip.salesmanData}
+        totals={kpiStrip.totals}
+        role={userProfile?.role}
+        loading={kpiStrip.loading}
+      />
       {/* Head role: greeting + company-scoped subtitle (directors don't need this
           — they have the company switcher and cross-company grid). */}
       {userProfile?.role === "head" && (
