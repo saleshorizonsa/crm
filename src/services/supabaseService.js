@@ -743,6 +743,8 @@ export const dealService = {
   async createDeal(dealData) {
     try {
       const payload = { ...dealData };
+      // Optional date columns reject "" — normalise blank strings to null.
+      if (payload.expected_close_date === "") payload.expected_close_date = null;
       if (!payload.initial_amount && payload.amount) payload.initial_amount = payload.amount;
       // Baseline the stage-change timer at creation so it's never null.
       if (!payload.stage_changed_at) payload.stage_changed_at = new Date().toISOString();
@@ -804,6 +806,8 @@ export const dealService = {
         ...safeUpdates,
         updated_at: now,
       };
+      // Optional date columns reject "" — normalise blank strings to null.
+      if (updatePayload.expected_close_date === "") updatePayload.expected_close_date = null;
       if (isWinningOrLosing) {
         updatePayload.closed_at = now;
       } else if (isReopeningDeal) {

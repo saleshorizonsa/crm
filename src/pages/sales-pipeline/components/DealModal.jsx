@@ -1048,6 +1048,9 @@ const DealModal = ({
       owner_id:   user?.id,
       currency:   preferredCurrency,
       contact_id: formData.contact_id || null,
+      // Expected close date is optional — send null (not "") so a blank value
+      // doesn't fail the insert on the date column.
+      expected_close_date: formData.expected_close_date || null,
     };
 
     // Always recalculate amount from the actual product line items to prevent drift
@@ -1570,11 +1573,11 @@ const DealModal = ({
               </div>
 
               <Input
-                label={t("deals.expectedCloseDate")}
+                label={`${t("deals.expectedCloseDate")} (${t("common.optional") || "optional"})`}
                 type="date"
-                value={formData?.expected_close_date}
+                value={formData?.expected_close_date || ""}
                 onChange={(e) =>
-                  handleInputChange("expected_close_date", e?.target?.value)
+                  handleInputChange("expected_close_date", e?.target?.value || null)
                 }
               />
             </div>

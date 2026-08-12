@@ -113,6 +113,7 @@ const DealModal = ({ isOpen, onClose, onSubmit }) => {
         stage: formData.stage || "lead",
         amount: parseFloat(formData.amount) || 0,
         currency: preferredCurrency, // Use global currency
+        expected_close_date: formData.expected_close_date || null, // optional
       };
 
       const result = await onSubmit(dealData);
@@ -271,18 +272,18 @@ const DealModal = ({ isOpen, onClose, onSubmit }) => {
             </div>
           </div>
 
-          {/* Expected Close Date */}
+          {/* Expected Close Date (optional) */}
           <div>
             <label className="text-sm font-medium text-muted-foreground">
               Expected Close Date
+              <span className="text-muted-foreground/70 font-normal ml-1">(optional)</span>
             </label>
             <Input
               name="expected_close_date"
               type="date"
-              value={formData.expected_close_date}
+              value={formData.expected_close_date || ""}
               onChange={handleChange}
               className="mt-1"
-              required
             />
           </div>
 
