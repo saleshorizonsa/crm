@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Icon from 'components/AppIcon';
+import { supabase } from 'lib/supabase';
 
 // Whole-SAR integer formatter.
 const fmtSAR = (n) =>
@@ -51,8 +52,7 @@ const POPUP_TITLES = {
 
 // Per-salesman breakdown table shown inside every popup. The active metric column
 // is emphasised.
-function SalesmanTable({ rows, active, role, onDrillDown }) {
-  const canDrill = ['manager', 'supervisor'].includes(role) && typeof onDrillDown === 'function';
+function SalesmanTable({ rows, active, canDrill, onRowClick }) {
   const cell = (key, node) => (
     <td className={`px-3 py-2.5 text-right tabular-nums whitespace-nowrap ${
       active === key ? 'font-semibold text-foreground' : 'text-muted-foreground'
@@ -79,7 +79,7 @@ function SalesmanTable({ rows, active, role, onDrillDown }) {
           {rows.map((s) => (
             <tr
               key={s.id}
-              onClick={canDrill ? () => onDrillDown(s) : undefined}
+              onClick={canDrill ? () => onRowClick(s) : undefined}
               className={`border-b border-border last:border-0 ${
                 canDrill ? 'cursor-pointer hover:bg-accent/40 transition-colors' : ''
               }`}
@@ -110,6 +110,105 @@ function SalesmanTable({ rows, active, role, onDrillDown }) {
   );
 }
 
+// Individual-salesman drill view (manager/supervisor). Shows that salesman's own
+// KPI numbers plus a metric-specific list of their deals / plan items.
+function DrillView({ salesman, popup, deals, opps, loading, onBack }) {
+  const now = new Date();
+  const mS = new Date(now.getFullYear(), now.getMonth(), 1);
+  const mE = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const inMonth = (d) => d && new Date(d) >= mS && new Date(d) <= mE;
+  const openDeals = deals.filter((d) => !['won', 'lost'].includes(d.stage));
+  const wonThisMonth = deals.filter((d) => d.stage === 'won' && inMonth(d.closed_at));
+  const history = deals.filter((d) => ['won', 'lost'].includes(d.stage));
+
+  let items = [];
+  let listLabel = '';
+  switch (popup) {
+    case 'achieved':
+      items = wonThisMonth.map((d) => ({ id: 'd' + d.id, name: d.title, amount: +(d.final_amount ?? d.amount) || 0, badge: 'Won', tone: 'green' }));
+      listLabel = 'Won deals this month'; break;
+    case 'deficit':
+      items = openDeals.map((d) => ({ id: 'd' + d.id, name: d.title, amount: +d.amount || 0, badge: d.stage?.replace('_', ' '), tone: 'blue' }));
+      listLabel = 'Open Funnel deals'; break;
+    case 'winRate':
+      items = history.map((d) => ({ id: 'd' + d.id, name: d.title, amount: +(d.final_amount ?? d.amount) || 0, badge: d.stage === 'won' ? 'Won' : 'Lost', tone: d.stage === 'won' ? 'green' : 'red' }));
+      listLabel = 'Deal history (won / lost)'; break;
+    case 'plannedGap':
+      items = opps.map((o) => ({ id: 'o' + o.id, name: o.customer_name, amount: +o.planned_amount || 0, badge: 'Plan', tone: 'purple' }));
+      listLabel = 'Current Sales Plan items'; break;
+    case 'target':
+    default:
+      items = [
+        ...opps.map((o) => ({ id: 'o' + o.id, name: o.customer_name, amount: +o.planned_amount || 0, badge: 'Plan', tone: 'purple' })),
+        ...openDeals.map((d) => ({ id: 'd' + d.id, name: d.title, amount: +d.amount || 0, badge: d.stage?.replace('_', ' '), tone: 'blue' })),
+      ];
+      listLabel = 'Funnel + Current Sales Plan'; break;
+  }
+
+  const stat = (label, value, cls) => (
+    <div className="bg-muted/50 rounded-lg p-2.5 text-center">
+      <p className={`text-sm font-bold tabular-nums ${cls}`}>{value}</p>
+      <p className="text-[10px] text-muted-foreground mt-0.5">{label}</p>
+    </div>
+  );
+  const toneCls = {
+    green: 'bg-green-100 text-green-700', red: 'bg-red-100 text-red-600',
+    blue: 'bg-blue-100 text-blue-700', purple: 'bg-purple-100 text-purple-700',
+  };
+
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
+      >
+        <Icon name="ArrowLeft" size={14} /> Back to team
+      </button>
+
+      <div className="flex items-center gap-3 mb-4 p-3 bg-primary/5 rounded-xl">
+        <div className="w-10 h-10 rounded-full bg-primary/15 text-primary flex items-center justify-center text-sm font-bold">
+          {salesman.full_name?.charAt(0)?.toUpperCase() || '?'}
+        </div>
+        <div>
+          <p className="font-semibold text-foreground">{salesman.full_name}</p>
+          <p className="text-xs text-muted-foreground capitalize">{salesman.role}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-4">
+        {stat('Target', fmtSAR(salesman.target), 'text-foreground')}
+        {stat('Achieved', fmtSAR(salesman.achieved), 'text-green-600')}
+        {stat('Deficit', salesman.deficit <= 0 ? '✓' : fmtSAR(salesman.deficit), salesman.deficit <= 0 ? 'text-green-600' : 'text-red-600')}
+        {stat('Win%', `${salesman.winRate3m.toFixed(0)}%`, 'text-purple-600')}
+        {stat('Gap', salesman.plannedGap <= 0 ? '✓' : fmtSAR(salesman.plannedGap), salesman.plannedGap <= 0 ? 'text-green-600' : 'text-red-600')}
+      </div>
+
+      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+        {listLabel} ({items.length})
+      </p>
+      {loading ? (
+        <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-10 bg-muted rounded-lg animate-pulse" />)}</div>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-6">Nothing to show here.</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((it) => (
+            <div key={it.id} className="flex items-center justify-between gap-3 p-2.5 bg-muted/30 rounded-lg">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium capitalize flex-shrink-0 ${toneCls[it.tone] || 'bg-muted text-muted-foreground'}`}>
+                  {it.badge}
+                </span>
+                <span className="text-sm text-foreground truncate">{it.name || '—'}</span>
+              </div>
+              <span className="text-sm font-semibold tabular-nums text-foreground flex-shrink-0">{fmtSAR(it.amount)} SAR</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Reusable 5-KPI strip. The parent passes already role-scoped data.
 //   salesmanData — per-salesman rows for the scope
 //   totals       — scope totals for the cards
@@ -130,6 +229,41 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [activePopup]);
+
+  // Managers/supervisors can drill into an individual salesman's data.
+  const canDrill = ['manager', 'supervisor'].includes(role);
+  const [drillDeals, setDrillDeals] = useState([]);
+  const [drillOpps, setDrillOpps] = useState([]);
+  const [drillLoading, setDrillLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!drillSalesman?.id) { setDrillDeals([]); setDrillOpps([]); return; }
+      setDrillLoading(true);
+      const [dRes, oRes] = await Promise.all([
+        supabase
+          .from('deals')
+          .select('id, title, stage, amount, final_amount, closed_at, created_at')
+          .eq('owner_id', drillSalesman.id)
+          .order('created_at', { ascending: false })
+          .limit(100),
+        supabase
+          .from('opportunities')
+          .select('id, customer_name, planned_amount, expected_month, status')
+          .eq('owner_id', drillSalesman.id)
+          .eq('status', 'open')
+          .order('expected_month', { ascending: true })
+          .limit(100),
+      ]);
+      if (!cancelled) {
+        setDrillDeals(dRes.data || []);
+        setDrillOpps(oRes.data || []);
+        setDrillLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [drillSalesman?.id]);
 
   const cards = cardDefs(totals);
 
@@ -193,12 +327,23 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
 
               {/* Body */}
               <div className="px-4 py-4 overflow-y-auto flex-1">
-                <SalesmanTable
-                  rows={salesmanData}
-                  active={activePopup}
-                  role={role}
-                  onDrillDown={onDrillDown}
-                />
+                {drillSalesman ? (
+                  <DrillView
+                    salesman={drillSalesman}
+                    popup={activePopup}
+                    deals={drillDeals}
+                    opps={drillOpps}
+                    loading={drillLoading}
+                    onBack={() => setDrillSalesman(null)}
+                  />
+                ) : (
+                  <SalesmanTable
+                    rows={salesmanData}
+                    active={activePopup}
+                    canDrill={canDrill}
+                    onRowClick={setDrillSalesman}
+                  />
+                )}
               </div>
 
               {/* Footer */}
