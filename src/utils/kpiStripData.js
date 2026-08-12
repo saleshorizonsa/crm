@@ -1,5 +1,8 @@
 import { supabase } from 'lib/supabase';
 
+// TEMP: set false to silence the KPI diagnostic logs (see end of the function).
+const KPI_DEBUG = true;
+
 // Roles that can own deals / carry a target — the rows shown in the KPI popups.
 const OWNER_ROLES = ['salesman', 'supervisor', 'manager'];
 
@@ -154,8 +157,23 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
   const required = winRate3m > 0 ? target / (winRate3m / 100) : target * 2;
   const plannedGap = Math.max(0, required - planned);
 
-  return {
-    salesmanData,
-    totals: { target, achieved, deficit, winRate3m, winRateIsDefault, planned, required, plannedGap },
-  };
+  const totals = { target, achieved, deficit, winRate3m, winRateIsDefault, planned, required, plannedGap };
+
+  // TEMP debug — helps diagnose wrong team/director KPI values. Remove once fixed.
+  if (KPI_DEBUG) {
+    /* eslint-disable no-console */
+    console.log('=== KPI DEBUG ===');
+    console.log('companyId:', companyId);
+    console.log('ownerIds (scope requested):', ownerIds === null ? 'NULL → whole company' : ownerIds);
+    console.log('users/scopeIds:', scopeIds.length, userList.map((u) => `${u.full_name} (${u.role})`));
+    console.log('targets rows fetched:', (targets || []).length, targets);
+    console.log('won deals this month:', (wonDeals || []).length);
+    console.log('deals (3-mo window):', (deals3 || []).length, '| won:', won3);
+    console.log('opportunities (open, this month):', (opps || []).length);
+    console.log('salesmanData built:', salesmanData);
+    console.log('TOTALS:', totals);
+    /* eslint-enable no-console */
+  }
+
+  return { salesmanData, totals };
 }
