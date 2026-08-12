@@ -112,7 +112,7 @@ function SalesmanTable({ rows, active, canDrill, onRowClick }) {
 
 // Individual-salesman drill view (manager/supervisor). Shows that salesman's own
 // KPI numbers plus a metric-specific list of their deals / plan items.
-function DrillView({ salesman, popup, deals, opps, loading, onBack }) {
+function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = true }) {
   const now = new Date();
   const mS = new Date(now.getFullYear(), now.getMonth(), 1);
   const mE = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
@@ -158,12 +158,14 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack }) {
 
   return (
     <div>
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
-      >
-        <Icon name="ArrowLeft" size={14} /> Back to team
-      </button>
+      {showBack && (
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
+        >
+          <Icon name="ArrowLeft" size={14} /> Back to team
+        </button>
+      )}
 
       <div className="flex items-center gap-3 mb-4 p-3 bg-primary/5 rounded-xl">
         <div className="w-10 h-10 rounded-full bg-primary/15 text-primary flex items-center justify-center text-sm font-bold">
@@ -230,8 +232,13 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
     return () => document.removeEventListener('keydown', onKey);
   }, [activePopup]);
 
-  // Managers/supervisors can drill into an individual salesman's data.
+  // Managers/supervisors can drill into an individual salesman's data. A plain
+  // salesman sees their OWN rich view directly (their single row, no team table).
   const canDrill = ['manager', 'supervisor'].includes(role);
+  const isSalesman = role === 'salesman';
+  const selfRow = isSalesman ? (salesmanData[0] || null) : null;
+  const viewSalesman = drillSalesman || selfRow; // whose detail the popup shows
+
   const [drillDeals, setDrillDeals] = useState([]);
   const [drillOpps, setDrillOpps] = useState([]);
   const [drillLoading, setDrillLoading] = useState(false);
@@ -239,19 +246,19 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!drillSalesman?.id) { setDrillDeals([]); setDrillOpps([]); return; }
+      if (!activePopup || !viewSalesman?.id) { setDrillDeals([]); setDrillOpps([]); return; }
       setDrillLoading(true);
       const [dRes, oRes] = await Promise.all([
         supabase
           .from('deals')
           .select('id, title, stage, amount, final_amount, closed_at, created_at')
-          .eq('owner_id', drillSalesman.id)
+          .eq('owner_id', viewSalesman.id)
           .order('created_at', { ascending: false })
           .limit(100),
         supabase
           .from('opportunities')
           .select('id, customer_name, planned_amount, expected_month, status')
-          .eq('owner_id', drillSalesman.id)
+          .eq('owner_id', viewSalesman.id)
           .eq('status', 'open')
           .order('expected_month', { ascending: true })
           .limit(100),
@@ -263,7 +270,7 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
       }
     })();
     return () => { cancelled = true; };
-  }, [drillSalesman?.id]);
+  }, [viewSalesman?.id, activePopup]);
 
   const cards = cardDefs(totals);
 
@@ -303,7 +310,10 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
               <div className="px-6 py-4 border-b border-border flex items-center justify-between flex-shrink-0">
                 <div>
                   <h2 className="text-base font-semibold text-foreground">
-                    {POPUP_TITLES[activePopup]} — {salesmanData.length} salesman{salesmanData.length === 1 ? '' : 'en'}
+                    {POPUP_TITLES[activePopup]}
+                    {isSalesman
+                      ? ' — My numbers'
+                      : ` — ${salesmanData.length} salesman${salesmanData.length === 1 ? '' : 'en'}`}
                   </h2>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {activePopup === 'winRate'
@@ -327,13 +337,14 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
 
               {/* Body */}
               <div className="px-4 py-4 overflow-y-auto flex-1">
-                {drillSalesman ? (
+                {viewSalesman ? (
                   <DrillView
-                    salesman={drillSalesman}
+                    salesman={viewSalesman}
                     popup={activePopup}
                     deals={drillDeals}
                     opps={drillOpps}
                     loading={drillLoading}
+                    showBack={!!drillSalesman}
                     onBack={() => setDrillSalesman(null)}
                   />
                 ) : (
