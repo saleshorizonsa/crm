@@ -1671,10 +1671,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               return true;
             });
 
-            // Revenue counts only INVOICED won deals (achievement = invoiced).
-            const wonDeals = filteredDeals.filter(
-              (d) => d.stage === "won" && d.is_invoiced === true,
-            );
+            const wonDeals = filteredDeals.filter((d) => d.stage === "won");
             const totalRevenue = wonDeals.reduce((sum, d) => {
               const amount = parseFloat(d.amount) || 0;
               const dealCurrency = d.currency || preferredCurrency;

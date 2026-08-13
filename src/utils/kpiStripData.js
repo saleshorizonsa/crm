@@ -70,12 +70,15 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
   const mb = monthBounds();
   const w3 = threeMonthWindow();
 
-  // 2. Targets — active, overlapping the current month; max per person.
+  // 2. Targets — active MONTHLY targets overlapping the current month; max per
+  //    person. period_type='monthly' excludes manager/head yearly team targets
+  //    (a manager's yearly roll-up would otherwise dwarf the salesmen's quotas).
   const { data: targets } = await supabase
     .from('sales_targets')
     .select('target_amount, assigned_to')
     .eq('company_id', companyId)
     .eq('status', 'active')
+    .eq('period_type', 'monthly')
     .in('assigned_to', scopeIds)
     .lte('period_start', mb.endISO)
     .gte('period_end', mb.startISO);
@@ -85,17 +88,15 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
     targetPer[k] = Math.max(targetPer[k] || 0, parseFloat(t.target_amount) || 0);
   });
 
-  // 3. Achieved — INVOICED won deals for this month (by invoice_date). Achievement
-  //    is only counted once a deal is invoiced, not merely won/closed.
+  // 3. Achieved — won deals whose stage changed to won this month (final value).
   const { data: wonDeals } = await supabase
     .from('deals')
-    .select('owner_id, amount, final_amount, invoice_date')
+    .select('owner_id, amount, final_amount, stage_changed_at')
     .eq('company_id', companyId)
     .eq('stage', 'won')
-    .eq('is_invoiced', true)
     .in('owner_id', scopeIds)
-    .gte('invoice_date', mb.startDate)
-    .lte('invoice_date', mb.endDate);
+    .gte('stage_changed_at', mb.startISO)
+    .lte('stage_changed_at', mb.endISO);
   const achievedPer = {};
   (wonDeals || []).forEach((d) => {
     const amt = parseFloat(d.final_amount ?? d.amount) || 0;
