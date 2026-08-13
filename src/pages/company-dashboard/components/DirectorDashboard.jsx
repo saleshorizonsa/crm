@@ -1621,9 +1621,11 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                 salesTargetService.getAssignedTargets(company.id),
               ]);
 
-            // Filter deals by selected period
+            // Filter deals by selected period. Won deals are windowed by
+            // invoice_date so revenue = achievement = invoiced deals only,
+            // matching the KPI Achieved card exactly.
             const filteredDeals = (deals || []).filter((deal) => {
-              const dateToCheck = deal.stage === "won" ? deal.closed_at : deal.created_at;
+              const dateToCheck = deal.stage === "won" ? deal.invoice_date : deal.created_at;
               return isInSelectedPeriod(dateToCheck);
             });
 
@@ -1671,9 +1673,12 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               return true;
             });
 
-            const wonDeals = filteredDeals.filter((d) => d.stage === "won");
+            // Revenue = invoiced won deals only (final value where negotiated).
+            const wonDeals = filteredDeals.filter(
+              (d) => d.stage === "won" && d.is_invoiced === true,
+            );
             const totalRevenue = wonDeals.reduce((sum, d) => {
-              const amount = parseFloat(d.amount) || 0;
+              const amount = parseFloat(d.final_amount ?? d.amount) || 0;
               const dealCurrency = d.currency || preferredCurrency;
               const convertedAmount =
                 dealCurrency !== preferredCurrency
