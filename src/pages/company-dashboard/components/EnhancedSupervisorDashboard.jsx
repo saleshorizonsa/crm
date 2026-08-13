@@ -2083,24 +2083,9 @@ const EnhancedSupervisorDashboard = ({
             </div>
           )}
 
-          {/* Metrics Cards - First Row */}
+          {/* Metrics Cards - First Row (old Revenue/Active-Pipeline cards removed
+              — superseded by the KPI strip at the top) */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <MetricsCard
-              title={t("dashboard.totalRevenue")}
-              value={formatCurrency(executiveMetrics?.totalRevenue || 0)}
-              change={changes.revenue}
-              trend={isPositiveChange(changes.revenue) === true ? 'up' : isPositiveChange(changes.revenue) === false ? 'down' : undefined}
-              icon="💰"
-              onClick={() => handleMetricClick("totalRevenue")}
-            />
-            <MetricsCard
-              title={t("dashboard.activeDeals")}
-              value={`${metrics?.totalDeals || 0}`}
-              change={changes.activeDeals}
-              trend={isPositiveChange(changes.activeDeals) === true ? 'up' : isPositiveChange(changes.activeDeals) === false ? 'down' : undefined}
-              icon="🤝"
-              onClick={() => handleMetricClick("activePipeline")}
-            />
             <MetricsCard
               title={t("dashboard.totalContacts")}
               value={`${metrics?.totalContacts || 0}`}
@@ -2149,48 +2134,8 @@ const EnhancedSupervisorDashboard = ({
             </div>
           )}
 
-          {/* Metrics Cards - Second Row */}
-          {executiveMetrics && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <MetricsCard
-                title={t("dashboard.pipelineValue")}
-                value={formatCurrency(executiveMetrics.activePipeline)}
-                icon="TrendingUp"
-                trend={8}
-                iconColor="text-blue-600"
-                iconBgColor="bg-blue-100"
-                onClick={() => handleMetricClick("activePipeline")}
-              />
-              <MetricsCard
-                title={t("dashboard.winRate")}
-                value={`${executiveMetrics.winRate.toFixed(1)}%`}
-                subtitle={`${t("dashboard.threeMonthAvg") || "3-Month Avg"}: ${winRate3m.toFixed(1)}%`}
-                icon="Target"
-                trend={5}
-                iconColor="text-purple-600"
-                iconBgColor="bg-purple-100"
-                onClick={() => handleMetricClick("winRate")}
-              />
-              <MetricsCard
-                title={t("dashboard.wonDeals")}
-                value={`${executiveMetrics.wonDeals}`}
-                subtitle={`of ${executiveMetrics.totalDeals} total`}
-                icon="Briefcase"
-                iconColor="text-green-600"
-                iconBgColor="bg-green-100"
-                onClick={() => handleMetricClick("dealsClosed")}
-              />
-              <MetricsCard
-                title={t("dashboard.teamMembers")}
-                value={`${subordinates.length + 1}`}
-                subtitle={t("dashboard.includingYou")}
-                icon="Users"
-                iconColor="text-orange-600"
-                iconBgColor="bg-orange-100"
-                onClick={() => handleMetricClick("teamPerformance")}
-              />
-            </div>
-          )}
+          {/* Metrics Cards - Second Row removed (Pipeline Value · Win Rate ·
+              Won Deals · Team Members) — superseded by the KPI strip. */}
 
           {/* Performance Trend Card */}
           <div className="bg-white rounded-lg shadow p-6">

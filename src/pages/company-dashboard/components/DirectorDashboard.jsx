@@ -1928,15 +1928,8 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         </div>
       )}
 
-      {/* Executive Metrics */}
-      {executiveMetrics && (
-        <ExecutiveMetrics
-          metrics={{ ...executiveMetrics, winRate3m }}
-          selectedCompany={selectedCompany}
-          timePeriod={timePeriod}
-          onMetricClick={handleMetricClick}
-        />
-      )}
+      {/* Executive Metrics (old 6 cards) removed — superseded by the KPI strip
+          at the top (Target · Achieved · Deficit · Win Rate · Planned Gap). */}
 
       {/* Performance Bar Chart - Revenue vs Target by Time Period */}
       {/* key remounts the chart on company switch so its internal breakdown
