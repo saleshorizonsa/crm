@@ -22,7 +22,7 @@ function cardDefs(totals) {
       sub: MONTH_LABEL(),
     },
     {
-      key: 'achieved', label: 'Achieved', strip: 'bg-green-500',
+      key: 'achieved', label: 'Achieved (invoiced)', strip: 'bg-green-500',
       value: `${fmtSAR(t.achieved)} SAR`, valueClass: 'text-green-600',
       sub: `${(t.attainmentPct || 0).toFixed(1)}% of target`,
     },
@@ -121,8 +121,8 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
   const mE = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
   const inMonth = (d) => d && new Date(d) >= mS && new Date(d) <= mE;
   const openDeals = deals.filter((d) => !['won', 'lost'].includes(d.stage));
-  // Achieved = won deals whose stage changed to won this month.
-  const wonThisMonth = deals.filter((d) => d.stage === 'won' && inMonth(d.stage_changed_at));
+  // Achieved = invoiced won deals this month (by invoice_date).
+  const wonThisMonth = deals.filter((d) => d.stage === 'won' && d.is_invoiced && inMonth(d.invoice_date));
   const history = deals.filter((d) => ['won', 'lost'].includes(d.stage));
 
   let items = [];
@@ -255,7 +255,7 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
       const [dRes, oRes] = await Promise.all([
         supabase
           .from('deals')
-          .select('id, title, stage, amount, final_amount, closed_at, created_at, stage_changed_at')
+          .select('id, title, stage, amount, final_amount, closed_at, created_at, is_invoiced, invoice_date')
           .eq('owner_id', viewSalesman.id)
           .order('created_at', { ascending: false })
           .limit(100),

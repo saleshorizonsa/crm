@@ -88,15 +88,17 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
     targetPer[k] = Math.max(targetPer[k] || 0, parseFloat(t.target_amount) || 0);
   });
 
-  // 3. Achieved — won deals whose stage changed to won this month (final value).
+  // 3. Achieved — INVOICED won deals for this month (by invoice_date). Achievement
+  //    is only counted once a deal is invoiced, not merely won/closed (director rule).
   const { data: wonDeals } = await supabase
     .from('deals')
-    .select('owner_id, amount, final_amount, stage_changed_at')
+    .select('owner_id, amount, final_amount, invoice_date')
     .eq('company_id', companyId)
     .eq('stage', 'won')
+    .eq('is_invoiced', true)
     .in('owner_id', scopeIds)
-    .gte('stage_changed_at', mb.startISO)
-    .lte('stage_changed_at', mb.endISO);
+    .gte('invoice_date', mb.startDate)
+    .lte('invoice_date', mb.endDate);
   const achievedPer = {};
   (wonDeals || []).forEach((d) => {
     const amt = parseFloat(d.final_amount ?? d.amount) || 0;
