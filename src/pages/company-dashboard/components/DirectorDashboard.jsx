@@ -1890,6 +1890,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       <PerformanceBarChart
         key={selectedCompany?.id ?? "all"}
         dealsData={filteredDeals}
+        allDeals={allDealsData}
         targetsData={filteredAssignedTargets}
         timePeriod={timePeriod}
         year={new Date().getFullYear()}

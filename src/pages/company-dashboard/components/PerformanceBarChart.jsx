@@ -16,6 +16,7 @@ import { useLanguage } from "../../../i18n";
 
 const PerformanceBarChart = ({
   dealsData = [],
+  allDeals = [], // full company deal set (unfiltered by period) — for pipeline value
   targetsData = [],
   timePeriod = "month", // month, quarter, year
   year = new Date().getFullYear(),
@@ -39,9 +40,11 @@ const PerformanceBarChart = ({
     [employees],
   );
 
-  // Helper to convert deal amount to user's preferred currency
+  // Helper to convert a deal's value to the preferred currency. Uses the
+  // negotiated final_amount when present (falls back to amount) so revenue counts
+  // the closing value; open deals have no final_amount and use amount.
   const getConvertedAmount = (deal) => {
-    const amount = parseFloat(deal.amount) || 0;
+    const amount = parseFloat(deal.final_amount ?? deal.amount) || 0;
     const dealCurrency = deal.currency || preferredCurrency;
     if (dealCurrency === preferredCurrency) return amount;
     return convertCurrency(amount, dealCurrency, preferredCurrency);
@@ -95,7 +98,8 @@ const PerformanceBarChart = ({
 
       // Calculate revenue from deals
       dealsData.forEach((deal) => {
-        const dealDate = new Date(deal.closed_at || deal.created_at);
+        // Won revenue is bucketed by invoice_date (achievement = invoiced).
+        const dealDate = new Date(deal.invoice_date || deal.closed_at || deal.created_at);
         const dealYear = dealDate.getFullYear();
         const dealMonth = dealDate.getMonth();
 
@@ -110,7 +114,7 @@ const PerformanceBarChart = ({
           dealYear === year &&
           dealMonth === period.month
         ) {
-          if (deal.stage === "won") {
+          if (deal.stage === "won" && deal.is_invoiced === true) {
             countDeal();
           }
         } else if (
@@ -118,11 +122,11 @@ const PerformanceBarChart = ({
           dealYear === year &&
           period.quarters.includes(dealMonth)
         ) {
-          if (deal.stage === "won") {
+          if (deal.stage === "won" && deal.is_invoiced === true) {
             countDeal();
           }
         } else if (timePeriod === "year" && dealYear === period.year) {
-          if (deal.stage === "won") {
+          if (deal.stage === "won" && deal.is_invoiced === true) {
             countDeal();
           }
         }
@@ -171,7 +175,7 @@ const PerformanceBarChart = ({
   const { salesmenBreakdown, activeSalesmenCount } = useMemo(() => {
     const currentYear = new Date().getFullYear();
     const inRange = (deal) => {
-      const dealDate = new Date(deal.closed_at || deal.created_at);
+      const dealDate = new Date(deal.invoice_date || deal.closed_at || deal.created_at);
       const dealYear = dealDate.getFullYear();
       if (timePeriod === "year") {
         return dealYear >= currentYear - 4 && dealYear <= currentYear;
@@ -184,7 +188,7 @@ const PerformanceBarChart = ({
     const activeIds = new Set();
 
     dealsData.forEach((deal) => {
-      if (deal.stage !== "won" || !deal.owner_id || !inRange(deal)) return;
+      if (deal.stage !== "won" || deal.is_invoiced !== true || !deal.owner_id || !inRange(deal)) return;
       const val = getConvertedAmount(deal);
       revenueMap[deal.owner_id] = (revenueMap[deal.owner_id] || 0) + val;
       dealCountMap[deal.owner_id] = (dealCountMap[deal.owner_id] || 0) + 1;
@@ -210,7 +214,10 @@ const PerformanceBarChart = ({
     const totalDeals = chartData.reduce((sum, d) => sum + d.deals, 0);
     const avgAchievement =
       totalTarget > 0 ? Math.round((totalRevenue / totalTarget) * 100) : 0;
-    const remainingRevenue = Math.max(0, totalTarget - totalRevenue);
+    // Active pipeline value = sum of ALL open deals (not won/lost), no date filter.
+    const remainingRevenue = (allDeals || [])
+      .filter((d) => !["won", "lost"].includes(d.stage))
+      .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
     // Avg is over salesmen who actually won a deal, not the whole headcount
     const avgPerSalesman =
       activeSalesmenCount > 0 ? totalRevenue / activeSalesmenCount : 0;
@@ -230,7 +237,7 @@ const PerformanceBarChart = ({
       avgPerSalesman,
       avgSalesmanAchievement,
     };
-  }, [chartData, activeSalesmenCount]);
+  }, [chartData, activeSalesmenCount, allDeals]);
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
@@ -339,11 +346,12 @@ const PerformanceBarChart = ({
             {summaryStats.totalDeals}
           </div>
         </div>
-        <div className="bg-red-500 rounded-lg p-3 text-center">
-          <div className="text-xs text-white mb-1">{"Remaining Revenue"}</div>
+        <div className="bg-indigo-500 rounded-lg p-3 text-center">
+          <div className="text-xs text-white mb-1">Active Pipeline Value</div>
           <div className="text-lg font-bold text-white">
             {formatCurrency(summaryStats.remainingRevenue)}
           </div>
+          <div className="text-[10px] text-white/80 mt-0.5">Open deals in Funnel</div>
         </div>
       </div>
 
