@@ -26,7 +26,6 @@ import EnhancedSalesmanDashboard from "./EnhancedSalesmanDashboard";
 import EmployeeSelector from "../../../components/ui/EmployeeSelector";
 import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
-import MetricInsightModal from "./MetricInsightModal";
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
@@ -159,10 +158,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   const [executiveMetrics, setExecutiveMetrics] = useState(null);
   const [pipelineData, setPipelineData] = useState([]);
   const [actionItems, setActionItems] = useState([]);
-  const [metricInsightModal, setMetricInsightModal] = useState({
-    isOpen: false,
-    metricType: null,
-  });
 
   // 3-month rolling win-rate average (won ÷ total deals created in the last 3
   // completed calendar months) for the manager's full team. Independent of the
@@ -196,36 +191,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   const [teamMonthlyAchieved, setTeamMonthlyAchieved] = useState(0);
 
   const navigate = useNavigate();
-
-  const handleMetricClick = (metricType) => {
-    // When a director is viewing this manager ("View Dashboard As"), the Total
-    // Revenue card deep-links into that manager's By Salesman report instead of
-    // opening the local insights modal.
-    if (viewAsUser && metricType === "totalRevenue") {
-      navigate("/reports?tab=salesman", {
-        state: {
-          tab: "salesman",
-          salesmanId: viewAsUser.id,
-          salesmanName: viewAsUser.full_name || viewAsUser.email,
-          company: company?.id,
-          dateFrom: activeDateRange?.from,
-          dateTo: activeDateRange?.to,
-        },
-      });
-      return;
-    }
-    setMetricInsightModal({
-      isOpen: true,
-      metricType,
-    });
-  };
-
-  const handleCloseMetricModal = () => {
-    setMetricInsightModal({
-      isOpen: false,
-      metricType: null,
-    });
-  };
 
   useEffect(() => {
     if (company?.id && userProfile?.id) {
@@ -3259,15 +3224,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
             </div>
           )}
 
-          {/* Metric Insight Modal */}
-          <MetricInsightModal
-            isOpen={metricInsightModal.isOpen}
-            onClose={handleCloseMetricModal}
-            metricType={metricInsightModal.metricType}
-            metrics={{ ...executiveMetrics, winRate3m }}
-            teamData={[...allSubordinates, effectiveUserProfile]}
-            dealsData={filteredDeals}
-          />
         </>
       )}
     </div>

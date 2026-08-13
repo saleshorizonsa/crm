@@ -27,7 +27,6 @@ import ActionableDashboard from "./ActionableDashboard";
 import HotLeadsWidget from "./HotLeadsWidget";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
-import MetricInsightModal from "./MetricInsightModal";
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
@@ -169,10 +168,6 @@ const EnhancedSupervisorDashboard = ({
 
   // Enhanced data states
   const [actionItems, setActionItems] = useState([]);
-  const [metricInsightModal, setMetricInsightModal] = useState({
-    isOpen: false,
-    metricType: null,
-  });
 
   // 3-month rolling win-rate average (won ÷ total deals created in the last 3
   // completed calendar months) for the supervisor's team. Independent of the
@@ -204,36 +199,6 @@ const EnhancedSupervisorDashboard = ({
   const [monthlyLoading, setMonthlyLoading] = useState(false);
 
   const navigate = useNavigate();
-
-  const handleMetricClick = (metricType) => {
-    // When a director is viewing this supervisor ("View Dashboard As"), the Total
-    // Revenue card deep-links into that supervisor's By Salesman report instead
-    // of opening the local insights modal.
-    if (viewAsUser && metricType === "totalRevenue") {
-      navigate("/reports?tab=salesman", {
-        state: {
-          tab: "salesman",
-          salesmanId: viewAsUser.id,
-          salesmanName: viewAsUser.full_name || viewAsUser.email,
-          company: company?.id,
-          dateFrom: activeDateRange?.from,
-          dateTo: activeDateRange?.to,
-        },
-      });
-      return;
-    }
-    setMetricInsightModal({
-      isOpen: true,
-      metricType,
-    });
-  };
-
-  const handleCloseMetricModal = () => {
-    setMetricInsightModal({
-      isOpen: false,
-      metricType: null,
-    });
-  };
 
   useEffect(() => {
     if (company?.id && effectiveUserProfile?.id) {
@@ -3704,15 +3669,6 @@ const EnhancedSupervisorDashboard = ({
         </div>
       )}
 
-      {/* Metric Insight Modal */}
-      <MetricInsightModal
-        isOpen={metricInsightModal.isOpen}
-        onClose={handleCloseMetricModal}
-        metricType={metricInsightModal.metricType}
-        metrics={{ ...executiveMetrics, winRate3m }}
-        teamData={[...subordinates, effectiveUserProfile]}
-        dealsData={filteredDeals}
-      />
     </div>
   );
 };

@@ -28,11 +28,9 @@ import DirectorSalesTargetAssignment from "../../../components/DirectorSalesTarg
 import SalesTargetTable from "../../../components/SalesTargetTable";
 
 // New enhanced components
-import ExecutiveMetrics from "./ExecutiveMetrics";
 import PipelineChart from "./PipelineChart";
 import CompanyPerformanceGrid from "./CompanyPerformanceGrid";
 import ActionableDashboard from "./ActionableDashboard";
-import MetricInsightModal from "./MetricInsightModal";
 import PerformanceBarChart from "./PerformanceBarChart";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
@@ -170,11 +168,6 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const [allDealsData, setAllDealsData] = useState([]);
   const [allContacts, setAllContacts] = useState([]);
   const [allTasks, setAllTasks] = useState([]);
-  const [metricInsightModal, setMetricInsightModal] = useState({
-    isOpen: false,
-    metricType: null,
-  });
-
   // 3-month rolling win-rate average (won ÷ total deals created in the last 3
   // completed calendar months). Company-wide by default; scoped to one salesman
   // when the director drills into an employee. Independent of the date filter.
@@ -1830,60 +1823,6 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     }
   };
 
-  const handleMetricClick = (metricType) => {
-    const navState = {
-      company: selectedCompany?.id,
-      companyName: selectedCompany?.name,
-      dateFrom: activeDateRange.from,
-      dateTo: activeDateRange.to,
-    };
-    // metricType values come from ExecutiveMetrics: totalRevenue, activePipeline,
-    // winRate, teamPerformance, dealsClosed, conversionRate (+ legacy aliases).
-    switch (metricType) {
-      // Total Revenue → Reports "By Value"
-      case 'totalRevenue':
-      case 'revenue':
-        navigate('/reports?tab=value');
-        break;
-      // Win Rate / Conversion / Team Performance → Reports "By Salesman"
-      case 'winRate':
-      case 'conversionRate':
-      case 'conversion':
-      case 'teamPerformance':
-      case 'team':
-      case 'activities':
-        navigate('/reports?tab=salesman');
-        break;
-      // Active Pipeline → Sales Pipeline (all open deals, no stage filter)
-      case 'activePipeline':
-      case 'pipeline':
-      case 'pipelineValue':
-        navigate('/sales-pipeline', { state: navState });
-        break;
-      // Deals Closed → Sales Pipeline filtered to Won (with drill-down banner)
-      case 'dealsClosed':
-      case 'dealsWon':
-        navigate('/sales-pipeline', {
-          state: { ...navState, filterStage: 'won', source: 'director-stage-click' },
-        });
-        break;
-      case 'contacts':
-        navigate('/contact-management', { state: navState });
-        break;
-      case 'leads':
-        navigate('/lead-management', { state: navState });
-        break;
-      default:
-        navigate('/reports');
-    }
-  };
-
-  const handleCloseMetricModal = () => {
-    setMetricInsightModal({
-      isOpen: false,
-      metricType: null,
-    });
-  };
 
   const handleActionClick = (action) => {
     switch (action.type) {
@@ -2784,17 +2723,6 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         </div>
       )}
 
-      {/* Metric Insight Modal */}
-      <MetricInsightModal
-        isOpen={metricInsightModal.isOpen}
-        onClose={handleCloseMetricModal}
-        metricType={metricInsightModal.metricType}
-        metrics={{ ...executiveMetrics, winRate3m }}
-        pipelineData={pipelineData}
-        teamData={teamData}
-        dealsData={filteredDeals}
-        timePeriod={timePeriod}
-      />
     </div>
   );
 };

@@ -18,7 +18,6 @@ import {
   getMonthlyTarget,
 } from "../../../services/supabaseService";
 import MonthlyTargetCard from "../../../components/MonthlyTargetCard";
-import ExecutiveMetrics from "./ExecutiveMetrics";
 import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
 import HotLeadsWidget from "./HotLeadsWidget";
