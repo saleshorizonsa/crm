@@ -10,6 +10,7 @@ import LostReasonModal from "./components/LostReasonModal";
 import Button from "../../components/ui/Button";
 import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
+import { supabase } from "../../lib/supabase";
 import { useLanguage } from "../../i18n";
 import { useLocation, Navigate } from "react-router-dom";
 import {
@@ -58,6 +59,55 @@ const SalesPipeline = () => {
   const [deals, setDeals] = useState([]);
   const [filteredDeals, setFilteredDeals] = useState([]);
   const [contacts, setContacts] = useState([]);
+
+  // ── Mark-as-invoiced (Won deals) — Achievement counts only once invoiced ──
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [invoicingDeal, setInvoicingDeal] = useState(null);
+  const [invoiceForm, setInvoiceForm] = useState({ invoice_number: "", invoice_date: "" });
+  const [invoiceErrors, setInvoiceErrors] = useState({});
+  const [savingInvoice, setSavingInvoice] = useState(false);
+
+  const handleMarkInvoiced = (deal) => {
+    setInvoicingDeal(deal);
+    setInvoiceForm({ invoice_number: "", invoice_date: new Date().toISOString().split("T")[0] });
+    setInvoiceErrors({});
+    setShowInvoiceModal(true);
+  };
+
+  const confirmInvoice = async () => {
+    const errors = {};
+    if (!invoiceForm.invoice_number.trim()) errors.invoice_number = "Invoice number is required";
+    if (!invoiceForm.invoice_date) errors.invoice_date = "Invoice date is required";
+    if (Object.keys(errors).length) { setInvoiceErrors(errors); return; }
+
+    setSavingInvoice(true);
+    try {
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("deals")
+        .update({
+          is_invoiced: true,
+          invoice_number: invoiceForm.invoice_number.trim(),
+          invoice_date: invoiceForm.invoice_date,
+          invoiced_at: now,
+          invoiced_by: user?.id,
+          updated_at: now,
+        })
+        .eq("id", invoicingDeal.id)
+        .select("*, contact:contacts!contact_id(id, first_name, last_name, company_name), owner:users!owner_id(id, full_name, email)")
+        .single();
+      if (error) throw error;
+      // Update in place so the card flips to "Invoiced" without a full reload.
+      setDeals((prev) => prev.map((d) => (d.id === data.id ? { ...d, ...data } : d)));
+      setShowInvoiceModal(false);
+      setInvoicingDeal(null);
+    } catch (err) {
+      console.error("Invoice:", err);
+      setInvoiceErrors({ invoice_number: err.message || "Could not save invoice" });
+    } finally {
+      setSavingInvoice(false);
+    }
+  };
   const [users, setUsers] = useState([]);
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [showDealModal, setShowDealModal] = useState(false);
@@ -646,6 +696,7 @@ const SalesPipeline = () => {
                     )}
                     onDealUpdate={handleEditDeal}
                     onDealClick={handleEditDeal}
+                    onMarkInvoiced={handleMarkInvoiced}
                     onStageUpdate={(stageId) =>
                       console.log("Stage settings:", stageId)
                     }
@@ -709,6 +760,102 @@ const SalesPipeline = () => {
           setDealBeingLost(null);
         }}
       />
+
+      {/* Mark as Invoiced modal */}
+      {showInvoiceModal && invoicingDeal && (
+        <>
+          <div
+            className="fixed inset-0 z-[700] bg-black/40 backdrop-blur-sm"
+            onClick={() => setShowInvoiceModal(false)}
+          />
+          <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md overflow-hidden pointer-events-auto border border-border">
+              <div className="px-6 py-4 border-b border-border bg-green-50">
+                <h2 className="text-base font-semibold text-green-800 flex items-center gap-2">
+                  <Icon name="Receipt" size={16} /> Mark as Invoiced
+                </h2>
+                <p className="text-xs text-green-600 mt-0.5 font-medium truncate">
+                  {invoicingDeal.title || invoicingDeal.contact?.company_name || "Deal"}
+                </p>
+              </div>
+
+              <div className="px-6 py-5 space-y-4">
+                <div className="p-3 bg-green-50 border border-green-100 rounded-xl flex items-center gap-3">
+                  <Icon name="CheckCircle" size={16} className="text-green-600 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs font-medium text-green-800">
+                      Won Amount:{" "}
+                      {new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(
+                        invoicingDeal.final_amount || invoicingDeal.amount || 0,
+                      )}{" "}
+                      SAR
+                    </p>
+                    <p className="text-xs text-green-600">
+                      This deal counts as Achievement once invoiced.
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                    Invoice Number *
+                  </label>
+                  <input
+                    type="text"
+                    value={invoiceForm.invoice_number}
+                    onChange={(e) => setInvoiceForm((f) => ({ ...f, invoice_number: e.target.value }))}
+                    placeholder="e.g. INV-2026-001"
+                    className={`w-full border rounded-xl px-3 py-2.5 text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500/20 ${
+                      invoiceErrors.invoice_number ? "border-destructive" : "border-border"
+                    }`}
+                  />
+                  {invoiceErrors.invoice_number && (
+                    <p className="text-xs text-destructive mt-1">{invoiceErrors.invoice_number}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                    Invoice Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={invoiceForm.invoice_date}
+                    onChange={(e) => setInvoiceForm((f) => ({ ...f, invoice_date: e.target.value }))}
+                    className={`w-full border rounded-xl px-3 py-2.5 text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500/20 ${
+                      invoiceErrors.invoice_date ? "border-destructive" : "border-border"
+                    }`}
+                  />
+                  {invoiceErrors.invoice_date && (
+                    <p className="text-xs text-destructive mt-1">{invoiceErrors.invoice_date}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-border flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowInvoiceModal(false)}
+                  className="px-4 py-2 text-sm border border-border rounded-xl text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmInvoice}
+                  disabled={savingInvoice}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white font-medium rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
+                >
+                  {savingInvoice ? (
+                    <Icon name="Loader2" size={14} className="animate-spin" />
+                  ) : (
+                    <Icon name="Receipt" size={14} />
+                  )}
+                  Confirm Invoice
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Deal Modal */}
       <DealModal

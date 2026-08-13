@@ -8,7 +8,7 @@ import { groupDealsByMaterialGroup, getDealOrigin } from "../../../utils/dealGro
 
 // ─── Grouped view component ───────────────────────────────────────────────────
 
-function GroupedDealsList({ deals, onDealClick, onDealUpdate, activePeriodFrom }) {
+function GroupedDealsList({ deals, onDealClick, onDealUpdate, onMarkInvoiced, activePeriodFrom }) {
   const grouped = groupDealsByMaterialGroup(deals);
   const groups  = Object.keys(grouped).sort((a, b) => {
     if (a === 'No Products') return 1;
@@ -73,6 +73,7 @@ function GroupedDealsList({ deals, onDealClick, onDealUpdate, activePeriodFrom }
                       deal={deal}
                       onDealClick={onDealClick}
                       onDealUpdate={onDealUpdate}
+                      onMarkInvoiced={onMarkInvoiced}
                       showProductSummary={true}
                       periodFrom={activePeriodFrom}
                     />
@@ -94,6 +95,7 @@ const PipelineStage = ({
   deals = [],
   onDealUpdate,
   onDealClick,
+  onMarkInvoiced,
   onStageUpdate,
   onDragOver,
   onDrop,
@@ -279,6 +281,7 @@ const PipelineStage = ({
               deals={deals}
               onDealClick={onDealClick}
               onDealUpdate={onDealUpdate}
+              onMarkInvoiced={onMarkInvoiced}
               activePeriodFrom={activePeriodFrom}
             />
           ) : (
@@ -295,6 +298,7 @@ const PipelineStage = ({
                   deal={deal}
                   onDealClick={onDealClick}
                   onDealUpdate={onDealUpdate}
+                  onMarkInvoiced={onMarkInvoiced}
                   periodFrom={activePeriodFrom}
                 />
               </div>

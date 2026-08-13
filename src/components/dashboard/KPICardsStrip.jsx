@@ -14,6 +14,7 @@ function cardDefs(totals) {
   const t = totals || {};
   const onTrack = (t.plannedGap || 0) <= 0;
   const targetMet = (t.deficit || 0) <= 0;
+  const pct = (num, den) => (den > 0 ? ((num / den) * 100).toFixed(1) : '0');
   return [
     {
       key: 'target', label: 'Target', strip: 'bg-blue-600',
@@ -21,15 +22,15 @@ function cardDefs(totals) {
       sub: MONTH_LABEL(),
     },
     {
-      key: 'achieved', label: 'Achieved', strip: 'bg-green-500',
+      key: 'achieved', label: 'Achieved (invoiced)', strip: 'bg-green-500',
       value: `${fmtSAR(t.achieved)} SAR`, valueClass: 'text-green-600',
-      sub: 'Won this month',
+      sub: `${(t.attainmentPct || 0).toFixed(1)}% of target`,
     },
     {
       key: 'deficit', label: 'Deficit', strip: targetMet ? 'bg-green-500' : 'bg-red-500',
       value: targetMet ? 'Target met ✓' : `${fmtSAR(t.deficit)} SAR`,
       valueClass: targetMet ? 'text-green-600' : 'text-red-600',
-      sub: 'Target − Achieved',
+      sub: targetMet ? 'Target met' : `${pct(t.deficit, t.target)}% of target remaining`,
     },
     {
       key: 'winRate', label: 'Win Rate', strip: 'bg-purple-500',
@@ -40,7 +41,9 @@ function cardDefs(totals) {
       key: 'plannedGap', label: 'Planned Gap', strip: onTrack ? 'bg-green-500' : 'bg-red-500',
       value: onTrack ? 'On Track ✓' : `${fmtSAR(t.plannedGap)} SAR`,
       valueClass: onTrack ? 'text-green-600' : 'text-red-600',
-      sub: onTrack ? `Planned: ${fmtSAR(t.planned)} SAR` : 'Required − Planned',
+      sub: onTrack
+        ? `Planned: ${fmtSAR(t.planned)} SAR`
+        : `${pct(t.plannedGap, t.required)}% of required plan unplanned`,
     },
   ];
 }
@@ -118,7 +121,8 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
   const mE = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
   const inMonth = (d) => d && new Date(d) >= mS && new Date(d) <= mE;
   const openDeals = deals.filter((d) => !['won', 'lost'].includes(d.stage));
-  const wonThisMonth = deals.filter((d) => d.stage === 'won' && inMonth(d.closed_at));
+  // Achieved = invoiced won deals this month (by invoice_date).
+  const wonThisMonth = deals.filter((d) => d.stage === 'won' && d.is_invoiced && inMonth(d.invoice_date));
   const history = deals.filter((d) => ['won', 'lost'].includes(d.stage));
 
   let items = [];
@@ -251,7 +255,7 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
       const [dRes, oRes] = await Promise.all([
         supabase
           .from('deals')
-          .select('id, title, stage, amount, final_amount, closed_at, created_at')
+          .select('id, title, stage, amount, final_amount, closed_at, created_at, is_invoiced, invoice_date')
           .eq('owner_id', viewSalesman.id)
           .order('created_at', { ascending: false })
           .limit(100),
@@ -296,6 +300,44 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
           </button>
         ))}
       </div>
+
+      {/* Health status — Coverage (Achieved + Funnel×WinRate + Plan×WinRate ≥ Target)
+          and Pacing (attainment vs month elapsed) */}
+      {!loading && totals && (
+        <div
+          className={`flex items-center gap-3 px-5 py-3 rounded-xl border mt-4 ${
+            totals.isHealthy ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
+          }`}
+        >
+          <div
+            className={`w-3 h-3 rounded-full flex-shrink-0 animate-pulse ${
+              totals.isHealthy ? 'bg-green-500' : 'bg-amber-500'
+            }`}
+          />
+          <div className="flex-1 min-w-0">
+            <span className={`font-semibold text-sm ${totals.isHealthy ? 'text-green-700' : 'text-amber-700'}`}>
+              {totals.isHealthy ? '✅ Status: Healthy' : '⚠️ Status: At Risk'}
+            </span>
+            <span className="text-xs text-muted-foreground ml-3">
+              {totals.isHealthy
+                ? 'Coverage and pacing on track'
+                : totals.coverageHealthy
+                  ? 'Pacing behind schedule'
+                  : totals.pacingHealthy
+                    ? 'Pipeline coverage insufficient'
+                    : 'Both coverage and pacing at risk'}
+            </span>
+          </div>
+          <div className="text-xs flex gap-4 flex-shrink-0">
+            <span className={totals.coverageHealthy ? 'text-green-600' : 'text-red-600'}>
+              Coverage: {totals.coverageHealthy ? '✓' : '✗'}
+            </span>
+            <span className={totals.pacingHealthy ? 'text-green-600' : 'text-red-600'}>
+              Pacing: {totals.pacingHealthy ? '✓' : '✗'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Popup */}
       {activePopup && (

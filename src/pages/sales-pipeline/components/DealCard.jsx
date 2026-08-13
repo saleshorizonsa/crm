@@ -31,7 +31,7 @@ const LOST_CODE_LABELS = {
   CAPACITY:          "Capacity",
 };
 
-const DealCard = ({ deal, onDealUpdate, onDealClick, showProductSummary = false, periodFrom }) => {
+const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, showProductSummary = false, periodFrom }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editAmount, setEditAmount] = useState(deal?.amount);
   const [productCount, setProductCount] = useState(0);
@@ -268,6 +268,24 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, showProductSummary = false,
           </span>
         </div>
       </div>
+
+      {/* --- Invoice (Won deals only) — Achievement counts only once invoiced --- */}
+      {deal?.stage === "won" && (
+        deal?.is_invoiced ? (
+          <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-green-700 font-medium mt-2">
+            <Icon name="CheckCircle" size={12} />
+            Invoiced #{deal.invoice_number}
+          </div>
+        ) : (
+          <button
+            onClick={(e) => { e.stopPropagation(); onMarkInvoiced?.(deal); }}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors w-full justify-center mt-2"
+          >
+            <Icon name="Receipt" size={12} />
+            Mark as Invoiced
+          </button>
+        )
+      )}
     </div>
   );
 };

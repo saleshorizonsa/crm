@@ -85,15 +85,17 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
     targetPer[k] = Math.max(targetPer[k] || 0, parseFloat(t.target_amount) || 0);
   });
 
-  // 3. Achieved — won deals closed this month (final negotiated value).
+  // 3. Achieved — INVOICED won deals for this month (by invoice_date). Achievement
+  //    is only counted once a deal is invoiced, not merely won/closed.
   const { data: wonDeals } = await supabase
     .from('deals')
-    .select('owner_id, amount, final_amount, closed_at')
+    .select('owner_id, amount, final_amount, invoice_date')
     .eq('company_id', companyId)
     .eq('stage', 'won')
+    .eq('is_invoiced', true)
     .in('owner_id', scopeIds)
-    .gte('closed_at', mb.startISO)
-    .lte('closed_at', mb.endISO);
+    .gte('invoice_date', mb.startDate)
+    .lte('invoice_date', mb.endDate);
   const achievedPer = {};
   (wonDeals || []).forEach((d) => {
     const amt = parseFloat(d.final_amount ?? d.amount) || 0;
@@ -129,6 +131,15 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
     plannedPer[o.owner_id] = (plannedPer[o.owner_id] || 0) + (parseFloat(o.planned_amount) || 0);
   });
 
+  // 6. Funnel value — open (not won/lost) deal amounts, for the coverage check.
+  const { data: openDeals } = await supabase
+    .from('deals')
+    .select('owner_id, amount')
+    .eq('company_id', companyId)
+    .in('owner_id', scopeIds)
+    .not('stage', 'in', '("won","lost")');
+  const funnelValue = (openDeals || []).reduce((s, d) => s + (parseFloat(d.amount) || 0), 0);
+
   const salesmanData = userList
     .map((u) => {
       const target = targetPer[u.id] || 0;
@@ -160,8 +171,27 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
   const planned = Object.values(plannedPer).reduce((s, v) => s + v, 0);
   const required = winRate3m > 0 ? target / (winRate3m / 100) : target * 2;
   const plannedGap = Math.max(0, required - planned);
+  const attainmentPct = target > 0 ? (achieved / target) * 100 : 0;
 
-  const totals = { target, achieved, deficit, winRate3m, winRateIsDefault, planned, required, plannedGap };
+  // Coverage check: Achieved + (Funnel × WinRate) + (Planning × WinRate) ≥ Target.
+  const wrFrac = winRate3m / 100;
+  const coverageValue = achieved + funnelValue * wrFrac + planned * wrFrac;
+  const coverageHealthy = target > 0 ? coverageValue >= target : true;
+
+  // Pacing check (linear): attainment% should keep up with the % of the month elapsed
+  // (within a 15-point tolerance).
+  const nowD = new Date();
+  const totalDaysInMonth = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0).getDate();
+  const daysElapsed = nowD.getDate();
+  const pacingPct = totalDaysInMonth > 0 ? (daysElapsed / totalDaysInMonth) * 100 : 0;
+  const pacingHealthy = attainmentPct >= pacingPct - 15;
+  const isHealthy = coverageHealthy && pacingHealthy;
+
+  const totals = {
+    target, achieved, deficit, winRate3m, winRateIsDefault, planned, required, plannedGap,
+    attainmentPct, funnelValue,
+    coverageValue, coverageHealthy, pacingPct, pacingHealthy, isHealthy,
+  };
 
   // TEMP debug — helps diagnose wrong team/director KPI values. Remove once fixed.
   if (KPI_DEBUG) {
