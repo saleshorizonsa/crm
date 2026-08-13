@@ -786,52 +786,64 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     }
   }, [companies, activeDateRange.from, activeDateRange.to]);
 
-  // Recalculate companiesWithMetrics when filters change
+  // Recalculate companiesWithMetrics from ALL company deals (not period-filtered).
+  // Revenue = invoiced won deals this month (final value); Active Deals + Remaining
+  // Revenue = every open deal regardless of when it was created.
   useEffect(() => {
     if (companies.length > 0 && allDealsData.length > 0) {
-      // Recalculate each company's metrics based on filteredDeals
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      const conv = (d) => {
+        const amount = parseFloat(d.final_amount ?? d.amount) || 0;
+        const dealCurrency = d.currency || preferredCurrency;
+        return dealCurrency !== preferredCurrency
+          ? convertCurrency(amount, dealCurrency, preferredCurrency)
+          : amount;
+      };
+
       const updatedCompanies = companies.map((company) => {
-        const companyFilteredDeals = filteredDeals.filter(
-          (d) => d.company_id === company.id,
+        const companyDeals = allDealsData.filter((d) => d.company_id === company.id);
+
+        // Revenue = invoiced won deals with invoice_date in the current month.
+        const invoicedWon = companyDeals.filter(
+          (d) =>
+            d.stage === "won" &&
+            d.is_invoiced === true &&
+            d.invoice_date &&
+            new Date(d.invoice_date) >= monthStart &&
+            new Date(d.invoice_date) <= monthEnd,
         );
-        const wonDeals = companyFilteredDeals.filter((d) => d.stage === "won");
-        const totalRevenue = wonDeals.reduce((sum, d) => {
+        const totalRevenue = invoicedWon.reduce((sum, d) => sum + conv(d), 0);
+
+        // Open deals (no date filter) → Active Deals + Remaining Revenue.
+        const openDeals = companyDeals.filter((d) => !["won", "lost"].includes(d.stage));
+        const remainingRevenue = openDeals.reduce((sum, d) => {
           const amount = parseFloat(d.amount) || 0;
           const dealCurrency = d.currency || preferredCurrency;
-          const convertedAmount =
-            dealCurrency !== preferredCurrency
-              ? convertCurrency(amount, dealCurrency, preferredCurrency)
-              : amount;
-          return sum + convertedAmount;
+          return sum + (dealCurrency !== preferredCurrency
+            ? convertCurrency(amount, dealCurrency, preferredCurrency)
+            : amount);
         }, 0);
-        const activeDeals = companyFilteredDeals.filter(
-          (d) => !["won", "lost"].includes(d.stage),
-        );
 
-        const existingCompany = companiesWithMetrics.find(
-          (c) => c.id === company.id,
-        );
-
-        // Calculate remaining revenue from existing target data
-        const totalTarget = existingCompany?.metrics?.totalTarget || 0;
-        const remainingRevenue = Math.max(0, totalTarget - totalRevenue);
+        const existingCompany = companiesWithMetrics.find((c) => c.id === company.id);
 
         return {
           ...company,
           metrics: {
             totalRevenue,
-            activeDeals: activeDeals.length,
-            totalDeals: companyFilteredDeals.length,
+            activeDeals: openDeals.length,
+            totalDeals: companyDeals.length,
             teamSize: existingCompany?.metrics?.teamSize || 0,
             targetAchievement: existingCompany?.metrics?.targetAchievement || 0,
-            totalTarget,
+            totalTarget: existingCompany?.metrics?.totalTarget || 0,
             remainingRevenue,
           },
         };
       });
       setCompaniesWithMetrics(updatedCompanies);
     }
-  }, [filteredDeals, companies, preferredCurrency]);
+  }, [allDealsData, companies, preferredCurrency]);
 
   // Update selected company when prop changes
   useEffect(() => {
@@ -1679,26 +1691,27 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                   : amount;
               return sum + convertedAmount;
             }, 0);
-            const activeDeals = filteredDeals.filter(
+            // Open deals (no date filter) → Active Deals + Remaining Revenue.
+            const openDeals = (deals || []).filter(
               (d) => !["won", "lost"].includes(d.stage),
             );
+            const remainingRevenue = openDeals.reduce((sum, d) => {
+              const amount = parseFloat(d.amount) || 0;
+              const dealCurrency = d.currency || preferredCurrency;
+              return sum + (dealCurrency !== preferredCurrency
+                ? convertCurrency(amount, dealCurrency, preferredCurrency)
+                : amount);
+            }, 0);
 
-            // Calculate target achievement from actual revenue vs targets
+            // Target achievement from actual revenue vs targets.
             let targetAchievement = 0;
             let totalTargetAmount = 0;
-            let remainingRevenue = 0;
-
             if (filteredTargets.length > 0) {
               totalTargetAmount = filteredTargets.reduce((sum, t) => {
                 return sum + (parseFloat(t.target_amount) || 0);
               }, 0);
-
               if (totalTargetAmount > 0) {
                 targetAchievement = (totalRevenue / totalTargetAmount) * 100;
-                remainingRevenue = Math.max(
-                  0,
-                  totalTargetAmount - totalRevenue,
-                );
               }
             }
 
@@ -1713,7 +1726,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               ...company,
               metrics: {
                 totalRevenue,
-                activeDeals: activeDeals.length,
+                activeDeals: openDeals.length,
                 teamSize: users?.length || 0,
                 targetAchievement,
                 totalTarget: totalTargetAmount,
