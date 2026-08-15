@@ -88,6 +88,8 @@ const PlanningPage = () => {
     winRate3m: 0,
     winRateIsDefault: false,
     requiredPlan: 0,
+    requiredPlanRaw: 0,
+    futureCarryover: 0,
     totalPlanned: 0,
     plannedGap: 0,
   });
@@ -100,7 +102,8 @@ const PlanningPage = () => {
     if (!companyId) {
       setSummaryData({
         target: 0, winRate3m: 0, winRateIsDefault: false,
-        requiredPlan: 0, totalPlanned: 0, plannedGap: 0,
+        requiredPlan: 0, requiredPlanRaw: 0, futureCarryover: 0,
+        totalPlanned: 0, plannedGap: 0,
       });
       setSummaryLoading(false);
       return;
@@ -123,7 +126,9 @@ const PlanningPage = () => {
           target: annual.target,             // Card 1 — annual target
           winRate3m: totals.winRate3m,       // Card 2 — 3-month salesman avg
           winRateIsDefault: totals.winRateIsDefault,
-          requiredPlan: totals.required,     // Card 3 — monthly required plan
+          requiredPlan: totals.required,     // Card 3 — monthly required plan (after carryover)
+          requiredPlanRaw: totals.requiredRaw,
+          futureCarryover: totals.futureCarryover,
           totalPlanned: totals.planned,      // this month's planned (salesmen)
           plannedGap: totals.plannedGap,     // Card 4 — monthly planned gap
         });
@@ -184,8 +189,24 @@ const PlanningPage = () => {
         }
       }
 
-      // ── REQUIRED PLAN ── Target ÷ Win Rate%
-      const requiredPlan = winRate3m > 0 ? totalTarget / (winRate3m / 100) : totalTarget * 2;
+      // ── REQUIRED PLAN ── Target ÷ Win Rate% (raw, before carryover)
+      const requiredPlanRaw = winRate3m > 0 ? totalTarget / (winRate3m / 100) : totalTarget * 2;
+
+      // ── FUTURE-ORDER CARRYOVER ── pending future orders for NEXT month count
+      // toward the required plan (customers already committed), so subtract them.
+      const nmStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      const nmEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+      const fmtD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const { data: futureOrders } = await supabase
+        .from("future_orders")
+        .select("planned_amount")
+        .eq("company_id", companyId)
+        .eq("status", "pending")
+        .in("owner_id", scopeIds)
+        .gte("expected_month", fmtD(nmStart))
+        .lte("expected_month", fmtD(nmEnd));
+      const futureCarryover = (futureOrders || []).reduce((s, o) => s + (parseFloat(o.planned_amount) || 0), 0);
+      const requiredPlan = Math.max(0, requiredPlanRaw - futureCarryover);
 
       // ── TOTAL PLANNED ── open opportunities for the current month
       const { data: opps } = await supabase
@@ -205,6 +226,8 @@ const PlanningPage = () => {
         winRate3m,
         winRateIsDefault,
         requiredPlan,
+        requiredPlanRaw,
+        futureCarryover,
         totalPlanned,
         plannedGap,
       });
@@ -307,8 +330,22 @@ const PlanningPage = () => {
                 <span className="text-sm font-normal text-muted-foreground ml-1">SAR</span>
               </p>
             )}
+            {!summaryLoading && summaryData.futureCarryover > 0 && (
+              <div className="mt-2 pt-2 border-t border-border">
+                <p className="text-xs text-muted-foreground">
+                  Raw required:{" "}
+                  <span className="tabular-nums">{fmtSAR(summaryData.requiredPlanRaw)} SAR</span>
+                </p>
+                <p className="text-xs text-green-600 font-medium flex items-center gap-1 mt-0.5">
+                  <span>↓</span>
+                  Future Orders: −{fmtSAR(summaryData.futureCarryover)} SAR
+                </p>
+              </div>
+            )}
             <p className="text-xs text-muted-foreground mt-1">
-              {isDirectorRole ? "Monthly quota" : "Target"} ÷ {summaryData.winRate3m.toFixed(0)}% win rate
+              {!summaryLoading && summaryData.futureCarryover > 0
+                ? "After future orders carryover"
+                : `${isDirectorRole ? "Monthly quota" : "Target"} ÷ ${summaryData.winRate3m.toFixed(0)}% win rate`}
             </p>
           </div>
 

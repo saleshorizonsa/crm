@@ -13,7 +13,7 @@ const CONTRIBUTOR_ROLES = ['salesman'];
 const EMPTY_TOTALS = {
   target: 0, achieved: 0, deficit: 0,
   winRate3m: 0, winRateIsDefault: true,
-  planned: 0, required: 0, plannedGap: 0,
+  planned: 0, required: 0, requiredRaw: 0, futureCarryover: 0, plannedGap: 0,
 };
 
 function monthBounds() {
@@ -26,6 +26,16 @@ function monthBounds() {
     startDate: `${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, '0')}-01`,
     endDate: new Date(n.getFullYear(), n.getMonth() + 1, 0).toISOString().split('T')[0],
   };
+}
+
+// First/last day of the NEXT calendar month as yyyy-MM-dd (built from local date
+// parts to avoid a timezone shift). Used for future-order carryover.
+function nextMonthBounds() {
+  const n = new Date();
+  const start = new Date(n.getFullYear(), n.getMonth() + 1, 1);
+  const end = new Date(n.getFullYear(), n.getMonth() + 2, 0);
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { startDate: fmt(start), endDate: fmt(end) };
 }
 
 // The 3 completed calendar months before the current one (current month excluded).
@@ -177,6 +187,23 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
     .not('stage', 'in', '("won","lost")');
   const funnelValue = (openDeals || []).reduce((s, d) => s + (parseFloat(d.amount) || 0), 0);
 
+  // 7. Future-order carryover — pending future orders for NEXT month count toward
+  //    the required plan (customers already committed), reducing the new pipeline
+  //    still needed. Only 'pending' orders (moved ones are already in the plan).
+  const nmb = nextMonthBounds();
+  const { data: futureOrders } = await supabase
+    .from('future_orders')
+    .select('owner_id, planned_amount')
+    .eq('company_id', companyId)
+    .eq('status', 'pending')
+    .in('owner_id', scopeIds)
+    .gte('expected_month', nmb.startDate)
+    .lte('expected_month', nmb.endDate);
+  const carryPer = {};
+  (futureOrders || []).forEach((o) => {
+    carryPer[o.owner_id] = (carryPer[o.owner_id] || 0) + (parseFloat(o.planned_amount) || 0);
+  });
+
   const salesmanData = userList
     .map((u) => {
       const target = targetPer[u.id] || 0;
@@ -184,13 +211,15 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
       const deficit = Math.max(0, target - achieved);
       const { rate: winRate3m, isDefault: winRateIsDefault } = resolveWinRate(u.id);
       const planned = plannedPer[u.id] || 0;
-      const required = winRate3m > 0 ? target / (winRate3m / 100) : target * 2;
+      const requiredRaw = winRate3m > 0 ? target / (winRate3m / 100) : target * 2;
+      const futureCarryover = carryPer[u.id] || 0;
+      const required = Math.max(0, requiredRaw - futureCarryover);
       const plannedGap = Math.max(0, required - planned);
       return {
         id: u.id, full_name: u.full_name, role: u.role,
         target, achieved, deficit,
         winRate3m, winRateIsDefault,
-        planned, required, plannedGap,
+        planned, required, requiredRaw, futureCarryover, plannedGap,
       };
     })
     .sort((a, b) => b.target - a.target || b.achieved - a.achieved);
@@ -203,7 +232,9 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
   const winRateIsDefault = total3 === 0;
   const winRate3m = companyWinRate3m;
   const planned = Object.values(plannedPer).reduce((s, v) => s + v, 0);
-  const required = winRate3m > 0 ? target / (winRate3m / 100) : target * 2;
+  const requiredRaw = winRate3m > 0 ? target / (winRate3m / 100) : target * 2;
+  const futureCarryover = Object.values(carryPer).reduce((s, v) => s + v, 0);
+  const required = Math.max(0, requiredRaw - futureCarryover);
   const plannedGap = Math.max(0, required - planned);
   const attainmentPct = target > 0 ? (achieved / target) * 100 : 0;
 
@@ -223,7 +254,8 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
   const isHealthy = coverageHealthy && pacingHealthy;
 
   const totals = {
-    target, achieved, deficit, winRate3m, winRateIsDefault, planned, required, plannedGap,
+    target, achieved, deficit, winRate3m, winRateIsDefault,
+    planned, required, requiredRaw, futureCarryover, plannedGap,
     attainmentPct, funnelValue,
     coverageValue, coverageHealthy, coveragePct,
     pacingPct, pacingHealthy, daysElapsed, totalDaysInMonth, isHealthy,
