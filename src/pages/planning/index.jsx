@@ -162,11 +162,27 @@ const PlanningPage = () => {
       });
       const totalTarget = Object.values(perPerson).reduce((s, v) => s + v, 0);
 
-      // ── 3-MONTH WIN RATE ── won ÷ total created over the last 3 completed months
-      // (default 50% with no history).
+      // ── WIN RATE ── 3-step (no fixed default): (1) 90-day rolling window;
+      // (2) if none, this scope's ACTUAL rate over all history — however few deals;
+      // (3) only if zero deals ever, the whole-company 3-month average.
       const { winRate3m: raw, total3m } = await fetchWinRate3m({ companyId, ownerIds: scope });
-      const winRateIsDefault = total3m === 0;
-      const winRate3m = winRateIsDefault ? 50 : raw;
+      let winRate3m = raw;
+      let winRateIsDefault = false;
+      if (total3m === 0) {
+        const { data: hist } = await supabase
+          .from("deals")
+          .select("stage")
+          .eq("company_id", companyId)
+          .in("owner_id", scopeIds);
+        if ((hist?.length || 0) > 0) {
+          const wonH = hist.filter((d) => d.stage === "won").length;
+          winRate3m = (wonH / hist.length) * 100;
+        } else {
+          const { winRate3m: companyAvg } = await fetchWinRate3m({ companyId, ownerIds: null });
+          winRate3m = companyAvg;
+          winRateIsDefault = true;
+        }
+      }
 
       // ── REQUIRED PLAN ── Target ÷ Win Rate%
       const requiredPlan = winRate3m > 0 ? totalTarget / (winRate3m / 100) : totalTarget * 2;

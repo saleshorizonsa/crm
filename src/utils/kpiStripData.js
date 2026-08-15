@@ -120,6 +120,40 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
     if (d.stage === 'won') wrPer[d.owner_id].won += 1;
   });
 
+  // Company-wide 3-month win rate — the fallback for salesmen with zero history.
+  const total3 = (deals3 || []).length;
+  const won3 = (deals3 || []).filter((d) => d.stage === 'won').length;
+  const companyWinRate3m = total3 > 0 ? (won3 / total3) * 100 : 0;
+
+  // New-salesman exception: anyone with NO deals in the 90-day window uses their
+  // ACTUAL win rate over all their history — however few deals (1 won of 2 = 50%,
+  // 0 of 1 = 0%). Only a salesman with zero deals ever falls back to the company
+  // average. Fetch all-history once for just those salesmen (usually new joiners).
+  const noWindowIds = scopeIds.filter((id) => !wrPer[id] || wrPer[id].total === 0);
+  const allWrPer = {};
+  if (noWindowIds.length) {
+    const { data: allDeals } = await supabase
+      .from('deals')
+      .select('owner_id, stage')
+      .eq('company_id', companyId)
+      .in('owner_id', noWindowIds);
+    (allDeals || []).forEach((d) => {
+      if (!allWrPer[d.owner_id]) allWrPer[d.owner_id] = { won: 0, total: 0 };
+      allWrPer[d.owner_id].total += 1;
+      if (d.stage === 'won') allWrPer[d.owner_id].won += 1;
+    });
+  }
+
+  // 3-step win rate for a salesman: 90-day window → all history → company average.
+  // Only the last step is a "default" (no personal data at all).
+  const resolveWinRate = (id) => {
+    const w = wrPer[id];
+    if (w && w.total > 0) return { rate: (w.won / w.total) * 100, isDefault: false };
+    const a = allWrPer[id];
+    if (a && a.total > 0) return { rate: (a.won / a.total) * 100, isDefault: false };
+    return { rate: companyWinRate3m, isDefault: true };
+  };
+
   // 5. Planned — open Current-Sales-Plan (opportunities) value for this month.
   const { data: opps } = await supabase
     .from('opportunities')
@@ -148,9 +182,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
       const target = targetPer[u.id] || 0;
       const achieved = achievedPer[u.id] || 0;
       const deficit = Math.max(0, target - achieved);
-      const wr = wrPer[u.id];
-      const winRateIsDefault = !wr || wr.total === 0;
-      const winRate3m = winRateIsDefault ? 50 : (wr.won / wr.total) * 100;
+      const { rate: winRate3m, isDefault: winRateIsDefault } = resolveWinRate(u.id);
       const planned = plannedPer[u.id] || 0;
       const required = winRate3m > 0 ? target / (winRate3m / 100) : target * 2;
       const plannedGap = Math.max(0, required - planned);
@@ -167,10 +199,9 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
   const target = Object.values(targetPer).reduce((s, v) => s + v, 0);
   const achieved = Object.values(achievedPer).reduce((s, v) => s + v, 0);
   const deficit = Math.max(0, target - achieved);
-  const total3 = (deals3 || []).length;
-  const won3 = (deals3 || []).filter((d) => d.stage === 'won').length;
+  // Scope total win rate = company/team 3-month average (already computed above).
   const winRateIsDefault = total3 === 0;
-  const winRate3m = winRateIsDefault ? 50 : (won3 / total3) * 100;
+  const winRate3m = companyWinRate3m;
   const planned = Object.values(plannedPer).reduce((s, v) => s + v, 0);
   const required = winRate3m > 0 ? target / (winRate3m / 100) : target * 2;
   const plannedGap = Math.max(0, required - planned);
