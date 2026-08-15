@@ -97,6 +97,72 @@ const PlanningPage = () => {
 
   const companyId = adminCompany?.id;
   const isDirectorRole = DIRECTOR_ROLES.includes(role);
+  const isSalesman = role === "salesman";
+  const isSupervisor = role === "supervisor";
+
+  // ── Plan submission (deadline: 25th of the month) ───────────────────────────
+  const [planSubmission, setPlanSubmission] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const planMonthStr = () => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-01`;
+  };
+
+  const fetchPlanSubmission = useCallback(async () => {
+    if (!companyId || !user?.id) { setPlanSubmission(null); return; }
+    const { data } = await supabase
+      .from("plan_submissions")
+      .select("*")
+      .eq("company_id", companyId)
+      .eq("owner_id", user.id)
+      .eq("plan_month", planMonthStr())
+      .maybeSingle();
+    setPlanSubmission(data || null);
+  }, [companyId, user?.id]);
+
+  useEffect(() => { fetchPlanSubmission(); }, [fetchPlanSubmission]);
+
+  const today = new Date();
+  const deadlineDay = new Date(today.getFullYear(), today.getMonth(), 25);
+  const isLate = today > deadlineDay;
+  const planComplete = summaryData.totalPlanned >= summaryData.requiredPlan;
+  const canSubmit = planComplete && !planSubmission?.is_submitted;
+  const showSubmitBar = (isSalesman || isSupervisor) && !!companyId;
+
+  const handleSubmitPlan = async () => {
+    if (!canSubmit || submitting) return;
+    setSubmitting(true);
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    try {
+      const { error } = await supabase
+        .from("plan_submissions")
+        .upsert(
+          {
+            company_id: companyId,
+            owner_id: user?.id,
+            plan_month: `${y}-${m}-01`,
+            submitted_at: now.toISOString(),
+            total_planned: summaryData.totalPlanned,
+            required_plan: summaryData.requiredPlan,
+            is_submitted: true,
+            is_late: isLate,
+            deadline_date: `${y}-${m}-25`,
+            flagged: false,
+            updated_at: now.toISOString(),
+          },
+          { onConflict: "company_id,owner_id,plan_month" },
+        );
+      if (error) throw error;
+      await fetchPlanSubmission();
+    } catch (err) {
+      console.error("Submit plan:", err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const fetchPlanningSummary = useCallback(async () => {
     if (!companyId) {
@@ -274,6 +340,58 @@ const PlanningPage = () => {
               : "Customer Master — Import, assign and manage your customer accounts"}
           </p>
         </div>
+
+        {/* Plan submission status + Submit Plan (salesman/supervisor) */}
+        {showSubmitBar && (
+          <div className="flex items-center justify-between gap-3 px-5 py-3 bg-card border border-border rounded-xl mb-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                  planSubmission?.is_submitted
+                    ? "bg-green-500"
+                    : isLate
+                      ? "bg-red-500 animate-pulse"
+                      : "bg-amber-500"
+                }`}
+              />
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  {planSubmission?.is_submitted
+                    ? "✅ Plan Submitted"
+                    : isLate
+                      ? "🚨 Plan Overdue"
+                      : "📋 Plan Due by 25th"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {planSubmission?.is_submitted
+                    ? `Submitted ${new Date(planSubmission.submitted_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}${planSubmission.is_late ? " (Late)" : ""}`
+                    : !planComplete
+                      ? `Add ${fmtSAR(summaryData.plannedGap)} SAR more to enable submission`
+                      : `Due ${deadlineDay.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`}
+                </p>
+              </div>
+            </div>
+
+            {!planSubmission?.is_submitted && (
+              <button
+                onClick={handleSubmitPlan}
+                disabled={!canSubmit || submitting}
+                className={`flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-xl transition-colors ${
+                  canSubmit
+                    ? isLate
+                      ? "bg-red-600 text-white hover:bg-red-700"
+                      : "bg-blue-600 text-white hover:bg-blue-700"
+                    : "bg-muted text-muted-foreground cursor-not-allowed"
+                }`}
+              >
+                {submitting && (
+                  <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                )}
+                {canSubmit ? (isLate ? "Submit Late" : "Submit Plan") : "Plan Incomplete"}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Planning summary bar — shown on every tab */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">

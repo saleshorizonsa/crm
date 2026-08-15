@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { settingsService } from "../services/supabaseService";
 import { checkExpiredLeads } from "../utils/leadExpiryCheck";
+import { checkPlanDeadlines } from "../utils/deadlineCheck";
 
 const AuthContext = createContext({});
 
@@ -33,6 +34,19 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem(key, String(Date.now()));
     checkExpiredLeads(company.id, user.id).catch(() => {});
   }, [user?.id, company?.id]);
+
+  // After the 25th, flag any team member who hasn't submitted their monthly plan
+  // and notify them + their manager. Managers/directors run the sweep (it covers
+  // the whole company). Throttled to once per 6h per browser; fire-and-forget.
+  useEffect(() => {
+    if (!user?.id || !company?.id || !userProfile?.role) return;
+    if (!["manager", "supervisor", "director", "head", "admin"].includes(userProfile.role)) return;
+    const key = `planDeadlineLastRun_${company.id}`;
+    const last = Number(localStorage.getItem(key) || 0);
+    if (Date.now() - last < 6 * 60 * 60 * 1000) return;
+    localStorage.setItem(key, String(Date.now()));
+    checkPlanDeadlines(company.id, user.id, userProfile.role).catch(() => {});
+  }, [user?.id, company?.id, userProfile?.role]);
 
   // Load all companies this user can switch to (admin = all, director = linked)
   const loadAvailableCompanies = async (role, userId) => {

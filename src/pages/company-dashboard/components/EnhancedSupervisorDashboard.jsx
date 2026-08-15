@@ -29,6 +29,7 @@ import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
+import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
@@ -1481,6 +1482,9 @@ const EnhancedSupervisorDashboard = ({
         role={userProfile?.role}
         loading={kpiStrip.loading}
       />
+      {company?.id && (
+        <PlanSubmissionAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
+      )}
       {/* Header */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

@@ -50,6 +50,7 @@ import {
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
+import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
 import { computeKpiStripData, computeDirectorAnnual } from "../../../utils/kpiStripData";
 
 // Employee-specific dashboards - use Enhanced versions for full features
@@ -2471,6 +2472,9 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         }
         annualData={annualData}
       />
+      {selectedCompany?.id && !selectedEmployee && (
+        <PlanSubmissionAlert companyId={selectedCompany.id} ownerIds={null} reviewerId={user?.id} />
+      )}
       {/* Head role: greeting + company-scoped subtitle (directors don't need this
           — they have the company switcher and cross-company grid). */}
       {userProfile?.role === "head" && (

@@ -28,6 +28,7 @@ import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
+import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
@@ -1447,6 +1448,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         role={userProfile?.role}
         loading={kpiStrip.loading}
       />
+      {company?.id && (
+        <PlanSubmissionAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
