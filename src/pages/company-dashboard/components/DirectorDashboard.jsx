@@ -1631,6 +1631,19 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       const targetUserId = selectedEmployee?.id || null;
       const viewAll = !selectedEmployee;
 
+      // Director view shows YTD revenue (full calendar year to date) to match the
+      // annual KPI cards; everyone else keeps the selected-period (monthly) window.
+      const isDirectorView =
+        ["director", "head", "admin"].includes(userProfile?.role) && !selectedEmployee;
+      const ytdYear = new Date().getFullYear();
+      const ytdStart = new Date(ytdYear, 0, 1);
+      const ytdEnd = new Date(ytdYear, 11, 31, 23, 59, 59);
+      const inYTD = (dateStr) => {
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        return d >= ytdStart && d <= ytdEnd;
+      };
+
       const companiesWithStats = await Promise.all(
         companies.map(async (company) => {
           try {
@@ -1645,8 +1658,14 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             // invoice_date so revenue = achievement = invoiced deals only,
             // matching the KPI Achieved card exactly.
             const filteredDeals = (deals || []).filter((deal) => {
-              const dateToCheck = deal.stage === "won" ? deal.invoice_date : deal.created_at;
-              return isInSelectedPeriod(dateToCheck);
+              // Won → windowed by invoice_date (YTD for director, else selected
+              // period); other stages by created_at within the selected period.
+              if (deal.stage === "won") {
+                return isDirectorView
+                  ? inYTD(deal.invoice_date)
+                  : isInSelectedPeriod(deal.invoice_date);
+              }
+              return isInSelectedPeriod(deal.created_at);
             });
 
             // Filter targets by selected period - only consider monthly targets
@@ -1925,6 +1944,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         selectedQuarter={selectedQuarter}
         selectedYear={selectedYear}
         timePeriod={timePeriod}
+        isDirector={["director", "head", "admin"].includes(userProfile?.role) && !selectedEmployee}
       />
 
       {/* At-Risk Deals + Leaderboard */}

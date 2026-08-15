@@ -11,9 +11,14 @@ const CompanyPerformanceGrid = ({
   selectedQuarter,
   selectedYear,
   timePeriod = "month",
+  isDirector = false, // director view shows YTD revenue + "Active Pipeline Value"
 }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
   const { t } = useLanguage();
+
+  // Director revenue is year-to-date (Jan–current month), matching the annual KPI cards.
+  const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const ytdRevenueLabel = `YTD Revenue (Jan–${MONTHS_SHORT[new Date().getMonth()]} ${new Date().getFullYear()})`;
 
   // Generate period label based on filters
   const getPeriodLabel = () => {
@@ -147,7 +152,7 @@ const CompanyPerformanceGrid = ({
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-xs text-gray-500">
-                      {periodLabel} {t("dashboard.revenue")}
+                      {isDirector ? ytdRevenueLabel : `${periodLabel} ${t("dashboard.revenue")}`}
                     </span>
                     <span className="text-sm font-semibold text-gray-900">
                       {formatCurrency(company.metrics?.totalRevenue)}
@@ -155,11 +160,11 @@ const CompanyPerformanceGrid = ({
                   </div>
                 </div>
 
-                {/* Remaining Revenue */}
+                {/* Remaining Revenue / Active Pipeline */}
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-xs text-gray-500">
-                      Remaining Revenue
+                      {isDirector ? "Active Pipeline Value" : "Remaining Revenue"}
                     </span>
                     <span className="text-sm font-semibold text-gray-900">
                       {formatCurrency(company.metrics?.remainingRevenue || 0)}
