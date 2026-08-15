@@ -151,6 +151,27 @@ const EnhancedSupervisorDashboard = ({
   const [subordinates, setSubordinates] = useState([]);
   const [allSubordinates, setAllSubordinates] = useState([]);
   const [subordinateIds, setSubordinateIds] = useState([]);
+  const [planSubmissions, setPlanSubmissions] = useState({}); // owner_id → submission (this month)
+
+  useEffect(() => {
+    (async () => {
+      if (!company?.id) { setPlanSubmissions({}); return; }
+      const ids = [effectiveUser.id, ...allSubordinates.map((s) => s.id)].filter(Boolean);
+      if (!ids.length) { setPlanSubmissions({}); return; }
+      const n = new Date();
+      const planMonth = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-01`;
+      const { data } = await supabase
+        .from("plan_submissions")
+        .select("owner_id, is_submitted, is_late, flagged")
+        .eq("company_id", company.id)
+        .eq("plan_month", planMonth)
+        .in("owner_id", ids);
+      const map = {};
+      (data || []).forEach((s) => { map[s.owner_id] = s; });
+      setPlanSubmissions(map);
+    })();
+  }, [company?.id, effectiveUser.id, allSubordinates]);
+
   const [clientTargetsData, setClientTargetsData] = useState([]);
   const [productTargetsData, setProductTargetsData] = useState([]);
   const [allDeals, setAllDeals] = useState([]);
@@ -2282,6 +2303,9 @@ const EnhancedSupervisorDashboard = ({
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t("dashboard.conversionRate")}
                   </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Plan Status
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -2363,6 +2387,39 @@ const EnhancedSupervisorDashboard = ({
                           />
                         </div>
                       </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {(() => {
+                        if (!["salesman", "supervisor"].includes(member.role)) {
+                          return <span className="text-xs text-gray-400">—</span>;
+                        }
+                        const sub = planSubmissions[member.id];
+                        if (sub?.is_submitted) {
+                          return (
+                            <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium">
+                              <Icon name="CheckCircle" size={11} />
+                              Submitted{sub.is_late ? <span className="text-amber-600 ml-1">(Late)</span> : null}
+                            </span>
+                          );
+                        }
+                        if (sub?.flagged) {
+                          return (
+                            <span className="inline-flex items-center gap-1 text-xs text-red-600 font-medium">
+                              <Icon name="Flag" size={11} />
+                              Overdue
+                            </span>
+                          );
+                        }
+                        if (new Date().getDate() <= 25) {
+                          return <span className="text-xs text-amber-600 font-medium">Pending</span>;
+                        }
+                        return (
+                          <span className="inline-flex items-center gap-1 text-xs text-red-600 font-medium">
+                            <Icon name="AlertTriangle" size={11} />
+                            Not Submitted
+                          </span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
