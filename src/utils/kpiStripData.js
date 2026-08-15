@@ -180,6 +180,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
   const wrFrac = winRate3m / 100;
   const coverageValue = achieved + funnelValue * wrFrac + planned * wrFrac;
   const coverageHealthy = target > 0 ? coverageValue >= target : true;
+  const coveragePct = target > 0 ? (coverageValue / target) * 100 : 100;
 
   // Pacing check (linear): attainment% should keep up with the % of the month elapsed
   // (within a 15-point tolerance).
@@ -193,7 +194,8 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
   const totals = {
     target, achieved, deficit, winRate3m, winRateIsDefault, planned, required, plannedGap,
     attainmentPct, funnelValue,
-    coverageValue, coverageHealthy, pacingPct, pacingHealthy, isHealthy,
+    coverageValue, coverageHealthy, coveragePct,
+    pacingPct, pacingHealthy, daysElapsed, totalDaysInMonth, isHealthy,
   };
 
   // TEMP debug — helps diagnose wrong team/director KPI values. Remove once fixed.

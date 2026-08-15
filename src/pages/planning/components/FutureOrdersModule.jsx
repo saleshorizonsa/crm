@@ -21,6 +21,13 @@ function currentMonthStart() {
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
+// A pending future order that has sat this long with no progress is "parked".
+const PARKED_THRESHOLD = 90; // days
+const daysInFutureOrders = (order) =>
+  Math.floor((Date.now() - new Date(order.created_at).getTime()) / 86400000);
+const isParkedOrder = (order) =>
+  order.status === 'pending' && daysInFutureOrders(order) >= PARKED_THRESHOLD;
+
 export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, onOrderChange }) {
   const { user, company: authCompany, userProfile } = useAuth();
   const { formatCurrency } = useCurrency();
@@ -176,6 +183,9 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, 
 
   useEffect(() => { checkAutoMove(); }, [checkAutoMove]);
 
+  // Parked = pending orders sitting PARKED_THRESHOLD+ days (in the current view).
+  const parkedCount = orders.filter(isParkedOrder).length;
+
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
@@ -220,6 +230,22 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, 
         </div>
       </div>
 
+      {/* Parked-clients warning — pending orders sitting 90+ days with no progress */}
+      {!loading && parkedCount > 0 && (
+        <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
+          <Icon name="AlertTriangle" size={16} className="text-red-500 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-red-800">
+              {parkedCount} Parked Client{parkedCount > 1 ? 's' : ''}
+            </p>
+            <p className="text-xs text-red-600 mt-0.5">
+              {parkedCount === 1 ? 'This customer has' : 'These customers have'} been in Future
+              Orders for {PARKED_THRESHOLD}+ days with no progress. Review and take action.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Orders list */}
       {loading ? (
         <div className="space-y-3">
@@ -244,6 +270,8 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, 
           {orders.map((order) => {
             const isMoving = movingId === order.id;
             const isMoved  = order.status === 'moved';
+            const parkedDays = daysInFutureOrders(order);
+            const isParked = isParkedOrder(order);
             // expected_month is a full date ("2026-09-01"); parse day 02 so a
             // negative UTC offset can't roll it back into the previous month.
             const expectedDate = order.expected_month
@@ -281,6 +309,12 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, 
                         <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium flex items-center gap-1">
                           <Icon name="CheckCircle" size={10} />
                           Moved to Current Sales Plan
+                        </span>
+                      )}
+                      {isParked && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 border border-red-200 text-red-700 font-medium flex items-center gap-1">
+                          <Icon name="AlertTriangle" size={10} />
+                          Parked · {parkedDays} days
                         </span>
                       )}
                     </div>

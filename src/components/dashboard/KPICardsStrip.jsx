@@ -224,17 +224,22 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
 export default function KPICardsStrip({ salesmanData = [], totals, role, loading = false, onDrillDown }) {
   const [activePopup, setActivePopup] = useState(null);
   const [drillSalesman, setDrillSalesman] = useState(null);
+  const [showHealthPopup, setShowHealthPopup] = useState(false);
 
   // Reset any drill-down when switching popups or closing.
   useEffect(() => { setDrillSalesman(null); }, [activePopup]);
 
-  // Close the popup on Escape.
+  // Close whichever overlay is open on Escape.
   useEffect(() => {
-    if (!activePopup) return;
-    const onKey = (e) => { if (e.key === 'Escape') setActivePopup(null); };
+    if (!activePopup && !showHealthPopup) return;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      setActivePopup(null);
+      setShowHealthPopup(false);
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [activePopup]);
+  }, [activePopup, showHealthPopup]);
 
   // Managers/supervisors can drill into an individual salesman's data. A plain
   // salesman sees their OWN rich view directly (their single row, no team table).
@@ -302,16 +307,18 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
       </div>
 
       {/* Health status — Coverage (Achieved + Funnel×WinRate + Plan×WinRate ≥ Target)
-          and Pacing (attainment vs month elapsed) */}
+          and Pacing (attainment vs month elapsed). Click to see the breakdown. */}
       {!loading && totals && (
-        <div
-          className={`flex items-center gap-3 px-5 py-3 rounded-xl border mt-4 ${
+        <button
+          type="button"
+          onClick={() => setShowHealthPopup(true)}
+          className={`w-full flex items-center gap-3 px-5 py-3 rounded-xl border mt-4 text-left hover:shadow-sm transition-all ${
             totals.isHealthy ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
           }`}
         >
           <div
-            className={`w-3 h-3 rounded-full flex-shrink-0 animate-pulse ${
-              totals.isHealthy ? 'bg-green-500' : 'bg-amber-500'
+            className={`w-3 h-3 rounded-full flex-shrink-0 ${
+              totals.isHealthy ? 'bg-green-500' : 'bg-amber-500 animate-pulse'
             }`}
           />
           <div className="flex-1 min-w-0">
@@ -322,21 +329,130 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
               {totals.isHealthy
                 ? 'Coverage and pacing on track'
                 : totals.coverageHealthy
-                  ? 'Pacing behind schedule'
+                  ? 'Achievement is behind schedule'
                   : totals.pacingHealthy
-                    ? 'Pipeline coverage insufficient'
-                    : 'Both coverage and pacing at risk'}
+                    ? 'Pipeline coverage insufficient to hit target'
+                    : 'Coverage and pacing both at risk'}
             </span>
           </div>
           <div className="text-xs flex gap-4 flex-shrink-0">
-            <span className={totals.coverageHealthy ? 'text-green-600' : 'text-red-600'}>
-              Coverage: {totals.coverageHealthy ? '✓' : '✗'}
+            <span className={totals.coverageHealthy ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+              Coverage: {(totals.coveragePct || 0).toFixed(0)}% {totals.coverageHealthy ? '✓' : '✗'}
             </span>
-            <span className={totals.pacingHealthy ? 'text-green-600' : 'text-red-600'}>
-              Pacing: {totals.pacingHealthy ? '✓' : '✗'}
+            <span className={totals.pacingHealthy ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+              Pacing: {(totals.attainmentPct || 0).toFixed(0)}% / {(totals.pacingPct || 0).toFixed(0)}% {totals.pacingHealthy ? '✓' : '✗'}
             </span>
           </div>
-        </div>
+          <Icon name="ChevronRight" size={14} className="text-muted-foreground flex-shrink-0" />
+        </button>
+      )}
+
+      {/* Health status popup — Coverage + Pacing breakdown */}
+      {showHealthPopup && totals && (
+        <>
+          <div
+            className="fixed inset-0 z-[600] bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowHealthPopup(false)}
+          />
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden pointer-events-auto border border-border">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between flex-shrink-0">
+                <h2 className="text-base font-semibold text-foreground">
+                  {totals.isHealthy ? '✅' : '⚠️'} Pipeline Health Check
+                </h2>
+                <button
+                  onClick={() => setShowHealthPopup(false)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
+                >
+                  <Icon name="X" size={16} className="text-muted-foreground" />
+                </button>
+              </div>
+
+              <div className="px-6 py-5 overflow-y-auto">
+                {/* A. Coverage Check */}
+                <div className={`p-4 rounded-xl border mb-4 ${totals.coverageHealthy ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-sm text-foreground">A. Coverage Check</h3>
+                    <span className={`text-sm font-bold ${totals.coverageHealthy ? 'text-green-600' : 'text-red-600'}`}>
+                      {totals.coverageHealthy ? '✓ Passed' : '✗ At Risk'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Achieved + (Funnel × Win Rate) + (Planning × Win Rate) ≥ Target
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-card rounded-lg p-2 border border-border">
+                      <p className="text-muted-foreground">Achieved</p>
+                      <p className="font-bold text-green-600 tabular-nums">{fmtSAR(totals.achieved)} SAR</p>
+                    </div>
+                    <div className="bg-card rounded-lg p-2 border border-border">
+                      <p className="text-muted-foreground">Funnel × {(totals.winRate3m || 0).toFixed(0)}%</p>
+                      <p className="font-bold text-blue-600 tabular-nums">{fmtSAR((totals.funnelValue || 0) * (totals.winRate3m || 0) / 100)} SAR</p>
+                    </div>
+                    <div className="bg-card rounded-lg p-2 border border-border">
+                      <p className="text-muted-foreground">Planning × {(totals.winRate3m || 0).toFixed(0)}%</p>
+                      <p className="font-bold text-purple-600 tabular-nums">{fmtSAR((totals.planned || 0) * (totals.winRate3m || 0) / 100)} SAR</p>
+                    </div>
+                    <div className="bg-card rounded-lg p-2 border border-border">
+                      <p className="text-muted-foreground">Coverage Total</p>
+                      <p className={`font-bold tabular-nums ${totals.coverageHealthy ? 'text-green-600' : 'text-red-600'}`}>{fmtSAR(totals.coverageValue)} SAR</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-border flex justify-between text-xs font-medium">
+                    <span className="text-muted-foreground">Target to cover:</span>
+                    <span className="text-foreground tabular-nums">{fmtSAR(totals.target)} SAR</span>
+                  </div>
+                  <div className="flex justify-between text-xs font-bold mt-1">
+                    <span className="text-muted-foreground">Coverage:</span>
+                    <span className={totals.coverageHealthy ? 'text-green-600' : 'text-red-600'}>
+                      {(totals.coveragePct || 0).toFixed(1)}% {totals.coverageHealthy ? '✓ Sufficient' : '✗ Insufficient'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* B. Pacing Check */}
+                <div className={`p-4 rounded-xl border ${totals.pacingHealthy ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-sm text-foreground">B. Pacing Check</h3>
+                    <span className={`text-sm font-bold ${totals.pacingHealthy ? 'text-green-600' : 'text-amber-600'}`}>
+                      {totals.pacingHealthy ? '✓ On Track' : '✗ Behind'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Achievement% vs Time Elapsed% — linear model (±15% tolerance)
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                    <div className="bg-card rounded-lg p-2 border border-border">
+                      <p className="text-muted-foreground">Days Elapsed</p>
+                      <p className="font-bold text-foreground">{totals.daysElapsed} of {totals.totalDaysInMonth} days</p>
+                      <p className="text-muted-foreground mt-0.5">{(totals.pacingPct || 0).toFixed(1)}% of month</p>
+                    </div>
+                    <div className="bg-card rounded-lg p-2 border border-border">
+                      <p className="text-muted-foreground">Achievement</p>
+                      <p className={`font-bold ${totals.pacingHealthy ? 'text-green-600' : 'text-amber-600'}`}>{(totals.attainmentPct || 0).toFixed(1)}% of target</p>
+                      <p className="text-muted-foreground mt-0.5">Expected: {Math.max(0, (totals.pacingPct || 0) - 15).toFixed(1)}%+</p>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Time Elapsed</span><span>{(totals.pacingPct || 0).toFixed(0)}%</span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full">
+                      <div className="h-full bg-gray-400 rounded-full" style={{ width: `${Math.min(totals.pacingPct || 0, 100)}%` }} />
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Achievement</span><span>{(totals.attainmentPct || 0).toFixed(0)}%</span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(totals.attainmentPct || 0, 100)}%`, background: totals.pacingHealthy ? '#059669' : '#D97706' }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Popup */}
