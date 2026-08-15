@@ -50,7 +50,7 @@ import {
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
-import { computeKpiStripData } from "../../../utils/kpiStripData";
+import { computeKpiStripData, computeDirectorAnnual } from "../../../utils/kpiStripData";
 
 // Employee-specific dashboards - use Enhanced versions for full features
 import EnhancedManagerDashboard from "./EnhancedManagerDashboard";
@@ -195,6 +195,21 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     })();
     return () => { cancelled = true; };
   }, [selectedCompany?.id, selectedEmployee?.id]);
+
+  // Director annual figures (full-year target + YTD invoiced achievement) for the
+  // selected company. Refetched on company switch so the KPI strip stays scoped
+  // to the one selected company.
+  const [annualData, setAnnualData] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const companyId = selectedCompany?.id;
+      if (!companyId) { setAnnualData(null); return; }
+      const res = await computeDirectorAnnual({ companyId });
+      if (!cancelled) setAnnualData(res);
+    })();
+    return () => { cancelled = true; };
+  }, [selectedCompany?.id]);
 
   // Monthly target state
   const [directorMonthlyTarget, setDirectorMonthlyTarget] = useState(null);
@@ -1898,6 +1913,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         totalSalesmen={allEmployees.filter(e => e.role === 'salesman' && e.is_active !== false).length || 1}
         showAvg={!selectedEmployee}
         employees={allEmployees}
+        annual={!selectedEmployee ? annualData : null}
       />
 
       {/* Company Performance Grid */}
@@ -2430,6 +2446,10 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         totals={kpiStrip.totals}
         role={userProfile?.role}
         loading={kpiStrip.loading}
+        isDirector={
+          ["director", "head", "admin"].includes(userProfile?.role) && !selectedEmployee
+        }
+        annualData={annualData}
       />
       {/* Head role: greeting + company-scoped subtitle (directors don't need this
           — they have the company switcher and cross-company grid). */}

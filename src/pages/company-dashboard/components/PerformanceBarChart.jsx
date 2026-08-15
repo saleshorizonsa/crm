@@ -24,6 +24,7 @@ const PerformanceBarChart = ({
   totalSalesmen = 1,
   showAvg = true,
   employees = [],
+  annual = null, // director annual view: { target, achieved, deficit, dealCount } → YTD summary tiles
 }) => {
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { t } = useLanguage();
@@ -309,21 +310,28 @@ const PerformanceBarChart = ({
         </div>
       </div>
 
-      {/* Summary Stats */}
+      {/* Summary Stats. For the director annual view the revenue/target/deals
+          tiles switch to full-year (YTD) figures; Active Pipeline stays as-is. */}
       <div className={`grid ${showAvg ? "grid-cols-5" : "grid-cols-4"} gap-4 mb-6`}>
         <div className="bg-green-50 rounded-lg p-3 text-center">
           <div className="text-xs text-green-600 mb-1">
-            {t("dashboard.totalRevenue") || "Total Revenue"}
+            {annual ? "YTD Revenue" : (t("dashboard.totalRevenue") || "Total Revenue")}
           </div>
           <div className="text-lg font-bold text-green-700">
-            {formatCurrency(summaryStats.totalRevenue)}
+            {formatCurrency(annual ? annual.achieved : summaryStats.totalRevenue)}
           </div>
         </div>
         {showAvg && (
           <div className="bg-teal-50 rounded-lg p-3 text-center">
-            <div className="text-xs text-teal-600 mb-1">Avg per Salesman</div>
+            <div className="text-xs text-teal-600 mb-1">
+              {annual ? "Avg per Salesman (YTD)" : "Avg per Salesman"}
+            </div>
             <div className="text-lg font-bold text-teal-700">
-              {formatCurrency(summaryStats.avgPerSalesman)}
+              {formatCurrency(
+                annual
+                  ? (activeSalesmenCount > 0 ? annual.achieved / activeSalesmenCount : 0)
+                  : summaryStats.avgPerSalesman,
+              )}
             </div>
             <div className="text-xs text-teal-500 mt-1">
               {activeSalesmenCount} active of {totalSalesmen} salesmen
@@ -332,18 +340,18 @@ const PerformanceBarChart = ({
         )}
         <div className="bg-blue-50 rounded-lg p-3 text-center">
           <div className="text-xs text-blue-600 mb-1">
-            {t("common.target") || "Total Target"}
+            {annual ? "Annual Target" : (t("common.target") || "Total Target")}
           </div>
           <div className="text-lg font-bold text-blue-700">
-            {formatCurrency(summaryStats.totalTarget)}
+            {formatCurrency(annual ? annual.target : summaryStats.totalTarget)}
           </div>
         </div>
         <div className="bg-purple-50 rounded-lg p-3 text-center">
           <div className="text-xs text-purple-600 mb-1">
-            {t("dashboard.dealsClosed") || "Deals Won"}
+            {annual ? "YTD Deals Closed" : (t("dashboard.dealsClosed") || "Deals Won")}
           </div>
           <div className="text-lg font-bold text-purple-700">
-            {summaryStats.totalDeals}
+            {annual ? annual.dealCount : summaryStats.totalDeals}
           </div>
         </div>
         <div className="bg-indigo-500 rounded-lg p-3 text-center">

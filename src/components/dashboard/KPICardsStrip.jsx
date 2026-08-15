@@ -10,11 +10,56 @@ const MONTH_LABEL = () =>
   new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 
 // The five KPI cards. `accent` drives the coloured top strip + value colour.
-function cardDefs(totals) {
+// For the director (`isDirector` + `annualData`) the Target/Achieved/Deficit
+// cards switch to full-year figures; Win Rate and Planned Gap stay monthly.
+function cardDefs(totals, opts = {}) {
   const t = totals || {};
+  const { isDirector, annualData } = opts;
   const onTrack = (t.plannedGap || 0) <= 0;
   const targetMet = (t.deficit || 0) <= 0;
   const pct = (num, den) => (den > 0 ? ((num / den) * 100).toFixed(1) : '0');
+
+  // Win Rate + Planned Gap are always monthly / 3-month, for every role.
+  const winRateCard = {
+    key: 'winRate', label: 'Win Rate', strip: 'bg-purple-500',
+    value: `${(t.winRate3m || 0).toFixed(1)}%`, valueClass: 'text-purple-600',
+    sub: `3-month avg${t.winRateIsDefault ? ' (default)' : ''}`,
+  };
+  const plannedGapCard = {
+    key: 'plannedGap', label: 'Planned Gap', strip: onTrack ? 'bg-green-500' : 'bg-red-500',
+    value: onTrack ? 'On Track ✓' : `${fmtSAR(t.plannedGap)} SAR`,
+    valueClass: onTrack ? 'text-green-600' : 'text-red-600',
+    sub: onTrack
+      ? `Planned: ${fmtSAR(t.planned)} SAR`
+      : `${pct(t.plannedGap, t.required)}% of required plan unplanned`,
+  };
+
+  if (isDirector && annualData) {
+    const a = annualData;
+    const year = a.year || new Date().getFullYear();
+    const curMonth = new Date().toLocaleDateString('en-GB', { month: 'short' });
+    const met = (a.deficit || 0) <= 0;
+    return [
+      {
+        key: 'target', label: 'Annual Target', strip: 'bg-blue-600',
+        value: `${fmtSAR(a.target)} SAR`, valueClass: 'text-foreground', sub: `${year}`,
+      },
+      {
+        key: 'achieved', label: 'Achieved (invoiced)', strip: 'bg-green-500',
+        value: `${fmtSAR(a.achieved)} SAR`, valueClass: 'text-green-600',
+        sub: `Jan–${curMonth} ${year} · ${(a.attainmentPct || 0).toFixed(1)}% of target`,
+      },
+      {
+        key: 'deficit', label: 'Annual Deficit', strip: met ? 'bg-green-500' : 'bg-red-500',
+        value: met ? 'Target met ✓' : `${fmtSAR(a.deficit)} SAR`,
+        valueClass: met ? 'text-green-600' : 'text-red-600',
+        sub: met ? 'Annual target met' : `${pct(a.deficit, a.target)}% of annual target remaining`,
+      },
+      winRateCard,
+      plannedGapCard,
+    ];
+  }
+
   return [
     {
       key: 'target', label: 'Target', strip: 'bg-blue-600',
@@ -32,19 +77,8 @@ function cardDefs(totals) {
       valueClass: targetMet ? 'text-green-600' : 'text-red-600',
       sub: targetMet ? 'Target met' : `${pct(t.deficit, t.target)}% of target remaining`,
     },
-    {
-      key: 'winRate', label: 'Win Rate', strip: 'bg-purple-500',
-      value: `${(t.winRate3m || 0).toFixed(1)}%`, valueClass: 'text-purple-600',
-      sub: `3-month avg${t.winRateIsDefault ? ' (default)' : ''}`,
-    },
-    {
-      key: 'plannedGap', label: 'Planned Gap', strip: onTrack ? 'bg-green-500' : 'bg-red-500',
-      value: onTrack ? 'On Track ✓' : `${fmtSAR(t.plannedGap)} SAR`,
-      valueClass: onTrack ? 'text-green-600' : 'text-red-600',
-      sub: onTrack
-        ? `Planned: ${fmtSAR(t.planned)} SAR`
-        : `${pct(t.plannedGap, t.required)}% of required plan unplanned`,
-    },
+    winRateCard,
+    plannedGapCard,
   ];
 }
 
@@ -221,7 +255,7 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
 //   role         — current user role (drives popup behaviour in later phases)
 //   loading      — skeletons while data loads
 //   onDrillDown  — (salesman) => void  (manager/supervisor drill-down; optional)
-export default function KPICardsStrip({ salesmanData = [], totals, role, loading = false, onDrillDown }) {
+export default function KPICardsStrip({ salesmanData = [], totals, role, loading = false, onDrillDown, isDirector = false, annualData = null }) {
   const [activePopup, setActivePopup] = useState(null);
   const [drillSalesman, setDrillSalesman] = useState(null);
   const [showHealthPopup, setShowHealthPopup] = useState(false);
@@ -281,7 +315,8 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
     return () => { cancelled = true; };
   }, [viewSalesman?.id, activePopup]);
 
-  const cards = cardDefs(totals);
+  const annual = isDirector && annualData ? annualData : null;
+  const cards = cardDefs(totals, { isDirector, annualData });
 
   return (
     <div className="mb-6">
@@ -477,13 +512,18 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                     {activePopup === 'winRate'
                       ? `Team 3-month average: ${(totals?.winRate3m || 0).toFixed(1)}%`
                       : activePopup === 'target'
-                      ? `Total target: ${fmtSAR(totals?.target)} SAR`
+                      ? (annual ? `Annual target: ${fmtSAR(annual.target)} SAR` : `Total target: ${fmtSAR(totals?.target)} SAR`)
                       : activePopup === 'achieved'
-                      ? `Total achieved: ${fmtSAR(totals?.achieved)} SAR`
+                      ? (annual ? `YTD achieved: ${fmtSAR(annual.achieved)} SAR (${annual.dealCount} deals)` : `Total achieved: ${fmtSAR(totals?.achieved)} SAR`)
                       : activePopup === 'deficit'
-                      ? `Total deficit: ${fmtSAR(totals?.deficit)} SAR`
+                      ? (annual ? `Annual deficit: ${fmtSAR(annual.deficit)} SAR` : `Total deficit: ${fmtSAR(totals?.deficit)} SAR`)
                       : `Total planned gap: ${fmtSAR(totals?.plannedGap)} SAR`}
                   </p>
+                  {annual && ['target', 'achieved', 'deficit'].includes(activePopup) && !isSalesman && (
+                    <p className="text-[11px] text-muted-foreground/80 mt-0.5">
+                      Per-salesman rows below show the current month's contributor detail.
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={() => setActivePopup(null)}

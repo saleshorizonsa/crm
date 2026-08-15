@@ -216,3 +216,45 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
 
   return { salesmanData, totals };
 }
+
+// Director annual view: the company's YEARLY target from management vs the
+// year-to-date invoiced achievement. Directors track the full-year number;
+// managers/supervisors/salesmen keep the monthly figures from computeKpiStripData.
+export async function computeDirectorAnnual({ companyId }) {
+  const empty = {
+    target: 0, achieved: 0, deficit: 0, dealCount: 0,
+    attainmentPct: 0, year: new Date().getFullYear(), yearStart: null, yearEnd: null,
+  };
+  if (!companyId) return empty;
+
+  const year = new Date().getFullYear();
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+
+  // Annual target = sum of the company's yearly targets for this year (the
+  // management target the director is measured against, e.g. 40,660,778 SAR).
+  const { data: targets } = await supabase
+    .from('sales_targets')
+    .select('target_amount')
+    .eq('company_id', companyId)
+    .eq('period_type', 'yearly')
+    .gte('period_start', yearStart)
+    .lte('period_end', yearEnd);
+  const target = (targets || []).reduce((s, t) => s + (parseFloat(t.target_amount) || 0), 0);
+
+  // YTD achieved = invoiced won deals this calendar year (final value where set).
+  const { data: won } = await supabase
+    .from('deals')
+    .select('amount, final_amount')
+    .eq('company_id', companyId)
+    .eq('stage', 'won')
+    .eq('is_invoiced', true)
+    .gte('invoice_date', yearStart)
+    .lte('invoice_date', yearEnd);
+  const achieved = (won || []).reduce((s, d) => s + (parseFloat(d.final_amount ?? d.amount) || 0), 0);
+  const dealCount = (won || []).length;
+
+  const deficit = Math.max(0, target - achieved);
+  const attainmentPct = target > 0 ? (achieved / target) * 100 : 0;
+  return { target, achieved, deficit, dealCount, attainmentPct, year, yearStart, yearEnd };
+}
