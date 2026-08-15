@@ -8,6 +8,7 @@ import OpportunitiesModule from "./components/OpportunitiesModule";
 import FutureOrdersModule from "./components/FutureOrdersModule";
 import HistoricalDataModule from "./components/HistoricalDataModule";
 import { fetchWinRate3m } from "utils/winRate3m";
+import { computeKpiStripData, computeDirectorAnnual } from "utils/kpiStripData";
 import { fetchTeamHierarchy } from "utils/teamHierarchy";
 
 const DIRECTOR_ROLES = ["director", "admin", "head"];
@@ -109,17 +110,32 @@ const PlanningPage = () => {
       const isDirector = DIRECTOR_ROLES.includes(role);
       const isTeamLead = TEAM_ROLES.includes(role);
 
-      // Owner scope: director/admin/head → whole company (null = no owner filter);
-      // manager/supervisor → self + full downline; salesman → self only.
-      let scope = null;
-      if (!isDirector) {
-        if (isTeamLead) {
-          const team = await fetchTeamHierarchy({ companyId, userId: user?.id, role });
-          scope = [user?.id, ...team.map((m) => m.id)].filter(Boolean);
-        } else {
-          scope = [user?.id].filter(Boolean);
-        }
+      // ── DIRECTOR ── Card 1 shows the company's ANNUAL target; Cards 2/3/4 mirror
+      // the Director dashboard's monthly KPI strip exactly (salesman-scoped 3-month
+      // win rate, monthly required plan and this-month planned gap) by reusing the
+      // very same functions the dashboard uses — so the two pages can never drift.
+      if (isDirector) {
+        const [{ totals }, annual] = await Promise.all([
+          computeKpiStripData({ companyId, ownerIds: null }),
+          computeDirectorAnnual({ companyId }),
+        ]);
+        setSummaryData({
+          target: annual.target,             // Card 1 — annual target
+          winRate3m: totals.winRate3m,       // Card 2 — 3-month salesman avg
+          winRateIsDefault: totals.winRateIsDefault,
+          requiredPlan: totals.required,     // Card 3 — monthly required plan
+          totalPlanned: totals.planned,      // this month's planned (salesmen)
+          plannedGap: totals.plannedGap,     // Card 4 — monthly planned gap
+        });
+        return;
       }
+
+      // ── MANAGER / SUPERVISOR / SALESMAN ── monthly figures (unchanged).
+      // Owner scope: manager/supervisor → self + full downline; salesman → self.
+      const scope = isTeamLead
+        ? [user?.id, ...(await fetchTeamHierarchy({ companyId, userId: user?.id, role })).map((m) => m.id)].filter(Boolean)
+        : [user?.id].filter(Boolean);
+      const scopeIds = scope.length ? scope : ["00000000-0000-0000-0000-000000000000"];
 
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -127,80 +143,43 @@ const PlanningPage = () => {
       const monthStartStr = monthStart.toISOString().split("T")[0];
       const monthEndStr = new Date(now.getFullYear(), now.getMonth() + 1, 0)
         .toISOString().split("T")[0];
-      const yearStartStr = `${now.getFullYear()}-01-01`;
-      const yearEndStr = `${now.getFullYear()}-12-31`;
 
-      // ── TARGET ── Director tracks the company's ANNUAL (yearly) target, matching
-      // the Director dashboard. Everyone else keeps the current-month target: sum
-      // of MAX per person (targets come as total/by-client/by-product views of ONE
-      // goal, so take the max per person then sum — never add the types).
-      let totalTarget = 0;
-      if (isDirector) {
-        const { data: yearlyTargets } = await supabase
-          .from("sales_targets")
-          .select("target_amount, assigned_to")
-          .eq("company_id", companyId)
-          .eq("period_type", "yearly")
-          .gte("period_start", yearStartStr)
-          .lte("period_end", yearEndStr);
-        const perYear = {};
-        (yearlyTargets || []).forEach((r) => {
-          const k = r.assigned_to || "x";
-          perYear[k] = Math.max(perYear[k] || 0, parseFloat(r.target_amount) || 0);
-        });
-        totalTarget = Object.values(perYear).reduce((s, v) => s + v, 0);
-      } else {
-        let tq = supabase
-          .from("sales_targets")
-          .select("target_amount, assigned_to")
-          .eq("company_id", companyId)
-          .eq("status", "active")
-          .lte("period_start", monthEnd.toISOString())
-          .gte("period_end", monthStart.toISOString());
-        if (scope) tq = tq.in("assigned_to", scope.length ? scope : ["00000000-0000-0000-0000-000000000000"]);
-        const { data: targets } = await tq;
-        const perPerson = {};
-        (targets || []).forEach((r) => {
-          const k = r.assigned_to || "x";
-          perPerson[k] = Math.max(perPerson[k] || 0, parseFloat(r.target_amount) || 0);
-        });
-        totalTarget = Object.values(perPerson).reduce((s, v) => s + v, 0);
-      }
+      // ── TARGET ── sum of MAX target per person over the current month (targets
+      // come as total/by-client/by-product views of ONE goal — max per person,
+      // then sum; never add the types).
+      const { data: targets } = await supabase
+        .from("sales_targets")
+        .select("target_amount, assigned_to")
+        .eq("company_id", companyId)
+        .eq("status", "active")
+        .lte("period_start", monthEnd.toISOString())
+        .gte("period_end", monthStart.toISOString())
+        .in("assigned_to", scopeIds);
+      const perPerson = {};
+      (targets || []).forEach((r) => {
+        const k = r.assigned_to || "x";
+        perPerson[k] = Math.max(perPerson[k] || 0, parseFloat(r.target_amount) || 0);
+      });
+      const totalTarget = Object.values(perPerson).reduce((s, v) => s + v, 0);
 
       // ── 3-MONTH WIN RATE ── won ÷ total created over the last 3 completed months
-      // (default 50% with no history). Director is scoped to salesmen (the same
-      // scope the dashboard KPI strip uses) so the two pages show the same %.
-      let winScope = scope;
-      if (isDirector) {
-        const { data: salesmen } = await supabase
-          .from("users")
-          .select("id")
-          .eq("company_id", companyId)
-          .eq("is_active", true)
-          .eq("role", "salesman");
-        winScope = (salesmen || []).map((u) => u.id);
-      }
-      const { winRate3m: raw, total3m } = await fetchWinRate3m({ companyId, ownerIds: winScope });
+      // (default 50% with no history).
+      const { winRate3m: raw, total3m } = await fetchWinRate3m({ companyId, ownerIds: scope });
       const winRateIsDefault = total3m === 0;
       const winRate3m = winRateIsDefault ? 50 : raw;
 
-      // ── REQUIRED PLAN ── Target ÷ Win Rate% (annual for director, monthly else)
+      // ── REQUIRED PLAN ── Target ÷ Win Rate%
       const requiredPlan = winRate3m > 0 ? totalTarget / (winRate3m / 100) : totalTarget * 2;
 
-      // ── TOTAL PLANNED ── open opportunities. Director = whole company, YTD;
-      // everyone else = their scope, current month.
-      let oq = supabase
+      // ── TOTAL PLANNED ── open opportunities for the current month
+      const { data: opps } = await supabase
         .from("opportunities")
         .select("planned_amount")
         .eq("company_id", companyId)
-        .eq("status", "open");
-      if (isDirector) {
-        oq = oq.gte("expected_month", yearStartStr).lte("expected_month", yearEndStr);
-      } else {
-        oq = oq.gte("expected_month", monthStartStr).lte("expected_month", monthEndStr);
-        if (scope) oq = oq.in("owner_id", scope.length ? scope : ["00000000-0000-0000-0000-000000000000"]);
-      }
-      const { data: opps } = await oq;
+        .eq("status", "open")
+        .gte("expected_month", monthStartStr)
+        .lte("expected_month", monthEndStr)
+        .in("owner_id", scopeIds);
       const totalPlanned = (opps || []).reduce((s, o) => s + (parseFloat(o.planned_amount) || 0), 0);
 
       const plannedGap = Math.max(0, requiredPlan - totalPlanned);
@@ -302,7 +281,7 @@ const PlanningPage = () => {
           <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500" />
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              {isDirectorRole ? "Annual Required Plan" : "Required Plan"}
+              {isDirectorRole ? "Monthly Required Plan" : "Required Plan"}
             </p>
             {summaryLoading ? (
               <div className="h-7 w-24 bg-muted rounded animate-pulse" />
@@ -313,7 +292,7 @@ const PlanningPage = () => {
               </p>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              Target ÷ {summaryData.winRate3m.toFixed(0)}% win rate
+              {isDirectorRole ? "Monthly quota" : "Target"} ÷ {summaryData.winRate3m.toFixed(0)}% win rate
             </p>
           </div>
 
@@ -331,7 +310,7 @@ const PlanningPage = () => {
               }`}
             />
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              {isDirectorRole ? "Annual Planned Gap" : "Planned Gap"}
+              {isDirectorRole ? "Monthly Planned Gap" : "Planned Gap"}
             </p>
             {summaryLoading ? (
               <div className="h-7 w-24 bg-muted rounded animate-pulse" />
@@ -350,7 +329,9 @@ const PlanningPage = () => {
             >
               {!summaryLoading && summaryData.plannedGap <= 0
                 ? `Planned: ${fmtSAR(summaryData.totalPlanned)} SAR`
-                : "Still need to plan this amount"}
+                : isDirectorRole
+                  ? "This month's planning gap"
+                  : "Still need to plan this amount"}
             </p>
           </div>
         </div>
