@@ -9,10 +9,8 @@ const fmtSAR = (n) => new Intl.NumberFormat('en-SA', { maximumFractionDigits: 0 
 // Mandatory replacement opportunity, shown before a deal is removed from the
 // current-month pipeline (marked Lost or moved to Future Orders). Creating the
 // replacement keeps the coverage math accurate. `onSaved(opp)` runs the actual
-// removal; `onClose` cancels it entirely (the deal stays in the Funnel).
-//
-// NOTE: opportunities.is_replacement / replaces_deal_id do not exist in the DB,
-// so the replacement is created as a normal open opportunity for this month.
+// removal; `onClose` cancels it entirely (the deal stays in the Funnel). The
+// opportunity is tagged is_replacement + replaces_deal_id for traceability.
 export default function ReplacementModal({ removedDeal, removalType, onClose, onSaved }) {
   const { user, company } = useAuth();
   const [form, setForm] = useState({ contact_id: null, customer_name: '', planned_amount: '' });
@@ -45,6 +43,8 @@ export default function ReplacementModal({ removedDeal, removalType, onClose, on
           planned_amount: parseFloat(form.planned_amount),
           expected_month: expectedMonth,
           status: 'open',
+          is_replacement: true,
+          replaces_deal_id: removedDeal.id,
           created_at: now.toISOString(),
           updated_at: now.toISOString(),
         })
