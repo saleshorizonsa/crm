@@ -117,7 +117,7 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
         .select(`
           id, customer_name, customer_type, planned_amount, material_group,
           expected_month, notes, status, deal_id, converted_at, created_at,
-          contact_id, owner_id,
+          contact_id, owner_id, bounce_count, last_bounced_at,
           owner:users!owner_id(id, full_name, role),
           contact:contacts!contact_id(id, first_name, last_name, company_name),
           deal:deals!deal_id(id, title, stage, amount)
@@ -531,6 +531,13 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
                           );
                           return null;
                         })()}
+                        {opp.bounce_count > 0 && (
+                          <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+                            opp.bounce_count >= 2 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            <Icon name="RefreshCw" size={9} /> Bounced {opp.bounce_count}×
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-4 mt-1.5 flex-wrap text-xs text-muted-foreground">

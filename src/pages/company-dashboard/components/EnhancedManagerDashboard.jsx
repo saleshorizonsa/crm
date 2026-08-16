@@ -30,6 +30,7 @@ import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
 import ContactReportsAudit from "../../../components/dashboard/ContactReportsAudit";
+import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
@@ -1471,6 +1472,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       />
       {company?.id && (
         <PlanSubmissionAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
+      )}
+      {company?.id && (
+        <BounceBackAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
       )}
       {company?.id && (
         <ContactReportsAudit companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />

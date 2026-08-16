@@ -27,6 +27,82 @@ async function notify({ userId, companyId, type, title, message, metadata }) {
   } catch (_) { /* notifications are best-effort */ }
 }
 
+// Escalate when a salesman has had a 2nd (or later) lead bounce back in the SAME
+// month. Flags the salesman once per month and notifies their manager + them.
+// Idempotent: the month flag is created only once (subsequent bounces no-op).
+async function checkSecondBounce(companyId, ownerId, opportunityId, now) {
+  if (!companyId || !ownerId) return;
+
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+  const flagMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+
+  // Count ALL of this salesman's bounces this month (across every opportunity).
+  const { data: monthBounces } = await supabase
+    .from('bounce_back_logs')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('owner_id', ownerId)
+    .gte('bounced_at', monthStart)
+    .lte('bounced_at', monthEnd);
+  const totalBounces = monthBounces?.length || 0;
+  if (totalBounces < 2) return; // not the 2nd bounce yet
+
+  // Only flag/notify once per salesman per month.
+  const { data: existingFlag } = await supabase
+    .from('salesman_flags')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('owner_id', ownerId)
+    .eq('flag_type', 'bounce_back_2nd')
+    .eq('flag_month', flagMonth)
+    .maybeSingle();
+  if (existingFlag) return;
+
+  await supabase.from('salesman_flags').insert({
+    company_id: companyId,
+    owner_id: ownerId,
+    flag_type: 'bounce_back_2nd',
+    flag_month: flagMonth,
+    details: { bounce_count: totalBounces, opportunity_id: opportunityId, month: flagMonth },
+    flagged_at: now.toISOString(),
+    reviewed: false,
+    created_at: now.toISOString(),
+  });
+
+  // Mark this month's bounce logs for this salesman as escalated.
+  await supabase
+    .from('bounce_back_logs')
+    .update({ escalated: true, escalated_at: now.toISOString() })
+    .eq('company_id', companyId)
+    .eq('owner_id', ownerId)
+    .gte('bounced_at', monthStart)
+    .lte('bounced_at', monthEnd);
+
+  const { data: salesman } = await supabase
+    .from('users')
+    .select('full_name, reports_to')
+    .eq('id', ownerId)
+    .single();
+
+  await notify({
+    userId: salesman?.reports_to,
+    companyId,
+    type: 'bounce_back_escalation',
+    title: '🚨 Escalation: 2nd Bounce-Back',
+    message: `${salesman?.full_name || 'A salesman'} has had ${totalBounces} leads bounce back this month without contact. This requires your immediate attention. Please review and intervene.`,
+    metadata: { owner_id: ownerId, bounce_count: totalBounces, month: flagMonth },
+  });
+  await notify({
+    userId: ownerId,
+    companyId,
+    type: 'bounce_back_warning',
+    title: '⚠️ Multiple Bounce-Backs',
+    message: `You have had ${totalBounces} leads bounce back this month. Your manager has been notified. Please ensure you contact leads within 3 days.`,
+    metadata: { bounce_count: totalBounces, month: flagMonth },
+  });
+}
+
 /**
  * Return converted leads to Opportunities when they've sat in the Lead stage for
  * 3+ days with no progress, and warn the owner on day 2.
@@ -77,6 +153,39 @@ export async function checkExpiredLeads(companyId, _userId) {
             message: `"${name}" had no activity for 3 days and has been returned to your Current Sales Plan. Plan your next action and convert again when ready.`,
             metadata: { opportunity_id: lead.opportunity_id },
           });
+
+          // ── Bounce-back tracking + 2nd-bounce escalation ──
+          if (lead.opportunity_id) {
+            const { data: opp } = await supabase
+              .from('opportunities')
+              .select('bounce_count')
+              .eq('id', lead.opportunity_id)
+              .single();
+            const newBounceCount = (opp?.bounce_count || 0) + 1;
+
+            await supabase
+              .from('opportunities')
+              .update({
+                bounce_count: newBounceCount,
+                last_bounced_at: now.toISOString(),
+                updated_at: now.toISOString(),
+              })
+              .eq('id', lead.opportunity_id);
+
+            await supabase.from('bounce_back_logs').insert({
+              company_id: companyId,
+              deal_id: lead.id,
+              opportunity_id: lead.opportunity_id,
+              owner_id: lead.owner_id,
+              bounce_count: newBounceCount,
+              bounced_at: now.toISOString(),
+              reason: 'No contact within 3 days',
+              escalated: false,
+              created_at: now.toISOString(),
+            });
+
+            await checkSecondBounce(companyId, lead.owner_id, lead.opportunity_id, now);
+          }
         }
       } else if (daysSince >= 2 && !lead.lead_warning_sent) {
         // ── Warn on day 2 (once) ──

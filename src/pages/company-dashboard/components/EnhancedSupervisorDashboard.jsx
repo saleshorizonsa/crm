@@ -31,6 +31,7 @@ import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
 import ContactReportsAudit from "../../../components/dashboard/ContactReportsAudit";
+import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
@@ -1506,6 +1507,9 @@ const EnhancedSupervisorDashboard = ({
       />
       {company?.id && (
         <PlanSubmissionAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
+      )}
+      {company?.id && (
+        <BounceBackAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
       )}
       {company?.id && (
         <ContactReportsAudit companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
