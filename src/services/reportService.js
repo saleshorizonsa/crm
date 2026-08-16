@@ -1,7 +1,8 @@
 import { supabase } from '../lib/supabase';
 
 const DEAL_SELECT = `
-  id, title, amount, stage,
+  id, title, amount, final_amount, is_invoiced, invoice_date, stage_changed_at,
+  stage,
   created_at, closed_at, lost_at,
   expected_close_date,
   contact:contacts!contact_id(

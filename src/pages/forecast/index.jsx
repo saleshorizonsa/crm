@@ -6,6 +6,7 @@ import { format, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuart
 import { useAuth } from "../../contexts/AuthContext";
 import { useDateRange } from "../../contexts/DateRangeContext";
 import { forecastService, userService } from "../../services/supabaseService";
+import { supabase } from "../../lib/supabase";
 import { buildForecast, DEFAULT_STAGE_WEIGHTS } from "../../utils/forecastEngine";
 import { generateInsights, generatePrediction } from "../../utils/forecastInsights";
 import ForecastKPIBar     from "./components/ForecastKPIBar";
@@ -168,6 +169,39 @@ const ForecastPage = () => {
 
   const targetAmount = rawData.target?.target_amount ?? 0;
 
+  // Director view: the KPI bar measures Attainment/Gap against the ANNUAL target,
+  // counting only INVOICED won revenue (final value) as Committed — matching the
+  // Director dashboard. Managers/supervisors/salesmen keep the projection view.
+  const isDirectorView = ["director", "head", "admin"].includes(role) && selectedSalesman === "all";
+  const [annualTarget, setAnnualTarget] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!company?.id || !isDirectorView) { setAnnualTarget(0); return; }
+      const y = new Date().getFullYear();
+      const { data } = await supabase
+        .from("sales_targets")
+        .select("target_amount")
+        .eq("company_id", company.id)
+        .eq("period_type", "yearly")
+        .gte("period_start", `${y}-01-01`)
+        .lte("period_end", `${y}-12-31`);
+      if (!cancelled) setAnnualTarget((data || []).reduce((s, tg) => s + (parseFloat(tg.target_amount) || 0), 0));
+    })();
+    return () => { cancelled = true; };
+  }, [company?.id, isDirectorView]);
+
+  const kpiTarget = isDirectorView && annualTarget > 0 ? annualTarget : targetAmount;
+  const kpiForecast = useMemo(() => {
+    if (!isDirectorView) return forecast;
+    const committed = (rawData.deals || [])
+      .filter((d) => d.stage === "won" && d.is_invoiced)
+      .reduce((s, d) => s + (parseFloat(d.final_amount ?? d.amount) || 0), 0);
+    const attainment = kpiTarget > 0 ? Math.round((committed / kpiTarget) * 1000) / 10 : 0;
+    const gap = Math.round((kpiTarget - committed) * 100) / 100;
+    return { ...forecast, committed, attainment, gap };
+  }, [isDirectorView, forecast, rawData.deals, kpiTarget]);
+
   // Per-salesman share of the weighted OPEN pipeline. Derived from the deals
   // already loaded (they carry owner info), so no extra fetch is needed and the
   // weighting matches the forecast (DEFAULT_STAGE_WEIGHTS, same as buildForecast
@@ -318,8 +352,8 @@ const ForecastPage = () => {
           <div className="space-y-6">
             {/* KPI Bar */}
             <ForecastKPIBar
-              forecast={forecast}
-              targetAmount={targetAmount}
+              forecast={kpiForecast}
+              targetAmount={kpiTarget}
               salesmanName={selectedSalesmanName}
               deals={rawData.deals}
               periodLabel={PERIOD_PRESETS.find((p) => p.id === activePeriod)?.label || "Custom range"}

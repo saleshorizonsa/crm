@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useCurrency } from "../../contexts/CurrencyContext";
 import { reportService, computeDateRange } from "../../services/reportService";
+import { computeKpiStripData } from "../../utils/kpiStripData";
+import { fetchTeamHierarchy } from "../../utils/teamHierarchy";
 import ByValue    from "./components/ByValue";
 import ByProduct  from "./components/ByProduct";
 import ByClient   from "./components/ByClient";
@@ -85,6 +87,28 @@ const ReportsPage = () => {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState(null);
   const [exportLoading, setExportLoading] = useState(false);
+  // Dashboard-consistent KPIs (3-month win rate + open pipeline), scoped by role,
+  // so the Reports summary matches the Director dashboard exactly.
+  const [dashKpis, setDashKpis] = useState({ winRate3m: null, openPipeline: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const companyId = company?.id;
+      if (!companyId) { setDashKpis({ winRate3m: null, openPipeline: null }); return; }
+      const role = userProfile?.role;
+      let ownerIds = null; // director/head/admin → whole company (salesmen)
+      if (role === "salesman") {
+        ownerIds = [userProfile?.id].filter(Boolean);
+      } else if (["manager", "supervisor"].includes(role)) {
+        const team = await fetchTeamHierarchy({ companyId, userId: userProfile?.id, role });
+        ownerIds = [userProfile?.id, ...team.map((m) => m.id)].filter(Boolean);
+      }
+      const { totals } = await computeKpiStripData({ companyId, ownerIds });
+      if (!cancelled) setDashKpis({ winRate3m: totals?.winRate3m ?? null, openPipeline: totals?.funnelValue ?? null });
+    })();
+    return () => { cancelled = true; };
+  }, [company?.id, userProfile?.role, userProfile?.id]);
 
   // Drill-down filters
   const [filterSalesman, setFilterSalesman] = useState('all');
@@ -558,7 +582,7 @@ const ReportsPage = () => {
           </div>
         ) : (
           <>
-            {activeTab === "value"    && <ByValue    deals={filteredDeals} formatCurrency={formatCurrency} />}
+            {activeTab === "value"    && <ByValue    deals={filteredDeals} formatCurrency={formatCurrency} winRate3m={dashKpis.winRate3m} openPipeline={dashKpis.openPipeline} />}
             {activeTab === "product"  && <ByProduct  deals={filteredDeals} formatCurrency={formatCurrency} />}
             {activeTab === "client"   && <ByClient   deals={filteredDeals} formatCurrency={formatCurrency} />}
             {activeTab === "location" && <ByLocation deals={filteredDeals} formatCurrency={formatCurrency} />}

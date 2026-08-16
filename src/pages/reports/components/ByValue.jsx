@@ -33,17 +33,24 @@ const monthLabel = (ym) => {
   return new Date(+y, +m - 1).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 };
 
-const ByValue = ({ deals, formatCurrency }) => {
+const ByValue = ({ deals, formatCurrency, winRate3m = null, openPipeline = null }) => {
   const stats = useMemo(() => {
     let pipeline = 0, won = 0, lost = 0, wonCount = 0, lostCount = 0;
     deals.forEach((d) => {
-      if (d.stage === "won")       { won += d.amount || 0; wonCount++; }
+      // Won revenue counts only INVOICED deals at their final (negotiated) value,
+      // matching the Director dashboard's achievement figure.
+      if (d.stage === "won")       { if (d.is_invoiced) won += parseFloat(d.final_amount ?? d.amount) || 0; wonCount++; }
       else if (d.stage === "lost") { lost += d.amount || 0; lostCount++; }
       else                         { pipeline += d.amount || 0; }
     });
     const closed = wonCount + lostCount;
     return { pipeline, won, lost, winRate: closed ? Math.round(wonCount / closed * 100) : 0, wonCount, lostCount };
   }, [deals]);
+
+  // Prefer the dashboard-consistent figures when provided (3-month win rate and
+  // all-open pipeline); otherwise fall back to this period's own numbers.
+  const displayWinRate = winRate3m != null ? `${winRate3m.toFixed(1)}%` : `${stats.winRate}%`;
+  const displayPipeline = openPipeline != null ? openPipeline : stats.pipeline;
 
   const monthData = useMemo(() => {
     const map = {};
@@ -83,14 +90,15 @@ const ByValue = ({ deals, formatCurrency }) => {
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Active Pipeline", value: formatCurrency(stats.pipeline), color: "text-blue-600",  bg: "bg-blue-50"  },
+          { label: "Active Pipeline", value: formatCurrency(displayPipeline), color: "text-blue-600",  bg: "bg-blue-50"  },
           { label: "Won",             value: formatCurrency(stats.won),      color: "text-green-600", bg: "bg-green-50" },
           { label: "Lost",            value: formatCurrency(stats.lost),     color: "text-red-500",   bg: "bg-red-50"   },
-          { label: "Win Rate",        value: `${stats.winRate}%`,            color: "text-purple-600",bg: "bg-purple-50"},
-        ].map(({ label, value, color, bg }) => (
+          { label: "Win Rate",        value: displayWinRate,                 color: "text-purple-600",bg: "bg-purple-50", subtitle: winRate3m != null ? "3-month avg" : undefined },
+        ].map(({ label, value, color, bg, subtitle }) => (
           <div key={label} className={`${bg} rounded-xl p-4 border border-white/60`}>
             <p className="text-xs text-gray-500 mb-1">{label}</p>
             <p className={`text-2xl font-bold ${color}`}>{value}</p>
+            {subtitle && <p className="text-[11px] text-gray-400 mt-0.5">{subtitle}</p>}
           </div>
         ))}
       </div>

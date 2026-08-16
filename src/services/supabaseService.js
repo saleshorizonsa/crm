@@ -5606,7 +5606,7 @@ export const forecastService = {
       let dealsQuery = supabase
         .from("deals")
         .select(
-          `id, title, stage, amount, expected_close_date, closed_at, owner_id, company_id,
+          `id, title, stage, amount, final_amount, is_invoiced, invoice_date, expected_close_date, closed_at, owner_id, company_id,
            contact:contacts!contact_id(id, first_name, last_name, company_name),
            owner:users!owner_id(id, full_name)`,
         )
