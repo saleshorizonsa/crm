@@ -30,6 +30,7 @@ import MarginSummaryWidget from "./MarginSummaryWidget";
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
+import ContactReportsAudit from "../../../components/dashboard/ContactReportsAudit";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { supabase } from "../../../lib/supabase";
@@ -1505,6 +1506,9 @@ const EnhancedSupervisorDashboard = ({
       />
       {company?.id && (
         <PlanSubmissionAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
+      )}
+      {company?.id && (
+        <ContactReportsAudit companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
       )}
       {/* Header */}
       <div className="space-y-4">

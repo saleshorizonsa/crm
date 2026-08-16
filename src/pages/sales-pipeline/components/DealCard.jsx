@@ -4,6 +4,8 @@ import Button from "../../../components/ui/Button";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { dealProductService } from "../../../services/supabaseService";
+import { supabase } from "../../../lib/supabase";
+import ContactReportModal from "../../../components/deals/ContactReportModal";
 import { useLanguage } from "../../../i18n";
 import { getDealProductSummary, getDealOrigin, getOriginLabel, getWonDealOrigin } from "../../../utils/dealGroupUtils";
 
@@ -35,6 +37,8 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, showProduct
   const [isEditing, setIsEditing] = useState(false);
   const [editAmount, setEditAmount] = useState(deal?.amount);
   const [productCount, setProductCount] = useState(0);
+  const [contactCount, setContactCount] = useState(0);
+  const [showLogContact, setShowLogContact] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
   const { userProfile } = useAuth();
   const { t } = useLanguage();
@@ -48,6 +52,16 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, showProduct
     };
     loadProductCount();
   }, [deal.id]);
+
+  // Load contact-report count for this deal.
+  const loadContactCount = async () => {
+    const { count } = await supabase
+      .from("contact_reports")
+      .select("id", { count: "exact", head: true })
+      .eq("deal_id", deal.id);
+    setContactCount(count || 0);
+  };
+  useEffect(() => { loadContactCount(); }, [deal.id]);
 
   // --- Utility functions ---
   const formatDate = (dateString) => {
@@ -267,7 +281,33 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, showProduct
             {deal?.owner?.full_name || t("tasks.unassigned")}
           </span>
         </div>
+        {contactCount > 0 && (
+          <span className="text-xs text-gray-400 flex items-center gap-1">
+            <Icon name="FileText" size={10} />
+            {contactCount} report{contactCount > 1 ? "s" : ""}
+          </span>
+        )}
       </div>
+
+      {/* --- Log Contact Report (standalone, any stage) --- */}
+      <button
+        onClick={(e) => { e.stopPropagation(); setShowLogContact(true); }}
+        className="mt-2 flex items-center justify-center gap-1.5 text-xs px-3 py-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors w-full border border-blue-100"
+      >
+        <Icon name="Phone" size={12} />
+        Log Contact Report
+      </button>
+
+      {showLogContact && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <ContactReportModal
+            deal={deal}
+            nextStage={null}
+            onClose={() => setShowLogContact(false)}
+            onSaved={() => { setShowLogContact(false); loadContactCount(); }}
+          />
+        </div>
+      )}
 
       {/* --- Invoice (Won deals only) — Achievement counts only once invoiced --- */}
       {deal?.stage === "won" && (

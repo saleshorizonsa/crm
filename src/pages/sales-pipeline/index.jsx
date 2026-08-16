@@ -7,6 +7,7 @@ import PipelineAnalytics from "./components/PipelineAnalytics";
 import DealModal from "./components/DealModal";
 import DealsList from "./components/DealsList";
 import LostReasonModal from "./components/LostReasonModal";
+import ContactReportModal from "../../components/deals/ContactReportModal";
 import Button from "../../components/ui/Button";
 import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
@@ -113,6 +114,9 @@ const SalesPipeline = () => {
   const [showDealModal, setShowDealModal] = useState(false);
   const [showLostModal, setShowLostModal] = useState(false);
   const [dealBeingLost, setDealBeingLost] = useState(null);
+  const [showContactReport, setShowContactReport] = useState(false);
+  const [contactReportDeal, setContactReportDeal] = useState(null);
+  const [contactReportStage, setContactReportStage] = useState(null);
   const [viewMode, setViewMode] = useState("pipeline");
   const [trackedKey, setTrackedKey] = useState(location.key);
   const [filters, setFilters] = useState(() => filtersFromLocation(location));
@@ -520,13 +524,23 @@ const SalesPipeline = () => {
       return;
     }
 
-    try {
-      const deal = deals.find((d) => d.id === dealId);
-      if (!deal) return;
+    const deal = deals.find((d) => d.id === dealId);
+    if (!deal || deal.stage === newStage) return; // ignore no-op drops
 
+    // Every stage change except Won (own invoice/close flow) and Lost (reason
+    // modal above) requires a contact report first — the report advances the
+    // deal once saved.
+    if (newStage !== "won") {
+      setContactReportDeal(deal);
+      setContactReportStage(newStage);
+      setShowContactReport(true);
+      return;
+    }
+
+    try {
       const updates = {
         stage: newStage,
-        closed_at: newStage === "won" ? new Date().toISOString() : null,
+        closed_at: new Date().toISOString(),
       };
 
       const { data, error } = await dealService.updateDeal(dealId, updates);
@@ -760,6 +774,25 @@ const SalesPipeline = () => {
           setDealBeingLost(null);
         }}
       />
+
+      {/* Mandatory contact report — gates a stage change (report saves, then advances) */}
+      {showContactReport && contactReportDeal && (
+        <ContactReportModal
+          deal={contactReportDeal}
+          nextStage={contactReportStage}
+          onClose={() => {
+            setShowContactReport(false);
+            setContactReportDeal(null);
+            setContactReportStage(null);
+          }}
+          onSaved={() => {
+            setShowContactReport(false);
+            setContactReportDeal(null);
+            setContactReportStage(null);
+            loadDeals(true);
+          }}
+        />
+      )}
 
       {/* Mark as Invoiced modal */}
       {showInvoiceModal && invoicingDeal && (
