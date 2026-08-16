@@ -8,6 +8,7 @@ import DealModal from "./components/DealModal";
 import DealsList from "./components/DealsList";
 import LostReasonModal from "./components/LostReasonModal";
 import ContactReportModal from "../../components/deals/ContactReportModal";
+import ReplacementModal from "../../components/deals/ReplacementModal";
 import Button from "../../components/ui/Button";
 import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
@@ -117,6 +118,9 @@ const SalesPipeline = () => {
   const [showContactReport, setShowContactReport] = useState(false);
   const [contactReportDeal, setContactReportDeal] = useState(null);
   const [contactReportStage, setContactReportStage] = useState(null);
+  const [showReplacement, setShowReplacement] = useState(false);
+  const [replacementDeal, setReplacementDeal] = useState(null);
+  const [pendingLost, setPendingLost] = useState(null); // { dealId, code, notes }
   const [viewMode, setViewMode] = useState("pipeline");
   const [trackedKey, setTrackedKey] = useState(location.key);
   const [filters, setFilters] = useState(() => filtersFromLocation(location));
@@ -754,26 +758,52 @@ const SalesPipeline = () => {
       <LostReasonModal
         isOpen={showLostModal}
         deal={dealBeingLost}
-        onConfirm={async (code, notes) => {
-          try {
-            const { data, error } = await dealService.updateDealLost(
-              dealBeingLost.id,
-              { lost_reason_code: code, lost_reason_notes: notes, company_id: company?.id },
-            );
-            if (error) throw error;
-            setDeals((prev) => prev.map((d) => (d.id === data.id ? data : d)));
-          } catch (err) {
-            console.error("Failed to mark deal lost:", err);
-          } finally {
-            setShowLostModal(false);
-            setDealBeingLost(null);
-          }
+        onConfirm={(code, notes) => {
+          // A replacement opportunity is mandatory before the deal is actually
+          // marked lost — defer the removal until the replacement is created.
+          setReplacementDeal(dealBeingLost);
+          setPendingLost({ dealId: dealBeingLost.id, code, notes });
+          setShowLostModal(false);
+          setDealBeingLost(null);
+          setShowReplacement(true);
         }}
         onCancel={() => {
           setShowLostModal(false);
           setDealBeingLost(null);
         }}
       />
+
+      {/* Mandatory replacement opportunity — must be added before the deal is
+          removed from the pipeline (marked Lost). Cancelling keeps the deal. */}
+      {showReplacement && replacementDeal && (
+        <ReplacementModal
+          removedDeal={replacementDeal}
+          removalType="lost"
+          onClose={() => {
+            setShowReplacement(false);
+            setReplacementDeal(null);
+            setPendingLost(null);
+          }}
+          onSaved={async () => {
+            if (pendingLost) {
+              try {
+                const { data, error } = await dealService.updateDealLost(
+                  pendingLost.dealId,
+                  { lost_reason_code: pendingLost.code, lost_reason_notes: pendingLost.notes, company_id: company?.id },
+                );
+                if (error) throw error;
+                setDeals((prev) => prev.map((d) => (d.id === data.id ? data : d)));
+              } catch (err) {
+                console.error("Failed to mark deal lost:", err);
+              }
+            }
+            setShowReplacement(false);
+            setReplacementDeal(null);
+            setPendingLost(null);
+            loadDeals(true);
+          }}
+        />
+      )}
 
       {/* Mandatory contact report — gates a stage change (report saves, then advances) */}
       {showContactReport && contactReportDeal && (

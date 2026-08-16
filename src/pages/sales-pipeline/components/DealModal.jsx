@@ -6,6 +6,7 @@ import Input from "../../../components/ui/Input";
 import Select from "../../../components/ui/Select";
 import ContactSearchInput from "../../../components/ui/ContactSearchInput";
 import LostReasonModal from "./LostReasonModal";
+import ReplacementModal from "../../../components/deals/ReplacementModal";
 import MeetingModal from "../../calendar/components/MeetingModal";
 import LogActivityModal from "../../../components/LogActivityModal";
 import ActivityTimeline from "../../../components/ActivityTimeline";
@@ -436,6 +437,7 @@ const DealModal = ({
   const [moveMonth, setMoveMonth]           = useState('');
   const [moveError, setMoveError]           = useState('');
   const [movingFuture, setMovingFuture]     = useState(false);
+  const [showReplacement, setShowReplacement] = useState(false); // replacement gate before removal
   const nextMonthStr = (() => {
     const d = new Date();
     d.setDate(1);
@@ -1294,7 +1296,9 @@ const DealModal = ({
 
   // Move this deal to Future Orders: create a pending future_orders row for the
   // chosen month, then remove the deal from the Funnel (cascade if it has refs).
-  const handleMoveToFuture = async () => {
+  // Validate the target month, then require a replacement opportunity before the
+  // deal actually leaves the Funnel (the replacement modal calls completeMoveToFuture).
+  const handleMoveToFuture = () => {
     if (!deal?.id) return;
     setMoveError('');
     if (!moveMonth) { setMoveError('Please choose a target month.'); return; }
@@ -1305,6 +1309,13 @@ const DealModal = ({
       setMoveError('Choose a future month (next month or later).');
       return;
     }
+    setShowMoveFuture(false);
+    setShowReplacement(true);
+  };
+
+  // Complete the move once the mandatory replacement opportunity is saved.
+  const completeMoveToFuture = async () => {
+    if (!deal?.id) return;
     setMovingFuture(true);
     try {
       const c = contacts.find((x) => x.id === deal.contact_id);
@@ -1321,6 +1332,7 @@ const DealModal = ({
         planned_amount: parseFloat(deal.amount) || 0,
         expected_month: `${moveMonth}-01`,
         status:         'pending',
+        source_deal_id: deal.id,
       });
       if (insErr) throw insErr;
 
@@ -1331,12 +1343,13 @@ const DealModal = ({
         : await dealService.deleteDeal(deal.id);
       if (delErr) throw delErr;
 
-      setShowMoveFuture(false);
+      setShowReplacement(false);
       onDelete?.(deal.id); // funnel drops the card
       onClose();
     } catch (err) {
       console.error('moveToFuture:', err);
       setMoveError(err.message || 'Could not move to Future Orders.');
+      setShowReplacement(false);
     } finally {
       setMovingFuture(false);
     }
@@ -2663,6 +2676,17 @@ const DealModal = ({
             </div>
           </div>
         </>
+      )}
+
+      {/* Mandatory replacement opportunity before moving the deal to Future Orders.
+          Cancelling keeps the deal in the Funnel (removal aborted). */}
+      {showReplacement && deal && (
+        <ReplacementModal
+          removedDeal={deal}
+          removalType="future_orders"
+          onClose={() => setShowReplacement(false)}
+          onSaved={completeMoveToFuture}
+        />
       )}
 
       {/* Amount-change reason modal — appears over the deal editor */}
