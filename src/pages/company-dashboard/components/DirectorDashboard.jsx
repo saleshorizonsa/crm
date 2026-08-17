@@ -1736,13 +1736,25 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                 : amount);
             }, 0);
 
-            // Target achievement from actual revenue vs targets.
+            // Target achievement from actual revenue vs targets. Group by person
+            // and use their total_value target when present, otherwise the sum of
+            // their by_clients rows (same rule as the KPI Target card, so both
+            // include salesmen AND supervisors and never double-count one goal).
             let targetAchievement = 0;
             let totalTargetAmount = 0;
             if (filteredTargets.length > 0) {
-              totalTargetAmount = filteredTargets.reduce((sum, t) => {
-                return sum + (parseFloat(t.target_amount) || 0);
-              }, 0);
+              const split = {};
+              filteredTargets.forEach((t) => {
+                const k = t.assigned_to || t.id;
+                if (!split[k]) split[k] = { total_value: 0, by_clients: 0 };
+                const amt = parseFloat(t.target_amount) || 0;
+                if (t.target_type === "by_clients") split[k].by_clients += amt;
+                else split[k].total_value += amt;
+              });
+              totalTargetAmount = Object.values(split).reduce(
+                (s, v) => s + (v.total_value > 0 ? v.total_value : v.by_clients),
+                0,
+              );
               if (totalTargetAmount > 0) {
                 targetAchievement = (totalRevenue / totalTargetAmount) * 100;
               }

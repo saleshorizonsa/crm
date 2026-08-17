@@ -215,23 +215,30 @@ const PlanningPage = () => {
       const monthEndStr = new Date(now.getFullYear(), now.getMonth() + 1, 0)
         .toISOString().split("T")[0];
 
-      // ── TARGET ── sum of MAX target per person over the current month (targets
-      // come as total/by-client/by-product views of ONE goal — max per person,
-      // then sum; never add the types).
+      // ── TARGET ── per person (salesmen + supervisors in scope), use their
+      // total_value monthly target when present, else the sum of their by_clients
+      // rows — never mix the two views of one goal.
       const { data: targets } = await supabase
         .from("sales_targets")
-        .select("target_amount, assigned_to")
+        .select("target_amount, assigned_to, target_type")
         .eq("company_id", companyId)
         .eq("status", "active")
+        .eq("period_type", "monthly")
         .lte("period_start", monthEnd.toISOString())
         .gte("period_end", monthStart.toISOString())
         .in("assigned_to", scopeIds);
-      const perPerson = {};
+      const targetSplit = {};
       (targets || []).forEach((r) => {
         const k = r.assigned_to || "x";
-        perPerson[k] = Math.max(perPerson[k] || 0, parseFloat(r.target_amount) || 0);
+        if (!targetSplit[k]) targetSplit[k] = { total_value: 0, by_clients: 0 };
+        const amt = parseFloat(r.target_amount) || 0;
+        if (r.target_type === "by_clients") targetSplit[k].by_clients += amt;
+        else targetSplit[k].total_value += amt;
       });
-      const totalTarget = Object.values(perPerson).reduce((s, v) => s + v, 0);
+      const totalTarget = Object.values(targetSplit).reduce(
+        (s, v) => s + (v.total_value > 0 ? v.total_value : v.by_clients),
+        0,
+      );
 
       // ── WIN RATE ── 3-step (no fixed default): (1) 90-day rolling window;
       // (2) if none, this scope's ACTUAL rate over all history — however few deals;

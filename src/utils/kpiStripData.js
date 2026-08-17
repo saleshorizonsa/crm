@@ -3,12 +3,11 @@ import { supabase } from 'lib/supabase';
 // TEMP: set true to re-enable the KPI diagnostic logs (see end of the function).
 const KPI_DEBUG = false;
 
-// The KPI strip aggregates over individual contributors (salesmen) only. Manager
-// and supervisor targets are team roll-ups — including them double-counts the
-// team/company Target (a manager's rolled-up target dwarfs the salesmen's), which
-// is what made the Director/Manager/Supervisor cards wrong. So both the popup rows
-// and the totals are built from salesmen only.
-const CONTRIBUTOR_ROLES = ['salesman'];
+// The KPI strip aggregates over individual contributors: salesmen AND supervisors
+// (supervisors carry their own monthly quotas and sell, so their targets/achieved
+// count). Managers are excluded — their target is a YEARLY team roll-up that would
+// dwarf and double-count the monthly quotas.
+const CONTRIBUTOR_ROLES = ['salesman', 'supervisor'];
 
 const EMPTY_TOTALS = {
   target: 0, achieved: 0, deficit: 0,
@@ -86,22 +85,30 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   const winStart = range?.start || mb.startDate;
   const winEnd = range?.end || mb.endDate;
 
-  // 2a. Per-salesman MONTHLY targets overlapping the window; max per person
-  //     (total/by-client/by-product are views of ONE goal — never summed). Drives
-  //     the popup contributor rows.
+  // 2a. Per-contributor MONTHLY targets overlapping the window. A person can hold
+  //     a `total_value` (overall) target and/or `by_clients` targets — the overall
+  //     value is the manager-set goal, so: use total_value when present, otherwise
+  //     sum the by_clients rows (never mix the two — they're two views of one goal).
   const { data: targets } = await supabase
     .from('sales_targets')
-    .select('target_amount, assigned_to')
+    .select('target_amount, assigned_to, target_type')
     .eq('company_id', companyId)
     .eq('status', 'active')
     .eq('period_type', 'monthly')
     .in('assigned_to', scopeIds)
     .lte('period_start', winEnd)
     .gte('period_end', winStart);
-  const targetPer = {};
+  const targetSplit = {}; // uid → { total_value, by_clients }
   (targets || []).forEach((t) => {
     const k = t.assigned_to;
-    targetPer[k] = Math.max(targetPer[k] || 0, parseFloat(t.target_amount) || 0);
+    if (!targetSplit[k]) targetSplit[k] = { total_value: 0, by_clients: 0 };
+    const amt = parseFloat(t.target_amount) || 0;
+    if (t.target_type === 'by_clients') targetSplit[k].by_clients += amt;
+    else targetSplit[k].total_value += amt; // total_value (and any other type) → overall
+  });
+  const targetPer = {};
+  Object.entries(targetSplit).forEach(([k, v]) => {
+    targetPer[k] = v.total_value > 0 ? v.total_value : v.by_clients;
   });
 
   // 2b. Annual view → the company's YEARLY target (assigned to the manager, not
