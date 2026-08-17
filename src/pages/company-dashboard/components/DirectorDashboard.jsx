@@ -140,6 +140,21 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     return () => clearTimeout(timer);
   }, [activeDateRange.from, activeDateRange.to]);
 
+  // Director defaults to This Year (annual view). One-shot on mount — only the
+  // director dashboard mounts this, so other roles keep their current-month default.
+  const didInitRange = React.useRef(false);
+  useEffect(() => {
+    if (didInitRange.current) return;
+    didInitRange.current = true;
+    const y = new Date().getFullYear();
+    setRange({ from: `${y}-01-01`, to: `${y}-12-31` });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Whether the active range spans the full current year → annual KPIs + labels.
+  const isAnnualView = !!(
+    activeDateRange?.from?.endsWith("-01-01") && activeDateRange?.to?.slice(5, 7) === "12"
+  );
+
   // Time period for charts and metrics (month, quarter, year)
   const [timePeriod, setTimePeriod] = useState("month");
 
@@ -191,12 +206,13 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       const companyId = selectedCompany?.id;
       if (!companyId) { setKpiStrip({ salesmanData: [], totals: null, loading: false }); return; }
       const ownerIds = selectedEmployee?.id ? [selectedEmployee.id] : null;
+      const range = { start: activeDateRange.from, end: activeDateRange.to, isAnnual: isAnnualView };
       setKpiStrip((s) => ({ ...s, loading: true }));
-      const res = await computeKpiStripData({ companyId, ownerIds });
+      const res = await computeKpiStripData({ companyId, ownerIds, range });
       if (!cancelled) setKpiStrip({ ...res, loading: false });
     })();
     return () => { cancelled = true; };
-  }, [selectedCompany?.id, selectedEmployee?.id]);
+  }, [selectedCompany?.id, selectedEmployee?.id, activeDateRange.from, activeDateRange.to, isAnnualView]);
 
   // Director annual figures (full-year target + YTD invoiced achievement) for the
   // selected company. Refetched on company switch so the KPI strip stays scoped
@@ -1633,19 +1649,6 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       const targetUserId = selectedEmployee?.id || null;
       const viewAll = !selectedEmployee;
 
-      // Director view shows YTD revenue (full calendar year to date) to match the
-      // annual KPI cards; everyone else keeps the selected-period (monthly) window.
-      const isDirectorView =
-        ["director", "head", "admin"].includes(userProfile?.role) && !selectedEmployee;
-      const ytdYear = new Date().getFullYear();
-      const ytdStart = new Date(ytdYear, 0, 1);
-      const ytdEnd = new Date(ytdYear, 11, 31, 23, 59, 59);
-      const inYTD = (dateStr) => {
-        if (!dateStr) return false;
-        const d = new Date(dateStr);
-        return d >= ytdStart && d <= ytdEnd;
-      };
-
       const companiesWithStats = await Promise.all(
         companies.map(async (company) => {
           try {
@@ -1656,17 +1659,11 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                 salesTargetService.getAssignedTargets(company.id),
               ]);
 
-            // Filter deals by selected period. Won deals are windowed by
-            // invoice_date so revenue = achievement = invoiced deals only,
-            // matching the KPI Achieved card exactly.
+            // Filter deals by the selected period. Won deals are windowed by
+            // invoice_date so revenue = achievement = invoiced deals only, matching
+            // the KPI Achieved card (This Year → YTD, This Month → the month, etc.).
             const filteredDeals = (deals || []).filter((deal) => {
-              // Won → windowed by invoice_date (YTD for director, else selected
-              // period); other stages by created_at within the selected period.
-              if (deal.stage === "won") {
-                return isDirectorView
-                  ? inYTD(deal.invoice_date)
-                  : isInSelectedPeriod(deal.invoice_date);
-              }
+              if (deal.stage === "won") return isInSelectedPeriod(deal.invoice_date);
               return isInSelectedPeriod(deal.created_at);
             });
 
@@ -1934,7 +1931,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         totalSalesmen={allEmployees.filter(e => e.role === 'salesman' && e.is_active !== false).length || 1}
         showAvg={!selectedEmployee}
         employees={allEmployees}
-        annual={!selectedEmployee ? annualData : null}
+        annual={!selectedEmployee && isAnnualView ? annualData : null}
       />
 
       {/* Company Performance Grid */}
@@ -1946,7 +1943,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         selectedQuarter={selectedQuarter}
         selectedYear={selectedYear}
         timePeriod={timePeriod}
-        isDirector={["director", "head", "admin"].includes(userProfile?.role) && !selectedEmployee}
+        isDirector={["director", "head", "admin"].includes(userProfile?.role) && !selectedEmployee && isAnnualView}
       />
 
       {/* At-Risk Deals + Leaderboard */}
@@ -2468,10 +2465,11 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         totals={kpiStrip.totals}
         role={userProfile?.role}
         loading={kpiStrip.loading}
-        isDirector={
+        period={
           ["director", "head", "admin"].includes(userProfile?.role) && !selectedEmployee
+            ? { label: getPeriodLabel(), isAnnual: isAnnualView }
+            : null
         }
-        annualData={annualData}
       />
       {selectedCompany?.id && !selectedEmployee && (
         <PlanSubmissionAlert companyId={selectedCompany.id} ownerIds={null} reviewerId={user?.id} />

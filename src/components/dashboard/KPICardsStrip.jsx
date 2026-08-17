@@ -10,11 +10,12 @@ const MONTH_LABEL = () =>
   new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 
 // The five KPI cards. `accent` drives the coloured top strip + value colour.
-// For the director (`isDirector` + `annualData`) the Target/Achieved/Deficit
-// cards switch to full-year figures; Win Rate and Planned Gap stay monthly.
+// For the director a `period` ({ label, isAnnual }) relabels Target/Achieved/
+// Deficit to the selected date range (the totals are already windowed to it);
+// Win Rate and Planned Gap stay 3-month / current-month for every role.
 function cardDefs(totals, opts = {}) {
   const t = totals || {};
-  const { isDirector, annualData } = opts;
+  const { period } = opts;
   const onTrack = (t.plannedGap || 0) <= 0;
   const targetMet = (t.deficit || 0) <= 0;
   const pct = (num, den) => (den > 0 ? ((num / den) * 100).toFixed(1) : '0');
@@ -34,26 +35,30 @@ function cardDefs(totals, opts = {}) {
       : `${pct(t.plannedGap, t.required)}% of required plan unplanned`,
   };
 
-  if (isDirector && annualData) {
-    const a = annualData;
-    const year = a.year || new Date().getFullYear();
+  if (period) {
+    const isAnnual = period.isAnnual;
+    const year = new Date().getFullYear();
     const curMonth = new Date().toLocaleDateString('en-GB', { month: 'short' });
-    const met = (a.deficit || 0) <= 0;
+    const met = (t.deficit || 0) <= 0;
+    const achievedWindow = isAnnual ? `Jan–${curMonth} ${year}` : period.label;
     return [
       {
-        key: 'target', label: 'Annual Target', strip: 'bg-blue-600',
-        value: `${fmtSAR(a.target)} SAR`, valueClass: 'text-foreground', sub: `${year}`,
+        key: 'target', label: isAnnual ? 'Annual Target' : 'Target', strip: 'bg-blue-600',
+        value: `${fmtSAR(t.target)} SAR`, valueClass: 'text-foreground',
+        sub: isAnnual ? `${year}` : period.label,
       },
       {
         key: 'achieved', label: 'Achieved (invoiced)', strip: 'bg-green-500',
-        value: `${fmtSAR(a.achieved)} SAR`, valueClass: 'text-green-600',
-        sub: `Jan–${curMonth} ${year} · ${(a.attainmentPct || 0).toFixed(1)}% of target`,
+        value: `${fmtSAR(t.achieved)} SAR`, valueClass: 'text-green-600',
+        sub: `${achievedWindow} · ${(t.attainmentPct || 0).toFixed(1)}% of target`,
       },
       {
-        key: 'deficit', label: 'Annual Deficit', strip: met ? 'bg-green-500' : 'bg-red-500',
-        value: met ? 'Target met ✓' : `${fmtSAR(a.deficit)} SAR`,
+        key: 'deficit', label: isAnnual ? 'Annual Deficit' : 'Deficit', strip: met ? 'bg-green-500' : 'bg-red-500',
+        value: met ? 'Target met ✓' : `${fmtSAR(t.deficit)} SAR`,
         valueClass: met ? 'text-green-600' : 'text-red-600',
-        sub: met ? 'Annual target met' : `${pct(a.deficit, a.target)}% of annual target remaining`,
+        sub: met
+          ? (isAnnual ? 'Annual target met' : 'Target met')
+          : `${pct(t.deficit, t.target)}% of ${isAnnual ? 'annual target' : 'target'} remaining`,
       },
       winRateCard,
       plannedGapCard,
@@ -255,7 +260,7 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
 //   role         — current user role (drives popup behaviour in later phases)
 //   loading      — skeletons while data loads
 //   onDrillDown  — (salesman) => void  (manager/supervisor drill-down; optional)
-export default function KPICardsStrip({ salesmanData = [], totals, role, loading = false, onDrillDown, isDirector = false, annualData = null }) {
+export default function KPICardsStrip({ salesmanData = [], totals, role, loading = false, onDrillDown, period = null }) {
   const [activePopup, setActivePopup] = useState(null);
   const [drillSalesman, setDrillSalesman] = useState(null);
   const [showHealthPopup, setShowHealthPopup] = useState(false);
@@ -315,8 +320,7 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
     return () => { cancelled = true; };
   }, [viewSalesman?.id, activePopup]);
 
-  const annual = isDirector && annualData ? annualData : null;
-  const cards = cardDefs(totals, { isDirector, annualData });
+  const cards = cardDefs(totals, { period });
 
   return (
     <div className="mb-6">
@@ -512,14 +516,14 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                     {activePopup === 'winRate'
                       ? `Team 3-month average: ${(totals?.winRate3m || 0).toFixed(1)}%`
                       : activePopup === 'target'
-                      ? (annual ? `Annual target: ${fmtSAR(annual.target)} SAR` : `Total target: ${fmtSAR(totals?.target)} SAR`)
+                      ? `${period?.isAnnual ? 'Annual' : 'Total'} target: ${fmtSAR(totals?.target)} SAR`
                       : activePopup === 'achieved'
-                      ? (annual ? `YTD achieved: ${fmtSAR(annual.achieved)} SAR (${annual.dealCount} deals)` : `Total achieved: ${fmtSAR(totals?.achieved)} SAR`)
+                      ? `${period?.isAnnual ? 'YTD' : 'Total'} achieved: ${fmtSAR(totals?.achieved)} SAR`
                       : activePopup === 'deficit'
-                      ? (annual ? `Annual deficit: ${fmtSAR(annual.deficit)} SAR` : `Total deficit: ${fmtSAR(totals?.deficit)} SAR`)
+                      ? `${period?.isAnnual ? 'Annual' : 'Total'} deficit: ${fmtSAR(totals?.deficit)} SAR`
                       : `Total planned gap: ${fmtSAR(totals?.plannedGap)} SAR`}
                   </p>
-                  {annual && ['target', 'achieved', 'deficit'].includes(activePopup) && !isSalesman && (
+                  {period && ['target', 'achieved', 'deficit'].includes(activePopup) && !isSalesman && (
                     <p className="text-[11px] text-muted-foreground/80 mt-0.5">
                       Per-salesman rows below show the current month's contributor detail.
                     </p>

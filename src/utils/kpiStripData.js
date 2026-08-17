@@ -59,7 +59,10 @@ function threeMonthWindow() {
 //
 // `ownerIds`: null = whole company (director); an array = that scope
 // (manager/supervisor team, or a single salesman). Empty array = nobody.
-export async function computeKpiStripData({ companyId, ownerIds = null }) {
+// `range`: optional { start, end, isAnnual } (yyyy-mm-dd) — the Target/Achieved
+// window. Omitted = current month. isAnnual makes Target the company yearly target
+// (win rate stays a 3-month rolling average, planned/coverage stay current-month).
+export async function computeKpiStripData({ companyId, ownerIds = null, range = null }) {
   const empty = { salesmanData: [], totals: { ...EMPTY_TOTALS } };
   if (!companyId) return empty;
   if (Array.isArray(ownerIds) && ownerIds.length === 0) return empty;
@@ -79,10 +82,13 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
 
   const mb = monthBounds();
   const w3 = threeMonthWindow();
+  // Achieved + target window: the selected range, or the current month by default.
+  const winStart = range?.start || mb.startDate;
+  const winEnd = range?.end || mb.endDate;
 
-  // 2. Targets — active MONTHLY targets overlapping the current month; max per
-  //    person. period_type='monthly' excludes manager/head yearly team targets
-  //    (a manager's yearly roll-up would otherwise dwarf the salesmen's quotas).
+  // 2a. Per-salesman MONTHLY targets overlapping the window; max per person
+  //     (total/by-client/by-product are views of ONE goal — never summed). Drives
+  //     the popup contributor rows.
   const { data: targets } = await supabase
     .from('sales_targets')
     .select('target_amount, assigned_to')
@@ -90,13 +96,28 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
     .eq('status', 'active')
     .eq('period_type', 'monthly')
     .in('assigned_to', scopeIds)
-    .lte('period_start', mb.endISO)
-    .gte('period_end', mb.startISO);
+    .lte('period_start', winEnd)
+    .gte('period_end', winStart);
   const targetPer = {};
   (targets || []).forEach((t) => {
     const k = t.assigned_to;
     targetPer[k] = Math.max(targetPer[k] || 0, parseFloat(t.target_amount) || 0);
   });
+
+  // 2b. Annual view → the company's YEARLY target (assigned to the manager, not
+  //     the salesmen) is the scope-total Target, matching the Director dashboard.
+  let annualTargetTotal = null;
+  if (range?.isAnnual) {
+    const y = new Date().getFullYear();
+    const { data: yt } = await supabase
+      .from('sales_targets')
+      .select('target_amount')
+      .eq('company_id', companyId)
+      .eq('period_type', 'yearly')
+      .gte('period_start', `${y}-01-01`)
+      .lte('period_end', `${y}-12-31`);
+    annualTargetTotal = (yt || []).reduce((s, t) => s + (parseFloat(t.target_amount) || 0), 0);
+  }
 
   // 3. Achieved — INVOICED won deals for this month (by invoice_date). Achievement
   //    is only counted once a deal is invoiced, not merely won/closed (director rule).
@@ -107,8 +128,8 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
     .eq('stage', 'won')
     .eq('is_invoiced', true)
     .in('owner_id', scopeIds)
-    .gte('invoice_date', mb.startDate)
-    .lte('invoice_date', mb.endDate);
+    .gte('invoice_date', winStart)
+    .lte('invoice_date', winEnd);
   const achievedPer = {};
   (wonDeals || []).forEach((d) => {
     const amt = parseFloat(d.final_amount ?? d.amount) || 0;
@@ -224,8 +245,10 @@ export async function computeKpiStripData({ companyId, ownerIds = null }) {
     })
     .sort((a, b) => b.target - a.target || b.achieved - a.achieved);
 
-  // Totals across the whole scope.
-  const target = Object.values(targetPer).reduce((s, v) => s + v, 0);
+  // Totals across the whole scope. Annual view uses the company yearly target.
+  const target = range?.isAnnual
+    ? (annualTargetTotal || 0)
+    : Object.values(targetPer).reduce((s, v) => s + v, 0);
   const achieved = Object.values(achievedPer).reduce((s, v) => s + v, 0);
   const deficit = Math.max(0, target - achieved);
   // Scope total win rate = company/team 3-month average (already computed above).
