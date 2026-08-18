@@ -111,19 +111,24 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     targetPer[k] = v.total_value > 0 ? v.total_value : v.by_clients;
   });
 
-  // 2b. Annual view → the company's YEARLY target (assigned to the manager, not
-  //     the salesmen) is the scope-total Target, matching the Director dashboard.
+  // 2b. Annual view → prefer an explicit YEARLY target for this scope (the company
+  //     yearly for a director; a manager/supervisor's own if assigned); otherwise
+  //     annualize the monthly quotas (×12) — e.g. a salesman with no yearly target.
   let annualTargetTotal = null;
   if (range?.isAnnual) {
     const y = new Date().getFullYear();
-    const { data: yt } = await supabase
+    let yq = supabase
       .from('sales_targets')
       .select('target_amount')
       .eq('company_id', companyId)
       .eq('period_type', 'yearly')
       .gte('period_start', `${y}-01-01`)
       .lte('period_end', `${y}-12-31`);
-    annualTargetTotal = (yt || []).reduce((s, t) => s + (parseFloat(t.target_amount) || 0), 0);
+    if (Array.isArray(ownerIds)) yq = yq.in('assigned_to', ownerIds);
+    const { data: yt } = await yq;
+    const yearlySum = (yt || []).reduce((s, t) => s + (parseFloat(t.target_amount) || 0), 0);
+    const monthlySum = Object.values(targetPer).reduce((s, v) => s + v, 0);
+    annualTargetTotal = yearlySum > 0 ? yearlySum : monthlySum * 12;
   }
 
   // 3. Achieved — INVOICED won deals for this month (by invoice_date). Achievement

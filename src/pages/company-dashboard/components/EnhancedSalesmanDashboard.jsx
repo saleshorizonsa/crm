@@ -42,6 +42,8 @@ import QuickDateSelector from '../../../components/QuickDateSelector';
 import {
   buildDateRange,
   syncDropdownsFromRange,
+  periodLabelFromRange,
+  isAnnualRange,
 } from "../../../utils/dashboardDateUtils";
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { fetchWinRate3m } from "../../../utils/winRate3m";
@@ -154,18 +156,26 @@ const EnhancedSalesmanDashboard = ({
       .then((r) => setWinRate3m(r.winRate3m));
   }, [company?.id, effectiveUser.id]);
 
+  // Selected-period range for the KPI strip (annual when the range spans a year).
+  const isAnnualView = isAnnualRange(activeDateRange?.from, activeDateRange?.to);
+  const kpiPeriod = {
+    label: periodLabelFromRange(activeDateRange?.from, activeDateRange?.to),
+    isAnnual: isAnnualView,
+  };
+
   // KPI strip (Target · Achieved · Deficit · Win Rate · Planned Gap) — own scope.
   const [kpiStrip, setKpiStrip] = useState({ salesmanData: [], totals: null, loading: true });
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!company?.id || !effectiveUser.id) return;
+      const range = { start: activeDateRange.from, end: activeDateRange.to, isAnnual: isAnnualView };
       setKpiStrip((s) => ({ ...s, loading: true }));
-      const res = await computeKpiStripData({ companyId: company.id, ownerIds: [effectiveUser.id] });
+      const res = await computeKpiStripData({ companyId: company.id, ownerIds: [effectiveUser.id], range });
       if (!cancelled) setKpiStrip({ ...res, loading: false });
     })();
     return () => { cancelled = true; };
-  }, [company?.id, effectiveUser.id]);
+  }, [company?.id, effectiveUser.id, activeDateRange.from, activeDateRange.to, isAnnualView]);
 
   // Monthly target state
   const [monthlyTarget, setMonthlyTarget] = useState(null);
@@ -1166,6 +1176,7 @@ const EnhancedSalesmanDashboard = ({
         totals={kpiStrip.totals}
         role={userProfile?.role}
         loading={kpiStrip.loading}
+        period={kpiPeriod}
       />
       {/* Header */}
       <div className="space-y-4">

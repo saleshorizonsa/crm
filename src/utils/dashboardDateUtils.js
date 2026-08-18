@@ -87,6 +87,28 @@ export function formatViewingLabel(from, to) {
 }
 
 /**
+ * A concise period label for a range: "August 2026" / "Q3 2026" / "2026",
+ * falling back to the raw date span for arbitrary custom ranges.
+ */
+export function periodLabelFromRange(from, to) {
+  if (!from || !to) return '';
+  const { selectedMonth, selectedQuarter, selectedYear } = syncDropdownsFromRange(from, to);
+  if (selectedMonth != null && selectedYear != null) {
+    return format(new Date(selectedYear, selectedMonth, 1), 'MMMM yyyy');
+  }
+  if (selectedQuarter != null && selectedYear != null) {
+    return `Q${selectedQuarter + 1} ${selectedYear}`;
+  }
+  if (selectedYear != null) return `${selectedYear}`;
+  return formatViewingLabel(from, to);
+}
+
+/** True when a range spans a full calendar year (Jan 1 – Dec 31) → annual view. */
+export function isAnnualRange(from, to) {
+  return !!(from && to && from.endsWith('-01-01') && to.slice(5, 7) === '12');
+}
+
+/**
  * Five plain-English quick-select date ranges for dashboard buttons.
  */
 export function getQuickRanges() {

@@ -46,6 +46,8 @@ import {
   getPreviousPeriod,
   calcChange,
   isPositiveChange,
+  periodLabelFromRange,
+  isAnnualRange,
 } from "../../../utils/dashboardDateUtils";
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { Edit2 } from "lucide-react";
@@ -193,6 +195,13 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     fetchWinRate3m({ companyId: company.id, ownerIds }).then((r) => setWinRate3m(r.winRate3m));
   }, [company?.id, effectiveUser.id, allSubordinates]);
 
+  // Selected-period range for the KPI strip (annual when the range spans a year).
+  const isAnnualView = isAnnualRange(activeDateRange?.from, activeDateRange?.to);
+  const kpiPeriod = {
+    label: periodLabelFromRange(activeDateRange?.from, activeDateRange?.to),
+    isAnnual: isAnnualView,
+  };
+
   // KPI strip (Target · Achieved · Deficit · Win Rate · Planned Gap) — full team.
   const [kpiStrip, setKpiStrip] = useState({ salesmanData: [], totals: null, loading: true });
   useEffect(() => {
@@ -200,12 +209,13 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     (async () => {
       if (!company?.id) return;
       const ownerIds = [effectiveUser.id, ...allSubordinates.map((s) => s.id)].filter(Boolean);
+      const range = { start: activeDateRange.from, end: activeDateRange.to, isAnnual: isAnnualView };
       setKpiStrip((s) => ({ ...s, loading: true }));
-      const res = await computeKpiStripData({ companyId: company.id, ownerIds });
+      const res = await computeKpiStripData({ companyId: company.id, ownerIds, range });
       if (!cancelled) setKpiStrip({ ...res, loading: false });
     })();
     return () => { cancelled = true; };
-  }, [company?.id, effectiveUser.id, allSubordinates]);
+  }, [company?.id, effectiveUser.id, allSubordinates, activeDateRange.from, activeDateRange.to, isAnnualView]);
 
   // Monthly target state
   const [managerMonthlyTarget, setManagerMonthlyTarget] = useState(null);
@@ -1469,6 +1479,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         totals={kpiStrip.totals}
         role={userProfile?.role}
         loading={kpiStrip.loading}
+        period={kpiPeriod}
       />
       {company?.id && (
         <PlanSubmissionAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
