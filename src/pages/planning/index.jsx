@@ -8,8 +8,11 @@ import OpportunitiesModule from "./components/OpportunitiesModule";
 import FutureOrdersModule from "./components/FutureOrdersModule";
 import HistoricalDataModule from "./components/HistoricalDataModule";
 import { fetchWinRate3m } from "utils/winRate3m";
-import { computeKpiStripData, computeDirectorAnnual } from "utils/kpiStripData";
+import { computeKpiStripData } from "utils/kpiStripData";
 import { fetchTeamHierarchy } from "utils/teamHierarchy";
+import { useDateRange } from "contexts/DateRangeContext";
+import { periodLabelFromRange, isAnnualRange } from "utils/dashboardDateUtils";
+import QuickDateSelector from "components/QuickDateSelector";
 
 const DIRECTOR_ROLES = ["director", "admin", "head"];
 const TEAM_ROLES = ["manager", "supervisor"];
@@ -98,6 +101,19 @@ const PlanningPage = () => {
   const companyId = adminCompany?.id;
   const isDirectorRole = DIRECTOR_ROLES.includes(role);
   const isSalesman = role === "salesman";
+
+  // ── Shared period (synced with the dashboards via DateRangeContext) ─────────
+  const { dateRange, setRange } = useDateRange();
+  const nowRef = new Date();
+  const defStart = `${nowRef.getFullYear()}-${String(nowRef.getMonth() + 1).padStart(2, "0")}-01`;
+  const defEnd = (() => {
+    const e = new Date(nowRef.getFullYear(), nowRef.getMonth() + 1, 0);
+    return `${e.getFullYear()}-${String(e.getMonth() + 1).padStart(2, "0")}-${String(e.getDate()).padStart(2, "0")}`;
+  })();
+  const rangeStart = dateRange?.from || defStart;
+  const rangeEnd = dateRange?.to || defEnd;
+  const isAnnualView = isAnnualRange(rangeStart, rangeEnd);
+  const periodLabel = periodLabelFromRange(rangeStart, rangeEnd);
   const isSupervisor = role === "supervisor";
 
   // ── Plan submission (deadline: 25th of the month) ───────────────────────────
@@ -179,24 +195,25 @@ const PlanningPage = () => {
       const isDirector = DIRECTOR_ROLES.includes(role);
       const isTeamLead = TEAM_ROLES.includes(role);
 
-      // ── DIRECTOR ── Card 1 shows the company's ANNUAL target; Cards 2/3/4 mirror
-      // the Director dashboard's monthly KPI strip exactly (salesman-scoped 3-month
-      // win rate, monthly required plan and this-month planned gap) by reusing the
-      // very same functions the dashboard uses — so the two pages can never drift.
+      // ── DIRECTOR ── mirror the Director dashboard KPI strip for the SELECTED
+      // period by reusing the exact same function — so the two pages can never
+      // drift and the Target follows the period (annual for This Year, monthly
+      // for This Month, etc.). Win rate stays a 3-month rolling average.
       if (isDirector) {
-        const [{ totals }, annual] = await Promise.all([
-          computeKpiStripData({ companyId, ownerIds: null }),
-          computeDirectorAnnual({ companyId }),
-        ]);
+        const { totals } = await computeKpiStripData({
+          companyId,
+          ownerIds: null,
+          range: { start: rangeStart, end: rangeEnd, isAnnual: isAnnualView },
+        });
         setSummaryData({
-          target: annual.target,             // Card 1 — annual target
-          winRate3m: totals.winRate3m,       // Card 2 — 3-month salesman avg
+          target: totals.target,
+          winRate3m: totals.winRate3m,
           winRateIsDefault: totals.winRateIsDefault,
-          requiredPlan: totals.required,     // Card 3 — monthly required plan (after carryover)
+          requiredPlan: totals.required,
           requiredPlanRaw: totals.requiredRaw,
           futureCarryover: totals.futureCarryover,
-          totalPlanned: totals.planned,      // this month's planned (salesmen)
-          plannedGap: totals.plannedGap,     // Card 4 — monthly planned gap
+          totalPlanned: totals.planned,
+          plannedGap: totals.plannedGap,
         });
         return;
       }
@@ -208,24 +225,20 @@ const PlanningPage = () => {
         : [user?.id].filter(Boolean);
       const scopeIds = scope.length ? scope : ["00000000-0000-0000-0000-000000000000"];
 
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-      const monthStartStr = monthStart.toISOString().split("T")[0];
-      const monthEndStr = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-        .toISOString().split("T")[0];
+      const now = new Date(); // used only for the next-month carryover below
 
-      // ── TARGET ── per person (salesmen + supervisors in scope), use their
-      // total_value monthly target when present, else the sum of their by_clients
-      // rows — never mix the two views of one goal.
+      // ── TARGET ── per person (salesmen + supervisors in scope), for the selected
+      // period: use their total_value target when present, else the sum of their
+      // by_clients rows (never mix the two views of one goal). Yearly targets for
+      // the annual view, monthly targets overlapping the range otherwise.
       const { data: targets } = await supabase
         .from("sales_targets")
         .select("target_amount, assigned_to, target_type")
         .eq("company_id", companyId)
         .eq("status", "active")
-        .eq("period_type", "monthly")
-        .lte("period_start", monthEnd.toISOString())
-        .gte("period_end", monthStart.toISOString())
+        .eq("period_type", isAnnualView ? "yearly" : "monthly")
+        .lte("period_start", rangeEnd)
+        .gte("period_end", rangeStart)
         .in("assigned_to", scopeIds);
       const targetSplit = {};
       (targets || []).forEach((r) => {
@@ -281,14 +294,14 @@ const PlanningPage = () => {
       const futureCarryover = (futureOrders || []).reduce((s, o) => s + (parseFloat(o.planned_amount) || 0), 0);
       const requiredPlan = Math.max(0, requiredPlanRaw - futureCarryover);
 
-      // ── TOTAL PLANNED ── open opportunities for the current month
+      // ── TOTAL PLANNED ── open opportunities whose month falls in the period
       const { data: opps } = await supabase
         .from("opportunities")
         .select("planned_amount")
         .eq("company_id", companyId)
         .eq("status", "open")
-        .gte("expected_month", monthStartStr)
-        .lte("expected_month", monthEndStr)
+        .gte("expected_month", rangeStart)
+        .lte("expected_month", rangeEnd)
         .in("owner_id", scopeIds);
       const totalPlanned = (opps || []).reduce((s, o) => s + (parseFloat(o.planned_amount) || 0), 0);
 
@@ -309,7 +322,7 @@ const PlanningPage = () => {
     } finally {
       setSummaryLoading(false);
     }
-  }, [companyId, role, user?.id]);
+  }, [companyId, role, user?.id, rangeStart, rangeEnd, isAnnualView]);
 
   useEffect(() => { fetchPlanningSummary(); }, [fetchPlanningSummary]);
 
@@ -345,6 +358,18 @@ const PlanningPage = () => {
               : activeTab === "historical_data"
               ? "Historical Data — Import past SAP/ERP sales to power forecasting and year-over-year comparisons"
               : "Customer Master — Import, assign and manage your customer accounts"}
+          </p>
+        </div>
+
+        {/* Period switcher — shares DateRangeContext with the dashboards, so
+            switching here updates the dashboard period and vice-versa. */}
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
+          <QuickDateSelector
+            activeDateRange={{ from: rangeStart, to: rangeEnd }}
+            onRangeChange={(r) => setRange({ from: r.from, to: r.to })}
+          />
+          <p className="text-sm text-muted-foreground">
+            Viewing: <strong className="text-foreground">{periodLabel}</strong>
           </p>
         </div>
 
@@ -406,7 +431,7 @@ const PlanningPage = () => {
           <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-1 bg-blue-600" />
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              {isDirectorRole ? "Annual Target" : "Monthly Target"}
+              {isAnnualView ? "Annual Target" : "Target"}
             </p>
             {summaryLoading ? (
               <div className="h-7 w-24 bg-muted rounded animate-pulse" />
@@ -416,11 +441,7 @@ const PlanningPage = () => {
                 <span className="text-sm font-normal text-muted-foreground ml-1">SAR</span>
               </p>
             )}
-            <p className="text-xs text-muted-foreground mt-1">
-              {isDirectorRole
-                ? `${new Date().getFullYear()}`
-                : new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">{periodLabel}</p>
           </div>
 
           {/* Card 2 — WIN RATE */}
@@ -445,7 +466,7 @@ const PlanningPage = () => {
           <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500" />
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              {isDirectorRole ? "Monthly Required Plan" : "Required Plan"}
+              {isAnnualView ? "Annual Required Plan" : "Required Plan"}
             </p>
             {summaryLoading ? (
               <div className="h-7 w-24 bg-muted rounded animate-pulse" />
@@ -470,7 +491,7 @@ const PlanningPage = () => {
             <p className="text-xs text-muted-foreground mt-1">
               {!summaryLoading && summaryData.futureCarryover > 0
                 ? "After future orders carryover"
-                : `${isDirectorRole ? "Monthly quota" : "Target"} ÷ ${summaryData.winRate3m.toFixed(0)}% win rate`}
+                : `Target ÷ ${summaryData.winRate3m.toFixed(0)}% win rate`}
             </p>
           </div>
 
@@ -488,7 +509,7 @@ const PlanningPage = () => {
               }`}
             />
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              {isDirectorRole ? "Monthly Planned Gap" : "Planned Gap"}
+              {isAnnualView ? "Annual Planned Gap" : "Planned Gap"}
             </p>
             {summaryLoading ? (
               <div className="h-7 w-24 bg-muted rounded animate-pulse" />
@@ -507,9 +528,7 @@ const PlanningPage = () => {
             >
               {!summaryLoading && summaryData.plannedGap <= 0
                 ? `Planned: ${fmtSAR(summaryData.totalPlanned)} SAR`
-                : isDirectorRole
-                  ? "This month's planning gap"
-                  : "Still need to plan this amount"}
+                : `${periodLabel} planning gap`}
             </p>
           </div>
         </div>
