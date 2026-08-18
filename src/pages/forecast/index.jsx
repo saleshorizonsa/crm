@@ -7,6 +7,8 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useDateRange } from "../../contexts/DateRangeContext";
 import { forecastService, userService } from "../../services/supabaseService";
 import { supabase } from "../../lib/supabase";
+import { computeKpiStripData } from "../../utils/kpiStripData";
+import { isAnnualRange } from "../../utils/dashboardDateUtils";
 import { buildForecast, DEFAULT_STAGE_WEIGHTS } from "../../utils/forecastEngine";
 import { generateInsights, generatePrediction } from "../../utils/forecastInsights";
 import ForecastKPIBar     from "./components/ForecastKPIBar";
@@ -169,38 +171,38 @@ const ForecastPage = () => {
 
   const targetAmount = rawData.target?.target_amount ?? 0;
 
-  // Director view: the KPI bar measures Attainment/Gap against the ANNUAL target,
-  // counting only INVOICED won revenue (final value) as Committed — matching the
-  // Director dashboard. Managers/supervisors/salesmen keep the projection view.
+  // Director view: the KPI bar mirrors the Director dashboard for the SELECTED
+  // period by reusing the exact same computeKpiStripData function — Committed =
+  // invoiced won by invoice_date (final value), Target/Attainment/Gap from the
+  // same source. This windows by invoice_date (not closed_at), so deals invoiced
+  // in a different year are never counted. Others keep the projection view.
   const isDirectorView = ["director", "head", "admin"].includes(role) && selectedSalesman === "all";
-  const [annualTarget, setAnnualTarget] = useState(0);
+  const [kpiTotals, setKpiTotals] = useState(null);
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!company?.id || !isDirectorView) { setAnnualTarget(0); return; }
-      const y = new Date().getFullYear();
-      const { data } = await supabase
-        .from("sales_targets")
-        .select("target_amount")
-        .eq("company_id", company.id)
-        .eq("period_type", "yearly")
-        .gte("period_start", `${y}-01-01`)
-        .lte("period_end", `${y}-12-31`);
-      if (!cancelled) setAnnualTarget((data || []).reduce((s, tg) => s + (parseFloat(tg.target_amount) || 0), 0));
+      if (!company?.id || !isDirectorView || !dateRange?.from || !dateRange?.to) { setKpiTotals(null); return; }
+      const range = {
+        start: dateRange.from,
+        end: dateRange.to,
+        isAnnual: isAnnualRange(dateRange.from, dateRange.to),
+      };
+      const { totals } = await computeKpiStripData({ companyId: company.id, ownerIds: null, range });
+      if (!cancelled) setKpiTotals(totals);
     })();
     return () => { cancelled = true; };
-  }, [company?.id, isDirectorView]);
+  }, [company?.id, isDirectorView, dateRange?.from, dateRange?.to]);
 
-  const kpiTarget = isDirectorView && annualTarget > 0 ? annualTarget : targetAmount;
+  const kpiTarget = isDirectorView && kpiTotals ? kpiTotals.target : targetAmount;
   const kpiForecast = useMemo(() => {
-    if (!isDirectorView) return forecast;
-    const committed = (rawData.deals || [])
-      .filter((d) => d.stage === "won" && d.is_invoiced)
-      .reduce((s, d) => s + (parseFloat(d.final_amount ?? d.amount) || 0), 0);
-    const attainment = kpiTarget > 0 ? Math.round((committed / kpiTarget) * 1000) / 10 : 0;
-    const gap = Math.round((kpiTarget - committed) * 100) / 100;
-    return { ...forecast, committed, attainment, gap };
-  }, [isDirectorView, forecast, rawData.deals, kpiTarget]);
+    if (!isDirectorView || !kpiTotals) return forecast;
+    return {
+      ...forecast,
+      committed: kpiTotals.achieved,                              // invoiced won, invoice_date in period
+      attainment: Math.round((kpiTotals.attainmentPct || 0) * 10) / 10,
+      gap: kpiTotals.deficit,                                     // max(0, target − achieved)
+    };
+  }, [isDirectorView, forecast, kpiTotals]);
 
   // Per-salesman share of the weighted OPEN pipeline. Derived from the deals
   // already loaded (they carry owner info), so no extra fetch is needed and the
