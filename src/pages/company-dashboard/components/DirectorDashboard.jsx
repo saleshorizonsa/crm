@@ -53,6 +53,7 @@ import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
 import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
 import { computeKpiStripData, computeDirectorAnnual } from "../../../utils/kpiStripData";
+import { backfillForecasts } from "../../../utils/forecastBackfill";
 
 // Employee-specific dashboards - use Enhanced versions for full features
 import EnhancedManagerDashboard from "./EnhancedManagerDashboard";
@@ -154,6 +155,20 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const isAnnualView = !!(
     activeDateRange?.from?.endsWith("-01-01") && activeDateRange?.to?.slice(5, 7) === "12"
   );
+
+  // One-shot: backfill deal forecast_amount / forecast_probability for the company.
+  // Runs once per mount for director/admin/head. backfillForecasts is idempotent —
+  // it only touches deals whose forecast_amount is still null and no-ops otherwise.
+  const didBackfillForecasts = React.useRef(false);
+  useEffect(() => {
+    const cid = selectedCompany?.id;
+    if (!cid || didBackfillForecasts.current) return;
+    if (!["director", "admin", "head"].includes(userProfile?.role)) return;
+    didBackfillForecasts.current = true;
+    backfillForecasts(cid).then((res) => {
+      if (res?.updated) console.log(`Forecast backfill: updated ${res.updated} deal(s) for company ${cid}`);
+    });
+  }, [selectedCompany?.id, userProfile?.role]);
 
   // Time period for charts and metrics (month, quarter, year)
   const [timePeriod, setTimePeriod] = useState("month");
