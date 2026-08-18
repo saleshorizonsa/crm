@@ -49,6 +49,7 @@ import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
+import TargetChangeBanner from "../../../components/dashboard/TargetChangeBanner";
 import LogActivityModal from '../../../components/LogActivityModal';
 
 const EnhancedSalesmanDashboard = ({
@@ -1178,6 +1179,9 @@ const EnhancedSalesmanDashboard = ({
         loading={kpiStrip.loading}
         period={kpiPeriod}
       />
+      {effectiveUser?.id && company?.id && (
+        <TargetChangeBanner userId={effectiveUser.id} companyId={company.id} />
+      )}
       {/* Header */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

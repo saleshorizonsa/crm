@@ -1,5 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { calculateLeadScore } from "../utils/leadScoring";
+import { handleTargetChange } from "../utils/targetChangeHandler";
 
 // ========================================
 // AUTH SERVICES
@@ -3588,6 +3589,14 @@ export const salesTargetService = {
   // Update an existing sales target
   async updateTarget(targetId, updateData) {
     try {
+      // Capture the previous values first so a mid-month amount change can be
+      // detected and the salesman's Required Plan recalculated / notified.
+      const { data: prev } = await supabase
+        .from("sales_targets")
+        .select("assigned_to, target_amount, period_start, period_type, company_id")
+        .eq("id", targetId)
+        .single();
+
       const { error } = await supabase
         .from("sales_targets")
         .update({
@@ -3604,6 +3613,27 @@ export const salesTargetService = {
 
       if (error) {
         return { data: null, error };
+      }
+
+      // Mid-month target change → recalc Required Plan + notify salesman & manager.
+      // Best-effort and non-blocking: never let it fail the save.
+      try {
+        const oldAmount = parseFloat(prev?.target_amount) || 0;
+        const newAmount = parseFloat(updateData.targetAmount) || 0;
+        const isMonthly = (prev?.period_type || updateData.periodType) === "monthly";
+        if (prev?.assigned_to && isMonthly && newAmount !== oldAmount) {
+          const { data: auth } = await supabase.auth.getUser();
+          await handleTargetChange({
+            companyId: prev.company_id,
+            salesmanId: prev.assigned_to,
+            managerId: auth?.user?.id || null,
+            oldAmount,
+            newAmount,
+            planMonth: updateData.periodStart || prev.period_start,
+          });
+        }
+      } catch (notifyErr) {
+        console.error("Target-change notification failed:", notifyErr);
       }
 
       return { data: { id: targetId }, error: null };
