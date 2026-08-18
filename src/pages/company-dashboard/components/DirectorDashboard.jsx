@@ -52,6 +52,7 @@ import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
 import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
+import ProductGroupTargetCard from "../../../components/dashboard/ProductGroupTargetCard";
 import { computeKpiStripData, computeDirectorAnnual } from "../../../utils/kpiStripData";
 import { backfillForecasts } from "../../../utils/forecastBackfill";
 
@@ -2503,6 +2504,14 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       )}
       {selectedCompany?.id && !selectedEmployee && (
         <BounceBackAlert companyId={selectedCompany.id} ownerIds={null} reviewerId={user?.id} />
+      )}
+      {selectedCompany?.id && !selectedEmployee && (
+        <div className="mb-6">
+          <ProductGroupTargetCard
+            companyId={selectedCompany.id}
+            period={{ start: activeDateRange.from, end: activeDateRange.to, label: getPeriodLabel() }}
+          />
+        </div>
       )}
       {/* Head role: greeting + company-scoped subtitle (directors don't need this
           — they have the company switcher and cross-company grid). */}

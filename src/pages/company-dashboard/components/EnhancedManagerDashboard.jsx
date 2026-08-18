@@ -31,6 +31,7 @@ import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
 import ContactReportsAudit from "../../../components/dashboard/ContactReportsAudit";
 import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
+import ProductGroupTargetCard from "../../../components/dashboard/ProductGroupTargetCard";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
@@ -1486,6 +1487,14 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       )}
       {company?.id && (
         <BounceBackAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
+      )}
+      {company?.id && (
+        <div className="mb-6">
+          <ProductGroupTargetCard
+            companyId={company.id}
+            period={{ start: activeDateRange.from, end: activeDateRange.to, label: kpiPeriod.label }}
+          />
+        </div>
       )}
       {company?.id && (
         <ContactReportsAudit companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
