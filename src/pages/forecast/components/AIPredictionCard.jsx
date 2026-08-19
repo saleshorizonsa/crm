@@ -2,9 +2,9 @@ import React from "react";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 
-// ── Confidence arc (SVG semicircle gauge) ─────────────────────────────────────
+// ── Win-rate arc (SVG semicircle gauge) ───────────────────────────────────────
 
-const ConfidenceGauge = ({ value }) => {
+const WinRateGauge = ({ value }) => {
   const R   = 40;
   const cx  = 56;
   const cy  = 56;
@@ -14,10 +14,12 @@ const ConfidenceGauge = ({ value }) => {
   // We use a full circle path clipped to the top half
   const arcLength = (value / 100) * circumference;
 
+  // Win-rate bands, matching the Win Rate insight in forecastInsights.js.
+  // (The old 70/50 confidence bands would paint every realistic win rate red.)
   const color =
-    value >= 70 ? "#10b981" : // emerald
-    value >= 50 ? "#f59e0b" : // amber
-                  "#ef4444";  // red
+    value >= 40 ? "#10b981" : // emerald — strong close performance
+    value >= 25 ? "#f59e0b" : // amber   — around industry average
+                  "#ef4444";  // red     — below average
 
   return (
     <div className="flex flex-col items-center">
@@ -43,9 +45,9 @@ const ConfidenceGauge = ({ value }) => {
       </svg>
       <div className="-mt-4 text-center">
         <p className="text-2xl font-bold tabular-nums" style={{ color }}>
-          {value}%
+          {value.toFixed(1)}%
         </p>
-        <p className="text-xs text-muted-foreground">Confidence</p>
+        <p className="text-xs text-muted-foreground">Win Rate</p>
       </div>
     </div>
   );
@@ -61,13 +63,14 @@ const AIPredictionCard = ({ prediction }) => {
   const {
     predictedRevenue,
     confidence,
-    historicalWinRate,
+    winRateBasis = "none",
     predictedCloses,
     topDeals,
     narrative,
     attainmentPct,
     targetAmount = 0,
     openDealsCount = 0,
+    expectedFromPipeline = 0,
   } = prediction;
 
   const attainmentColor =
@@ -77,11 +80,15 @@ const AIPredictionCard = ({ prediction }) => {
     attainmentPct >= 50    ? "text-amber-600"   :
                              "text-red-600";
 
-  // Plain-language read on the confidence score
-  const confidenceLabel =
-    confidence >= 70 ? "High confidence forecast" :
-    confidence >= 50 ? "Moderate confidence"      :
-                       "Low confidence — limited data";
+  // Says where the number came from instead of grading it. The old label put a
+  // subjective read ("Moderate confidence") on a score that measured nothing.
+  // "Company Avg" is the borrowed floor for a scope with no record of its own.
+  const winRateLabel = {
+    own:     "3-Month Average",
+    company: "Company Avg Win Rate",
+    period:  "Selected period only",
+    none:    "No history available",
+  }[winRateBasis];
 
   // Whether the predicted revenue clears the (summed) target
   const aboveTarget = targetAmount > 0 && predictedRevenue >= targetAmount;
@@ -102,10 +109,10 @@ const AIPredictionCard = ({ prediction }) => {
         </div>
       </div>
 
-      {/* Confidence gauge + predicted revenue */}
+      {/* Win-rate gauge + predicted revenue */}
       <div className="flex flex-col items-center gap-1">
-        <ConfidenceGauge value={confidence} />
-        <p className="text-xs text-muted-foreground -mt-1 mb-1">{confidenceLabel}</p>
+        <WinRateGauge value={confidence} />
+        <p className="text-xs text-muted-foreground -mt-1 mb-1">{winRateLabel}</p>
         <p className="text-2xl font-bold text-card-foreground tabular-nums mt-1">
           {formatCurrency(predictedRevenue)}
         </p>
@@ -129,11 +136,13 @@ const AIPredictionCard = ({ prediction }) => {
 
       {/* Stats row */}
       <div className="grid grid-cols-2 gap-3">
+        {/* The win rate now drives the gauge above, so this tile shows the
+            revenue that rate implies rather than repeating the same number. */}
         <div className="bg-muted/40 rounded-lg p-3 text-center">
           <p className="text-lg font-bold text-card-foreground tabular-nums">
-            {historicalWinRate}%
+            {formatCurrency(expectedFromPipeline)}
           </p>
-          <p className="text-xs text-muted-foreground mt-0.5">Historical Win Rate</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Expected from Pipeline</p>
         </div>
         <div className="bg-muted/40 rounded-lg p-3 text-center">
           <p className="text-lg font-bold text-card-foreground tabular-nums">
@@ -189,8 +198,8 @@ const AIPredictionCard = ({ prediction }) => {
 
       {/* Disclaimer */}
       <p className="text-[10px] text-muted-foreground/70 text-center leading-relaxed">
-        Predictions use stage weights blended with your historical close rate.
-        Actual results may vary.
+        Win rate is measured from deals created in the last 3 completed months.
+        Predictions blend it with stage weights. Actual results may vary.
       </p>
     </div>
   );

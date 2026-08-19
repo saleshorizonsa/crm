@@ -123,16 +123,46 @@ export function generateInsights(forecast, deals = [], targetAmount = 0) {
 
 /**
  * Returns a prediction object with revenue estimate, confidence, and narrative.
+ *
+ * `winRates` carries the REAL 3-month rolling win rates from computeWinRate3m()
+ * in kpiStripData.js — the same numbers the dashboards' KPI strip shows:
+ *   own     — the rate for whatever is on screen (the selected salesman when
+ *             drilled in, otherwise the whole company). null = no history.
+ *   company — the company-wide rate, used as the floor when `own` has none.
+ * Both null means neither has loaded yet or the company has no history at all.
  */
-export function generatePrediction(forecast, deals = [], targetAmount = 0) {
+export function generatePrediction(forecast, deals = [], targetAmount = 0, winRates = {}) {
   const openDeals   = deals.filter((d) => OPEN_STAGES.has(d.stage));
   const wonDeals    = deals.filter((d) => d.stage === "won");
   const lostDeals   = deals.filter((d) => d.stage === "lost");
   const closedCount = wonDeals.length + lostDeals.length;
 
-  const historicalWinRate = closedCount > 0
-    ? Math.round((wonDeals.length / closedCount) * 1000) / 10
-    : 25;
+  // ── Win rate ──────────────────────────────────────────────────────────────
+  // Fallback ladder, mirroring resolveWinRate() in kpiStripData.js:
+  //   1. own 3-month rate      — this salesman's (or the company's) real record
+  //   2. company 3-month rate  — the floor for someone with no history of their
+  //                              own, so a new rep is not forecast at 0%
+  //   3. selected-period rate  — nothing in the 3-month window, but the period
+  //                              in view has closed deals (e.g. a "This Year"
+  //                              range holding deals older than the window)
+  //   4. 0                     — only when there is genuinely no data anywhere
+  //
+  // Presence is decided by hasHistory upstream, never by "rate > 0": a rep who
+  // created deals and won none has a measured 0% rate, which is real data and
+  // must not silently borrow the company average.
+  const rate = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const ownRate     = rate(winRates?.own);
+  const companyRate = rate(winRates?.company);
+  const periodRate  = closedCount > 0 ? (wonDeals.length / closedCount) * 100 : null;
+
+  const winRateBasis =
+    ownRate     !== null ? "own"     :
+    companyRate !== null ? "company" :
+    periodRate  !== null ? "period"  :
+                           "none";
+
+  const rawWinRate = ownRate ?? companyRate ?? periodRate ?? 0;
+  const historicalWinRate = Math.round(rawWinRate * 10) / 10;
 
   // Predicted revenue: committed + open deals × blended probability
   // Blend: 40% stage weight + 60% historical win rate
@@ -143,13 +173,10 @@ export function generatePrediction(forecast, deals = [], targetAmount = 0) {
   }, 0);
   const predictedRevenue = Math.round((forecast.committed + predictedOpen) * 100) / 100;
 
-  // Confidence score (30–92%) based on committed ratio and pipeline spread
-  const commitRatio = targetAmount > 0
-    ? Math.min(forecast.committed / targetAmount, 1)
-    : Math.min(forecast.committed / Math.max(forecast.bestCase, 1), 1);
-  const spreadRatio = Math.min(deals.length / 10, 1);
-  const rawConf     = commitRatio * 0.6 + spreadRatio * 0.4;
-  const confidence  = Math.max(30, Math.min(92, Math.round(30 + rawConf * 62)));
+  // Confidence IS the historical win rate — the share of deals this company
+  // actually closes. The old score was a synthetic blend of committed/target and
+  // deal count clamped to 30–92%, which was not measuring anything real.
+  const confidence = historicalWinRate;
 
   // Predicted closes: late-stage open deals
   const lateStageOpen = openDeals.filter(
@@ -162,33 +189,45 @@ export function generatePrediction(forecast, deals = [], targetAmount = 0) {
     .sort((a, b) => (b.amount || 0) - (a.amount || 0))
     .slice(0, 3);
 
-  // Natural-language narrative
   const attainmentPct = targetAmount > 0
     ? Math.round((predictedRevenue / targetAmount) * 100)
     : null;
 
-  let narrative;
-  if (attainmentPct === null) {
-    narrative = `Based on current pipeline momentum, you are tracking toward ${formatK(predictedRevenue)} in revenue.`;
-    if (topDeals.length > 0) {
-      const topVal = topDeals.reduce((s, d) => s + (d.amount || 0), 0);
-      narrative += ` ${topDeals.length} late-stage deal${topDeals.length > 1 ? "s" : ""} worth ${formatK(topVal)} represent your highest closing priority.`;
-    }
-  } else if (attainmentPct >= 100) {
-    narrative = `On current trajectory you are likely to achieve ${attainmentPct}% of target (${formatK(predictedRevenue)}). A strong committed base provides high confidence.`;
-  } else if (attainmentPct >= 75) {
-    const gap = formatK(targetAmount - predictedRevenue);
-    narrative = `You are tracking at ${attainmentPct}% of target. To close the ${gap} gap, focus on advancing ${predictedCloses > 0 ? `${predictedCloses} late-stage deal${predictedCloses > 1 ? "s" : ""}` : "open opportunities"}.`;
-  } else if (attainmentPct >= 50) {
-    narrative = `At ${attainmentPct}% of target, significant pipeline acceleration is needed. Prioritize late-stage deals and consider pulling in opportunities from next period.`;
+  // ── Narrative ─────────────────────────────────────────────────────────────
+  // Built from the actual pipeline numbers rather than picking a canned sentence
+  // from an attainment if/else ladder. Every figure below is measured, not
+  // adjectival: open deal count, open pipeline value, the real win rate, the
+  // revenue that rate implies, and the stage-weighted forecast.
+  const openValue = openDeals.reduce((s, d) => s + (d.amount || 0), 0);
+  const expectedFromPipeline = openValue * (historicalWinRate / 100);
+
+  const winRatePhrase = {
+    own:     `the 3-month win rate of ${historicalWinRate.toFixed(1)}%`,
+    company: `the company average win rate of ${historicalWinRate.toFixed(1)}% (no 3-month history of its own yet)`,
+    period:  `this period's win rate of ${historicalWinRate.toFixed(1)}% (${wonDeals.length} of ${closedCount} closed)`,
+    none:    "no closed-deal history yet",
+  }[winRateBasis];
+
+  let narrative = `Based on ${openDeals.length} open deal${openDeals.length === 1 ? "" : "s"} worth ${formatK(openValue)}.`;
+
+  if (winRateBasis === "none") {
+    narrative += ` There is ${winRatePhrase}, so expected revenue cannot be projected from a close rate — the weighted forecast of ${formatK(forecast.weighted)} rests on stage probabilities alone.`;
   } else {
-    const gap = formatK(targetAmount - predictedRevenue);
-    narrative = `Current trajectory suggests ${attainmentPct}% attainment. Aggressive pipeline building or target revision may be required to close the ${gap} gap.`;
+    narrative += ` At ${winRatePhrase}, expected revenue from that pipeline is ${formatK(expectedFromPipeline)}`;
+    narrative += forecast.committed > 0
+      ? `, on top of ${formatK(forecast.committed)} already won.`
+      : `.`;
+    narrative += ` Weighted forecast: ${formatK(forecast.weighted)}.`;
+  }
+
+  if (attainmentPct !== null) {
+    narrative += ` That puts predicted revenue at ${attainmentPct}% of the ${formatK(targetAmount)} target.`;
   }
 
   return {
     predictedRevenue,
     confidence,
+    winRateBasis,             // "own" | "company" | "period" | "none" — how to label it
     historicalWinRate,
     predictedCloses,
     topDeals,
@@ -196,5 +235,7 @@ export function generatePrediction(forecast, deals = [], targetAmount = 0) {
     attainmentPct,
     targetAmount,             // raw target for above/below comparison
     openDealsCount: openDeals.length,
+    openValue,
+    expectedFromPipeline: Math.round(expectedFromPipeline * 100) / 100,
   };
 }

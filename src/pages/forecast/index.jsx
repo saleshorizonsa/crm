@@ -7,7 +7,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useDateRange } from "../../contexts/DateRangeContext";
 import { forecastService, userService } from "../../services/supabaseService";
 import { supabase } from "../../lib/supabase";
-import { computeKpiStripData } from "../../utils/kpiStripData";
+import { computeKpiStripData, computeWinRate3m } from "../../utils/kpiStripData";
 import { isAnnualRange } from "../../utils/dashboardDateUtils";
 import { buildForecast, DEFAULT_STAGE_WEIGHTS } from "../../utils/forecastEngine";
 import { generateInsights, generatePrediction } from "../../utils/forecastInsights";
@@ -165,9 +165,41 @@ const ForecastPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [company?.id, user?.id, role, dateRange.from, dateRange.to, dateRange.isAllTime, selectedSalesman]);
 
+  // The REAL 3-month rolling win rates — the same figures the dashboard KPI strip
+  // reports. They drive the AI Prediction card's confidence, which used to be a
+  // synthetic committed/target + deal-count score. `own` is the scope on screen
+  // (the drilled-into salesman, else the company); `company` is the floor used
+  // when that scope has no history of its own, so a new rep is never forecast at
+  // 0%. Both are independent of the selected period — always the last 3 completed
+  // months — so this refetches only when the company or the drill-down changes.
+  const [winRates, setWinRates] = useState({ own: null, company: null });
+  useEffect(() => {
+    if (!company?.id) { setWinRates({ own: null, company: null }); return; }
+    let cancelled = false;
+    (async () => {
+      const ownerIds = selectedSalesman !== "all" ? [selectedSalesman] : null;
+      const [companyRes, ownRes] = await Promise.all([
+        computeWinRate3m({ companyId: company.id }),
+        ownerIds ? computeWinRate3m({ companyId: company.id, ownerIds }) : null,
+      ]);
+      if (cancelled) return;
+      // hasHistory (any deals in the window), not rate > 0 — a genuine 0% record
+      // is real data and must not fall through to the company average.
+      const scoped = ownerIds ? ownRes : companyRes;
+      setWinRates({
+        own:     scoped?.hasHistory     ? scoped.winRate3m     : null,
+        company: companyRes?.hasHistory ? companyRes.winRate3m : null,
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [company?.id, selectedSalesman]);
+
   const forecast   = useMemo(() => buildForecast(rawData.deals, rawData.target?.target_amount ?? 0), [rawData]);
   const insights   = useMemo(() => generateInsights(forecast, rawData.deals, rawData.target?.target_amount ?? 0), [forecast, rawData]);
-  const prediction = useMemo(() => generatePrediction(forecast, rawData.deals, rawData.target?.target_amount ?? 0), [forecast, rawData]);
+  const prediction = useMemo(
+    () => generatePrediction(forecast, rawData.deals, rawData.target?.target_amount ?? 0, winRates),
+    [forecast, rawData, winRates],
+  );
 
   const targetAmount = rawData.target?.target_amount ?? 0;
 
