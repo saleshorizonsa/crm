@@ -85,8 +85,8 @@ const AIPredictionCard = ({ prediction }) => {
   // "Company Avg" is the borrowed floor for a scope with no record of its own.
   const winRateLabel = {
     own:     "3-Month Average",
+    history: "All-Time Average",
     company: "Company Avg Win Rate",
-    period:  "Selected period only",
     none:    "No history available",
   }[winRateBasis];
 

@@ -124,45 +124,29 @@ export function generateInsights(forecast, deals = [], targetAmount = 0) {
 /**
  * Returns a prediction object with revenue estimate, confidence, and narrative.
  *
- * `winRates` carries the REAL 3-month rolling win rates from computeWinRate3m()
- * in kpiStripData.js — the same numbers the dashboards' KPI strip shows:
- *   own     — the rate for whatever is on screen (the selected salesman when
- *             drilled in, otherwise the whole company). null = no history.
- *   company — the company-wide rate, used as the floor when `own` has none.
- * Both null means neither has loaded yet or the company has no history at all.
+ * `winRate` is the already-resolved rate from the caller, which walks the same
+ * 3-step ladder as planning/index.jsx using the shared fetchWinRate3m() in
+ * utils/winRate3m.js — the single definition of the 3-month rate:
+ *   { rate: number|null, basis: "own" | "history" | "company" | "none" }
+ * Resolution happens at the call site because steps 2 and 3 need their own
+ * queries, and this module is deliberately pure (no Supabase).
  */
-export function generatePrediction(forecast, deals = [], targetAmount = 0, winRates = {}) {
+export function generatePrediction(forecast, deals = [], targetAmount = 0, winRate = {}) {
   const openDeals   = deals.filter((d) => OPEN_STAGES.has(d.stage));
   const wonDeals    = deals.filter((d) => d.stage === "won");
   const lostDeals   = deals.filter((d) => d.stage === "lost");
   const closedCount = wonDeals.length + lostDeals.length;
 
   // ── Win rate ──────────────────────────────────────────────────────────────
-  // Fallback ladder, mirroring resolveWinRate() in kpiStripData.js:
-  //   1. own 3-month rate      — this salesman's (or the company's) real record
-  //   2. company 3-month rate  — the floor for someone with no history of their
-  //                              own, so a new rep is not forecast at 0%
-  //   3. selected-period rate  — nothing in the 3-month window, but the period
-  //                              in view has closed deals (e.g. a "This Year"
-  //                              range holding deals older than the window)
-  //   4. 0                     — only when there is genuinely no data anywhere
-  //
-  // Presence is decided by hasHistory upstream, never by "rate > 0": a rep who
-  // created deals and won none has a measured 0% rate, which is real data and
-  // must not silently borrow the company average.
-  const rate = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
-  const ownRate     = rate(winRates?.own);
-  const companyRate = rate(winRates?.company);
-  const periodRate  = closedCount > 0 ? (wonDeals.length / closedCount) * 100 : null;
-
-  const winRateBasis =
-    ownRate     !== null ? "own"     :
-    companyRate !== null ? "company" :
-    periodRate  !== null ? "period"  :
-                           "none";
-
-  const rawWinRate = ownRate ?? companyRate ?? periodRate ?? 0;
-  const historicalWinRate = Math.round(rawWinRate * 10) / 10;
+  // The caller resolved which rung of the ladder applies; `basis` records it so
+  // the card can label the number honestly rather than implying a 3-month
+  // average it did not come from. A measured 0% is real data and arrives here
+  // as rate 0 with a real basis, not as null.
+  const resolved = typeof winRate?.rate === "number" && Number.isFinite(winRate.rate)
+    ? winRate.rate
+    : null;
+  const winRateBasis = resolved === null ? "none" : (winRate?.basis || "own");
+  const historicalWinRate = Math.round((resolved ?? 0) * 10) / 10;
 
   // Predicted revenue: committed + open deals × blended probability
   // Blend: 40% stage weight + 60% historical win rate
@@ -203,8 +187,8 @@ export function generatePrediction(forecast, deals = [], targetAmount = 0, winRa
 
   const winRatePhrase = {
     own:     `the 3-month win rate of ${historicalWinRate.toFixed(1)}%`,
-    company: `the company average win rate of ${historicalWinRate.toFixed(1)}% (no 3-month history of its own yet)`,
-    period:  `this period's win rate of ${historicalWinRate.toFixed(1)}% (${wonDeals.length} of ${closedCount} closed)`,
+    history: `the all-time win rate of ${historicalWinRate.toFixed(1)}% (nothing closed in the last 3 months)`,
+    company: `the company average win rate of ${historicalWinRate.toFixed(1)}% (no history of its own yet)`,
     none:    "no closed-deal history yet",
   }[winRateBasis];
 
@@ -227,7 +211,7 @@ export function generatePrediction(forecast, deals = [], targetAmount = 0, winRa
   return {
     predictedRevenue,
     confidence,
-    winRateBasis,             // "own" | "company" | "period" | "none" — how to label it
+    winRateBasis,             // "own" | "history" | "company" | "none" — how to label it
     historicalWinRate,
     predictedCloses,
     topDeals,

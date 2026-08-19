@@ -7,7 +7,8 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useDateRange } from "../../contexts/DateRangeContext";
 import { forecastService, userService } from "../../services/supabaseService";
 import { supabase } from "../../lib/supabase";
-import { computeKpiStripData, computeWinRate3m } from "../../utils/kpiStripData";
+import { computeKpiStripData } from "../../utils/kpiStripData";
+import { fetchWinRate3m } from "../../utils/winRate3m";
 import { isAnnualRange } from "../../utils/dashboardDateUtils";
 import { buildForecast, DEFAULT_STAGE_WEIGHTS } from "../../utils/forecastEngine";
 import { generateInsights, generatePrediction } from "../../utils/forecastInsights";
@@ -165,31 +166,51 @@ const ForecastPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [company?.id, user?.id, role, dateRange.from, dateRange.to, dateRange.isAllTime, selectedSalesman]);
 
-  // The REAL 3-month rolling win rates — the same figures the dashboard KPI strip
-  // reports. They drive the AI Prediction card's confidence, which used to be a
-  // synthetic committed/target + deal-count score. `own` is the scope on screen
-  // (the drilled-into salesman, else the company); `company` is the floor used
-  // when that scope has no history of its own, so a new rep is never forecast at
-  // 0%. Both are independent of the selected period — always the last 3 completed
-  // months — so this refetches only when the company or the drill-down changes.
-  const [winRates, setWinRates] = useState({ own: null, company: null });
+  // The REAL win rate driving the AI Prediction card's confidence, which used to
+  // be a synthetic committed/target + deal-count score. Resolved with the same
+  // 3-step ladder as planning/index.jsx, using the shared fetchWinRate3m():
+  //   1. this scope's 3-month rolling rate (the drilled-into salesman, else the
+  //      whole company)
+  //   2. if the window is empty, this scope's ACTUAL rate over all history —
+  //      however few deals
+  //   3. only with no deals ever, the whole-company 3-month average
+  // Presence is decided by total3m/row count, never by "rate > 0": a rep who
+  // created deals and won none has a measured 0% rate, which is real data.
+  // Steps 1 and 3 are independent of the selected period — always the last 3
+  // completed months — so this refetches only on company or drill-down change.
+  const [winRate, setWinRate] = useState({ rate: null, basis: "none" });
   useEffect(() => {
-    if (!company?.id) { setWinRates({ own: null, company: null }); return; }
+    if (!company?.id) { setWinRate({ rate: null, basis: "none" }); return; }
     let cancelled = false;
     (async () => {
+      const companyId = company.id;
       const ownerIds = selectedSalesman !== "all" ? [selectedSalesman] : null;
-      const [companyRes, ownRes] = await Promise.all([
-        computeWinRate3m({ companyId: company.id }),
-        ownerIds ? computeWinRate3m({ companyId: company.id, ownerIds }) : null,
-      ]);
+
+      const { winRate3m: raw, total3m } = await fetchWinRate3m({ companyId, ownerIds });
       if (cancelled) return;
-      // hasHistory (any deals in the window), not rate > 0 — a genuine 0% record
-      // is real data and must not fall through to the company average.
-      const scoped = ownerIds ? ownRes : companyRes;
-      setWinRates({
-        own:     scoped?.hasHistory     ? scoped.winRate3m     : null,
-        company: companyRes?.hasHistory ? companyRes.winRate3m : null,
-      });
+      if (total3m > 0) { setWinRate({ rate: raw, basis: "own" }); return; }
+
+      // Step 2 — all-time history for this scope.
+      let histQuery = supabase.from("deals").select("stage").eq("company_id", companyId);
+      if (ownerIds) histQuery = histQuery.in("owner_id", ownerIds);
+      const { data: hist } = await histQuery;
+      if (cancelled) return;
+      if ((hist?.length || 0) > 0) {
+        const wonH = hist.filter((d) => d.stage === "won").length;
+        setWinRate({ rate: (wonH / hist.length) * 100, basis: "history" });
+        return;
+      }
+
+      // Step 3 — company average. For the company-wide view this is the same
+      // query that already came back empty, so there is nothing left to fall
+      // back to and the card reports no history.
+      if (!ownerIds) { setWinRate({ rate: null, basis: "none" }); return; }
+      const { winRate3m: companyAvg, total3m: companyTotal } =
+        await fetchWinRate3m({ companyId, ownerIds: null });
+      if (cancelled) return;
+      setWinRate(companyTotal > 0
+        ? { rate: companyAvg, basis: "company" }
+        : { rate: null, basis: "none" });
     })();
     return () => { cancelled = true; };
   }, [company?.id, selectedSalesman]);
@@ -197,8 +218,8 @@ const ForecastPage = () => {
   const forecast   = useMemo(() => buildForecast(rawData.deals, rawData.target?.target_amount ?? 0), [rawData]);
   const insights   = useMemo(() => generateInsights(forecast, rawData.deals, rawData.target?.target_amount ?? 0), [forecast, rawData]);
   const prediction = useMemo(
-    () => generatePrediction(forecast, rawData.deals, rawData.target?.target_amount ?? 0, winRates),
-    [forecast, rawData, winRates],
+    () => generatePrediction(forecast, rawData.deals, rawData.target?.target_amount ?? 0, winRate),
+    [forecast, rawData, winRate],
   );
 
   const targetAmount = rawData.target?.target_amount ?? 0;

@@ -149,6 +149,11 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   });
 
   // 4. Win rate — deals created in the last 3 completed months, grouped by owner.
+  //    fetchWinRate3m() in utils/winRate3m.js is the canonical source for the
+  //    3-month rate as a single number, and anything needing just that figure
+  //    must use it rather than re-deriving the window here. This block keeps its
+  //    own query only because it needs the raw rows to group per owner, which
+  //    that helper does not return — the window and formula are identical.
   const { data: deals3 } = await supabase
     .from('deals')
     .select('owner_id, stage, created_at')
@@ -313,51 +318,6 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   }
 
   return { salesmanData, totals };
-}
-
-// The 3-month win rate on its own — the exact rolling window and formula the KPI
-// strip uses (deals CREATED in the last 3 completed calendar months, current
-// month excluded; won ÷ total). Exposed separately so a page that needs only
-// this one number — e.g. the Forecast AI Prediction card — can get it with a
-// single query instead of running the full 7-query KPI strip.
-//
-// `ownerIds`: null = the whole company; an array = just those owners (used to
-// get a single salesman's own rate when the Forecast page drills into one).
-//
-// `hasHistory` reports whether any deals exist in the window — NOT whether the
-// rate is above zero. A rep who created 10 deals and won none has a real,
-// measured 0% win rate; that is data, not a missing value, and callers must not
-// treat it as "no history" (same rule as resolveWinRate above).
-//
-// Company-wide results carry no owner-role filter, so they can differ slightly
-// from computeKpiStripData's totals.winRate3m, which counts only deals owned by
-// contributors (salesmen + supervisors).
-export async function computeWinRate3m({ companyId, ownerIds = null }) {
-  const empty = { winRate3m: 0, won: 0, total: 0, hasHistory: false };
-  if (!companyId) return empty;
-  if (Array.isArray(ownerIds) && ownerIds.length === 0) return empty;
-
-  const w3 = threeMonthWindow();
-  let q = supabase
-    .from('deals')
-    .select('id, stage')
-    .eq('company_id', companyId)
-    .gte('created_at', w3.startISO)
-    .lte('created_at', w3.endISO);
-  if (Array.isArray(ownerIds)) q = q.in('owner_id', ownerIds);
-  const { data: deals3m, error } = await q;
-  if (error) return empty;
-
-  const rows = deals3m || [];
-  const total = rows.length;
-  const won = rows.filter((d) => d.stage === 'won').length;
-
-  return {
-    winRate3m: total > 0 ? (won / total) * 100 : 0,
-    won,
-    total,
-    hasHistory: total > 0,
-  };
 }
 
 // Director annual view: the company's YEARLY target from management vs the
