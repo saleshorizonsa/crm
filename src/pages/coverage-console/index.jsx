@@ -33,16 +33,25 @@ export default function CoverageConsole() {
 
   // ── NAVIGATION GESTURES ────────────────────────────────────────────────────
 
+  // Drilling changes React state, not the route, so the app-level <ScrollToTop />
+  // (which keys off pathname) never fires here. Reset scroll by hand on every
+  // level change, otherwise a drill from a row below the fold leaves the reader
+  // parked mid-page with the breadcrumb out of view.
+  const scrollToTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
+
   function drillTeam(teamId) {
     setNav({ level: "team", team: teamId, rep: null, opp: null });
+    scrollToTop();
   }
 
   function drillRep(repId, teamId) {
     setNav({ level: "salesman", team: teamId, rep: repId, opp: null });
+    scrollToTop();
   }
 
   function drillOpp(oppId, repId, teamId) {
     setNav({ level: "opportunity", team: teamId, rep: repId, opp: oppId });
+    scrollToTop();
   }
 
   // Breadcrumb click — clear everything below the level clicked.
@@ -54,6 +63,7 @@ export default function CoverageConsole() {
       rep: ["company", "team"].includes(level) ? null : prev.rep,
       opp: level !== "opportunity" ? null : prev.opp,
     }));
+    scrollToTop();
   }
 
   // Exception shortcut — sets all four keys at once.
@@ -64,6 +74,7 @@ export default function CoverageConsole() {
       rep: repId,
       opp: dealId,
     });
+    scrollToTop();
   }
 
   // ── DATA FETCH ─────────────────────────────────────────────────────────────
@@ -741,8 +752,9 @@ export default function CoverageConsole() {
     <div className="min-h-screen bg-gray-50">
       <Header />
 
-      {/* Console sub-header */}
-      <div className="bg-white border-b border-gray-200">
+      {/* Console sub-header — sticks flush under the app Header (h-16 = 64px)
+          so the breadcrumb stays reachable at any scroll position. */}
+      <div className="sticky top-16 z-10 bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-white font-bold text-xs">
