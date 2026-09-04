@@ -34,6 +34,7 @@ import ReportsPage from "./pages/reports";
 import CalendarPage from "./pages/calendar";
 import PipelineView from "./pages/pipeline-view";
 import PlanningPage from "./pages/planning";
+import CoverageConsole from "./pages/coverage-console";
 
 const Routes = () => {
   return (
@@ -177,6 +178,14 @@ const Routes = () => {
                   element={
                     <ProtectedRoute>
                       <PlanningPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/coverage-console"
+                  element={
+                    <ProtectedRoute>
+                      <CoverageConsole />
                     </ProtectedRoute>
                   }
                 />

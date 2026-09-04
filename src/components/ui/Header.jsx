@@ -51,6 +51,11 @@ const Header = ({
       path: "/company-dashboard",
       icon: "LayoutDashboard",
     },
+    {
+      label: t("nav.console"),
+      path: "/coverage-console",
+      icon: "LayoutGrid",
+    },
     { label: t("nav.pipeline"), path: "/sales-pipeline", icon: "TrendingUp" },
     { label: t("nav.leads"),    path: "/lead-management", icon: "UserPlus"   },
     { label: t("nav.calendar"), path: "/calendar",        icon: "CalendarDays"},

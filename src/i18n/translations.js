@@ -167,6 +167,7 @@ export const translations = {
     // Navigation
     nav: {
       dashboard: "Dashboard",
+      console: "Console",
       contacts: "Contacts",
       clients: "Clients",
       deals: "Deals",
@@ -2861,6 +2862,7 @@ export const translations = {
     // Navigation
     nav: {
       dashboard: "لوحة التحكم",
+      console: "الوحدة",
       contacts: "جهات الاتصال",
       clients: "العملاء",
       deals: "الصفقات",
