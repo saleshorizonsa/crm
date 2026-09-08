@@ -23,16 +23,32 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [availableCompanies, setAvailableCompanies] = useState([]);
 
-  // On login / company load, return any leads that have sat 3+ days with no
-  // progress back to Opportunities. Throttled to once per 6h per browser so it
-  // doesn't run on every navigation, and fire-and-forget so it never blocks auth.
+  // On login / company load, move any lead that has sat 3+ days with no contact
+  // out of the Funnel and into Future Orders. Throttled to once per 6h per
+  // browser so it doesn't run on every navigation, and fire-and-forget so it
+  // never blocks auth.
+  //
+  // The throttle stamp is written only after a run that actually completed: if
+  // the sweep throws or leaves work behind, the next navigation retries instead
+  // of burning the whole 6h window on a failed run. Failures are logged loudly
+  // — this sweep silently no-op'd for months because its errors were swallowed.
   useEffect(() => {
     if (!user?.id || !company?.id) return;
     const key = `leadExpiryLastRun_${company.id}`;
     const last = Number(localStorage.getItem(key) || 0);
     if (Date.now() - last < 6 * 60 * 60 * 1000) return;
-    localStorage.setItem(key, String(Date.now()));
-    checkExpiredLeads(company.id, user.id).catch(() => {});
+    (async () => {
+      try {
+        const res = await checkExpiredLeads(company.id, user.id);
+        if (res?.failed) {
+          console.error("🔴 checkExpiredLeads left work behind:", res);
+        } else {
+          localStorage.setItem(key, String(Date.now()));
+        }
+      } catch (err) {
+        console.error("🔴 checkExpiredLeads FAILED:", err);
+      }
+    })();
   }, [user?.id, company?.id]);
 
   // After the 25th, flag any team member who hasn't submitted their monthly plan
