@@ -24,15 +24,65 @@ const TEAM_ROLES = ['manager', 'supervisor'];
 // null. Ahmad Sulaiman Moamina — the only salesman who has ever submitted a
 // plan — has no reports_to, so without this his plan would notify nobody and
 // appear in nobody's queue.
+const LEAD_ROLES = ['manager', 'supervisor', 'director', 'head', 'admin'];
+
+// Manager first, then supervisor, then director/head/admin. A company with no
+// manager or supervisor legitimately resolves to its director — in that case
+// the director IS the assigned approver and may act.
+function pickFallback(users) {
+  // Sorted by id so the pick is deterministic and matches the SQL trigger in
+  // add_plan_approval_guard.sql, which orders by (role priority, id). Without
+  // this, two managers could yield different approvers in JS and in Postgres.
+  const leads = (users || [])
+    .filter((u) => LEAD_ROLES.includes(u.role))
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  if (!leads.length) return null;
+  const byRole = (r) => leads.find((u) => u.role === r)?.id;
+  return byRole('manager') || byRole('supervisor') || byRole('director') || byRole('head') || byRole('admin') || null;
+}
+
 async function companyFallbackApprover(companyId) {
-  const { data: leads } = await supabase
+  const { data } = await supabase
     .from('users')
     .select('id, role')
     .eq('company_id', companyId)
-    .in('role', ['manager', 'supervisor', 'director', 'head', 'admin']);
-  if (!leads?.length) return null;
-  const byRole = (r) => leads.find((u) => u.role === r)?.id;
-  return byRole('manager') || byRole('supervisor') || byRole('director') || byRole('head') || byRole('admin') || null;
+    .in('role', LEAD_ROLES);
+  return pickFallback(data);
+}
+
+// ownerId -> approverId for many owners in one round trip, so the approvals
+// screen can decide per card who may act without N queries.
+export async function resolveApproverMap(companyId, ownerIds) {
+  const map = {};
+  if (!companyId || !ownerIds?.length) return map;
+  const { data: users } = await supabase
+    .from('users')
+    .select('id, role, reports_to')
+    .eq('company_id', companyId);
+  const fallback = pickFallback(users);
+  for (const id of ownerIds) {
+    const u = (users || []).find((x) => x.id === id);
+    map[id] = u?.reports_to || fallback;
+  }
+  return map;
+}
+
+// Authorization for a decision on one submission. Seeing a plan (directors see
+// the whole company) is deliberately not the same as being able to decide it:
+// only the approver resolveApprover picked for THAT salesman may act. Checked
+// here rather than in the component so it holds for every caller.
+async function assertIsApprover({ submissionId, companyId, actorId }) {
+  const { data: sub } = await supabase
+    .from('plan_submissions')
+    .select('owner_id')
+    .eq('id', submissionId)
+    .maybeSingle();
+  if (!sub?.owner_id) return { error: { message: 'Plan not found.' } };
+  const approverId = await resolveApprover(companyId, sub.owner_id);
+  if (!approverId || approverId !== actorId) {
+    return { error: { message: 'Only the assigned Sales Manager can approve or reject this plan.' } };
+  }
+  return { error: null };
 }
 
 // Who reviews this salesman's plan: their manager, else the company fallback.
@@ -144,6 +194,8 @@ export async function notifyPlanSubmitted({ companyId, ownerId, ownerName, planM
 
 // ── Approve / reject ────────────────────────────────────────────────────────
 export async function approvePlan({ submissionId, ownerId, companyId, approverId }) {
+  const guard = await assertIsApprover({ submissionId, companyId, actorId: approverId });
+  if (guard.error) return guard;
   const now = new Date().toISOString();
   const { error } = await supabase
     .from('plan_submissions')
@@ -172,7 +224,9 @@ export async function approvePlan({ submissionId, ownerId, companyId, approverId
 // existing canSubmit gate in planning/index.jsx keys off !is_submitted, so this
 // reopens the plan without any further change there. is_locked is cleared too,
 // in case the plan was approved and then sent back.
-export async function rejectPlan({ submissionId, ownerId, companyId, reason }) {
+export async function rejectPlan({ submissionId, ownerId, companyId, reason, actorId }) {
+  const guard = await assertIsApprover({ submissionId, companyId, actorId });
+  if (guard.error) return guard;
   const now = new Date().toISOString();
   const { error } = await supabase
     .from('plan_submissions')

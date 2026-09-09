@@ -2,7 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from 'contexts/AuthContext';
 import { supabase } from 'lib/supabase';
 import Icon from 'components/AppIcon';
-import { fetchPendingApprovals, approvePlan, rejectPlan, resolveApproverScope } from 'utils/planApproval';
+import {
+  fetchPendingApprovals,
+  approvePlan,
+  rejectPlan,
+  resolveApproverScope,
+  resolveApproverMap,
+} from 'utils/planApproval';
 
 const fmtSAR = (n) =>
   new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
@@ -27,6 +33,9 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
   const [rejecting, setRejecting] = useState(null); // submission being rejected
   const [reason, setReason] = useState('');
   const [viewing, setViewing] = useState(null);     // { row, opps, loading }
+  // ownerId -> approverId. Only the resolved approver may decide a given plan;
+  // everyone else in scope (typically the director) gets read-only oversight.
+  const [approverMap, setApproverMap] = useState({});
 
   const load = useCallback(async () => {
     if (!companyId || !user?.id) { setRows([]); setLoading(false); return; }
@@ -36,6 +45,7 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
       const { rows: pending, schemaMissing: missing } = await fetchPendingApprovals({ companyId, ownerIds });
       setRows(pending);
       setSchemaMissing(missing);
+      setApproverMap(await resolveApproverMap(companyId, pending.map((r) => r.owner_id)));
     } finally {
       setLoading(false);
     }
@@ -58,7 +68,7 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
     if (!rejecting || !reason.trim()) return;
     setBusyId(rejecting.id);
     const { error } = await rejectPlan({
-      submissionId: rejecting.id, ownerId: rejecting.owner_id, companyId, reason: reason.trim(),
+      submissionId: rejecting.id, ownerId: rejecting.owner_id, companyId, reason: reason.trim(), actorId: user?.id,
     });
     setBusyId(null);
     if (error) { alert(`Could not reject: ${error.message || error}`); return; }
@@ -80,6 +90,11 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
       .order('planned_amount', { ascending: false });
     setViewing({ row, opps: data || [], loading: false });
   }
+
+  // Only the approver resolveApprover picked for this salesman may decide.
+  // Identity, not role: a director who genuinely is the assigned approver
+  // (a company with no manager or supervisor) keeps the buttons.
+  const canDecide = (row) => !!user?.id && approverMap[row.owner_id] === user.id;
 
   if (loading) {
     return (
@@ -157,27 +172,36 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
               </p>
             )}
 
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 onClick={() => handleView(row)}
                 className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
               >
                 View Plan
               </button>
-              <button
-                disabled={busy}
-                onClick={() => handleApprove(row)}
-                className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                {busy ? 'Working…' : 'Approve & Lock'}
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => { setRejecting(row); setReason(''); }}
-                className="text-xs px-3 py-1.5 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50"
-              >
-                Reject
-              </button>
+              {canDecide(row) ? (
+                <>
+                  <button
+                    disabled={busy}
+                    onClick={() => handleApprove(row)}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {busy ? 'Working…' : 'Approve & Lock'}
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => { setRejecting(row); setReason(''); }}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    Reject
+                  </button>
+                </>
+              ) : (
+                <span className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground flex items-center gap-1">
+                  <Icon name="Eye" size={12} />
+                  View Only
+                </span>
+              )}
             </div>
           </div>
         );
