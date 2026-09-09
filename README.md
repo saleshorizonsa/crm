@@ -28,7 +28,16 @@ A modern React-based project utilizing the latest frontend technologies and tool
    yarn install
    ```
    
-2. Start the development server:
+2. Enable the repo git hooks (once per clone):
+   ```bash
+   git config core.hooksPath .githooks
+   ```
+   Runs `npm run lint:tables` on staged files before each commit. It blocks
+   `overflow-hidden` on an element wrapping a `<table>`, which clips the
+   right-hand columns on narrow screens with no scrollbar to show that anything
+   is missing. A responsive audit found 15 of these.
+
+3. Start the development server:
    ```bash
    npm start
    # or
@@ -88,6 +97,22 @@ This project uses Tailwind CSS for styling. The configuration includes:
 ## 📱 Responsive Design
 
 The app is built with responsive design using Tailwind CSS breakpoints.
+
+Conventions from the responsive audit:
+
+- **Tables scroll, never clip.** `overflow-x-auto` on the wrapper, plus
+  `min-w-[Npx]` on the `<table>` when the columns need room (~60-80px per
+  column, more for unbreakable strings like an email or item code). The
+  pre-commit hook rejects `overflow-hidden` on a table wrapper.
+- **Modal panels need a height cap:** `max-h-[90vh] flex flex-col` on the panel,
+  `flex-shrink-0` on header/footer, `flex-1 overflow-y-auto min-h-0` on the body.
+  Without one the submit button can sit off-screen and unreachable.
+- **Grids holding currency** need ~110px per cell at `text-lg`. At a 375px viewport
+  the page has ~343px of content, so `grid-cols-3` and above usually needs a
+  `grid-cols-1 sm:` or `grid-cols-2 sm:` prefix.
+- **Write class names as complete literals.** Tailwind's JIT only scans source
+  text, so `lg:${cond ? "grid-cols-5" : "grid-cols-4"}` generates no CSS at all.
+  Write `${cond ? "lg:grid-cols-5" : "lg:grid-cols-4"}` instead.
 
 
 ## 📦 Deployment

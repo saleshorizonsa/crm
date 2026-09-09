@@ -1,0 +1,11 @@
+#!/bin/sh
+# Blocks a commit that clips a <table> with overflow-hidden.
+# Enable once per clone:  git config core.hooksPath .githooks
+
+files=$(git diff --cached --name-only --diff-filter=ACM | grep -E "\.jsx?$" || true)
+[ -z "$files" ] && exit 0
+
+node scripts/check-table-overflow.cjs $files || {
+  echo "Commit blocked. Fix the above, or bypass with: git commit --no-verify"
+  exit 1
+}
