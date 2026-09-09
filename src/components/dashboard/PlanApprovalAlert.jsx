@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from 'contexts/AuthContext';
-import { supabase } from 'lib/supabase';
-import { fetchTeamHierarchy } from 'utils/teamHierarchy';
-import { fetchPendingApprovalCount } from 'utils/planApproval';
+import { fetchPendingApprovalCount, resolveApproverScope } from 'utils/planApproval';
 
 const DIRECTOR_ROLES = ['director', 'admin', 'head'];
 const TEAM_ROLES = ['manager', 'supervisor'];
@@ -23,14 +21,7 @@ export default function PlanApprovalAlert({ adminCompany }) {
     let cancelled = false;
     (async () => {
       if (!companyId || !user?.id || !canApprove) { setCount(0); return; }
-      let ownerIds;
-      if (DIRECTOR_ROLES.includes(role)) {
-        const { data } = await supabase.from('users').select('id').eq('company_id', companyId);
-        ownerIds = (data || []).map((u) => u.id);
-      } else {
-        const team = await fetchTeamHierarchy({ companyId, userId: user.id, role });
-        ownerIds = team.map((m) => m.id).filter(Boolean);
-      }
+      const ownerIds = await resolveApproverScope({ companyId, userId: user.id, role });
       const n = await fetchPendingApprovalCount({ companyId, ownerIds });
       if (!cancelled) setCount(n);
     })();

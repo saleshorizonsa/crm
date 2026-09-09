@@ -2,10 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from 'contexts/AuthContext';
 import { supabase } from 'lib/supabase';
 import Icon from 'components/AppIcon';
-import { fetchTeamHierarchy } from 'utils/teamHierarchy';
-import { fetchPendingApprovals, approvePlan, rejectPlan } from 'utils/planApproval';
-
-const DIRECTOR_ROLES = ['director', 'admin', 'head'];
+import { fetchPendingApprovals, approvePlan, rejectPlan, resolveApproverScope } from 'utils/planApproval';
 
 const fmtSAR = (n) =>
   new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
@@ -35,15 +32,7 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
     if (!companyId || !user?.id) { setRows([]); setLoading(false); return; }
     setLoading(true);
     try {
-      // Director sees the whole company; manager/supervisor see their downline.
-      let ownerIds;
-      if (DIRECTOR_ROLES.includes(role)) {
-        const { data } = await supabase.from('users').select('id').eq('company_id', companyId);
-        ownerIds = (data || []).map((u) => u.id);
-      } else {
-        const team = await fetchTeamHierarchy({ companyId, userId: user.id, role });
-        ownerIds = team.map((m) => m.id).filter(Boolean);
-      }
+      const ownerIds = await resolveApproverScope({ companyId, userId: user.id, role });
       const { rows: pending, schemaMissing: missing } = await fetchPendingApprovals({ companyId, ownerIds });
       setRows(pending);
       setSchemaMissing(missing);

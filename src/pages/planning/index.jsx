@@ -17,6 +17,7 @@ import PlanApprovalsModule from "./components/PlanApprovalsModule";
 import {
   notifyPlanSubmitted,
   fetchPendingApprovalCount,
+  resolveApproverScope,
   isMissingApprovalSchema,
 } from "utils/planApproval";
 
@@ -150,14 +151,7 @@ const PlanningPage = () => {
 
   const refreshPendingApprovals = useCallback(async () => {
     if (!companyId || !user?.id || !canApprove) { setPendingApprovals(0); return; }
-    let ownerIds;
-    if (DIRECTOR_ROLES.includes(role)) {
-      const { data } = await supabase.from("users").select("id").eq("company_id", companyId);
-      ownerIds = (data || []).map((u) => u.id);
-    } else {
-      const team = await fetchTeamHierarchy({ companyId, userId: user.id, role });
-      ownerIds = team.map((m) => m.id).filter(Boolean);
-    }
+    const ownerIds = await resolveApproverScope({ companyId, userId: user.id, role });
     setPendingApprovals(await fetchPendingApprovalCount({ companyId, ownerIds }));
   }, [companyId, user?.id, role, canApprove]);
 

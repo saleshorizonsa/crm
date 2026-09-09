@@ -1,4 +1,5 @@
 import { supabase } from 'lib/supabase';
+import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 
 // Manager approval workflow for monthly sales plans.
 //
@@ -16,31 +17,63 @@ export function currentPlanMonth(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
-// Who reviews this salesman's plan. reports_to is the answer when it is set,
-// but it is nullable (Ahmad Sulaiman Moamina has none), and a plan that
-// notifies nobody is the bug this whole feature exists to fix. Fall back to the
-// company's manager, then its director/head/admin.
-export async function resolveApprover(companyId, ownerId) {
-  if (!companyId || !ownerId) return null;
+const DIRECTOR_ROLES = ['director', 'admin', 'head'];
+const TEAM_ROLES = ['manager', 'supervisor'];
 
-  const { data: me } = await supabase
-    .from('users')
-    .select('reports_to')
-    .eq('id', ownerId)
-    .maybeSingle();
-  if (me?.reports_to) return me.reports_to;
-
+// The company-wide fallback reviewer, used for anyone whose reports_to is
+// null. Ahmad Sulaiman Moamina — the only salesman who has ever submitted a
+// plan — has no reports_to, so without this his plan would notify nobody and
+// appear in nobody's queue.
+async function companyFallbackApprover(companyId) {
   const { data: leads } = await supabase
     .from('users')
     .select('id, role')
     .eq('company_id', companyId)
     .in('role', ['manager', 'supervisor', 'director', 'head', 'admin']);
   if (!leads?.length) return null;
-
   const byRole = (r) => leads.find((u) => u.role === r)?.id;
   return byRole('manager') || byRole('supervisor') || byRole('director') || byRole('head') || byRole('admin') || null;
 }
 
+// Who reviews this salesman's plan: their manager, else the company fallback.
+export async function resolveApprover(companyId, ownerId) {
+  if (!companyId || !ownerId) return null;
+  const { data: me } = await supabase
+    .from('users')
+    .select('reports_to')
+    .eq('id', ownerId)
+    .maybeSingle();
+  if (me?.reports_to) return me.reports_to;
+  return companyFallbackApprover(companyId);
+}
+
+// The owner ids whose plans this user reviews — the exact inverse of
+// resolveApprover, so a notified approver always finds the plan in their
+// queue. Directors see the whole company; a manager/supervisor sees their
+// downline, plus every unassigned user if they are the company fallback.
+export async function resolveApproverScope({ companyId, userId, role }) {
+  if (!companyId || !userId) return [];
+
+  if (DIRECTOR_ROLES.includes(role)) {
+    const { data } = await supabase.from('users').select('id').eq('company_id', companyId);
+    return (data || []).map((u) => u.id);
+  }
+  if (!TEAM_ROLES.includes(role)) return [];
+
+  const team = await fetchTeamHierarchy({ companyId, userId, role });
+  const ids = new Set(team.map((m) => m.id).filter(Boolean));
+
+  if ((await companyFallbackApprover(companyId)) === userId) {
+    const { data: unassigned } = await supabase
+      .from('users')
+      .select('id')
+      .eq('company_id', companyId)
+      .is('reports_to', null)
+      .neq('id', userId);
+    (unassigned || []).forEach((u) => ids.add(u.id));
+  }
+  return [...ids];
+}
 // Best-effort notification insert. Mirrors leadExpiryCheck.notify: metadata is
 // passed as an object, NOT JSON.stringify'd — the column is jsonb, and a
 // stringified payload would store a JSON *string* that metadata?.field could
