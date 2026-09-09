@@ -17,11 +17,16 @@ const Header = ({
   const { t, language, setLanguage, isRTL } = useLanguage();
   const navigate = useNavigate();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // Two separate UIs, two separate flags. They shared one boolean until a
+  // mobile-navigation bug traced back to exactly that: the click-outside guard
+  // was checking the desktop dropdown's ref while the mobile drawer was open.
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);      // mobile drawer
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);  // desktop "More"
   const [unreadCount, setUnreadCount] = useState(0);
 
   const userMenuRef = useRef(null);
-  const mobileMenuRef = useRef(null);
+  const moreMenuRef = useRef(null);   // desktop "More" dropdown
+  const drawerRef = useRef(null);     // mobile drawer panel
 
   // Load unread notification count and refresh immediately when notifications are read
   useEffect(() => {
@@ -93,10 +98,22 @@ const Header = ({
         setIsUserMenuOpen(false);
       }
       if (
-        mobileMenuRef?.current &&
-        !mobileMenuRef?.current?.contains(event?.target)
+        moreMenuRef?.current &&
+        !moreMenuRef?.current?.contains(event?.target)
       ) {
-        setIsMobileMenuOpen(false);
+        setIsMoreMenuOpen(false);
+      }
+      // The drawer must not close on mousedown over its OWN buttons: mousedown
+      // fires before click, so unmounting here would remove the button before
+      // its onClick could run -- which is exactly why tapping a nav item did
+      // nothing on mobile. The hamburger is excluded too, otherwise it would
+      // close and immediately reopen the drawer on the same tap.
+      if (
+        drawerRef?.current &&
+        !drawerRef?.current?.contains(event?.target) &&
+        !event?.target?.closest?.("[data-drawer-toggle]")
+      ) {
+        setIsDrawerOpen(false);
       }
     };
 
@@ -106,7 +123,7 @@ const Header = ({
 
   const handleNavigation = (path) => {
     window.location.href = path;
-    setIsMobileMenuOpen(false);
+    setIsDrawerOpen(false);
   };
 
   const handleAccountSettings = () => {
@@ -135,7 +152,8 @@ const Header = ({
             variant="ghost"
             size="icon"
             className="lg:hidden mr-2"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            data-drawer-toggle
+            onClick={() => setIsDrawerOpen((v) => !v)}
           >
             <Icon name="Menu" size={20} />
           </Button>
@@ -178,18 +196,18 @@ const Header = ({
             ))}
 
             {/* More Menu */}
-            <div className="relative" ref={mobileMenuRef}>
+            <div className="relative" ref={moreMenuRef}>
               <Button
                 variant={moreIsActive ? "default" : "ghost"}
                 size="sm"
-                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                onClick={() => setIsMoreMenuOpen((v) => !v)}
                 className="transition-enterprise"
               >
                 <Icon name="CircleEllipsis" size={16} className={isRTL ? "ml-2" : "mr-2"} />
                 {t("common.more") || "More"}
               </Button>
 
-              {isMobileMenuOpen && (
+              {isMoreMenuOpen && (
                 <div className={`absolute top-full mt-1 w-48 bg-popover border border-border rounded-md shadow-enterprise-md animate-slide-down z-200 ${isRTL ? "right-0" : "left-0"}`}>
                   <div className="py-1">
                     {secondaryItems?.map((item) => (
@@ -303,13 +321,16 @@ const Header = ({
         </div>
       </header>
       {/* Mobile Navigation Overlay */}
-      {isMobileMenuOpen && (
+      {isDrawerOpen && (
         <div className="fixed inset-0 z-300 lg:hidden">
           <div
             className="fixed inset-0 bg-background/80 backdrop-blur-sm"
-            onClick={() => setIsMobileMenuOpen(false)}
+            onClick={() => setIsDrawerOpen(false)}
           />
-          <div className="fixed top-16 left-0 right-0 bg-background border-b border-border shadow-enterprise-lg animate-slide-down">
+          <div
+            ref={drawerRef}
+            className="fixed top-16 left-0 right-0 bg-background border-b border-border shadow-enterprise-lg animate-slide-down"
+          >
             <nav className={`px-4 py-4 space-y-2 ${isRTL ? "text-right" : "text-left"}`}>
               {navigationItems?.map((item) => (
                 <button
