@@ -103,9 +103,21 @@ export function periodLabelFromRange(from, to) {
   return formatViewingLabel(from, to);
 }
 
-/** True when a range spans a full calendar year (Jan 1 – Dec 31) → annual view. */
+// True for the "This Year" view. It deliberately keys off the START of the
+// range only: the quick-select "This Year" runs 1 Jan .. TODAY, so requiring
+// the end to land in December made this return false all year and left the
+// annual-target branch in kpiStripData unreachable from the UI.
 export function isAnnualRange(from, to) {
-  return !!(from && to && from.endsWith('-01-01') && to.slice(5, 7) === '12');
+  if (!from || !to) return false;
+  const n = new Date();
+  const yearStart = `${n.getFullYear()}-01-01`;
+  // Local date, not toISOString(): getQuickRanges builds `to` from the local
+  // clock, so comparing against a UTC "today" would read false for part of
+  // each day in any timezone behind UTC and silently disable the annual view.
+  const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  // `to >= today` keeps "This Year" (Jan 1 .. today) true while excluding a
+  // custom part-year range such as Jan 1 .. Mar 31.
+  return from === yearStart && to >= today;
 }
 
 /**
