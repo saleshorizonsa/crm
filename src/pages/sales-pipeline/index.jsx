@@ -425,6 +425,16 @@ const SalesPipeline = () => {
     setShowDealModal(true);
   };
 
+  // Quick action on a Lead card. Opens the SAME DealModal flow (month picker →
+  // validation → mandatory ReplacementModal → completeMoveToFuture) rather than
+  // duplicating any of it — the card only chooses which step the modal opens on.
+  const [dealModalAction, setDealModalAction] = useState(null);
+  const handleMoveToFutureFromCard = (deal) => {
+    setSelectedDeal(deal);
+    setDealModalAction('move_future');
+    setShowDealModal(true);
+  };
+
   const handleDealSave = async (dealData) => {
     try {
       const payload = {
@@ -715,6 +725,7 @@ const SalesPipeline = () => {
                     onDealUpdate={handleEditDeal}
                     onDealClick={handleEditDeal}
                     onMarkInvoiced={handleMarkInvoiced}
+                    onMoveToFuture={handleMoveToFutureFromCard}
                     onStageUpdate={(stageId) =>
                       console.log("Stage settings:", stageId)
                     }
@@ -926,7 +937,8 @@ const SalesPipeline = () => {
         isOpen={showDealModal}
         onSave={handleDealSave}
         onDelete={handleDealDelete}
-        onClose={() => setShowDealModal(false)}
+        onClose={() => { setShowDealModal(false); setDealModalAction(null); }}
+        initialAction={dealModalAction}
         contacts={contacts}
         users={users}
       />

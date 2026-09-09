@@ -33,8 +33,25 @@ const LOST_CODE_LABELS = {
   CAPACITY:          "Capacity",
 };
 
-const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, showProductSummary = false, periodFrom }) => {
+// Lead SLA, mirroring checkExpiredLeads in utils/leadExpiryCheck.js: a deal
+// sitting in 'lead' for this many days is swept into Future Orders. Duplicated
+// as a constant rather than imported so the card stays presentational and the
+// sweep itself is untouched.
+const LEAD_SLA_DAYS = 3;
+const DAY_MS = 1000 * 60 * 60 * 24;
+
+// Same reference time the sweep uses: stage_changed_at, falling back the same way.
+const leadDaysLeft = (deal) => {
+  const ref = deal?.stage_changed_at || deal?.converted_at || deal?.created_at;
+  if (!ref) return null;
+  const elapsed = Math.floor((Date.now() - new Date(ref).getTime()) / DAY_MS);
+  return LEAD_SLA_DAYS - elapsed;
+};
+
+const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onMoveToFuture, showProductSummary = false, periodFrom }) => {
   const [isEditing, setIsEditing] = useState(false);
+  const isLeadStage = deal?.stage === 'lead';
+  const daysUntilExpiry = isLeadStage ? leadDaysLeft(deal) : null;
   const [editAmount, setEditAmount] = useState(deal?.amount);
   const [productCount, setProductCount] = useState(0);
   const [contactCount, setContactCount] = useState(0);
@@ -240,6 +257,34 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, showProduct
             <Icon name="TrendingUp" size={10} />
             {deal.margin_pct.toFixed(1)}% {t("pipeline.margin")}
           </span>
+        </div>
+      )}
+
+      {/* --- Lead SLA: countdown + manual escape hatch --- */}
+      {/* The 3-day sweep in leadExpiryCheck.js moves an untouched lead to Future
+          Orders on its own and creates NO replacement opportunity. Surfacing the
+          deadline and the manual action here lets the salesman move it
+          deliberately instead, which routes through the mandatory replacement. */}
+      {isLeadStage && (onMoveToFuture || daysUntilExpiry !== null) && (
+        <div className="flex items-center justify-between gap-2 mb-2">
+          {daysUntilExpiry !== null && daysUntilExpiry >= 0 && daysUntilExpiry <= 1 ? (
+            <span className="text-xs text-red-600 font-medium flex items-center gap-1">
+              <Icon name="Clock" size={10} />
+              Expires in {daysUntilExpiry}{daysUntilExpiry === 1 ? " day" : " days"}
+            </span>
+          ) : (
+            <span />
+          )}
+          {onMoveToFuture && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onMoveToFuture(deal); }}
+              className="flex items-center gap-1 text-xs px-2 py-1 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors border border-amber-200"
+            >
+              <Icon name="Calendar" size={11} />
+              Move to Future
+            </button>
+          )}
         </div>
       )}
 

@@ -357,6 +357,7 @@ const DealModal = ({
   onDelete,
   contacts = [],
   users = [],
+  initialAction = null,
 }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
   const { user, userProfile, company } = useAuth();
@@ -434,6 +435,17 @@ const DealModal = ({
   // Move-to-Future-Orders flow: schedule this deal as a future order and remove
   // it from the Funnel. The salesman always picks the target month.
   const [showMoveFuture, setShowMoveFuture] = useState(false);
+
+  // Opened from a card's "Move to Future" quick action: jump straight to the
+  // month picker. Everything after that — validation, the mandatory replacement,
+  // the removal — is the existing flow, unchanged.
+  useEffect(() => {
+    if (isOpen && initialAction === 'move_future' && deal?.id) {
+      setMoveMonth('');
+      setMoveError('');
+      setShowMoveFuture(true);
+    }
+  }, [isOpen, initialAction, deal?.id]);
   const [moveMonth, setMoveMonth]           = useState('');
   const [moveError, setMoveError]           = useState('');
   const [movingFuture, setMovingFuture]     = useState(false);
