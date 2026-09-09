@@ -226,7 +226,7 @@ const ProductImportModal = ({ isOpen, onClose, onSuccess, adminCompany }) => {
               {errors.length > 0 && (
                 <div>
                   <p className="text-sm font-medium text-red-600 mb-2">Rows with errors (will be skipped):</p>
-                  <div className="rounded-xl border border-red-200 overflow-hidden max-h-40 overflow-y-auto">
+                  <div className="rounded-xl border border-red-200 overflow-x-auto max-h-40 overflow-y-auto">
                     <table className="w-full text-xs">
                       <thead className="bg-red-50 dark:bg-red-950/20">
                         <tr>
@@ -253,7 +253,7 @@ const ProductImportModal = ({ isOpen, onClose, onSuccess, adminCompany }) => {
               {warnings.length > 0 && (
                 <div>
                   <p className="text-sm font-medium text-amber-600 mb-2">Warnings:</p>
-                  <div className="rounded-xl border border-amber-200 overflow-hidden max-h-32 overflow-y-auto">
+                  <div className="rounded-xl border border-amber-200 overflow-x-auto max-h-32 overflow-y-auto">
                     <table className="w-full text-xs">
                       <thead className="bg-amber-50 dark:bg-amber-950/20">
                         <tr>
@@ -280,8 +280,8 @@ const ProductImportModal = ({ isOpen, onClose, onSuccess, adminCompany }) => {
                   <p className="text-sm font-medium mb-2">
                     Preview (first {Math.min(10, validRows.length)} of {validRows.length} valid rows):
                   </p>
-                  <div className="rounded-xl border border-border overflow-hidden max-h-48 overflow-y-auto">
-                    <table className="w-full text-xs">
+                  <div className="rounded-xl border border-border overflow-x-auto max-h-48 overflow-y-auto">
+                    <table className="w-full text-xs min-w-[560px]">
                       <thead className="bg-muted sticky top-0">
                         <tr>
                           <th className="px-3 py-2 text-left">Item Code</th>

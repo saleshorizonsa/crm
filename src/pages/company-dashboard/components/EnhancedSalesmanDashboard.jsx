@@ -1845,8 +1845,8 @@ const EnhancedSalesmanDashboard = ({
                 </div>
 
                 {/* Client Stats Table */}
-                <div className="border rounded-lg overflow-hidden max-h-80 overflow-y-auto">
-                  <table className="w-full text-sm">
+                <div className="border rounded-lg overflow-x-auto max-h-80 overflow-y-auto">
+                  <table className="w-full text-sm min-w-[480px]">
                     <thead className="bg-gray-50 sticky top-0">
                       <tr>
                         <th className="text-left p-3 font-medium text-gray-600">
