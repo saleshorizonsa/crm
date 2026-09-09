@@ -53,6 +53,7 @@ import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
 import PlanApprovalAlert from "../../../components/dashboard/PlanApprovalAlert";
 import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
+import ForecastVarianceAlert from "../../../components/dashboard/ForecastVarianceAlert";
 import ProductGroupTargetCard from "../../../components/dashboard/ProductGroupTargetCard";
 import { computeKpiStripData, computeDirectorAnnual } from "../../../utils/kpiStripData";
 import { backfillForecasts } from "../../../utils/forecastBackfill";
@@ -2504,6 +2505,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       {selectedCompany?.id && !selectedEmployee && (
         <PlanSubmissionAlert companyId={selectedCompany.id} ownerIds={null} reviewerId={user?.id} />
       )}
+      {selectedCompany?.id && !selectedEmployee && <ForecastVarianceAlert companyId={selectedCompany.id} ownerIds={null} reviewerId={user?.id} />}
       {selectedCompany?.id && !selectedEmployee && (
         <BounceBackAlert companyId={selectedCompany.id} ownerIds={null} reviewerId={user?.id} />
       )}

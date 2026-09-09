@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { settingsService } from "../services/supabaseService";
 import { checkExpiredLeads } from "../utils/leadExpiryCheck";
 import { checkPlanDeadlines } from "../utils/deadlineCheck";
+import { checkForecastVariance } from "../utils/forecastVarianceCheck";
 
 const AuthContext = createContext({});
 
@@ -62,6 +63,26 @@ export const AuthProvider = ({ children }) => {
     if (Date.now() - last < 6 * 60 * 60 * 1000) return;
     localStorage.setItem(key, String(Date.now()));
     checkPlanDeadlines(company.id, user.id, userProfile.role).catch(() => {});
+  }, [user?.id, company?.id, userProfile?.role]);
+
+  // In the last days of the month, compare each contributor's forecast for the
+  // month against what they actually invoiced and record the ones outside
+  // tolerance. Informational only — it writes forecast_flags and notifies
+  // nobody. Same 6h browser throttle and fire-and-forget shape as above.
+  useEffect(() => {
+    if (!user?.id || !company?.id || !userProfile?.role) return;
+    if (!["manager", "supervisor", "director", "head", "admin"].includes(userProfile.role)) return;
+    const key = `forecastVarianceLastRun_${company.id}`;
+    const last = Number(localStorage.getItem(key) || 0);
+    if (Date.now() - last < 6 * 60 * 60 * 1000) return;
+    (async () => {
+      try {
+        await checkForecastVariance(company.id);
+        localStorage.setItem(key, String(Date.now()));
+      } catch (err) {
+        console.error("🔴 checkForecastVariance FAILED:", err);
+      }
+    })();
   }, [user?.id, company?.id, userProfile?.role]);
 
   // Load all companies this user can switch to (admin = all, director = linked)

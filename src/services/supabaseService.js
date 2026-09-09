@@ -1,6 +1,7 @@
 import { supabase } from "../lib/supabase";
 import { calculateLeadScore } from "../utils/leadScoring";
 import { handleTargetChange } from "../utils/targetChangeHandler";
+import { forecastFieldsFor } from "../utils/forecastCalc";
 
 // ========================================
 // AUTH SERVICES
@@ -754,6 +755,16 @@ export const dealService = {
       }
       // Baseline the stage-change timer at creation so it's never null.
       if (!payload.stage_changed_at) payload.stage_changed_at = new Date().toISOString();
+      // Weighted forecast at creation. Previously only backfillForecasts() set
+      // these, and that runs on DirectorDashboard mount for director/admin/head,
+      // so a deal created by a salesman kept forecast_amount = null until a
+      // director next logged in and was missing from every forecast total.
+      const fc = await forecastFieldsFor({
+        companyId: payload.company_id,
+        stage: payload.stage || "lead",
+        amount: payload.amount,
+      });
+      if (fc) Object.assign(payload, fc);
       const { data, error } = await supabase
         ?.from("deals")
         ?.insert(payload)
@@ -825,6 +836,18 @@ export const dealService = {
       if (updates.stage && oldDeal && updates.stage !== oldDeal.stage) {
         updatePayload.stage_changed_at = now;
         updatePayload.lead_warning_sent = false;
+      }
+
+      // Recompute the weighted forecast whenever the stage or the amount moves —
+      // both feed amount x probability / 100. Skipped when neither changed, so an
+      // unrelated edit never rewrites the forecast.
+      if (updates.stage !== undefined || updates.amount !== undefined) {
+        const fcU = await forecastFieldsFor({
+          companyId: oldDeal?.company_id,
+          stage: updates.stage ?? oldDeal?.stage,
+          amount: updates.amount ?? oldDeal?.amount,
+        });
+        if (fcU) Object.assign(updatePayload, fcU);
       }
 
       const { data, error } = await supabase

@@ -32,6 +32,7 @@ import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAle
 import PlanApprovalAlert from "../../../components/dashboard/PlanApprovalAlert";
 import ContactReportsAudit from "../../../components/dashboard/ContactReportsAudit";
 import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
+import ForecastVarianceAlert from "../../../components/dashboard/ForecastVarianceAlert";
 import ProductGroupTargetCard from "../../../components/dashboard/ProductGroupTargetCard";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
 import SalesForecast from "./SalesForecast";
@@ -1487,6 +1488,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       {company?.id && (
         <PlanSubmissionAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
       )}
+      {company?.id && <ForecastVarianceAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />}
       {company?.id && (
         <BounceBackAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
       )}
