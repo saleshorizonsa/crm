@@ -13,6 +13,12 @@ import { fetchTeamHierarchy } from "utils/teamHierarchy";
 import { useDateRange } from "contexts/DateRangeContext";
 import { periodLabelFromRange, isAnnualRange } from "utils/dashboardDateUtils";
 import QuickDateSelector from "components/QuickDateSelector";
+import PlanApprovalsModule from "./components/PlanApprovalsModule";
+import {
+  notifyPlanSubmitted,
+  fetchPendingApprovalCount,
+  isMissingApprovalSchema,
+} from "utils/planApproval";
 
 const DIRECTOR_ROLES = ["director", "admin", "head"];
 const TEAM_ROLES = ["manager", "supervisor"];
@@ -115,10 +121,13 @@ const PlanningPage = () => {
   const isAnnualView = isAnnualRange(rangeStart, rangeEnd);
   const periodLabel = periodLabelFromRange(rangeStart, rangeEnd);
   const isSupervisor = role === "supervisor";
+  // Manager/supervisor/director review their team's submitted plans.
+  const canApprove = TEAM_ROLES.includes(role) || DIRECTOR_ROLES.includes(role);
 
   // ── Plan submission (deadline: 25th of the month) ───────────────────────────
   const [planSubmission, setPlanSubmission] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
 
   const planMonthStr = () => {
     const n = new Date();
@@ -139,6 +148,21 @@ const PlanningPage = () => {
 
   useEffect(() => { fetchPlanSubmission(); }, [fetchPlanSubmission]);
 
+  const refreshPendingApprovals = useCallback(async () => {
+    if (!companyId || !user?.id || !canApprove) { setPendingApprovals(0); return; }
+    let ownerIds;
+    if (DIRECTOR_ROLES.includes(role)) {
+      const { data } = await supabase.from("users").select("id").eq("company_id", companyId);
+      ownerIds = (data || []).map((u) => u.id);
+    } else {
+      const team = await fetchTeamHierarchy({ companyId, userId: user.id, role });
+      ownerIds = team.map((m) => m.id).filter(Boolean);
+    }
+    setPendingApprovals(await fetchPendingApprovalCount({ companyId, ownerIds }));
+  }, [companyId, user?.id, role, canApprove]);
+
+  useEffect(() => { refreshPendingApprovals(); }, [refreshPendingApprovals]);
+
   const today = new Date();
   const deadlineDay = new Date(today.getFullYear(), today.getMonth(), 25);
   const isLate = today > deadlineDay;
@@ -153,25 +177,49 @@ const PlanningPage = () => {
     const y = now.getFullYear();
     const m = String(now.getMonth() + 1).padStart(2, "0");
     try {
-      const { error } = await supabase
-        .from("plan_submissions")
-        .upsert(
-          {
-            company_id: companyId,
-            owner_id: user?.id,
-            plan_month: `${y}-${m}-01`,
-            submitted_at: now.toISOString(),
-            total_planned: summaryData.totalPlanned,
-            required_plan: summaryData.requiredPlan,
-            is_submitted: true,
-            is_late: isLate,
-            deadline_date: `${y}-${m}-25`,
-            flagged: false,
-            updated_at: now.toISOString(),
-          },
-          { onConflict: "company_id,owner_id,plan_month" },
-        );
+      const planMonth = `${y}-${m}-01`;
+      const base = {
+        company_id: companyId,
+        owner_id: user?.id,
+        plan_month: planMonth,
+        submitted_at: now.toISOString(),
+        total_planned: summaryData.totalPlanned,
+        required_plan: summaryData.requiredPlan,
+        is_submitted: true,
+        is_late: isLate,
+        deadline_date: `${y}-${m}-25`,
+        flagged: false,
+        updated_at: now.toISOString(),
+      };
+      // Resubmitting after a rejection puts the plan back in the queue.
+      const withApproval = {
+        ...base,
+        approval_status: "pending",
+        rejection_reason: null,
+        is_locked: false,
+      };
+      const upsert = (payload) =>
+        supabase
+          .from("plan_submissions")
+          .upsert(payload, { onConflict: "company_id,owner_id,plan_month" })
+          .select("id")
+          .maybeSingle();
+
+      let { data: saved, error } = await upsert(withApproval);
+      // add_plan_approval_workflow.sql not applied yet — submit still works.
+      if (isMissingApprovalSchema(error)) ({ data: saved, error } = await upsert(base));
       if (error) throw error;
+
+      // The notification that never existed: tell the approver a plan has
+      // arrived, instead of only telling them when the deadline is missed.
+      await notifyPlanSubmitted({
+        companyId,
+        ownerId: user?.id,
+        ownerName: userProfile?.full_name,
+        planMonth,
+        totalPlanned: summaryData.totalPlanned,
+        submissionId: saved?.id,
+      });
       await fetchPlanSubmission();
     } catch (err) {
       console.error("Submit plan:", err);
@@ -330,10 +378,24 @@ const PlanningPage = () => {
     { id: "customer_master", label: "Customer Master", icon: "Users"  },
     { id: "opportunities",   label: "Current Sales Plan", icon: "Target" },
     { id: "future_orders",   label: "Future Orders",   icon: "CalendarClock" },
+    ...(canApprove
+      ? [{
+          id: "approvals",
+          label: pendingApprovals > 0
+            ? `Plans Awaiting Approval (${pendingApprovals})`
+            : "Plans Awaiting Approval",
+          icon: "ClipboardCheck",
+        }]
+      : []),
     ...(canUploadHistory
       ? [{ id: "historical_data", label: "Historical Data", icon: "Upload" }]
       : []),
   ];
+
+  // Deep link from the dashboard banner: /planning#approvals.
+  useEffect(() => {
+    if (canApprove && window.location.hash === "#approvals") setActiveTab("approvals");
+  }, [canApprove]);
 
   if (!userProfile) {
     return (
@@ -374,6 +436,35 @@ const PlanningPage = () => {
         </div>
 
         {/* Plan submission status + Submit Plan (salesman/supervisor) */}
+        {/* Approved plans are locked: the salesman can no longer change the
+            month's opportunities until a manager sends the plan back. */}
+        {showSubmitBar && planSubmission?.is_locked && (
+          <div className="flex items-center gap-2 px-5 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl mb-4">
+            <span className="text-base">🔒</span>
+            <div>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Plan Locked</p>
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                {planSubmission.approved_at
+                  ? `Approved ${new Date(planSubmission.approved_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}. Contact your manager if changes are needed.`
+                  : "Approved. Contact your manager if changes are needed."}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {showSubmitBar && planSubmission?.approval_status === "rejected" && (
+          <div className="flex items-center gap-2 px-5 py-3 bg-amber-50 border border-amber-200 rounded-xl mb-4">
+            <span className="text-base">❌</span>
+            <div>
+              <p className="text-sm font-semibold text-amber-800">Plan Sent Back</p>
+              <p className="text-xs text-amber-700">
+                {planSubmission.rejection_reason
+                  ? `"${planSubmission.rejection_reason}" — revise your plan and submit again.`
+                  : "Revise your plan and submit again."}
+              </p>
+            </div>
+          </div>
+        )}
         {showSubmitBar && (
           <div className="flex items-center justify-between gap-3 px-5 py-3 bg-card border border-border rounded-xl mb-4 flex-wrap">
             <div className="flex items-center gap-3">
@@ -573,6 +664,13 @@ const PlanningPage = () => {
               adminCompany={adminCompany}
               onGoToOpportunities={() => setActiveTab("opportunities")}
               onOrderChange={fetchPlanningSummary}
+            />
+          )}
+
+          {activeTab === "approvals" && canApprove && (
+            <PlanApprovalsModule
+              adminCompany={adminCompany}
+              onChange={() => { refreshPendingApprovals(); fetchPlanningSummary(); }}
             />
           )}
 

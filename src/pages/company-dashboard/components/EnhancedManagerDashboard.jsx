@@ -29,6 +29,7 @@ import ActionableDashboard from "./ActionableDashboard";
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
+import PlanApprovalAlert from "../../../components/dashboard/PlanApprovalAlert";
 import ContactReportsAudit from "../../../components/dashboard/ContactReportsAudit";
 import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
 import ProductGroupTargetCard from "../../../components/dashboard/ProductGroupTargetCard";
@@ -1482,6 +1483,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         loading={kpiStrip.loading}
         period={kpiPeriod}
       />
+      {company?.id && <PlanApprovalAlert />}
       {company?.id && (
         <PlanSubmissionAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
       )}

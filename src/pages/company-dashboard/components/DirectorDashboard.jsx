@@ -51,6 +51,7 @@ import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
+import PlanApprovalAlert from "../../../components/dashboard/PlanApprovalAlert";
 import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
 import ProductGroupTargetCard from "../../../components/dashboard/ProductGroupTargetCard";
 import { computeKpiStripData, computeDirectorAnnual } from "../../../utils/kpiStripData";
@@ -2499,6 +2500,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             : null
         }
       />
+      {selectedCompany?.id && !selectedEmployee && <PlanApprovalAlert adminCompany={selectedCompany} />}
       {selectedCompany?.id && !selectedEmployee && (
         <PlanSubmissionAlert companyId={selectedCompany.id} ownerIds={null} reviewerId={user?.id} />
       )}

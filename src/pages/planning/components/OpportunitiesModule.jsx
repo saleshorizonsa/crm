@@ -5,6 +5,7 @@ import { useCurrency } from 'contexts/CurrencyContext';
 import Icon from 'components/AppIcon';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
+import { blockIfPlanLocked } from 'utils/planApproval';
 
 const DIRECTOR_ROLES = ['director', 'head', 'admin'];
 const TEAM_ROLES     = ['manager', 'supervisor'];
@@ -195,6 +196,9 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
   // ── Save (create / update) ────────────────────────────────────────────────
   async function handleSave() {
     if (!form.customer_name?.trim() || !form.planned_amount) return;
+    // An approved plan is locked for the month — a salesman cannot add to or
+    // change it until their manager sends it back.
+    if (await blockIfPlanLocked({ ownerId: user?.id, role })) return;
     setSaving(true);
     try {
       const payload = {
@@ -231,6 +235,7 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
   }
 
   async function handleDelete(id) {
+    if (await blockIfPlanLocked({ ownerId: user?.id, role })) return;
     if (!window.confirm('Delete this opportunity?')) return;
     const { error } = await supabase.from('opportunities').delete().eq('id', id);
     if (error) { alert(`Could not delete: ${error.message}`); return; }

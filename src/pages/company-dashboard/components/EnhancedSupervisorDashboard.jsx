@@ -30,6 +30,7 @@ import MarginSummaryWidget from "./MarginSummaryWidget";
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAlert";
+import PlanApprovalAlert from "../../../components/dashboard/PlanApprovalAlert";
 import ContactReportsAudit from "../../../components/dashboard/ContactReportsAudit";
 import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
@@ -1516,6 +1517,7 @@ const EnhancedSupervisorDashboard = ({
         loading={kpiStrip.loading}
         period={kpiPeriod}
       />
+      {company?.id && <PlanApprovalAlert />}
       {company?.id && (
         <PlanSubmissionAlert companyId={company.id} ownerIds={subordinateIds} reviewerId={effectiveUser?.id} />
       )}

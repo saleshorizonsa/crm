@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from 'lib/supabase';
 import { useAuth } from 'contexts/AuthContext';
+import { blockIfPlanLocked } from 'utils/planApproval';
 import Icon from 'components/AppIcon';
 import AdminCompanySelector from 'pages/admin-dashboard/components/AdminCompanySelector';
 import CustomerDetailDrawer from './CustomerDetailDrawer';
@@ -356,6 +357,9 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
       inlineInputRef.current?.focus();
       return;
     }
+    // Same lock as the Current Sales Plan tab: the opportunity would land in
+    // this month, which an approved plan has frozen.
+    if (await blockIfPlanLocked({ ownerId: customer.owner_id || user?.id, role: userProfile?.role })) return;
     setSavingId(customer.id);
     try {
       const now = new Date();
