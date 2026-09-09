@@ -33,6 +33,16 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- A salesman reopening their OWN plan is not an approval decision. After a
+  -- rejection, handleSubmitPlan upserts approval_status back to pending, which
+  -- flips the guarded column; without this the trigger would block every
+  -- resubmission and strand the plan in rejected forever.
+  IF NEW.owner_id = auth.uid()
+     AND NEW.approval_status = 'pending'
+     AND COALESCE(NEW.is_locked, false) = false THEN
+    RETURN NEW;
+  END IF;
+
   -- Mirrors resolveApprover(): the salesman's manager, else the company
   -- fallback. Ordered by role priority then id so it picks the SAME person as
   -- pickFallback() in src/utils/planApproval.js.
