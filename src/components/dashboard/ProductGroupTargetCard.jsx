@@ -1,13 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Icon from 'components/AppIcon';
 import { supabase } from 'lib/supabase';
+import { achievedByProductGroup } from 'utils/productGroupAchievement';
 
 const fmtSAR = (n) => new Intl.NumberFormat('en-SA', { maximumFractionDigits: 0 }).format(Number(n) || 0);
 const barColor = (pct) => (pct >= 80 ? '#059669' : pct >= 50 ? '#3B82F6' : '#F59E0B');
 
 // Product-group targets vs achieved. Targets come from product_group_targets
-// (linked to sales_targets in the period); achieved is summed from invoiced won
-// deals' product lines (deal_products → products.material_group). Empty-state safe.
+// (linked to sales_targets in the period).
+//
+// Achieved follows the director's rule: a deal counts FULLY toward a group if
+// ANY of its lines belongs to that group — not the matching line's value. A deal
+// spanning two groups therefore counts in full toward both, so the group totals
+// can exceed actual revenue. That is deliberate: this is a per-group attainment
+// view, not a revenue breakdown. See utils/productGroupAchievement.js.
 export default function ProductGroupTargetCard({ companyId, period }) {
   const { start, end, label } = period || {};
   const [targets, setTargets] = useState([]);
@@ -44,27 +50,8 @@ export default function ProductGroupTargetCard({ companyId, period }) {
         grouped = Object.values(map).sort((a, b) => b.target_amount - a.target_amount);
       }
 
-      // ── Achieved ── invoiced won deals in period, summed per material_group.
-      const { data: wonDeals } = await supabase
-        .from('deals')
-        .select('id, amount, final_amount, deal_products(line_total, product:products!product_id(material_group))')
-        .eq('company_id', companyId)
-        .eq('stage', 'won')
-        .eq('is_invoiced', true)
-        .gte('invoice_date', start)
-        .lte('invoice_date', end);
-      const ach = {};
-      (wonDeals || []).forEach((d) => {
-        const lines = d.deal_products || [];
-        if (lines.length > 0) {
-          lines.forEach((dp) => {
-            const g = dp.product?.material_group || 'Unassigned';
-            ach[g] = (ach[g] || 0) + (parseFloat(dp.line_total) || 0);
-          });
-        } else {
-          ach['Unassigned'] = (ach['Unassigned'] || 0) + (parseFloat(d.final_amount ?? d.amount) || 0);
-        }
-      });
+      // ── Achieved ── full deal value counted once per group it contains.
+      const ach = await achievedByProductGroup({ companyId, ownerIds: null, start, end });
 
       setTargets(grouped);
       setAchieved(ach);
@@ -108,6 +95,7 @@ export default function ProductGroupTargetCard({ companyId, period }) {
             </p>
             <p className="text-xs text-gray-400 mb-3">
               {totalTarget > 0 ? ((totalAchieved / totalTarget) * 100).toFixed(1) : 0}% achieved · {targets.length} groups
+              <span className="block text-[10px] text-gray-300 mt-0.5">Groups may overlap</span>
             </p>
             <div className="space-y-1.5">
               {targets.slice(0, 3).map((g) => {
@@ -148,7 +136,7 @@ export default function ProductGroupTargetCard({ companyId, period }) {
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-3 px-6 py-4 bg-gray-50 flex-shrink-0">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-6 py-4 bg-gray-50 flex-shrink-0">
                 <div className="bg-blue-50 rounded-xl p-3 text-center">
                   <p className="text-lg font-bold text-blue-600 tabular-nums">{fmtSAR(totalTarget)} SAR</p>
                   <p className="text-xs text-blue-500 mt-0.5">Total Target</p>
@@ -163,14 +151,21 @@ export default function ProductGroupTargetCard({ companyId, period }) {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-6 py-4" style={{ scrollbarWidth: 'thin' }}>
+              {/* Without this the totals read like an arithmetic error. */}
+              <p className="px-6 pb-3 -mt-1 text-xs text-gray-400 flex items-start gap-1.5 bg-gray-50 flex-shrink-0">
+                <Icon name="Info" size={12} className="mt-0.5 flex-shrink-0" />
+                Groups may overlap — a deal counts fully toward every group it contains, so totals
+                reflect per-group attainment, not a revenue breakdown.
+              </p>
+
+              <div className="flex-1 overflow-y-auto overflow-x-auto px-6 py-4" style={{ scrollbarWidth: 'thin' }}>
                 {targets.length === 0 ? (
                   <div className="text-center py-8">
                     <p className="text-sm text-gray-500">No product group targets have been set yet.</p>
                     <p className="text-xs text-gray-400 mt-1">Go to Admin Dashboard → Sales Managers Target to set product group targets.</p>
                   </div>
                 ) : (
-                  <table className="w-full border-collapse text-sm">
+                  <table className="w-full min-w-[520px] border-collapse text-sm">
                     <thead>
                       <tr className="bg-gray-50">
                         {['Product Group', 'Target', 'Achieved', 'Deficit', 'Attainment', 'Win Rate'].map((h) => (

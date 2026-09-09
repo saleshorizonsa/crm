@@ -132,7 +132,7 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
             {/* Contact Type */}
             <div>
               <label className="text-xs font-medium text-gray-700 mb-2 block">Contact Type *</label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {CONTACT_TYPES.map((t) => {
                   const active = form.contact_type === t.id;
                   const TIcon = t.icon;
@@ -153,7 +153,7 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
             </div>
 
             {/* Contact Date + Duration */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-gray-700 mb-1.5 block">Contact Date *</label>
                 <input
