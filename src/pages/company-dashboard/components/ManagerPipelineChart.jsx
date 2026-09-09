@@ -115,7 +115,7 @@ const ManagerPipelineChart = ({
       </ResponsiveContainer>
 
       {/* Pipeline stats */}
-      <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
         <div className="text-center">
           <p className="text-2xl font-bold text-gray-900">
             {pipelineData.reduce((sum, stage) => sum + stage.count, 0)}

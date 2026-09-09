@@ -1683,7 +1683,7 @@ const EnhancedSalesmanDashboard = ({
             </div>
 
             {/* Task Metrics Summary */}
-            <div className="grid grid-cols-4 gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
               <div className="text-center">
                 <div className="text-lg font-bold text-gray-900">
                   {taskMetrics.total}

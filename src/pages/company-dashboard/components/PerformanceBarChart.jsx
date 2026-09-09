@@ -312,7 +312,7 @@ const PerformanceBarChart = ({
 
       {/* Summary Stats. For the director annual view the revenue/target/deals
           tiles switch to full-year (YTD) figures; Active Pipeline stays as-is. */}
-      <div className={`grid ${showAvg ? "grid-cols-5" : "grid-cols-4"} gap-4 mb-6`}>
+      <div className={`grid grid-cols-2 sm:grid-cols-3 ${showAvg ? "lg:grid-cols-5" : "lg:grid-cols-4"} gap-4 mb-6`}>
         <div className="bg-green-50 rounded-lg p-3 text-center">
           <div className="text-xs text-green-600 mb-1">
             {annual ? "YTD Revenue" : (t("dashboard.totalRevenue") || "Total Revenue")}
@@ -388,9 +388,9 @@ const PerformanceBarChart = ({
           </button>
 
           {showBreakdown && (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
               {/* Table header */}
-              <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-400 border-b border-gray-200">
+              <div className="grid grid-cols-12 gap-2 min-w-[560px] px-4 py-2.5 bg-gray-50 text-xs font-medium text-gray-400 border-b border-gray-200">
                 <div className="col-span-1">#</div>
                 <div className="col-span-4">Salesman</div>
                 <div className="col-span-2 text-center">Deals</div>
@@ -409,7 +409,7 @@ const PerformanceBarChart = ({
                 return (
                   <div
                     key={s.id}
-                    className={`grid grid-cols-12 gap-2 px-4 py-3 border-b border-gray-100 last:border-0 items-center transition-colors hover:bg-gray-50 ${
+                    className={`grid grid-cols-12 gap-2 min-w-[560px] px-4 py-3 border-b border-gray-100 last:border-0 items-center transition-colors hover:bg-gray-50 ${
                       !isActive ? "opacity-50" : ""
                     }`}
                   >
@@ -495,7 +495,7 @@ const PerformanceBarChart = ({
               })}
 
               {/* Summary footer */}
-              <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-gray-50 border-t-2 border-gray-200 text-sm font-semibold">
+              <div className="grid grid-cols-12 gap-2 min-w-[560px] px-4 py-3 bg-gray-50 border-t-2 border-gray-200 text-sm font-semibold">
                 <div className="col-span-1"></div>
                 <div className="col-span-4 text-gray-900">Total</div>
                 <div className="col-span-2 text-center text-gray-900">
