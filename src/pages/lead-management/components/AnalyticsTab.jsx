@@ -121,11 +121,11 @@ export default function AnalyticsTab({ accounts, role, onCreateDeal }) {
       )}
 
       {/* Top 10 by invoice count */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <div className="px-5 py-3 border-b border-gray-100">
           <h3 className="text-sm font-semibold text-gray-800">Top 10 by Invoice Count (Most Active Buyers)</h3>
         </div>
-        <table className="w-full text-xs">
+        <table className="w-full min-w-[480px] text-xs">
           <thead className="bg-gray-50 text-gray-500">
             <tr>
               <th className="px-4 py-2.5 text-left">#</th>
@@ -149,11 +149,11 @@ export default function AnalyticsTab({ accounts, role, onCreateDeal }) {
 
       {/* Dormant customers */}
       {dormantList.length > 0 && (
-        <div className="bg-white rounded-xl border border-red-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-red-200 overflow-x-auto">
           <div className="px-5 py-3 border-b border-red-100 bg-red-50">
             <h3 className="text-sm font-semibold text-red-700">⚠️ Dormant Customers — No purchase in 90+ days ({dormantList.length})</h3>
           </div>
-          <table className="w-full text-xs">
+          <table className="w-full min-w-[600px] text-xs">
             <thead className="bg-gray-50 text-gray-500">
               <tr>
                 <th className="px-4 py-2.5 text-left">Customer</th>
