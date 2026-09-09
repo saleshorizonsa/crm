@@ -312,8 +312,8 @@ const UomSettings = () => {
       )}
 
       {/* UOM List */}
-      <div className="bg-card border border-border rounded-lg overflow-hidden">
-        <table className="w-full">
+      <div className="bg-card border border-border rounded-lg overflow-x-auto">
+        <table className="w-full min-w-[560px]">
           <thead>
             <tr className="bg-muted/50 border-b border-border">
               <th className="text-left p-4 font-medium text-sm w-12">#</th>

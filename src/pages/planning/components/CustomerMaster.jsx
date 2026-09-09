@@ -468,7 +468,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
           </div>
 
           {/* Stats row */}
-          <div className="grid grid-cols-7 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
             {statCards.map(({ key, label, value, color, ring }) => {
               const isActive = statusFilter === key;
               // Unassigned customers need attention — flag the card red when any exist
