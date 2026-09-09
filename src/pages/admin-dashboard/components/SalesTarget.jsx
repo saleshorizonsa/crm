@@ -20,6 +20,7 @@ import {
   yearMonthFromDateString,
 } from "utils/dateFormat";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
+import ProductGroupTargetManager from "./ProductGroupTargetManager";
 
 const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
   const { t } = useLanguage();
@@ -407,6 +408,11 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Product GROUP targets — distinct from the by_products (individual
+          product) targets listed below; group targets live in
+          product_group_targets and had no UI at all until now. */}
+      <ProductGroupTargetManager companyId={selectedCompany !== "all" ? selectedCompany : (propCompanyId || authCompany?.id)} />
+
       {/* Header with Month Filter */}
       <div className="flex items-center justify-between">
         <div>

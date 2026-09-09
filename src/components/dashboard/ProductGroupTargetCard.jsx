@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Icon from 'components/AppIcon';
 import { supabase } from 'lib/supabase';
-import { achievedByProductGroup } from 'utils/productGroupAchievement';
+import { achievedBreakdown } from 'utils/productGroupAchievement';
 
 const fmtSAR = (n) => new Intl.NumberFormat('en-SA', { maximumFractionDigits: 0 }).format(Number(n) || 0);
 const barColor = (pct) => (pct >= 80 ? '#059669' : pct >= 50 ? '#3B82F6' : '#F59E0B');
@@ -18,11 +18,13 @@ export default function ProductGroupTargetCard({ companyId, period }) {
   const { start, end, label } = period || {};
   const [targets, setTargets] = useState([]);
   const [achieved, setAchieved] = useState({});
+  // Invoiced deals with no product lines: shown, never counted toward a target.
+  const [unassigned, setUnassigned] = useState({ value: 0, count: 0 });
   const [loading, setLoading] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
 
   const fetchData = useCallback(async () => {
-    if (!companyId || !start || !end) { setTargets([]); setAchieved({}); return; }
+    if (!companyId || !start || !end) { setTargets([]); setAchieved({}); setUnassigned({ value: 0, count: 0 }); return; }
     setLoading(true);
     try {
       // ── Targets ── product_group_targets linked to this period's sales_targets.
@@ -51,7 +53,8 @@ export default function ProductGroupTargetCard({ companyId, period }) {
       }
 
       // ── Achieved ── full deal value counted once per group it contains.
-      const ach = await achievedByProductGroup({ companyId, ownerIds: null, start, end });
+      const { byGroup: ach, unassigned: un } = await achievedBreakdown({ companyId, ownerIds: null, start, end });
+      setUnassigned(un);
 
       setTargets(grouped);
       setAchieved(ach);
@@ -163,6 +166,11 @@ export default function ProductGroupTargetCard({ companyId, period }) {
                   <div className="text-center py-8">
                     <p className="text-sm text-gray-500">No product group targets have been set yet.</p>
                     <p className="text-xs text-gray-400 mt-1">Go to Admin Dashboard → Sales Managers Target to set product group targets.</p>
+                    {unassigned.count > 0 && (
+                      <p className="text-xs text-amber-700 mt-3">
+                        {fmtSAR(unassigned.value)} SAR across {unassigned.count} invoiced deal{unassigned.count === 1 ? '' : 's'} has no product line items recorded.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <table className="w-full min-w-[520px] border-collapse text-sm">
@@ -200,6 +208,31 @@ export default function ProductGroupTargetCard({ companyId, period }) {
                           </tr>
                         );
                       })}
+
+                      {/* Invoiced revenue with no product detail. Deliberately
+                          outside the target columns: it matches no target, so it
+                          can never move anyone's attainment. Its size is the
+                          signal — how much revenue was never itemised. */}
+                      {unassigned.count > 0 && (
+                        <tr className="bg-amber-50/60 border-t-2 border-amber-200">
+                          <td className="px-3 py-3">
+                            <p className="font-medium text-amber-900">Unassigned</p>
+                            <p className="text-xs text-amber-700 mt-0.5 font-normal">
+                              Invoiced deals with no product line items recorded — not counted toward any target.
+                            </p>
+                          </td>
+                          <td className="px-3 py-3 text-xs text-gray-400">—</td>
+                          <td className="px-3 py-3 tabular-nums text-amber-800 font-medium">
+                            {fmtSAR(unassigned.value)} SAR
+                            <span className="block text-xs font-normal text-amber-600">
+                              {unassigned.count} deal{unassigned.count === 1 ? '' : 's'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-xs text-gray-400">—</td>
+                          <td className="px-3 py-3 text-xs text-gray-400">—</td>
+                          <td className="px-3 py-3 text-xs text-gray-400">—</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 )}
