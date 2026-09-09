@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import ContactSearchInput from '../ui/ContactSearchInput';
@@ -16,6 +16,42 @@ export default function ReplacementModal({ removedDeal, removalType, onClose, on
   const [form, setForm] = useState({ contact_id: null, customer_name: '', planned_amount: '' });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  // ContactSearchInput filters a list the parent supplies — it does not query.
+  // This modal never passed one, so the dropdown was empty for EVERY customer,
+  // not just those with a Lost deal or a Future Order.
+  const [contacts, setContacts] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const companyId = company?.id;
+      if (!companyId) { setContacts([]); return; }
+
+      // Contacts reach a company two different ways in this data, and which one
+      // is populated varies by company: JASCO PVC leaves contacts.company_id
+      // null and links only through the owner, while JASCO Steels sets
+      // company_id on rows that have no owner at all. Matching on either keeps
+      // both whole — owner-only would hide 487 JASCO Steels contacts.
+      const { data: users } = await supabase
+        .from('users')
+        .select('id')
+        .eq('company_id', companyId);
+      const ownerIds = (users || []).map((u) => u.id).filter(Boolean);
+
+      let q = supabase
+        .from('contacts')
+        .select('id, first_name, last_name, company_name, phone, mobile')
+        .order('company_name', { ascending: true });
+      q = ownerIds.length
+        ? q.or(`company_id.eq.${companyId},owner_id.in.(${ownerIds.join(",")})`)
+        : q.eq('company_id', companyId);
+
+      const { data, error } = await q;
+      if (error) { console.error('ReplacementModal contacts:', error); if (!cancelled) setContacts([]); return; }
+      if (!cancelled) setContacts(data || []);
+    })();
+    return () => { cancelled = true; };
+  }, [company?.id]);
 
   const validate = () => {
     const e = {};
@@ -98,6 +134,7 @@ export default function ReplacementModal({ removedDeal, removalType, onClose, on
             <div>
               <ContactSearchInput
                 label="Replacement Customer"
+                contacts={contacts}
                 value={form.contact_id}
                 onChange={(contact) => {
                   setForm((f) => ({
