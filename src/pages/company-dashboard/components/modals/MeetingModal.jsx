@@ -113,14 +113,14 @@ const MeetingModal = ({ isOpen, onClose, onSubmit }) => {
   return (
     <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50">
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <div className="bg-card border border-border rounded-lg shadow-enterprise-lg w-full max-w-lg">
-          <div className="p-6 border-b border-border">
+        <div className="bg-card border border-border rounded-lg shadow-enterprise-lg w-full max-w-lg max-h-[90vh] flex flex-col">
+          <div className="p-6 border-b border-border flex-shrink-0">
             <h2 className="text-xl font-semibold text-card-foreground">
               Schedule Meeting
             </h2>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <form onSubmit={handleSubmit} className="p-6 space-y-4 flex-1 overflow-y-auto min-h-0">
             <div className="space-y-2">
               <label className="text-sm font-medium text-card-foreground">
                 Meeting Title

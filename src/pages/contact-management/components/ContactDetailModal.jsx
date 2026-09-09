@@ -135,11 +135,11 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
         <div className="fixed inset-0 transition-opacity bg-background/80 backdrop-blur-sm"></div>
 
         <div
-          className="inline-block w-full max-w-2xl my-8 overflow-hidden text-left align-middle transition-all transform bg-card border border-border rounded-lg shadow-enterprise-lg"
+          className="inline-block w-full max-w-2xl my-8 overflow-hidden text-left align-middle transition-all transform bg-card border border-border rounded-lg shadow-enterprise-lg max-h-[90vh]"
           onClick={(e) => e.stopPropagation()}
         >
-          <form onSubmit={handleSubmit}>
-            <div className="flex items-center justify-between p-6 border-b border-border">
+          <form className="flex flex-col max-h-[90vh]" onSubmit={handleSubmit}>
+            <div className="flex items-center justify-between p-6 border-b border-border flex-shrink-0">
               <h2 className="text-xl font-semibold text-card-foreground">
                 {contact ? t("contacts.editClient") : t("contacts.newClient")}
               </h2>
@@ -153,7 +153,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
               </Button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 flex-1 overflow-y-auto min-h-0">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
@@ -304,7 +304,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
               </div>
             )}
 
-            <div className="flex justify-between items-center p-6 border-t border-border">
+            <div className="flex justify-between items-center p-6 border-t border-border flex-shrink-0">
               <div>
                 {contact && (
                   <Button

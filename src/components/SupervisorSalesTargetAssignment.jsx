@@ -883,8 +883,8 @@ const SupervisorSalesTargetAssignment = ({
         {/* Create Client Modal */}
         {showCreateClient && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-card border border-border rounded-lg p-6 w-full max-w-md mx-4">
-              <div className="flex items-center justify-between mb-4">
+            <div className="bg-card border border-border rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between mb-4 flex-shrink-0">
                 <h4 className="text-lg font-semibold text-card-foreground">
                   Create New Client
                 </h4>
@@ -897,7 +897,7 @@ const SupervisorSalesTargetAssignment = ({
                 </Button>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-4 flex-1 overflow-y-auto min-h-0">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-sm font-medium text-card-foreground mb-1 block">

@@ -1457,9 +1457,9 @@ const DealModal = ({
 
   return (
     <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-300 flex items-center justify-center p-4">
-      <div className="bg-card border border-border rounded-lg shadow-enterprise-lg w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <div className="bg-card border border-border rounded-lg shadow-enterprise-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-border">
+        <div className="flex items-center justify-between p-6 border-b border-border flex-shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
               <Icon name="Briefcase" size={20} className="text-primary" />
@@ -1506,7 +1506,7 @@ const DealModal = ({
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[70vh]">
+        <div className="p-6 overflow-y-auto flex-1 min-h-0">
           <div className="space-y-6">
             {/* Title */}
             <div>
@@ -2495,7 +2495,7 @@ const DealModal = ({
         )}
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-6 border-t border-border bg-muted/30">
+        <div className="flex items-center justify-between p-6 border-t border-border bg-muted/30 flex-shrink-0">
           <div className="flex items-center space-x-2">
             {deal && (
               <Button

@@ -105,9 +105,9 @@ const TaskModal = ({ isOpen, onClose, onSubmit }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl rounded-2xl border border-border bg-card shadow-2xl overflow-hidden animate-in fade-in-50">
+      <div className="w-full max-w-2xl rounded-2xl border border-border bg-card shadow-2xl overflow-hidden animate-in fade-in-50 max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b border-border bg-muted/30">
+        <div className="flex justify-between items-center px-6 py-4 border-b border-border bg-muted/30 flex-shrink-0">
           <h2 className="text-lg font-semibold text-foreground">
             Create New Task
           </h2>
@@ -121,7 +121,7 @@ const TaskModal = ({ isOpen, onClose, onSubmit }) => {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="px-6 py-6 space-y-6">
+        <form onSubmit={handleSubmit} className="px-6 py-6 space-y-6 flex-1 overflow-y-auto min-h-0">
           {/* Title & Due Date */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>

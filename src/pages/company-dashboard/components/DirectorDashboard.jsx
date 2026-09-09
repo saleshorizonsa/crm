@@ -2709,8 +2709,8 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       {/* Edit Target Modal */}
       {editingTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
-            <div className="flex items-center justify-between mb-5">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between mb-5 flex-shrink-0">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">{t("dashboard.editSalesTarget")}</h3>
                 <p className="text-sm text-gray-500">
@@ -2723,7 +2723,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-4 flex-1 overflow-y-auto min-h-0">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   {t("dashboard.targetAmountLabel")} ({editingTarget.currency || preferredCurrency})
@@ -2793,7 +2793,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
+            <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-gray-200 flex-shrink-0">
               <button
                 onClick={() => setEditingTarget(null)}
                 disabled={editSaving}
