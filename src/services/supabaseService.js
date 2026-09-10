@@ -3348,7 +3348,8 @@ export const salesTargetService = {
           *,
           assignee:assigned_to(id, email, full_name, role),
           assigner:assigned_by(id, email, full_name, role),
-          company:companies(id, name)
+          company:companies(id, name),
+          client_targets(target_amount)
         `,
         )
         .order("created_at", { ascending: false });
@@ -3389,7 +3390,8 @@ export const salesTargetService = {
           `
           *,
           assigner:assigned_by(id, email, full_name, role),
-          company:companies(id, name)
+          company:companies(id, name),
+          client_targets(target_amount)
         `,
         )
         .eq("assigned_to", currentUserId)

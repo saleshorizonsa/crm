@@ -38,42 +38,76 @@ export async function fetchContributors({ companyId, ownerIds = null }) {
 
 // ── 1. TARGET ───────────────────────────────────────────────────────────────
 /**
+ * The value ONE sales_targets row contributes to Target.
+ *
+ * A row with linked `client_targets` is a HEADER: the children are that same
+ * goal broken down per client, so counting the row AND its children would
+ * double it. This is symmetric — `total_value` and `by_clients` rows behave
+ * identically when they have children, because the test is whether children
+ * EXIST, never what target_type says (12 of the 20 parent rows in this database
+ * are total_value, so keying off the type would be wrong).
+ *
+ * Takes the HIGHER of the row and its children, not the children alone: five
+ * rows here are only partly allocated across clients (e.g. a 315,108 target
+ * with 241,836 spread over 15 clients). Using the children's sum would let an
+ * unfinished breakdown quietly LOWER an agreed target and flatter the owner's
+ * attainment. The higher value keeps the commitment intact, and the 15 rows
+ * whose children match their parent exactly are unaffected either way.
+ *
+ * @param {object} row a sales_targets row, with `client_targets` embedded
+ */
+export function targetRowValue(row) {
+  const own = parseFloat(row?.target_amount) || 0;
+  const kids = row?.client_targets;
+  if (!Array.isArray(kids) || kids.length === 0) return own;
+  const childSum = kids.reduce((sum, c) => sum + (parseFloat(c.target_amount) || 0), 0);
+  return Math.max(own, childSum);
+}
+
+/**
  * Per-person target from monthly sales_targets rows.
  *
- * A person may record one goal in either of two views: `total_value` (the
- * overall number) or `by_clients` (the same number broken down per client).
- * Use total_value when present, else the by_clients rows — never both, they are
- * two views of one goal.
+ * Rows are ADDITIVE: a person's target for a month is the sum of every
+ * applicable row, because each records a DIFFERENT commitment —
+ *   total_value  the overall value goal
+ *   by_products  a product-group commitment (e.g. CPVC 300,000)
+ *   by_clients   a per-client goal
+ * so "CPVC 300,000 + client ABC 200,000 + by value 100,000" reads 600,000.
+ * A person holding both a total_value and a by_clients row in one month has
+ * two commitments and gets both: confirmed with the Sales Manager for the
+ * June/July 2026 rows that prompted the question.
  *
- * `by_products` is a THIRD view and never counts toward Target. It used to fall
- * into the total_value bucket via an `else`, which added a phantom 750,000 to
- * one salesman and to every roll-up above him.
+ * The ONE thing never counted twice is a row and its own client breakdown,
+ * which targetRowValue() collapses. client_targets are reached only through
+ * their parent row, so there is no second pass that could add them again —
+ * the double count is prevented structurally, not by a check.
  *
- * The choice is made PER MONTH then summed. Made once per person across a
- * multi-month range, a month recorded in the other style is silently dropped.
+ * This replaced an either/or rule (total_value ?? by_clients). That rule was
+ * correct while those were two views of one goal, and became wrong once a
+ * person could hold several genuinely different commitments in one month.
  *
+ * Summing is done PER MONTH then across months, so a multi-month range cannot
+ * blur one month's rows into another's.
+ *
+ * @param {Array} targetRows sales_targets rows with `client_targets` embedded.
+ *   Rows fetched WITHOUT the embed still work — a childless row counts its own
+ *   amount — but a header row would then contribute its own value instead of
+ *   its children's. Use fetchMonthlyTargets(), which embeds them.
  * @returns {Record<string, number>} assigned_to -> target
  */
 export function targetPerPerson(targetRows) {
-  const split = {};   // uid -> month -> { total_value, by_clients, breakdown }
+  const split = {};   // uid -> month -> summed value
   (targetRows || []).forEach((t) => {
     const k = t.assigned_to;
     const m = t.period_start || 'unknown';
     if (!k) return;
     if (!split[k]) split[k] = {};
-    if (!split[k][m]) split[k][m] = { total_value: 0, by_clients: 0, breakdown: 0 };
-    const amt = parseFloat(t.target_amount) || 0;
-    if (t.target_type === 'total_value') split[k][m].total_value += amt;
-    else if (t.target_type === 'by_clients') split[k][m].by_clients += amt;
-    else split[k][m].breakdown += amt;   // by_products etc — a view, not a goal
+    split[k][m] = (split[k][m] || 0) + targetRowValue(t);
   });
 
   const per = {};
   Object.entries(split).forEach(([k, months]) => {
-    per[k] = Object.values(months).reduce(
-      (sum, v) => sum + (v.total_value > 0 ? v.total_value : v.by_clients),
-      0,
-    );
+    per[k] = Object.values(months).reduce((sum, v) => sum + v, 0);
   });
   return per;
 }
@@ -83,7 +117,9 @@ export async function fetchMonthlyTargets({ companyId, contributorIds, start, en
   if (!companyId || !contributorIds?.length) return [];
   const { data, error } = await supabase
     .from('sales_targets')
-    .select('target_amount, assigned_to, target_type, period_start')
+    .select(
+      'target_amount, assigned_to, target_type, period_start, product_group, client_targets(target_amount)',
+    )
     .eq('company_id', companyId)
     .eq('status', 'active')
     .eq('period_type', 'monthly')

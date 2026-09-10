@@ -136,7 +136,9 @@ export default function CoverageConsole() {
         // and superseded rows were being counted here but nowhere else.
         supabase
           .from("sales_targets")
-          .select("assigned_to, target_amount, period_type, target_type, period_start")
+          .select(
+            "assigned_to, target_amount, period_type, target_type, period_start, product_group, client_targets(target_amount)"
+          )
           .eq("company_id", company.id)
           .eq("status", "active")
           .eq("period_type", "monthly")
