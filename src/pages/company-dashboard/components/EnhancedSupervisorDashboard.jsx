@@ -1216,10 +1216,13 @@ const EnhancedSupervisorDashboard = ({
                 });
               });
             } else {
-              // This is a value-based target, add as-is
+              // A row with no children stands on its own. Keep its OWN
+              // target_type: this used to force "by_value", which mislabelled
+              // a standalone by_products row (now the normal way a product
+              // group target is recorded) as a value target.
               expandedTargets.push({
                 ...target,
-                target_type: "by_value",
+                target_type: target.target_type || "by_value",
                 parent_target_id: target.id,
               });
             }

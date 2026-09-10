@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Icon from '../../../components/AppIcon';
 import { supabase } from '../../../lib/supabase';
 import { useMaterialGroups } from '../../../hooks/useMaterialGroups';
+import { useAuth } from '../../../contexts/AuthContext';
 import { achievedByProductGroup } from '../../../utils/productGroupAchievement';
 
 const fmt = (n) =>
@@ -16,9 +17,20 @@ const monthEndOf = (d = new Date()) => {
 
 // Assign a target to a PRODUCT GROUP for one salesman, for the current month.
 //
-// Distinct from the existing by_products UI, which targets individual products
-// through product_targets. Group targets live in product_group_targets and hang
-// off the salesman's monthly sales_target row.
+// A product-group target IS a sales_targets row: target_type 'by_products' with
+// the group in product_group. It stands on its own and ADDS to whatever else
+// the salesman carries that month, which is what utils/planningCalculations.js
+// sums into Target.
+//
+// It used to live in product_group_targets, hanging off whichever monthly
+// sales_target row happened to be found first for that owner. That table is
+// no longer read or written (it holds no rows). Two problems went with it: the
+// parent row was picked arbitrarily when a person had more than one, and a
+// salesman with no base target could not be given a group target at all.
+// Neither applies now that the row is standalone.
+//
+// Distinct from the existing by_products UI for individual products, which
+// targets specific SKUs through product_targets.
 //
 // The group list comes from the material_groups table, not from DISTINCT
 // products.material_group: that column is free-text in places and yields 45
@@ -26,8 +38,9 @@ const monthEndOf = (d = new Date()) => {
 // curated groups such as PVC COMPO and RESIN that no product carries yet.
 export default function ProductGroupTargetManager({ companyId }) {
   const { groups, loading: groupsLoading } = useMaterialGroups(companyId);
+  const { user } = useAuth();
 
-  const [salesmen, setSalesmen] = useState([]);   // [{ id, full_name, sales_target_id }]
+  const [salesmen, setSalesmen] = useState([]);   // [{ id, full_name, role }]
   const [ownerId, setOwnerId] = useState('');
   const [rows, setRows] = useState([]);
   const [achieved, setAchieved] = useState({});
@@ -42,9 +55,8 @@ export default function ProductGroupTargetManager({ companyId }) {
   const end = monthEndOf();
   const monthLabel = new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 
-  // Contributors who hold a monthly sales_target overlapping this month — a
-  // group target has to hang off one, so anyone without a target cannot be
-  // given one here.
+  // Every active contributor. No base-target prerequisite: a group target is
+  // its own row.
   const loadSalesmen = useCallback(async () => {
     if (!companyId) { setSalesmen([]); return; }
     const { data: users } = await supabase
@@ -55,40 +67,35 @@ export default function ProductGroupTargetManager({ companyId }) {
       .in('role', ['salesman', 'supervisor'])
       .order('full_name');
 
-    const { data: st } = await supabase
-      .from('sales_targets')
-      .select('id, assigned_to')
-      .eq('company_id', companyId)
-      .eq('status', 'active')
-      .eq('period_type', 'monthly')
-      .lte('period_start', end)
-      .gte('period_end', start);
-
-    const byOwner = {};
-    (st || []).forEach((t) => { if (!byOwner[t.assigned_to]) byOwner[t.assigned_to] = t.id; });
-
-    setSalesmen((users || []).map((u) => ({ ...u, sales_target_id: byOwner[u.id] || null })));
-  }, [companyId, start, end]);
+    setSalesmen(users || []);
+  }, [companyId]);
 
   useEffect(() => { loadSalesmen(); }, [loadSalesmen]);
 
   const selected = salesmen.find((s) => s.id === ownerId) || null;
 
   const loadRows = useCallback(async () => {
-    if (!selected?.sales_target_id) { setRows([]); setAchieved({}); return; }
+    if (!selected?.id) { setRows([]); setAchieved({}); return; }
     setLoading(true);
     try {
       const { data } = await supabase
-        .from('product_group_targets')
-        .select('id, product_group, target_amount, currency, notes, sales_target_id')
-        .eq('sales_target_id', selected.sales_target_id)
+        .from('sales_targets')
+        .select('id, product_group, target_amount, currency, notes')
+        .eq('company_id', companyId)
+        .eq('assigned_to', selected.id)
+        .eq('status', 'active')
+        .eq('period_type', 'monthly')
+        .eq('target_type', 'by_products')
+        .not('product_group', 'is', null)
+        .lte('period_start', end)
+        .gte('period_end', start)
         .order('product_group');
       setRows(data || []);
       setAchieved(await achievedByProductGroup({ companyId, ownerIds: [selected.id], start, end }));
     } finally {
       setLoading(false);
     }
-  }, [selected?.sales_target_id, selected?.id, companyId, start, end]);
+  }, [selected?.id, companyId, start, end]);
 
   useEffect(() => { loadRows(); }, [loadRows]);
 
@@ -98,23 +105,43 @@ export default function ProductGroupTargetManager({ companyId }) {
     setError('');
     if (!form.product_group) { setError('Choose a product group.'); return; }
     if (!form.target_amount || parseFloat(form.target_amount) <= 0) { setError('Enter a target amount.'); return; }
-    if (!selected?.sales_target_id) { setError('This salesman has no monthly target for ' + monthLabel + '.'); return; }
+    if (!selected?.id) { setError('Select a salesman.'); return; }
     // One target per group per salesman-month; editing an existing row is fine.
     const clash = rows.find((r) => r.product_group === form.product_group && r.id !== editing?.id);
     if (clash) { setError(`${form.product_group} already has a target for ${monthLabel}.`); return; }
 
     setBusy(true);
     try {
-      const payload = {
-        sales_target_id: selected.sales_target_id,
-        product_group: form.product_group,
-        target_amount: parseFloat(form.target_amount),
-        notes: form.notes?.trim() || null,
-        updated_at: new Date().toISOString(),
-      };
-      const { error: e } = editing
-        ? await supabase.from('product_group_targets').update(payload).eq('id', editing.id)
-        : await supabase.from('product_group_targets').insert(payload);
+      const amount = parseFloat(form.target_amount);
+      const notes = form.notes?.trim() || null;
+      let e;
+      if (editing) {
+        // Only the amount/notes/group are editable; the row's identity as this
+        // salesman's by_products target for this month does not change.
+        ({ error: e } = await supabase
+          .from('sales_targets')
+          .update({
+            product_group: form.product_group,
+            target_amount: amount,
+            notes,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', editing.id));
+      } else {
+        ({ error: e } = await supabase.from('sales_targets').insert({
+          company_id: companyId,
+          assigned_to: selected.id,
+          assigned_by: user?.id || null,
+          target_type: 'by_products',
+          product_group: form.product_group,
+          target_amount: amount,
+          period_type: 'monthly',
+          period_start: start,
+          period_end: end,
+          status: 'active',
+          notes,
+        }));
+      }
       if (e) throw e;
       resetForm();
       await loadRows();
@@ -127,7 +154,9 @@ export default function ProductGroupTargetManager({ companyId }) {
 
   async function handleDelete(row) {
     if (!window.confirm(`Delete the ${row.product_group} target?`)) return;
-    const { error: e } = await supabase.from('product_group_targets').delete().eq('id', row.id);
+    // A group target is a whole sales_targets row, so deleting it removes the
+    // commitment entirely and Target drops by that amount.
+    const { error: e } = await supabase.from('sales_targets').delete().eq('id', row.id);
     if (e) { setError(e.message); return; }
     loadRows();
   }
@@ -150,7 +179,7 @@ export default function ProductGroupTargetManager({ companyId }) {
           <option value="">Select a salesman…</option>
           {salesmen.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.full_name}{s.sales_target_id ? '' : ' — no monthly target'}
+              {s.full_name}
             </option>
           ))}
         </select>
@@ -158,13 +187,6 @@ export default function ProductGroupTargetManager({ companyId }) {
 
       {!ownerId ? (
         <p className="text-sm text-gray-400 py-6 text-center">Select a salesman to view or set their product group targets.</p>
-      ) : !selected?.sales_target_id ? (
-        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
-          <p className="text-sm text-amber-800 font-medium">No monthly target for {monthLabel}</p>
-          <p className="text-xs text-amber-700 mt-0.5">
-            A product group target attaches to the salesman&apos;s monthly sales target. Assign one first, then come back.
-          </p>
-        </div>
       ) : (
         <>
           {loading ? (

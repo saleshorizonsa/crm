@@ -21,6 +21,7 @@ import {
 } from "utils/dateFormat";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
 import ProductGroupTargetManager from "./ProductGroupTargetManager";
+import ClientTargetManager from "./ClientTargetManager";
 
 const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
   const { t } = useLanguage();
@@ -408,10 +409,17 @@ const SalesTarget = ({ userRole, currentUserId, companyId: propCompanyId }) => {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Product GROUP targets — distinct from the by_products (individual
-          product) targets listed below; group targets live in
-          product_group_targets and had no UI at all until now. */}
-      <ProductGroupTargetManager companyId={selectedCompany !== "all" ? selectedCompany : (propCompanyId || authCompany?.id)} />
+      {/* The two ADDITIVE commitment types, each its own assignment UI.
+          A product-group target is a sales_targets row (by_products +
+          product_group); a client target is a client_targets row on that
+          salesman's by_clients container row. Both add to Target — see
+          utils/planningCalculations.js. Distinct from the by_products
+          INDIVIDUAL-product targets listed further below, which target
+          specific SKUs through product_targets. */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <ProductGroupTargetManager companyId={selectedCompany !== "all" ? selectedCompany : (propCompanyId || authCompany?.id)} />
+        <ClientTargetManager companyId={selectedCompany !== "all" ? selectedCompany : (propCompanyId || authCompany?.id)} />
+      </div>
 
       {/* Header with Month Filter */}
       <div className="flex items-center justify-between">

@@ -33,7 +33,7 @@ import PlanApprovalAlert from "../../../components/dashboard/PlanApprovalAlert";
 import ContactReportsAudit from "../../../components/dashboard/ContactReportsAudit";
 import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
 import ForecastVarianceAlert from "../../../components/dashboard/ForecastVarianceAlert";
-import ProductGroupTargetCard from "../../../components/dashboard/ProductGroupTargetCard";
+import TargetBreakdownCard from "../../../components/dashboard/TargetBreakdownCard";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
@@ -1247,10 +1247,13 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                 });
               });
             } else {
-              // This is a value-based target, add as-is
+              // A row with no children stands on its own. Keep its OWN
+              // target_type: this used to force "by_value", which mislabelled
+              // a standalone by_products row (now the normal way a product
+              // group target is recorded) as a value target.
               expandedTargets.push({
                 ...target,
-                target_type: "by_value",
+                target_type: target.target_type || "by_value",
                 parent_target_id: target.id,
               });
             }
@@ -1494,7 +1497,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       )}
       {company?.id && (
         <div className="mb-6">
-          <ProductGroupTargetCard
+          <TargetBreakdownCard
             companyId={company.id}
             period={{ start: activeDateRange.from, end: activeDateRange.to, label: kpiPeriod.label }}
           />

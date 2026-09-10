@@ -58,7 +58,7 @@ import PlanSubmissionAlert from "../../../components/dashboard/PlanSubmissionAle
 import PlanApprovalAlert from "../../../components/dashboard/PlanApprovalAlert";
 import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
 import ForecastVarianceAlert from "../../../components/dashboard/ForecastVarianceAlert";
-import ProductGroupTargetCard from "../../../components/dashboard/ProductGroupTargetCard";
+import TargetBreakdownCard from "../../../components/dashboard/TargetBreakdownCard";
 import { computeKpiStripData, computeDirectorAnnual } from "../../../utils/kpiStripData";
 import { backfillForecasts } from "../../../utils/forecastBackfill";
 
@@ -2523,7 +2523,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       )}
       {selectedCompany?.id && !selectedEmployee && (
         <div className="mb-6">
-          <ProductGroupTargetCard
+          <TargetBreakdownCard
             companyId={selectedCompany.id}
             period={{ start: activeDateRange.from, end: activeDateRange.to, label: getPeriodLabel() }}
           />
