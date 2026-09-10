@@ -7,8 +7,7 @@ import CustomerMaster from "./components/CustomerMaster";
 import OpportunitiesModule from "./components/OpportunitiesModule";
 import FutureOrdersModule from "./components/FutureOrdersModule";
 import HistoricalDataModule from "./components/HistoricalDataModule";
-import { fetchWinRate3m } from "utils/winRate3m";
-import { computeKpiStripData } from "utils/kpiStripData";
+import { computePlanningSummary } from "utils/planningCalculations";
 import { fetchTeamHierarchy } from "utils/teamHierarchy";
 import { useDateRange } from "contexts/DateRangeContext";
 import { periodLabelFromRange, isAnnualRange } from "utils/dashboardDateUtils";
@@ -234,130 +233,47 @@ const PlanningPage = () => {
     }
     setSummaryLoading(true);
     try {
+      // ── ONE definition for EVERY role ──────────────────────────────────
+      // This page, the Coverage Console and the dashboards each carried their
+      // own copy of these five calculations and had drifted: the same manager's
+      // Target read 3,050,494 here and 2,300,494 on his dashboard. They now all
+      // call utils/planningCalculations.js, so a fix lands everywhere at once.
+      //
+      // Owner scope: director → whole company; manager/supervisor → self + full
+      // downline; salesman → self. The shared code narrows that to CONTRIBUTORS
+      // (salesmen + supervisors) for Target, Planned and carry-in.
       const isDirector = DIRECTOR_ROLES.includes(role);
       const isTeamLead = TEAM_ROLES.includes(role);
 
-      // ── DIRECTOR ── mirror the Director dashboard KPI strip for the SELECTED
-      // period by reusing the exact same function — so the two pages can never
-      // drift and the Target follows the period (annual for This Year, monthly
-      // for This Month, etc.). Win rate stays a 3-month rolling average.
-      if (isDirector) {
-        const { totals } = await computeKpiStripData({
-          companyId,
-          ownerIds: null,
-          range: { start: rangeStart, end: rangeEnd, isAnnual: isAnnualView },
-        });
-        setSummaryData({
-          target: totals.target,
-          winRate3m: totals.winRate3m,
-          winRateIsDefault: totals.winRateIsDefault,
-          requiredPlan: totals.required,
-          requiredPlanRaw: totals.requiredRaw,
-          futureCarryover: totals.futureCarryover,
-          totalPlanned: totals.planned,
-          plannedGap: totals.plannedGap,
-        });
-        return;
+      let ownerIds = null;
+      if (!isDirector) {
+        const scope = isTeamLead
+          ? [user?.id, ...(await fetchTeamHierarchy({ companyId, userId: user?.id, role })).map((m) => m.id)].filter(Boolean)
+          : [user?.id].filter(Boolean);
+        ownerIds = scope.length ? scope : ["00000000-0000-0000-0000-000000000000"];
       }
 
-      // ── MANAGER / SUPERVISOR / SALESMAN ── monthly figures (unchanged).
-      // Owner scope: manager/supervisor → self + full downline; salesman → self.
-      const scope = isTeamLead
-        ? [user?.id, ...(await fetchTeamHierarchy({ companyId, userId: user?.id, role })).map((m) => m.id)].filter(Boolean)
-        : [user?.id].filter(Boolean);
-      const scopeIds = scope.length ? scope : ["00000000-0000-0000-0000-000000000000"];
-
-      const now = new Date(); // used only for the next-month carryover below
-
-      // ── TARGET ── per person (salesmen + supervisors in scope), for the selected
-      // period: use their total_value target when present, else the sum of their
-      // by_clients rows (never mix the two views of one goal). Yearly targets for
-      // the annual view, monthly targets overlapping the range otherwise.
-      const { data: targets } = await supabase
-        .from("sales_targets")
-        .select("target_amount, assigned_to, target_type")
-        .eq("company_id", companyId)
-        .eq("status", "active")
-        .eq("period_type", isAnnualView ? "yearly" : "monthly")
-        .lte("period_start", rangeEnd)
-        .gte("period_end", rangeStart)
-        .in("assigned_to", scopeIds);
-      const targetSplit = {};
-      (targets || []).forEach((r) => {
-        const k = r.assigned_to || "x";
-        if (!targetSplit[k]) targetSplit[k] = { total_value: 0, by_clients: 0 };
-        const amt = parseFloat(r.target_amount) || 0;
-        if (r.target_type === "by_clients") targetSplit[k].by_clients += amt;
-        else targetSplit[k].total_value += amt;
+      const sum = await computePlanningSummary({
+        companyId,
+        ownerIds,
+        range: { start: rangeStart, end: rangeEnd, isAnnual: isAnnualView },
+        // Planning walks the 3-step win-rate fallback chain (the KPI strip
+        // deliberately shows 0% instead) and measures Planned over the period
+        // the user selected, so a quarter's Required Plan is compared with a
+        // quarter of planned value. Both policies are explicit, not implied.
+        withFallback: true,
+        plannedFollowsRange: true,
       });
-      const totalTarget = Object.values(targetSplit).reduce(
-        (s, v) => s + (v.total_value > 0 ? v.total_value : v.by_clients),
-        0,
-      );
-
-      // ── WIN RATE ── 3-step (no fixed default): (1) 90-day rolling window;
-      // (2) if none, this scope's ACTUAL rate over all history — however few deals;
-      // (3) only if zero deals ever, the whole-company 3-month average.
-      const { winRate3m: raw, total3m } = await fetchWinRate3m({ companyId, ownerIds: scope });
-      let winRate3m = raw;
-      let winRateIsDefault = false;
-      if (total3m === 0) {
-        const { data: hist } = await supabase
-          .from("deals")
-          .select("stage")
-          .eq("company_id", companyId)
-          .in("owner_id", scopeIds);
-        if ((hist?.length || 0) > 0) {
-          const wonH = hist.filter((d) => d.stage === "won").length;
-          winRate3m = (wonH / hist.length) * 100;
-        } else {
-          const { winRate3m: companyAvg } = await fetchWinRate3m({ companyId, ownerIds: null });
-          winRate3m = companyAvg;
-          winRateIsDefault = true;
-        }
-      }
-
-      // ── REQUIRED PLAN ── Target ÷ Win Rate% (raw, before carryover)
-      const requiredPlanRaw = winRate3m > 0 ? totalTarget / (winRate3m / 100) : totalTarget * 2;
-
-      // ── FUTURE-ORDER CARRYOVER ── pending future orders for NEXT month count
-      // toward the required plan (customers already committed), so subtract them.
-      const nmStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      const nmEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0);
-      const fmtD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      const { data: futureOrders } = await supabase
-        .from("future_orders")
-        .select("planned_amount")
-        .eq("company_id", companyId)
-        .eq("status", "pending")
-        .in("owner_id", scopeIds)
-        .gte("expected_month", fmtD(nmStart))
-        .lte("expected_month", fmtD(nmEnd));
-      const futureCarryover = (futureOrders || []).reduce((s, o) => s + (parseFloat(o.planned_amount) || 0), 0);
-      const requiredPlan = Math.max(0, requiredPlanRaw - futureCarryover);
-
-      // ── TOTAL PLANNED ── open opportunities whose month falls in the period
-      const { data: opps } = await supabase
-        .from("opportunities")
-        .select("planned_amount")
-        .eq("company_id", companyId)
-        .eq("status", "open")
-        .gte("expected_month", rangeStart)
-        .lte("expected_month", rangeEnd)
-        .in("owner_id", scopeIds);
-      const totalPlanned = (opps || []).reduce((s, o) => s + (parseFloat(o.planned_amount) || 0), 0);
-
-      const plannedGap = Math.max(0, requiredPlan - totalPlanned);
 
       setSummaryData({
-        target: totalTarget,
-        winRate3m,
-        winRateIsDefault,
-        requiredPlan,
-        requiredPlanRaw,
-        futureCarryover,
-        totalPlanned,
-        plannedGap,
+        target: sum.target,
+        winRate3m: sum.winRatePct,
+        winRateIsDefault: sum.winRateIsDefault,
+        requiredPlan: sum.required,
+        requiredPlanRaw: sum.requiredRaw,
+        futureCarryover: sum.carryIn,
+        totalPlanned: sum.planned,
+        plannedGap: sum.plannedGap,
       });
     } catch (err) {
       console.error("Planning summary:", err);

@@ -6,6 +6,12 @@ import Icon from 'components/AppIcon';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 import { blockIfPlanLocked } from 'utils/planApproval';
+import {
+  fetchContributors,
+  fetchMonthlyTargets,
+  targetPerPerson,
+  monthBounds,
+} from 'utils/planningCalculations';
 
 const DIRECTOR_ROLES = ['director', 'head', 'admin'];
 const TEAM_ROLES     = ['manager', 'supervisor'];
@@ -79,32 +85,36 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
   }, [filterOwner, isDirector, isTeamLead, teamMembers, user?.id]);
 
   // ── Fetch: monthly target ─────────────────────────────────────────────────
-  // Targets may be assigned as total_value / by_clients / by_products — these are
-  // different views of the SAME monthly goal, so we take the MAX per person and
-  // then sum across the scope (never add the types together).
+  // The one shared rule (utils/planningCalculations.js): this month's ACTIVE
+  // MONTHLY rows for CONTRIBUTORS, then per person per month take total_value
+  // when present else by_clients, never by_products.
+  //
+  // What this replaced took the MAX across every target type with no
+  // period_type filter, so a manager's YEARLY roll-up row leaked in and the
+  // tab reported a 43,749,224 monthly target against a real 2,300,494 — which
+  // also pinned planningPct to ~0% and isUnderPlanned permanently true. The
+  // window was built from toISOString() as well, pulling in the previous
+  // month's rows (the same bleed fixed in the Coverage Console).
   const fetchTarget = useCallback(async (ids) => {
     if (!company?.id || !ids?.length) { setMonthlyTarget(0); return; }
-    const n = new Date();
-    const from = new Date(n.getFullYear(), n.getMonth(), 1).toISOString();
-    const to   = new Date(n.getFullYear(), n.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
-    const { data, error } = await supabase
-      .from('sales_targets')
-      .select('target_amount, assigned_to')
-      .eq('company_id', company.id)
-      .eq('status', 'active')
-      .in('assigned_to', ids)
-      .lte('period_start', to)
-      .gte('period_end', from);
-
-    if (error) { setMonthlyTarget(0); return; }
-
-    const perPerson = {};
-    (data || []).forEach((r) => {
-      const k = r.assigned_to || 'x';
-      perPerson[k] = Math.max(perPerson[k] || 0, parseFloat(r.target_amount) || 0);
+    const contributors = await fetchContributors({
+      companyId: company.id,
+      ownerIds: ids,
     });
-    setMonthlyTarget(Object.values(perPerson).reduce((s, v) => s + v, 0));
+    const contributorIds = contributors.map((c) => c.id);
+    if (!contributorIds.length) { setMonthlyTarget(0); return; }
+
+    const { startDate, endDate } = monthBounds();
+    const rows = await fetchMonthlyTargets({
+      companyId: company.id,
+      contributorIds,
+      start: startDate,
+      end: endDate,
+    });
+    setMonthlyTarget(
+      Object.values(targetPerPerson(rows)).reduce((sum, v) => sum + v, 0),
+    );
   }, [company?.id]);
 
   // ── Fetch: opportunities ──────────────────────────────────────────────────

@@ -6,6 +6,16 @@ import CoverageRail from "./components/CoverageRail";
 import PacingRail from "./components/PacingRail";
 import OppHero from "./components/OppHero";
 import ExceptionFeed from "./components/ExceptionFeed";
+import {
+  CONTRIBUTOR_ROLES,
+  targetPerPerson,
+  winRateFromDeals,
+  sumPlannedByOwner,
+  computeRequiredRaw,
+  computePlannedGap,
+  monthBounds,
+  nextMonthBounds,
+} from "utils/planningCalculations";
 
 // ── STATE ────────────────────────────────────────────────────────────────────
 // One object, four keys.
@@ -86,12 +96,13 @@ export default function CoverageConsole() {
     setError("");
     try {
       const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-        .toISOString()
-        .split("T")[0];
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-        .toISOString()
-        .split("T")[0];
+      // monthBounds() formats from LOCAL date parts. toISOString() was used
+      // here, which in GMT+3 shifted the window back a day: monthStart came out
+      // as the 31st of the previous month and monthEnd as the 29th. That pulled
+      // the previous month's target rows into this month's Target and dropped
+      // anything dated the last day of the month.
+      const { startDate: monthStart, endDate: monthEnd } = monthBounds(now);
+      const nextMonth = nextMonthBounds(now);
 
       const [
         { data: deals },
@@ -121,11 +132,13 @@ export default function CoverageConsole() {
           .eq("company_id", company.id)
           .eq("is_active", true),
 
-        // Monthly targets overlapping this month
+        // Monthly targets overlapping this month. status=active matters: draft
+        // and superseded rows were being counted here but nowhere else.
         supabase
           .from("sales_targets")
-          .select("assigned_to, target_amount, period_type, target_type")
+          .select("assigned_to, target_amount, period_type, target_type, period_start")
           .eq("company_id", company.id)
+          .eq("status", "active")
           .eq("period_type", "monthly")
           .lte("period_start", monthEnd)
           .gte("period_end", monthStart),
@@ -162,14 +175,19 @@ export default function CoverageConsole() {
           .gte("expected_month", monthStart)
           .lte("expected_month", monthEnd),
 
-        // Future orders (carry-in)
+        // Future orders (carry-in) — NEXT month only. Carry-in is defined as
+        // next month's committed orders; this fetched every pending row of any
+        // month, which would silently inflate carry-in as soon as an order was
+        // booked further out.
         supabase
           .from("future_orders")
           .select(
             "id, owner_id, planned_amount, expected_month, status, customer_name, created_at"
           )
           .eq("company_id", company.id)
-          .eq("status", "pending"),
+          .eq("status", "pending")
+          .gte("expected_month", nextMonth.startDate)
+          .lte("expected_month", nextMonth.endDate),
 
         // Unreviewed salesman flags
         supabase
@@ -277,6 +295,7 @@ export default function CoverageConsole() {
 
     const {
       deals,
+      users,
       targets,
       deals3m,
       opps,
@@ -293,25 +312,44 @@ export default function CoverageConsole() {
     ).getDate();
     const elapsed = now.getDate() / totalDays;
 
-    // Target — total_value rows only
-    const myTargets = (targets || []).filter(
-      (t) => userIds.includes(t.assigned_to) && t.target_type === "total_value"
+    // Every KPI below is measured over CONTRIBUTORS (salesmen + supervisors),
+    // never over the raw id set. A manager carries no monthly quota — counting
+    // his deals while ignoring his (non-existent) target skewed the team's win
+    // rate, and his future orders offset a target he never contributed to.
+    // Same rule as utils/planningCalculations.js, so the console, Planning and
+    // the dashboards now agree.
+    const contributorIds = userIds.filter((id) => {
+      const u = (users || []).find((x) => x.id === id);
+      return u && CONTRIBUTOR_ROLES.includes(u.role);
+    });
+
+    // ── TARGET ── shared per-person rule: total_value when present, else the
+    // by_clients rows, never both, and by_products never counts. The old filter
+    // kept total_value rows ONLY, which dropped anyone who recorded their month
+    // as by_clients entirely.
+    const targetPer = targetPerPerson(
+      (targets || []).filter((t) => contributorIds.includes(t.assigned_to))
     );
-    const target = myTargets.reduce((sum, t) => sum + (t.target_amount || 0), 0);
+    const target = Object.values(targetPer).reduce((sum, v) => sum + v, 0);
 
-    // Win rate — trailing 3 months, falling back to company rate
-    const my3m = (deals3m || []).filter((d) => userIds.includes(d.owner_id));
-    const won3m = my3m.filter((d) => d.stage === "won").length;
-    const companyWR = (() => {
-      const w = (deals3m || []).filter((d) => d.stage === "won").length;
-      return (deals3m || []).length > 0 ? w / (deals3m || []).length : 0.472;
-    })();
-    const winRate = my3m.length > 0 ? won3m / my3m.length : companyWR;
+    // ── WIN RATE ── trailing 3 months over contributors; a node with no deals
+    // in the window borrows the company's contributor rate rather than the
+    // hardcoded 0.472 that used to sit here.
+    const companyContributorIds = (users || [])
+      .filter((u) => CONTRIBUTOR_ROLES.includes(u.role))
+      .map((u) => u.id);
+    const mine = winRateFromDeals({ deals: deals3m, ownerIds: contributorIds });
+    const companyWide = winRateFromDeals({
+      deals: deals3m,
+      ownerIds: companyContributorIds,
+    });
+    const winRatePct = mine.total > 0 ? mine.winRatePct : companyWide.winRatePct;
+    const winRate = winRatePct / 100; // this file weights in fractions
 
-    // Invoiced (achieved)
+    // ── INVOICED (achieved) ──
     const invoicedDeals = (deals || []).filter(
       (d) =>
-        userIds.includes(d.owner_id) &&
+        contributorIds.includes(d.owner_id) &&
         d.stage === "won" &&
         d.is_invoiced === true &&
         d.invoice_date >= monthStart &&
@@ -322,9 +360,11 @@ export default function CoverageConsole() {
       0
     );
 
-    // Open deals (funnel)
+    // ── FUNNEL ──
     const openDeals = (deals || []).filter(
-      (d) => userIds.includes(d.owner_id) && !["won", "lost"].includes(d.stage)
+      (d) =>
+        contributorIds.includes(d.owner_id) &&
+        !["won", "lost"].includes(d.stage)
     );
     const funnel = openDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
     const weightedFunnel = openDeals.reduce(
@@ -332,25 +372,34 @@ export default function CoverageConsole() {
       0
     );
 
-    // Planning
-    const myOpps = (opps || []).filter((o) => userIds.includes(o.owner_id));
-    const planning = myOpps.reduce((sum, o) => sum + (o.planned_amount || 0), 0);
+    // ── PLANNING ──
+    const planningSum = sumPlannedByOwner({
+      rows: opps,
+      ownerIds: contributorIds,
+    });
+    const planning = planningSum.total;
     const weightedPlanning = planning * winRate;
 
-    // Coverage
+    // ── COVERAGE ──
     const coverage = invoiced + weightedFunnel + weightedPlanning;
 
-    // Required plan
-    const requiredPlan = winRate > 0 ? target / winRate : 0;
+    // ── REQUIRED PLAN ── shared rule: with no win rate at all, assume 50%
+    // (target x 2). This used to return 0, which reported "no plan needed"
+    // for a team that simply had no closed deals yet.
+    const requiredPlan = computeRequiredRaw({ target, winRatePct });
 
-    // Future orders carry-in
-    const future = (futureOrders || [])
-      .filter((o) => userIds.includes(o.owner_id))
-      .reduce((sum, o) => sum + (o.planned_amount || 0), 0);
+    // ── CARRY-IN ── next month's committed orders, contributors only.
+    const future = sumPlannedByOwner({
+      rows: futureOrders,
+      ownerIds: contributorIds,
+    }).total;
 
-    // Planned gap
-    const adjustedRequired = Math.max(0, requiredPlan - future);
-    const plannedGap = Math.max(0, adjustedRequired - planning);
+    // ── PLANNED GAP ──
+    const { required: adjustedRequired, plannedGap } = computePlannedGap({
+      requiredRaw: requiredPlan,
+      carryIn: future,
+      planned: planning,
+    });
 
     return {
       target,
@@ -362,10 +411,12 @@ export default function CoverageConsole() {
       coverage,
       winRate,
       requiredPlan,
+      adjustedRequired,
       future,
       plannedGap,
       openDeals,
       invoicedDeals,
+      contributorIds,
       coverageOk: coverage >= target,
       pacingOk: invoiced / Math.max(target, 1) >= elapsed - 0.15,
       pace: invoiced / Math.max(target, 1),
