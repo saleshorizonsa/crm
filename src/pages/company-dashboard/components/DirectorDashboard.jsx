@@ -26,6 +26,10 @@ import MonthlyTargetCard from "../../../components/MonthlyTargetCard";
 import SalesTargetAssignment from "../../../components/SalesTargetAssignment";
 import DirectorSalesTargetAssignment from "../../../components/DirectorSalesTargetAssignment";
 import SalesTargetTable from "../../../components/SalesTargetTable";
+import {
+  CONTRIBUTOR_ROLES,
+  targetPerPerson,
+} from "../../../utils/planningCalculations";
 
 // New enhanced components
 import PipelineChart from "./PipelineChart";
@@ -1439,18 +1443,24 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         let remainingRevenue = 0;
 
         if (targets && targets.length > 0) {
-          // Filter targets based on selected period - only consider monthly targets
+          // Monthly target rows whose period brackets today, for contributors.
           const now = new Date();
           const activeTargets = targets.filter((target) => {
             if ((target.period_type || "monthly") !== "monthly") return false;
+            if ((target.status || "active") !== "active") return false;
+            if (!CONTRIBUTOR_ROLES.includes(target.assignee?.role)) return false;
             const start = new Date(target.period_start);
             const end = new Date(target.period_end);
             return start <= now && end >= now;
           });
 
-          totalTargetAmount = activeTargets.reduce((sum, t) => {
-            return sum + (parseFloat(t.target_amount) || 0);
-          }, 0);
+          // Shared rule, not a raw sum. The raw sum added a by_products row into
+          // this card (750,000 too high) and would double-count anyone holding
+          // both a total_value and a by_clients row for the same month, since
+          // those are two views of ONE goal.
+          totalTargetAmount = Object.values(
+            targetPerPerson(activeTargets),
+          ).reduce((sum, v) => sum + v, 0);
 
           remainingRevenue = Math.max(0, totalTargetAmount - totalRevenue);
         }
@@ -1754,25 +1764,27 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                 : amount);
             }, 0);
 
-            // Target achievement from actual revenue vs targets. Group by person
-            // and use their total_value target when present, otherwise the sum of
-            // their by_clients rows (same rule as the KPI Target card, so both
-            // include salesmen AND supervisors and never double-count one goal).
+            // Target achievement from actual revenue vs targets, using the one
+            // shared rule in utils/planningCalculations.js: per person, per month,
+            // total_value when present else by_clients, and by_products never
+            // counts. The copy that used to live here summed by_products into
+            // total_value (a phantom 750,000 on this card) and chose the view
+            // once across the whole range, which dropped any month a person had
+            // recorded in the other style.
             let targetAchievement = 0;
             let totalTargetAmount = 0;
             if (filteredTargets.length > 0) {
-              const split = {};
-              filteredTargets.forEach((t) => {
-                const k = t.assigned_to || t.id;
-                if (!split[k]) split[k] = { total_value: 0, by_clients: 0 };
-                const amt = parseFloat(t.target_amount) || 0;
-                if (t.target_type === "by_clients") split[k].by_clients += amt;
-                else split[k].total_value += amt;
-              });
-              totalTargetAmount = Object.values(split).reduce(
-                (s, v) => s + (v.total_value > 0 ? v.total_value : v.by_clients),
-                0,
+              const roleById = new Map(
+                (users || []).map((u) => [u.id, u.role]),
               );
+              const countableTargets = filteredTargets.filter((t) => {
+                if ((t.status || "active") !== "active") return false;
+                const r = roleById.get(t.assigned_to) || t.assignee?.role;
+                return CONTRIBUTOR_ROLES.includes(r);
+              });
+              totalTargetAmount = Object.values(
+                targetPerPerson(countableTargets),
+              ).reduce((sum, v) => sum + v, 0);
               if (totalTargetAmount > 0) {
                 targetAchievement = (totalRevenue / totalTargetAmount) * 100;
               }

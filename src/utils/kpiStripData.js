@@ -1,13 +1,20 @@
 import { supabase } from 'lib/supabase';
+import {
+  CONTRIBUTOR_ROLES,
+  fetchMonthlyTargets,
+  targetPerPerson,
+  computeAnnualTarget,
+  computeRequiredRaw,
+  computeCarryIn,
+  computePlannedGap,
+} from 'utils/planningCalculations';
 
 // TEMP: set true to re-enable the KPI diagnostic logs (see end of the function).
 const KPI_DEBUG = false;
 
-// The KPI strip aggregates over individual contributors: salesmen AND supervisors
-// (supervisors carry their own monthly quotas and sell, so their targets/achieved
-// count). Managers are excluded — their target is a YEARLY team roll-up that would
-// dwarf and double-count the monthly quotas.
-const CONTRIBUTOR_ROLES = ['salesman', 'supervisor'];
+// CONTRIBUTOR_ROLES, and the target/carry-in/required/gap rules, now live in
+// utils/planningCalculations.js so Planning, Coverage Console and the
+// dashboards cannot drift apart again.
 
 const EMPTY_TOTALS = {
   target: 0, achieved: 0, deficit: 0,
@@ -25,16 +32,6 @@ function monthBounds() {
     startDate: `${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, '0')}-01`,
     endDate: new Date(n.getFullYear(), n.getMonth() + 1, 0).toISOString().split('T')[0],
   };
-}
-
-// First/last day of the NEXT calendar month as yyyy-MM-dd (built from local date
-// parts to avoid a timezone shift). Used for future-order carryover.
-function nextMonthBounds() {
-  const n = new Date();
-  const start = new Date(n.getFullYear(), n.getMonth() + 1, 1);
-  const end = new Date(n.getFullYear(), n.getMonth() + 2, 0);
-  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return { startDate: fmt(start), endDate: fmt(end) };
 }
 
 // The 3 completed calendar months before the current one (current month excluded).
@@ -92,75 +89,21 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   //     a `total_value` (overall) target and/or `by_clients` targets — the overall
   //     value is the manager-set goal, so: use total_value when present, otherwise
   //     sum the by_clients rows (never mix the two — they're two views of one goal).
-  const { data: targets } = await supabase
-    .from('sales_targets')
-    .select('target_amount, assigned_to, target_type, period_start')
-    .eq('company_id', companyId)
-    .eq('status', 'active')
-    .eq('period_type', 'monthly')
-    .in('assigned_to', scopeIds)
-    .lte('period_start', winEnd)
-    .gte('period_end', winStart);
-  // uid → month → { total_value, by_clients, breakdown }. Bucketing by MONTH
-  // matters: the total_value-else-by_clients choice has to be made per month.
-  // Made once per person across a multi-month range, a month recorded in the
-  // other style is silently dropped — Shaikh Osman books by_clients in July
-  // and total_value in Aug/Sep, so his July target vanished from Q3.
-  const targetSplit = {};
-  (targets || []).forEach((t) => {
-    const k = t.assigned_to;
-    const m = t.period_start || 'unknown';
-    if (!targetSplit[k]) targetSplit[k] = {};
-    if (!targetSplit[k][m]) targetSplit[k][m] = { total_value: 0, by_clients: 0, breakdown: 0 };
-    const amt = parseFloat(t.target_amount) || 0;
-    if (t.target_type === 'total_value') targetSplit[k][m].total_value += amt;
-    else if (t.target_type === 'by_clients') targetSplit[k][m].by_clients += amt;
-    // by_products (and any future breakdown dimension) is a VIEW of a goal, not
-    // an extra goal. It previously fell into the total_value bucket via an else,
-    // which added a phantom 750,000 to one salesman and to every roll-up above
-    // him. It is kept separate here and never reaches the Target card.
-    else targetSplit[k][m].breakdown += amt;
+  const targetRows = await fetchMonthlyTargets({
+    companyId, contributorIds: scopeIds, start: winStart, end: winEnd,
   });
-  const targetPer = {};
-  Object.entries(targetSplit).forEach(([k, months]) => {
-    targetPer[k] = Object.values(months).reduce(
-      (sum, v) => sum + (v.total_value > 0 ? v.total_value : v.by_clients),
-      0,
-    );
-  });
-
+  const targetPer = targetPerPerson(targetRows);
   // 2b. Annual view → prefer an explicit YEARLY target for this scope (the company
   //     yearly for a director; a manager/supervisor's own if assigned); otherwise
   //     annualize the monthly quotas (×12) — e.g. a salesman with no yearly target.
   let annualTargetTotal = null;
   if (range?.isAnnual) {
-    const y = new Date().getFullYear();
-    let yq = supabase
-      .from('sales_targets')
-      .select('target_amount, assigned_to, target_type')
-      .eq('company_id', companyId)
-      .eq('period_type', 'yearly')
-      .eq('status', 'active')
-      .eq('target_type', 'total_value')
-      .gte('period_start', `${y}-01-01`)
-      .lte('period_end', `${y}-12-31`);
-    if (Array.isArray(ownerIds)) yq = yq.in('assigned_to', ownerIds);
-    const { data: yt } = await yq;
-    // MAX per person, then sum: a revised annual target is a replacement, not
-    // an addition, so two rows for one person must not double-count.
-    const yearlyPer = {};
-    (yt || []).forEach((t) => {
-      const amt = parseFloat(t.target_amount) || 0;
-      yearlyPer[t.assigned_to] = Math.max(yearlyPer[t.assigned_to] || 0, amt);
+    annualTargetTotal = await computeAnnualTarget({
+      companyId,
+      ownerIds,
+      monthlyTotal: Object.values(targetPer).reduce((sum, v) => sum + v, 0),
     });
-    const yearlySum = Object.values(yearlyPer).reduce((s, v) => s + v, 0);
-    // Fallback when nobody in scope holds an annual target: the year-to-date
-    // monthly sum already computed above. (It used to be monthlySum × 12,
-    // which invented targets for months that have not happened.)
-    const monthlySum = Object.values(targetPer).reduce((s, v) => s + v, 0);
-    annualTargetTotal = yearlySum > 0 ? yearlySum : monthlySum;
   }
-
   // 3. Achieved — INVOICED won deals for this month (by invoice_date). Achievement
   //    is only counted once a deal is invoiced, not merely won/closed (director rule).
   const { data: wonDeals } = await supabase
@@ -258,20 +201,9 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   // 7. Future-order carryover — pending future orders for NEXT month count toward
   //    the required plan (customers already committed), reducing the new pipeline
   //    still needed. Only 'pending' orders (moved ones are already in the plan).
-  const nmb = nextMonthBounds();
-  const { data: futureOrders } = await supabase
-    .from('future_orders')
-    .select('owner_id, planned_amount')
-    .eq('company_id', companyId)
-    .eq('status', 'pending')
-    .in('owner_id', scopeIds)
-    .gte('expected_month', nmb.startDate)
-    .lte('expected_month', nmb.endDate);
-  const carryPer = {};
-  (futureOrders || []).forEach((o) => {
-    carryPer[o.owner_id] = (carryPer[o.owner_id] || 0) + (parseFloat(o.planned_amount) || 0);
+  const { total: carryInTotal, perPerson: carryPer } = await computeCarryIn({
+    companyId, contributorIds: scopeIds,
   });
-
   const salesmanData = userList
     .map((u) => {
       const target = targetPer[u.id] || 0;
@@ -279,10 +211,11 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
       const deficit = Math.max(0, target - achieved);
       const { rate: winRate3m, isDefault: winRateIsDefault } = resolveWinRate(u.id);
       const planned = plannedPer[u.id] || 0;
-      const requiredRaw = winRate3m > 0 ? target / (winRate3m / 100) : target * 2;
+      const requiredRaw = computeRequiredRaw({ target, winRatePct: winRate3m });
       const futureCarryover = carryPer[u.id] || 0;
-      const required = Math.max(0, requiredRaw - futureCarryover);
-      const plannedGap = Math.max(0, required - planned);
+      const { required, plannedGap } = computePlannedGap({
+        requiredRaw, carryIn: futureCarryover, planned,
+      });
       return {
         id: u.id, full_name: u.full_name, role: u.role,
         target, achieved, deficit,
@@ -302,10 +235,11 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   const winRateIsDefault = total3 === 0;
   const winRate3m = companyWinRate3m;
   const planned = Object.values(plannedPer).reduce((s, v) => s + v, 0);
-  const requiredRaw = winRate3m > 0 ? target / (winRate3m / 100) : target * 2;
-  const futureCarryover = Object.values(carryPer).reduce((s, v) => s + v, 0);
-  const required = Math.max(0, requiredRaw - futureCarryover);
-  const plannedGap = Math.max(0, required - planned);
+  const requiredRaw = computeRequiredRaw({ target, winRatePct: winRate3m });
+  const futureCarryover = carryInTotal;
+  const { required, plannedGap } = computePlannedGap({
+    requiredRaw, carryIn: futureCarryover, planned,
+  });
   const attainmentPct = target > 0 ? (achieved / target) * 100 : 0;
 
   // Coverage check: Achieved + (Funnel × WinRate) + (Planning × WinRate) ≥ Target.
@@ -364,16 +298,19 @@ export async function computeDirectorAnnual({ companyId }) {
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
 
-  // Annual target = sum of the company's yearly targets for this year (the
-  // management target the director is measured against, e.g. 40,660,778 SAR).
-  const { data: targets } = await supabase
-    .from('sales_targets')
-    .select('target_amount')
-    .eq('company_id', companyId)
-    .eq('period_type', 'yearly')
-    .gte('period_start', yearStart)
-    .lte('period_end', yearEnd);
-  const target = (targets || []).reduce((s, t) => s + (parseFloat(t.target_amount) || 0), 0);
+  // Annual target = the company's yearly targets for this year (the management
+  // target the director is measured against, e.g. 40,660,779 SAR).
+  //
+  // Delegated to computeAnnualTarget() so this card obeys the same rules as
+  // every other Target in the app: active rows only, total_value only, and MAX
+  // per person rather than a sum — a revised yearly target REPLACES the old
+  // one, and summing both silently doubled the director's annual target.
+  // ownerIds = null: the whole company, which is what a director is measured on.
+  const target = await computeAnnualTarget({
+    companyId,
+    ownerIds: null,
+    monthlyTotal: 0,
+  });
 
   // YTD achieved = invoiced won deals this calendar year (final value where set).
   const { data: won } = await supabase

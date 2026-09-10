@@ -49,6 +49,7 @@ import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
+import { targetPerPerson } from "../../../utils/planningCalculations";
 import TargetChangeBanner from "../../../components/dashboard/TargetChangeBanner";
 import LogActivityModal from '../../../components/LogActivityModal';
 
@@ -547,11 +548,16 @@ const EnhancedSalesmanDashboard = ({
       0,
     );
 
-    // Calculate target amount: sum all filtered targets
-    const targetAmount = filteredMyTargets.reduce(
-      (sum, target) => sum + (parseFloat(target.target_amount) || 0),
-      0,
-    );
+    // Calculate target amount using the one shared rule: per month, this
+    // salesman's total_value target when present, else his by_clients rows,
+    // and never by_products. Summing every row raw (what this did) counted a
+    // by_products row as a real goal and would double-count a month recorded
+    // in both views.
+    const targetAmount = Object.values(
+      targetPerPerson(
+        filteredMyTargets.filter((t) => (t.status || "active") === "active"),
+      ),
+    ).reduce((sum, v) => sum + v, 0);
 
     // Calculate days based on selected filters
     let periodStart, periodEnd, totalDays, daysGone;
