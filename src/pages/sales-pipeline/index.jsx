@@ -506,8 +506,10 @@ const SalesPipeline = () => {
 
         if (actingForOwner) {
           // Best-effort: an audit entry or notification must never fail the save.
+          // createActivity() also RETURNS { error } instead of throwing — same
+          // trap as the notification insert below. Check it explicitly.
           try {
-            await activityService.createActivity({
+            const { error: auditErr } = await activityService.createActivity({
               type: "note",
               title: stageChanged
                 ? `Stage changed to ${data.stage} by ${actorName} (${actorRole})`
@@ -520,12 +522,23 @@ const SalesPipeline = () => {
               contact_id: data.contact_id,
               owner_id: userProfile?.id,
             });
-          } catch (auditErr) {
-            console.error("Audit activity failed (non-fatal):", auditErr);
+            if (auditErr) {
+              console.error(
+                "Audit activity failed (non-fatal):",
+                auditErr.code, auditErr.message, auditErr.details, auditErr.hint,
+              );
+            }
+          } catch (auditThrown) {
+            console.error("Audit activity threw (non-fatal):", auditThrown);
           }
 
+          // supabase-js RETURNS { error } rather than throwing on a database or
+          // RLS rejection, so a try/catch alone silently swallows the failure —
+          // which is exactly what happened on the first live test: the audit
+          // entry landed, no notification row appeared, and the console showed
+          // nothing at all. The returned error must be inspected explicitly.
           try {
-            await supabase.from("notifications").insert({
+            const { error: notifyErr } = await supabase.from("notifications").insert({
               user_id: trueOwnerId,
               company_id: company.id,
               type: "deal_changed",
@@ -543,8 +556,14 @@ const SalesPipeline = () => {
                 to_stage: stageChanged ? data.stage : null,
               },
             });
-          } catch (notifyErr) {
-            console.error("Owner notification failed (non-fatal):", notifyErr);
+            if (notifyErr) {
+              console.error(
+                "Owner notification failed (non-fatal):",
+                notifyErr.code, notifyErr.message, notifyErr.details, notifyErr.hint,
+              );
+            }
+          } catch (notifyThrown) {
+            console.error("Owner notification threw (non-fatal):", notifyThrown);
           }
         }
 
