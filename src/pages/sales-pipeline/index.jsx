@@ -437,16 +437,42 @@ const SalesPipeline = () => {
 
   const handleDealSave = async (dealData) => {
     try {
-      const payload = {
-        ...dealData,
-        company_id: company.id,
-        // Set owner_id to current user if not provided
-        owner_id: dealData.owner_id || userProfile?.id,
-      };
+      // CREATE and EDIT take deliberately different routes.
+      //
+      // EDIT is a real UPDATE. It used to be an upsert, which Postgres runs as
+      // INSERT ... ON CONFLICT DO UPDATE — and an INSERT policy's WITH CHECK is
+      // evaluated against the CANDIDATE row, before conflict resolution. The
+      // deals INSERT policy is
+      //   owner_id = auth.uid() OR can_manage_user_contacts(auth.uid(), owner_id)
+      // so once DealModal stopped sending owner_id on edit (so an edit could not
+      // silently steal ownership), the candidate row's owner_id was NULL, that
+      // check failed for EVERY user, and all deal saves broke in production.
+      //
+      // A plain UPDATE evaluates only the UPDATE policy, against the EXISTING
+      // row — whose owner_id is unchanged and already passes, including the
+      // hierarchy branch that lets a manager edit a team member's deal. So the
+      // row is never a candidate for INSERT and the whole failure mode is gone,
+      // rather than being worked around by re-sending owner_id.
+      //
+      // updateDeal() is also simply the better fit: it stamps stage_changed_at
+      // only on a real stage change, recomputes the forecast only when stage or
+      // amount moves, records deal_stage_history (upsertDeal never did), and
+      // leaves closed_at alone instead of nulling it on every edit of an open
+      // deal. Same joined shape back, so callers below are unaffected.
+      let data, error;
 
-      console.log("Saving deal with payload:", payload);
-
-      const { data, error } = await dealService.upsertDeal(payload);
+      if (selectedDeal?.id) {
+        // owner_id and id are never part of an update: id addresses the row, and
+        // ownership changes only through an explicit reassignment action.
+        const { id: _id, owner_id: _ownerId, ...updates } = dealData;
+        ({ data, error } = await dealService.updateDeal(selectedDeal.id, updates));
+      } else {
+        ({ data, error } = await dealService.upsertDeal({
+          ...dealData,
+          company_id: company.id,
+          owner_id: dealData.owner_id || userProfile?.id,
+        }));
+      }
 
       if (error) {
         console.error("Deal save error:", error);
@@ -456,8 +482,91 @@ const SalesPipeline = () => {
       if (selectedDeal) {
         setDeals(deals.map((d) => (d.id === data.id ? data : d)));
 
+        // Someone editing a deal they do not own — a manager or supervisor acting
+        // for a team member. The owner must be able to see that it happened and
+        // who did it, so the change never looks like their own. Checked on EVERY
+        // edit, not only stage moves: the ownership bug this accompanies was
+        // triggered by any save at all, and a silent amount or close-date change
+        // on someone's deal deserves the same visibility.
+        //
+        // Distinct from the role-based notification updateDeal() already sends,
+        // which travels UP the hierarchy to supervisors; this one goes DOWN to
+        // the deal's owner. Different audiences, not a duplicate.
+        const trueOwnerId = data.owner_id || selectedDeal.owner_id;
+        const actingForOwner = Boolean(trueOwnerId) && trueOwnerId !== userProfile?.id;
+        const actorName = userProfile?.full_name || "A manager";
+        const actorRole = userProfile?.role
+          ? userProfile.role.charAt(0).toUpperCase() + userProfile.role.slice(1)
+          : "Manager";
+        const dealLabel =
+          data.title || data.contact?.company_name || selectedDeal.title || "a deal";
+
         // Log activity for deal update
         const stageChanged = selectedDeal.stage !== data.stage;
+
+        if (actingForOwner) {
+          // Best-effort: an audit entry or notification must never fail the save.
+          // createActivity() also RETURNS { error } instead of throwing — same
+          // trap as the notification insert below. Check it explicitly.
+          try {
+            const { error: auditErr } = await activityService.createActivity({
+              type: "note",
+              title: stageChanged
+                ? `Stage changed to ${data.stage} by ${actorName} (${actorRole})`
+                : `Deal updated by ${actorName} (${actorRole})`,
+              description: stageChanged
+                ? `${actorName} (${actorRole}) moved "${dealLabel}" from ${selectedDeal.stage} to ${data.stage} on behalf of the deal owner.`
+                : `${actorName} (${actorRole}) edited "${dealLabel}" on behalf of the deal owner.`,
+              company_id: company.id,
+              deal_id: data.id,
+              contact_id: data.contact_id,
+              owner_id: userProfile?.id,
+            });
+            if (auditErr) {
+              console.error(
+                "Audit activity failed (non-fatal):",
+                auditErr.code, auditErr.message, auditErr.details, auditErr.hint,
+              );
+            }
+          } catch (auditThrown) {
+            console.error("Audit activity threw (non-fatal):", auditThrown);
+          }
+
+          // supabase-js RETURNS { error } rather than throwing on a database or
+          // RLS rejection, so a try/catch alone silently swallows the failure —
+          // which is exactly what happened on the first live test: the audit
+          // entry landed, no notification row appeared, and the console showed
+          // nothing at all. The returned error must be inspected explicitly.
+          try {
+            const { error: notifyErr } = await supabase.from("notifications").insert({
+              user_id: trueOwnerId,
+              company_id: company.id,
+              type: "deal_changed",
+              title: "📋 Your Deal Was Updated by Your Manager",
+              message: stageChanged
+                ? `${actorName} moved "${dealLabel}" to ${data.stage} on your behalf.`
+                : `${actorName} updated "${dealLabel}" on your behalf.`,
+              is_read: false,
+              metadata: {
+                deal_id: data.id,
+                actor_id: userProfile?.id,
+                actor_name: actorName,
+                actor_role: userProfile?.role || null,
+                from_stage: stageChanged ? selectedDeal.stage : null,
+                to_stage: stageChanged ? data.stage : null,
+              },
+            });
+            if (notifyErr) {
+              console.error(
+                "Owner notification failed (non-fatal):",
+                notifyErr.code, notifyErr.message, notifyErr.details, notifyErr.hint,
+              );
+            }
+          } catch (notifyThrown) {
+            console.error("Owner notification threw (non-fatal):", notifyThrown);
+          }
+        }
+
         if (stageChanged) {
           // Log stage change activity
           await activityService.createActivity({
