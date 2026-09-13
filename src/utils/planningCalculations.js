@@ -138,7 +138,36 @@ export async function fetchMonthlyTargets({ companyId, contributorIds, start, en
  */
 export async function computeAnnualTarget({ companyId, ownerIds, monthlyTotal }) {
   const y = new Date().getFullYear();
-  let q = supabase
+
+  // The scope is resolved to ACTIVE users FIRST, always — including the
+  // whole-company path. This previously applied `.in('assigned_to', ownerIds)`
+  // only when ownerIds was an array, so a director's annual view (ownerIds =
+  // null) read every yearly row in the company with no filter at all, and a
+  // deactivated person's annual target would keep inflating the company number
+  // indefinitely.
+  //
+  // Scoped to active users of ANY role, deliberately NOT to CONTRIBUTOR_ROLES,
+  // which is the one place in this file that narrowing would be wrong. The
+  // annual target IS the manager's yearly team roll-up — that is exactly what
+  // the comment at the top of this file describes managers as carrying, and
+  // what this function exists to read. Narrowing to salesman/supervisor would
+  // discard it: the only yearly total_value row in this database belongs to a
+  // manager, so the company annual target would collapse from 40,660,778.80 to
+  // the monthly fallback. Excluding deactivated users is the fix here;
+  // excluding managers would be a different, and incorrect, change.
+  const { data: activeUsers, error: usersErr } = await supabase
+    .from('users')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('is_active', true);
+  if (usersErr) { console.error('computeAnnualTarget (users):', usersErr); return monthlyTotal; }
+
+  let scopeIds = (activeUsers || []).map((u) => u.id);
+  // An explicit scope narrows further; it never widens past the active set.
+  if (Array.isArray(ownerIds)) scopeIds = scopeIds.filter((id) => ownerIds.includes(id));
+  if (!scopeIds.length) return monthlyTotal;
+
+  const { data, error } = await supabase
     .from('sales_targets')
     .select('target_amount, assigned_to, target_type')
     .eq('company_id', companyId)
@@ -146,9 +175,8 @@ export async function computeAnnualTarget({ companyId, ownerIds, monthlyTotal })
     .eq('status', 'active')
     .eq('target_type', 'total_value')
     .gte('period_start', `${y}-01-01`)
-    .lte('period_end', `${y}-12-31`);
-  if (Array.isArray(ownerIds)) q = q.in('assigned_to', ownerIds);
-  const { data, error } = await q;
+    .lte('period_end', `${y}-12-31`)
+    .in('assigned_to', scopeIds);
   if (error) { console.error('computeAnnualTarget:', error); return monthlyTotal; }
 
   const per = {};
