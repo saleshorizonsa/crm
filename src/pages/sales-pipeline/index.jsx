@@ -437,11 +437,15 @@ const SalesPipeline = () => {
 
   const handleDealSave = async (dealData) => {
     try {
+      // DealModal decides ownership and it is the only authority on it: it sends
+      // owner_id on CREATE and deliberately omits the key on EDIT so the stored
+      // owner is untouched. Re-adding a `|| userProfile?.id` fallback here would
+      // put the editing user's id back onto every edit and reintroduce the
+      // silent-transfer bug — the old fallback is exactly what masked it, since
+      // the incoming value was already wrong and the `||` never fired.
       const payload = {
         ...dealData,
         company_id: company.id,
-        // Set owner_id to current user if not provided
-        owner_id: dealData.owner_id || userProfile?.id,
       };
 
       console.log("Saving deal with payload:", payload);
@@ -456,8 +460,68 @@ const SalesPipeline = () => {
       if (selectedDeal) {
         setDeals(deals.map((d) => (d.id === data.id ? data : d)));
 
+        // Someone editing a deal they do not own — a manager or supervisor
+        // acting for a team member. The owner must be able to see that it
+        // happened and who did it, so the change never looks like their own.
+        // Checked on EVERY edit, not only stage moves: the ownership bug this
+        // replaced was triggered by any save at all, and a silent amount or
+        // close-date edit on someone's deal deserves the same visibility.
+        const trueOwnerId = data.owner_id || selectedDeal.owner_id;
+        const actingForOwner = Boolean(trueOwnerId) && trueOwnerId !== userProfile?.id;
+        const actorName = userProfile?.full_name || "A manager";
+        const actorRole = userProfile?.role
+          ? userProfile.role.charAt(0).toUpperCase() + userProfile.role.slice(1)
+          : "Manager";
+        const dealLabel =
+          data.title || data.contact?.company_name || selectedDeal.title || "a deal";
+
         // Log activity for deal update
         const stageChanged = selectedDeal.stage !== data.stage;
+
+        if (actingForOwner) {
+          // Best-effort: an audit entry or notification must never fail the save.
+          try {
+            await activityService.createActivity({
+              type: "note",
+              title: stageChanged
+                ? `Stage changed to ${data.stage} by ${actorName} (${actorRole})`
+                : `Deal updated by ${actorName} (${actorRole})`,
+              description: stageChanged
+                ? `${actorName} (${actorRole}) moved "${dealLabel}" from ${selectedDeal.stage} to ${data.stage} on behalf of the deal owner.`
+                : `${actorName} (${actorRole}) edited "${dealLabel}" on behalf of the deal owner.`,
+              company_id: company.id,
+              deal_id: data.id,
+              contact_id: data.contact_id,
+              owner_id: userProfile?.id,
+            });
+          } catch (auditErr) {
+            console.error("Audit activity failed (non-fatal):", auditErr);
+          }
+
+          try {
+            await supabase.from("notifications").insert({
+              user_id: trueOwnerId,
+              company_id: company.id,
+              type: "deal_changed",
+              title: "📋 Your Deal Was Updated by Your Manager",
+              message: stageChanged
+                ? `${actorName} moved "${dealLabel}" to ${data.stage} on your behalf.`
+                : `${actorName} updated "${dealLabel}" on your behalf.`,
+              is_read: false,
+              metadata: {
+                deal_id: data.id,
+                actor_id: userProfile?.id,
+                actor_name: actorName,
+                actor_role: userProfile?.role || null,
+                from_stage: stageChanged ? selectedDeal.stage : null,
+                to_stage: stageChanged ? data.stage : null,
+              },
+            });
+          } catch (notifyErr) {
+            console.error("Owner notification failed (non-fatal):", notifyErr);
+          }
+        }
+
         if (stageChanged) {
           // Log stage change activity
           await activityService.createActivity({

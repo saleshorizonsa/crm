@@ -1125,8 +1125,17 @@ const DealModal = ({
       const isNewWin = dealData.stage === "won" && (!deal || deal.stage !== "won");
       if (isNewWin && savedDeal) {
         try {
-          const targetUserId = savedDeal.owner_id || user?.id;
+          // Credit the DEAL'S OWNER, never the person who happened to close it.
+          // The old `|| user?.id` fallback meant a manager closing a salesman's
+          // deal moved the revenue onto his own target — and once the save had
+          // already rewritten owner_id to the manager, the fallback was not even
+          // reached: savedDeal.owner_id WAS the manager. With ownership now
+          // preserved on edit, this reads the true owner, so no fallback is
+          // wanted: if a deal somehow has no owner, credit nobody rather than
+          // silently crediting whoever clicked.
+          const targetUserId = savedDeal.owner_id;
           const companyId = savedDeal.company_id || company?.id;
+          if (!targetUserId) throw new Error('Deal has no owner; skipping target credit.');
           const { data: targets } = await salesTargetService.getMyTargets(companyId, targetUserId);
           const closeDate = savedDeal.closed_at
             ? new Date(savedDeal.closed_at)
@@ -1175,11 +1184,25 @@ const DealModal = ({
     if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
     setErrors({});
 
+    // Ownership is decided by WHICH ACTION this is, never by who is sitting in
+    // front of the screen:
+    //
+    //   CREATE — the creator becomes the owner.
+    //   EDIT   — `owner_id` is omitted from the payload ENTIRELY, so the stored
+    //            value is never touched, whoever is editing.
+    //
+    // This used to read `owner_id: user?.id` unconditionally on both paths.
+    // `formData` carries no owner_id (the deal's real owner was never loaded
+    // into form state), so every save by a manager on a team member's deal
+    // silently transferred that deal to the manager — 10 deals, ~1.42M SAR,
+    // had already moved this way. It is written as an explicit branch rather
+    // than a `?? deal.owner_id` fallback so that an edit payload provably
+    // cannot carry the key at all: a fallback is what hid this for months.
+    const isEdit = Boolean(deal?.id);
     const dealData = {
       ...formData,
-      ...(deal?.id && { id: deal.id }),
+      ...(isEdit ? { id: deal.id } : { owner_id: user?.id }),
       amount:     parseFloat(formData.amount) || 0,
-      owner_id:   user?.id,
       currency:   preferredCurrency,
       contact_id: formData.contact_id || null,
       // Expected close date is optional — send null (not "") so a blank value
