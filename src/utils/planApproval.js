@@ -41,11 +41,15 @@ function pickFallback(users) {
   return byRole('manager') || byRole('supervisor') || byRole('director') || byRole('head') || byRole('admin') || null;
 }
 
+// Only ACTIVE leads can be the fallback: a deactivated manager must never be
+// handed someone's plan to approve, because nobody would ever act on it and
+// assertCanDecide() would then reject every other user who tried.
 async function companyFallbackApprover(companyId) {
   const { data } = await supabase
     .from('users')
     .select('id, role')
     .eq('company_id', companyId)
+    .eq('is_active', true)
     .in('role', LEAD_ROLES);
   return pickFallback(data);
 }
@@ -58,11 +62,17 @@ export async function resolveApproverMap(companyId, ownerIds) {
   const { data: users } = await supabase
     .from('users')
     .select('id, role, reports_to')
-    .eq('company_id', companyId);
+    .eq('company_id', companyId)
+    .eq('is_active', true);
   const fallback = pickFallback(users);
+  // Only active users are fetched, so this set is the test for "is the manager
+  // this person reports to still active?". A reports_to pointing at someone
+  // deactivated resolves to the company fallback rather than to a person who
+  // can no longer act — otherwise their whole team's plans become unapprovable.
+  const activeIds = new Set((users || []).map((u) => u.id));
   for (const id of ownerIds) {
     const u = (users || []).find((x) => x.id === id);
-    map[id] = u?.reports_to || fallback;
+    map[id] = u?.reports_to && activeIds.has(u.reports_to) ? u.reports_to : fallback;
   }
   return map;
 }
@@ -93,7 +103,19 @@ export async function resolveApprover(companyId, ownerId) {
     .select('reports_to')
     .eq('id', ownerId)
     .maybeSingle();
-  if (me?.reports_to) return me.reports_to;
+  // The owner's own status is irrelevant — a deactivated person's already-filed
+  // plan still needs a reviewer. What matters is that the REVIEWER is active:
+  // returning a deactivated manager would leave the plan permanently stuck,
+  // since assertCanDecide() authorises only the resolved approver.
+  if (me?.reports_to) {
+    const { data: approver } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', me.reports_to)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (approver?.id) return approver.id;
+  }
   return companyFallbackApprover(companyId);
 }
 
@@ -105,7 +127,11 @@ export async function resolveApproverScope({ companyId, userId, role }) {
   if (!companyId || !userId) return [];
 
   if (DIRECTOR_ROLES.includes(role)) {
-    const { data } = await supabase.from('users').select('id').eq('company_id', companyId);
+    const { data } = await supabase
+      .from('users')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('is_active', true);
     return (data || []).map((u) => u.id);
   }
   if (!TEAM_ROLES.includes(role)) return [];
@@ -114,13 +140,25 @@ export async function resolveApproverScope({ companyId, userId, role }) {
   const ids = new Set(team.map((m) => m.id).filter(Boolean));
 
   if ((await companyFallbackApprover(companyId)) === userId) {
-    const { data: unassigned } = await supabase
+    // Everyone resolveApprover() hands to the fallback must appear here, or a
+    // plan gets routed to an approver whose queue never shows it. That is two
+    // groups, not one:
+    //   a) reports_to IS NULL      — never had a manager
+    //   b) reports_to points at a DEACTIVATED user — orphaned by a deactivation.
+    // Group (b) matters because fetchTeamHierarchy() walks active users only, so
+    // an orphan is unreachable from any manager's downline and would otherwise
+    // fall out of every queue in the company.
+    const { data: companyUsers } = await supabase
       .from('users')
-      .select('id')
-      .eq('company_id', companyId)
-      .is('reports_to', null)
-      .neq('id', userId);
-    (unassigned || []).forEach((u) => ids.add(u.id));
+      .select('id, reports_to, is_active')
+      .eq('company_id', companyId);
+    const activeIds = new Set(
+      (companyUsers || []).filter((u) => u.is_active).map((u) => u.id),
+    );
+    (companyUsers || [])
+      .filter((u) => u.id !== userId && u.is_active)
+      .filter((u) => !u.reports_to || !activeIds.has(u.reports_to))
+      .forEach((u) => ids.add(u.id));
   }
   return [...ids];
 }
