@@ -8,7 +8,7 @@ const DEAL_SELECT = `
   contact:contacts!contact_id(
     id, first_name, last_name, company_name
   ),
-  owner:users!owner_id(id, full_name),
+  owner:users!owner_id(id, full_name, is_active),
   deal_products(
     id, line_total, uom_value, unit_price,
     product:products(
@@ -17,20 +17,63 @@ const DEAL_SELECT = `
   )
 `;
 
+// Reports is a HISTORICAL view, so this scope deliberately differs from the
+// "current" team scopes in teamHierarchy.js / Coverage Console in two ways:
+//
+//   1. NO is_active filter. A deactivated former team member's deals are still
+//      part of what this manager's team actually did, so they must keep showing
+//      in their Reports page and in the By Salesman dropdown. Filtering here was
+//      also what made a deactivated user's whole subtree unreachable: with the
+//      middle node missing from the result set there was no edge left to walk
+//      through, so their reports vanished too even while active. Only "current
+//      period" screens (Coverage Console, Planning, Forecast, owner pickers)
+//      exclude inactive users.
+//
+//   2. It RECURSES. This was a single query for direct reports only, so a
+//      manager saw himself plus his supervisors and nothing beneath them —
+//      Mohamed Kamal's Reports covered 2 people out of an actual team of 7.
+//      Same downward walk as fetchTeamHierarchy() and the Coverage Console's
+//      subtreeOf(), and the same shape as the database's own recursive
+//      get_user_subordinates().
+//
+// Hierarchy is read from `supervisor_id`, NOT `reports_to`. That is deliberate:
+// every SECURITY DEFINER function behind RLS (can_user_access_data,
+// can_assign_target_to_user, can_manage_user_contacts, get_user_subordinates)
+// resolves the tree through supervisor_id, so reading anything else here would
+// let this scope disagree with what the database will actually return.
 async function getTeamUserIds(userId, role, companyId) {
   // head = company-wide access (scoped to their own company via companyId).
   if (['director', 'admin', 'ceo', 'head'].includes(role)) return null;
   if (role === 'salesman') return [userId];
 
-  // supervisor / manager / sales_manager → own team + self
-  const { data } = await supabase
+  // supervisor / manager / sales_manager → own team + self, all levels down.
+  // One fetch of the company then an in-memory walk, rather than a query per
+  // level: cheaper, and it keeps the traversal identical to the other two.
+  const { data: allUsers } = await supabase
     .from('users')
-    .select('id')
-    .eq('supervisor_id', userId)
-    .eq('company_id', companyId)
-    .eq('is_active', true);
+    .select('id, supervisor_id')
+    .eq('company_id', companyId);
 
-  return [userId, ...(data || []).map((u) => u.id)];
+  const childrenOf = new Map();
+  (allUsers || []).forEach((u) => {
+    if (!u.supervisor_id) return;
+    if (!childrenOf.has(u.supervisor_id)) childrenOf.set(u.supervisor_id, []);
+    childrenOf.get(u.supervisor_id).push(u.id);
+  });
+
+  const team = [userId];
+  const seen = new Set([userId]); // guards against a cyclic supervisor_id chain
+  const queue = [userId];
+  while (queue.length) {
+    for (const childId of childrenOf.get(queue.shift()) || []) {
+      if (seen.has(childId)) continue;
+      seen.add(childId);
+      team.push(childId);
+      queue.push(childId);
+    }
+  }
+
+  return team;
 }
 
 export function computeDateRange(period) {

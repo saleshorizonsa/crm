@@ -217,11 +217,20 @@ const ReportsPage = () => {
     }
   }, [deals]);
 
-  // Filter options derived from raw deals
+  // Filter options derived from the raw deals, not from a users query, so a
+  // deactivated owner still appears here and their history stays pullable —
+  // Reports is a historical view. Their name is suffixed "(Inactive)" so it is
+  // obvious they are no longer on the team; the suffix is display-only and
+  // never reaches the filter value, which stays the raw owner id.
   const salesmanOptions = useMemo(() => {
     const map = {};
-    deals.forEach(d => { const id = d.owner?.id; const name = d.owner?.full_name; if (id && name) map[id] = name; });
-    return Object.entries(map).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+    deals.forEach(d => {
+      const id = d.owner?.id; const name = d.owner?.full_name;
+      if (id && name) map[id] = { name, isActive: d.owner?.is_active !== false };
+    });
+    return Object.entries(map)
+      .map(([id, { name, isActive }]) => ({ id, name: isActive ? name : `${name} (Inactive)` }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [deals]);
 
   const { groups: materialGroupOptions } = useMaterialGroups();
