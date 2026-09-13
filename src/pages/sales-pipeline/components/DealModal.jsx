@@ -1125,8 +1125,15 @@ const DealModal = ({
       const isNewWin = dealData.stage === "won" && (!deal || deal.stage !== "won");
       if (isNewWin && savedDeal) {
         try {
-          const targetUserId = savedDeal.owner_id || user?.id;
+          // Credit the DEAL'S OWNER, never whoever happened to close it. The old
+          // `|| user?.id` fallback moved a salesman's revenue onto the closer's
+          // target — and once the save had already rewritten owner_id, it was not
+          // even reached: savedDeal.owner_id WAS the closer. Ownership now
+          // survives an edit, so this reads the true owner; with no owner, credit
+          // nobody rather than silently crediting whoever clicked.
+          const targetUserId = savedDeal.owner_id;
           const companyId = savedDeal.company_id || company?.id;
+          if (!targetUserId) throw new Error('Deal has no owner; skipping target credit.');
           const { data: targets } = await salesTargetService.getMyTargets(companyId, targetUserId);
           const closeDate = savedDeal.closed_at
             ? new Date(savedDeal.closed_at)
@@ -1175,11 +1182,29 @@ const DealModal = ({
     if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
     setErrors({});
 
+    // Ownership is decided by WHICH ACTION this is, never by who is at the screen:
+    //
+    //   CREATE — the creator becomes the owner.
+    //   EDIT   — `owner_id` is omitted ENTIRELY, so the stored value is never
+    //            touched, whoever is editing.
+    //
+    // This read `owner_id: user?.id` unconditionally on both paths. formData
+    // carries no owner_id (the real owner was never loaded into form state), so
+    // every save by a manager on a team member's deal transferred that deal to
+    // the manager — 10 deals, ~1.42M SAR, moved this way before it was caught.
+    //
+    // Omitting the key is only safe because handleDealSave() sends edits through
+    // a real UPDATE. Under the previous upsert it was NOT: an upsert runs as
+    // INSERT ... ON CONFLICT, whose INSERT policy WITH CHECK is evaluated against
+    // the candidate row, where the omitted owner_id is NULL — failing
+    // `owner_id = auth.uid() OR can_manage_user_contacts(auth.uid(), owner_id)`
+    // for EVERY user and blocking all deal saves in production. The two changes
+    // belong together; do not reintroduce an upsert on the edit path.
+    const isEdit = Boolean(deal?.id);
     const dealData = {
       ...formData,
-      ...(deal?.id && { id: deal.id }),
+      ...(isEdit ? { id: deal.id } : { owner_id: user?.id }),
       amount:     parseFloat(formData.amount) || 0,
-      owner_id:   user?.id,
       currency:   preferredCurrency,
       contact_id: formData.contact_id || null,
       // Expected close date is optional — send null (not "") so a blank value
