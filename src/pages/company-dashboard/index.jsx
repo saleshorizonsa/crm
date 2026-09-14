@@ -115,7 +115,7 @@ const CompanyDashboard = () => {
                   <span className="font-medium text-gray-700">{t("dashboard.viewing")}:</span>
                   <span>{periodLabel}</span>
                 </div>
-                <DateRangePicker onChange={setRange} />
+                <DateRangePicker range={dateRange} onChange={setRange} />
               </div>
 
               {/* Role-based Dashboard */}

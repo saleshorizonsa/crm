@@ -5,6 +5,7 @@ import { settingsService } from "../services/supabaseService";
 import { checkExpiredLeads } from "../utils/leadExpiryCheck";
 import { checkPlanDeadlines } from "../utils/deadlineCheck";
 import { checkForecastVariance } from "../utils/forecastVarianceCheck";
+import { clearSavedRanges } from "../utils/dateRangeStorage";
 
 const AuthContext = createContext({});
 
@@ -358,6 +359,12 @@ export const AuthProvider = ({ children }) => {
 
       // Only handle SIGNED_IN and SIGNED_OUT events
       if (event === "SIGNED_OUT") {
+        // Every sign-out lands here, including the ones signOut() below never
+        // sees: the forced sign-out when a profile is missing, password reset,
+        // an expired session, and a sign-out in another tab (Supabase broadcasts
+        // it). Clearing here is what guarantees a saved period never outlives
+        // the session it was chosen in.
+        clearSavedRanges();
         setUser(null);
         setUserProfile(null);
         setCompany(null);
@@ -412,6 +419,12 @@ export const AuthProvider = ({ children }) => {
     setUserProfile(null);
     setCompany(null);
     setAvailableCompanies([]);
+
+    // A selected period lives for the session only. Clear it explicitly — the
+    // SIGNED_OUT listener also does, but this path must not depend on that event
+    // firing — so logging back in starts from the default period, and nothing of
+    // this user's is left on a tab someone else may sign into next.
+    clearSavedRanges();
 
     // Clear localStorage - including Supabase auth keys
     localStorage.removeItem("preferredCurrency");

@@ -1,9 +1,13 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useState } from "react";
 import { format, startOfMonth, endOfMonth } from "date-fns";
+import { useAuth } from "./AuthContext";
+import {
+  storageKeyFor,
+  readSavedRange,
+  writeSavedRange,
+} from "../utils/dateRangeStorage";
 
 const DateRangeContext = createContext(null);
-
-const STORAGE_KEY = "jasco_date_range";
 
 const defaultRange = () => {
   const now = new Date();
@@ -14,26 +18,51 @@ const defaultRange = () => {
   };
 };
 
-const saveToStorage = (from, to) => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ from, to }));
-  } catch {}
+// `hasSelection` records whether a range has already been chosen this session —
+// restored from storage, or set by anything since. DirectorDashboard applies its
+// This Year default only when it is false; otherwise every return to the
+// dashboard would overwrite the director's own choice.
+const hydrate = (key) => {
+  const saved = readSavedRange(key);
+  return { key, range: saved || defaultRange(), hasSelection: Boolean(saved) };
 };
 
 export const DateRangeProvider = ({ children }) => {
-  const [dateRange, setDateRangeState] = useState(defaultRange);
+  const { user, company } = useAuth();
+  const storageKey = storageKeyFor(user?.id, company?.id);
+  const [state, setState] = useState(() => hydrate(storageKey));
 
-  // Accepts { from, to } — called by DateRangePicker's onChange
-  const setRange = ({ from, to } = {}) => {
-    const next = from && to
-      ? { from, to, isAllTime: false }
-      : { from: null, to: null, isAllTime: true };
-    setDateRangeState(next);
-    saveToStorage(from || null, to || null);
-  };
+  // Re-hydrate DURING RENDER when the key changes — login, the company finishing
+  // loading, a company switch, logout — not in an effect. Child effects run
+  // before a parent's, so an effect here would land too late: the dashboards
+  // would first fetch with the default month and then again with the restored
+  // range, and DirectorDashboard's mount default would fire before the restore
+  // and overwrite it. React re-renders this provider immediately, before its
+  // children, when state is set during render.
+  let current = state;
+  if (state.key !== storageKey) {
+    current = hydrate(storageKey);
+    setState(current);
+  }
+
+  // Accepts { from, to } — called by DateRangePicker's onChange. No dates means
+  // All Time. Written straight to storage so a refresh a moment later keeps it.
+  const setRange = useCallback(
+    ({ from, to } = {}) => {
+      const next =
+        from && to
+          ? { from, to, isAllTime: false }
+          : { from: null, to: null, isAllTime: true };
+      setState((prev) => ({ ...prev, range: next, hasSelection: true }));
+      writeSavedRange(storageKey, next);
+    },
+    [storageKey],
+  );
 
   return (
-    <DateRangeContext.Provider value={{ dateRange, setRange }}>
+    <DateRangeContext.Provider
+      value={{ dateRange: current.range, setRange, hasSelection: current.hasSelection }}
+    >
       {children}
     </DateRangeContext.Provider>
   );
