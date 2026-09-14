@@ -88,7 +88,7 @@ import {
 const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const { user, userProfile } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
-  const { dateRange, setRange } = useDateRange();
+  const { dateRange, setRange, hasSelection } = useDateRange();
   const { t } = useLanguage();
   const navigate = useNavigate();
 
@@ -148,12 +148,17 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     return () => clearTimeout(timer);
   }, [activeDateRange.from, activeDateRange.to]);
 
-  // Director defaults to This Year (annual view). One-shot on mount — only the
-  // director dashboard mounts this, so other roles keep their current-month default.
+  // Director defaults to This Year (annual view) — but only when no range has
+  // been chosen yet this session. This used to fire on every mount, which was
+  // harmless while the range reset on each visit anyway; now that the range is
+  // kept for the session, it would overwrite the director's own selection every
+  // time they came back to the dashboard. Only the director dashboard mounts
+  // this, so other roles keep the context's current-month default.
   const didInitRange = React.useRef(false);
   useEffect(() => {
     if (didInitRange.current) return;
     didInitRange.current = true;
+    if (hasSelection) return;
     const y = new Date().getFullYear();
     setRange({ from: `${y}-01-01`, to: `${y}-12-31` });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

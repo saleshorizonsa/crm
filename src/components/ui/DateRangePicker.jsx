@@ -189,14 +189,63 @@ const findMatchingPreset = (periodType, date) => {
   return null;
 };
 
-// ─── LocalStorage ─────────────────────────────────────────────────────────────
+// ─── Seeding from an external range ───────────────────────────────────────────
+// Session persistence lives in DateRangeContext; the picker only has to show
+// whatever range it is handed. (It used to write its own state to localStorage
+// under "jasco_date_picker_v2" and never read it back.)
 
-const STORAGE_KEY = "jasco_date_picker_v2";
+const rangeKey = (r) =>
+  r?.isAllTime || !r?.from || !r?.to ? "all" : `${r.from}|${r.to}`;
 
-const saveState = (state) => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {}
+const THIS_MONTH_SEED = {
+  activePreset: "thisMonth",
+  activePeriodType: "month",
+  navigatedDate: null, // resolved to "now" at the call site
+  customFrom: "",
+  customTo: "",
+};
+
+// The reverse of what the picker emits: the state that would produce this
+// range. A preset first, then an exact day/month/quarter/year (a period reached
+// with the arrows), otherwise a custom range. All Time has no preset here, so it
+// is carried as its own marker and shown as a label.
+const seedFromRange = (r) => {
+  const blank = { navigatedDate: new Date(), customFrom: "", customTo: "" };
+  if (r?.isAllTime || !r?.from || !r?.to) {
+    return { ...blank, activePreset: "allTime", activePeriodType: "custom" };
+  }
+  for (const key of [...CURRENT_PRESETS, ...LAST_PRESETS]) {
+    const d = calculateDates(key);
+    if (d && d.from === r.from && d.to === r.to) {
+      return {
+        ...blank,
+        activePreset: key,
+        activePeriodType: getPeriodType(key),
+        navigatedDate: getRepresentativeDate(key),
+      };
+    }
+  }
+  const start = new Date(`${r.from}T00:00:00`);
+  if (!Number.isNaN(start.getTime())) {
+    for (const pt of ["day", "month", "quarter", "year"]) {
+      const d = getDatesForPeriod(pt, start);
+      if (d && d.from === r.from && d.to === r.to) {
+        return {
+          ...blank,
+          activePreset: findMatchingPreset(pt, start),
+          activePeriodType: pt,
+          navigatedDate: start,
+        };
+      }
+    }
+  }
+  return {
+    ...blank,
+    activePreset: "custom",
+    activePeriodType: "custom",
+    customFrom: r.from,
+    customTo: r.to,
+  };
 };
 
 // ─── Inline SVG icons ─────────────────────────────────────────────────────────
@@ -231,6 +280,13 @@ const CheckIcon = ({ size = 13 }) => (
 
 const DateRangePicker = ({
   onChange,
+  // The range to display — pass the shared context range. When given, the picker
+  // starts from it, follows it when it changes elsewhere (a quick-range button,
+  // the director's This Year default, a restore after a refresh), and does NOT
+  // emit on mount: the caller already holds the right value, and emitting the
+  // hard-coded This Month on mount is what overwrote every restored selection.
+  // Omitted — as the pipeline's own filter does — it behaves exactly as before.
+  range,
   // These props are accepted for backward compat but the component manages its own state
   value,
   customRange,
@@ -238,43 +294,73 @@ const DateRangePicker = ({
   triggerClassName = "",
   placeholder,
 }) => {
-  // Always default to "This Month" — never restore from localStorage
-  const initPreset = "thisMonth";
-  const initPeriodType = getPeriodType(initPreset); // "month"
-  const initNavigatedDate = new Date();
+  const [seed] = useState(() =>
+    range
+      ? seedFromRange(range)
+      : { ...THIS_MONTH_SEED, navigatedDate: new Date() },
+  );
 
   const [open, setOpen]                   = useState(false);
-  const [activePreset, setActivePreset]   = useState(initPreset);      // string | null
-  const [activePeriodType, setActivePeriodType] = useState(initPeriodType);
-  const [navigatedDate, setNavigatedDate] = useState(initNavigatedDate);
+  const [activePreset, setActivePreset]   = useState(seed.activePreset);      // string | null
+  const [activePeriodType, setActivePeriodType] = useState(seed.activePeriodType);
+  const [navigatedDate, setNavigatedDate] = useState(seed.navigatedDate);
   const [showCustom, setShowCustom]       = useState(false);
-  const [customFrom, setCustomFrom]       = useState("");
-  const [customTo, setCustomTo]           = useState("");
+  const [customFrom, setCustomFrom]       = useState(seed.customFrom);
+  const [customTo, setCustomTo]           = useState(seed.customTo);
   const [customError, setCustomError]     = useState("");
 
   const wrapperRef = useRef(null);
 
+  // The last range this picker emitted. When it comes straight back in through
+  // `range`, it is our own echo, not an outside change, and must not re-seed.
+  const lastEmittedRef = useRef(range ? rangeKey(range) : null);
+  const emit = useCallback((dates) => {
+    lastEmittedRef.current = rangeKey(dates);
+    onChange?.(dates);
+  }, [onChange]);
+
   // ── On mount: emit initial dates so pages load with correct data ──
+  // Skipped when a `range` is supplied: the caller already has the right value,
+  // and emitting here would replace a restored selection with This Month.
   useEffect(() => {
+    if (range) return;
     if (activePreset === "custom") {
-      if (customFrom && customTo) onChange?.({ from: customFrom, to: customTo });
+      if (customFrom && customTo) emit({ from: customFrom, to: customTo });
       return;
     }
     if (CURRENT_PRESETS.has(activePreset)) {
       const dates = calculateDates(activePreset);
-      if (dates) onChange?.(dates);
+      if (dates) emit(dates);
       return;
     }
     if (LAST_PRESETS.has(activePreset)) {
       const repDate = getRepresentativeDate(activePreset);
       const dates = getDatesForPeriod(activePeriodType, repDate);
-      if (dates) onChange?.(dates);
+      if (dates) emit(dates);
       return;
     }
     // null / free navigation
     const dates = getDatesForPeriod(activePeriodType, navigatedDate);
-    if (dates) onChange?.(dates);
+    if (dates) emit(dates);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Follow `range` when it changes outside this picker ──
+  // e.g. a quick-range button inside a role dashboard, or the director's This
+  // Year default. Before this, the trigger kept reading "This Month" while the
+  // page showed a different period.
+  useEffect(() => {
+    if (!range) return;
+    const k = rangeKey(range);
+    if (k === lastEmittedRef.current) return;
+    lastEmittedRef.current = k;
+    const s = seedFromRange(range);
+    setActivePreset(s.activePreset);
+    setActivePeriodType(s.activePeriodType);
+    setNavigatedDate(s.navigatedDate);
+    setCustomFrom(s.customFrom);
+    setCustomTo(s.customTo);
+    setShowCustom(false);
+  }, [range?.from, range?.to, range?.isAllTime]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Close on outside click ──
   useEffect(() => {
@@ -305,17 +391,10 @@ const DateRangePicker = ({
     setNavigatedDate(repDate);
 
     const dates = calculateDates(key);
-    if (dates) onChange?.(dates);
+    if (dates) emit(dates);
 
     setOpen(false);
-    saveState({
-      activePreset: key,
-      activePeriodType: pType,
-      navigatedDate: repDate.toISOString(),
-      customFrom,
-      customTo,
-    });
-  }, [onChange, customFrom, customTo]);
+  }, [emit]);
 
   // ── Navigator ──
   const atCurrent = activePreset !== "custom" &&
@@ -330,16 +409,8 @@ const DateRangePicker = ({
     setActivePreset(match); // may be null — that's fine
 
     const dates = getDatesForPeriod(activePeriodType, newDate);
-    if (dates) onChange?.(dates);
-
-    saveState({
-      activePreset: match,
-      activePeriodType,
-      navigatedDate: newDate.toISOString(),
-      customFrom,
-      customTo,
-    });
-  }, [activePeriodType, navigatedDate, atCurrent, onChange, customFrom, customTo]);
+    if (dates) emit(dates);
+  }, [activePeriodType, navigatedDate, atCurrent, emit]);
 
   // ── Custom apply ──
   const handleApplyCustom = useCallback(() => {
@@ -352,19 +423,15 @@ const DateRangePicker = ({
       return;
     }
     setCustomError("");
-    onChange?.({ from: customFrom, to: customTo });
+    emit({ from: customFrom, to: customTo });
     setOpen(false);
-    saveState({
-      activePreset: "custom",
-      activePeriodType: "custom",
-      navigatedDate: new Date().toISOString(),
-      customFrom,
-      customTo,
-    });
-  }, [customFrom, customTo, onChange]);
+  }, [customFrom, customTo, emit]);
 
   // ── Trigger label ──
   const triggerLabel = (() => {
+    // Only reachable via `range` — All Time is set elsewhere (e.g. Forecast) and
+    // has no preset in this picker.
+    if (activePreset === "allTime") return "All time";
     if (activePreset === "custom") {
       if (customFrom && customTo) {
         try {
