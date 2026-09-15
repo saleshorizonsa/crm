@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Input from "./ui/Input";
 import Select from "./ui/Select";
 import Button from "./ui/Button";
@@ -119,6 +119,14 @@ const ManagerSalesTargetAssignment = ({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  // Sales Division filter (sales_divisions + users.sales_division_id). Purely a
+  // filter on the "Assign To" list: targets are created exactly as before.
+  // Hidden while the table or column doesn't exist, so the screen keeps working
+  // before the migration is applied.
+  const [divisions, setDivisions] = useState([]);
+  const [divisionByUser, setDivisionByUser] = useState({});
+  const [selectedDivision, setSelectedDivision] = useState("all");
+
   const periodTypes = [
     { value: "weekly", label: "Weekly" },
     { value: "monthly", label: "Monthly" },
@@ -176,6 +184,76 @@ const ManagerSalesTargetAssignment = ({
 
     loadSubordinates();
   }, [userProfile?.id, userProfile?.role]);
+
+  // Load the company's divisions and which one each team member belongs to.
+  // Read separately from getUserSubordinates so a missing column can't break
+  // the team list itself.
+  useEffect(() => {
+    const divisionCompanyId = companyId || userProfile?.company_id;
+    if (!divisionCompanyId || subordinates.length === 0) {
+      setDivisions([]);
+      setDivisionByUser({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const [
+        { data: divisionRows, error: divisionsError },
+        { data: memberRows, error: membersError },
+      ] = await Promise.all([
+        supabase
+          .from("sales_divisions")
+          .select("id, name, sort_order")
+          .eq("company_id", divisionCompanyId)
+          .order("sort_order", { ascending: true }),
+        supabase
+          .from("users")
+          .select("id, sales_division_id")
+          .in("id", subordinates.map((s) => s.id)),
+      ]);
+      if (cancelled) return;
+      if (divisionsError || membersError) {
+        setDivisions([]);
+        setDivisionByUser({});
+        return;
+      }
+      setDivisions(divisionRows || []);
+      setDivisionByUser(
+        Object.fromEntries((memberRows || []).map((m) => [m.id, m.sales_division_id]))
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, userProfile?.company_id, subordinates]);
+
+  const showDivisionFilter = divisions.length > 0 && !isEditing;
+
+  const visibleSubordinates = useMemo(
+    () =>
+      !showDivisionFilter || selectedDivision === "all"
+        ? subordinates
+        : subordinates.filter((u) => divisionByUser[u.id] === selectedDivision),
+    [showDivisionFilter, selectedDivision, subordinates, divisionByUser]
+  );
+
+  const divisionIsEmpty =
+    showDivisionFilter &&
+    selectedDivision !== "all" &&
+    !loadingSubordinates &&
+    visibleSubordinates.length === 0;
+
+  const handleDivisionChange = (value) => {
+    const next = value || "all"; // Select passes null when cleared
+    setSelectedDivision(next);
+    if (
+      next !== "all" &&
+      selectedSubordinate &&
+      divisionByUser[selectedSubordinate] !== next
+    ) {
+      setSelectedSubordinate("");
+    }
+  };
 
   // Load subordinate's clients
   useEffect(() => {
@@ -573,25 +651,49 @@ const ManagerSalesTargetAssignment = ({
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Sales Division filter */}
+        {showDivisionFilter && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-card-foreground">
+              Sales Division
+            </label>
+            <Select
+              value={selectedDivision}
+              onChange={handleDivisionChange}
+              options={[
+                { value: "all", label: "All Divisions" },
+                ...divisions.map((d) => ({ value: d.id, label: d.name })),
+              ]}
+            />
+          </div>
+        )}
+
         {/* Select Team Member */}
         <div className="space-y-2">
           <label className="text-sm font-medium text-card-foreground">
             Assign To
           </label>
-          <Select
-            value={selectedSubordinate}
-            onChange={setSelectedSubordinate}
-            placeholder={
-              loadingSubordinates ? "Loading..." : "Select team member"
-            }
-            disabled={isEditing || loadingSubordinates || availableBudget <= 0}
-            options={subordinates.map((user) => ({
-              value: user.id,
-              label: `${user.full_name || user.email} (${capitalize(
-                user.role
-              )})`,
-            }))}
-          />
+          {divisionIsEmpty ? (
+            <div className="flex items-center gap-2 p-4 rounded-lg border border-dashed border-border text-sm text-muted-foreground">
+              <Icon name="Users" size={16} className="flex-shrink-0" />
+              No team members assigned to this division yet
+            </div>
+          ) : (
+            <Select
+              value={selectedSubordinate}
+              onChange={setSelectedSubordinate}
+              placeholder={
+                loadingSubordinates ? "Loading..." : "Select team member"
+              }
+              disabled={isEditing || loadingSubordinates || availableBudget <= 0}
+              options={visibleSubordinates.map((user) => ({
+                value: user.id,
+                label: `${user.full_name || user.email} (${capitalize(
+                  user.role
+                )})`,
+              }))}
+            />
+          )}
           {isEditing && (
             <p className="text-xs text-muted-foreground">
               Team member cannot be changed when editing
