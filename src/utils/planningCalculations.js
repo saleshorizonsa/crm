@@ -336,6 +336,41 @@ export async function computePlanned({ companyId, contributorIds, monthStart, mo
   return sumPlannedByOwner({ rows: data });
 }
 
+// ── 6. COVERAGE ─────────────────────────────────────────────────────────────
+/**
+ * Coverage = achieved + weighted open pipeline + weighted plan.
+ *
+ * An open deal is weighted by its own forecast_amount when one was entered,
+ * otherwise by amount x win rate; the month's planned value is weighted by the
+ * win rate. Compared against Target: coverage >= target means the month is
+ * covered.
+ *
+ * Operates on rows already in hand (like winRateFromDeals), so a page that
+ * computes several levels from one fetch can call it per node.
+ *
+ * NOTE: coverage-console/index.jsx still carries its own inline copy of this
+ * formula in calcMetrics. It was deliberately left untouched when this was
+ * added; moving it onto this function is a logged follow-up.
+ *
+ * @param {number}   p.invoiced    achieved (won + invoiced) value in the window
+ * @param {object[]} p.openDeals   open deal rows: { amount, forecast_amount }
+ * @param {number}   p.planned     open Current-Sales-Plan value for the month
+ * @param {number}   p.winRatePct  percent, not a fraction
+ */
+export function computeCoverage({ invoiced, openDeals, planned, winRatePct }) {
+  const winRate = (Number(winRatePct) || 0) / 100;
+  const weightedFunnel = (openDeals || []).reduce(
+    (sum, d) => sum + (d.forecast_amount || d.amount * winRate || 0),
+    0,
+  );
+  const weightedPlanning = (Number(planned) || 0) * winRate;
+  return {
+    weightedFunnel,
+    weightedPlanning,
+    coverage: (Number(invoiced) || 0) + weightedFunnel + weightedPlanning,
+  };
+}
+
 // ── Orchestrator ────────────────────────────────────────────────────────────
 /** First/last day of the current month, as ISO strings and yyyy-MM-dd. */
 export function monthBounds(d = new Date()) {

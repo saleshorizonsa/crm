@@ -61,6 +61,10 @@ const Header = ({
       path: "/coverage-console",
       icon: "LayoutGrid",
     },
+    // Directors and managers only — the route enforces the same list.
+    ...(["director", "manager"].includes(userProfile?.role)
+      ? [{ label: "Sales Divisions", path: "/sales-divisions", icon: "Layers" }]
+      : []),
     { label: t("nav.pipeline"), path: "/sales-pipeline", icon: "TrendingUp" },
     { label: t("nav.leads"),    path: "/lead-management", icon: "UserPlus"   },
     { label: t("nav.calendar"), path: "/calendar",        icon: "CalendarDays"},

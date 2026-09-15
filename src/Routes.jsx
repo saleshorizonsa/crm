@@ -35,6 +35,8 @@ import CalendarPage from "./pages/calendar";
 import PipelineView from "./pages/pipeline-view";
 import PlanningPage from "./pages/planning";
 import CoverageConsole from "./pages/coverage-console";
+import SalesDivisions from "./pages/sales-divisions";
+import { DIVISION_PAGE_ROLES } from "./utils/salesDivisionMetrics";
 import ReassignRecords from "./pages/reassign-records";
 import { REASSIGN_ROLES } from "./services/reassignmentService";
 
@@ -188,6 +190,14 @@ const Routes = () => {
                   element={
                     <ProtectedRoute>
                       <CoverageConsole />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/sales-divisions"
+                  element={
+                    <ProtectedRoute allowedRoles={DIVISION_PAGE_ROLES}>
+                      <SalesDivisions />
                     </ProtectedRoute>
                   }
                 />
