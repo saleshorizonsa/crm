@@ -35,6 +35,8 @@ import CalendarPage from "./pages/calendar";
 import PipelineView from "./pages/pipeline-view";
 import PlanningPage from "./pages/planning";
 import CoverageConsole from "./pages/coverage-console";
+import ReassignRecords from "./pages/reassign-records";
+import { REASSIGN_ROLES } from "./services/reassignmentService";
 
 const Routes = () => {
   return (
@@ -186,6 +188,14 @@ const Routes = () => {
                   element={
                     <ProtectedRoute>
                       <CoverageConsole />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/reassign-records"
+                  element={
+                    <ProtectedRoute allowedRoles={REASSIGN_ROLES}>
+                      <ReassignRecords />
                     </ProtectedRoute>
                   }
                 />

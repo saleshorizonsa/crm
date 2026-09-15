@@ -75,6 +75,11 @@ const Header = ({
 
   const secondaryItems = [
     ...adminItems,
+    // A standalone page rather than an Admin Dashboard tab: /admin-dashboard is
+    // admin-only, and the people who reassign records are Sales Managers.
+    ...(["manager", "director", "head", "admin"].includes(userProfile?.role)
+      ? [{ label: "Reassign Records", path: "/reassign-records", icon: "ArrowLeftRight" }]
+      : []),
     { label: t("nav.tasks"), path: "/task-management", icon: "ListTodo" },
     { label: t("nav.settings"), path: "/settings", icon: "Settings" },
     { label: t("dashboard.help"), path: "/help", icon: "Info" },

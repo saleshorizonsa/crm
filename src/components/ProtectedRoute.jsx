@@ -8,7 +8,9 @@ const Spinner = () => (
   </div>
 );
 
-export const ProtectedRoute = ({ children, requiredRole }) => {
+// `requiredRole` admits exactly one role; `allowedRoles` admits any of several.
+// When both are given, `allowedRoles` wins.
+export const ProtectedRoute = ({ children, requiredRole, allowedRoles }) => {
   const { user, userProfile, loading } = useAuth();
   const location = useLocation();
 
@@ -28,13 +30,19 @@ export const ProtectedRoute = ({ children, requiredRole }) => {
     return <Navigate to="/pipeline-view" replace />;
   }
 
+  const restricted = Boolean(requiredRole || allowedRoles?.length);
+
   // Wait for userProfile to load before checking roles
-  if (requiredRole && !userProfile) {
+  if (restricted && !userProfile) {
     return <Spinner />;
   }
 
-  // Check role-based access if requiredRole is specified
-  if (requiredRole && userProfile?.role !== requiredRole) {
+  const permitted = allowedRoles?.length
+    ? allowedRoles.includes(userProfile?.role)
+    : userProfile?.role === requiredRole;
+
+  // Check role-based access if a role restriction is specified
+  if (restricted && !permitted) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
@@ -43,7 +51,7 @@ export const ProtectedRoute = ({ children, requiredRole }) => {
             You don't have permission to access this page.
           </p>
           <p className="text-sm text-muted-foreground mt-2">
-            Required role: {requiredRole} | Your role:{" "}
+            Required role: {allowedRoles?.length ? allowedRoles.join(", ") : requiredRole} | Your role:{" "}
             {userProfile?.role ? capitalize(userProfile.role) : "Unknown"}
           </p>
         </div>
