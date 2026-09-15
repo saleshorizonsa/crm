@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from 'lib/supabase';
 import { useAuth } from 'contexts/AuthContext';
 import { blockIfPlanLocked } from 'utils/planApproval';
@@ -8,6 +8,7 @@ import CustomerDetailDrawer from './CustomerDetailDrawer';
 import AddCustomerModal from './AddCustomerModal';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
+import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
 
 function StatusBadge({ type }) {
   const map = {
@@ -46,6 +47,8 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
   // Drill-down selector: null = "All Salesmen" (in scope); otherwise a user id.
   const [selectedSalesman, setSelectedSalesman] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
+  // Owners of customers loaded under "All" — selector only (utils/recordOwners).
+  const [recordOwners, setRecordOwners] = useState([]);
   // "New This Month" = customers created in the current calendar month, scoped
   // by role. Clicking the stat card opens a modal listing them. Resets on its
   // own each month because the query window is derived from today's date.
@@ -82,6 +85,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
   // stale ids / green badges can't leak across companies.
   useEffect(() => {
     setSelectedSalesman(null);
+    setRecordOwners([]);
     setActiveRow(null);
     setInlineAmount('');
     setAddedIds(new Set());
@@ -229,7 +233,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
       setAllCustomers([]);
       return;
     }
-    const COLS = 'id,owner_id,customer_type';
+    const COLS = 'id,owner_id,customer_type,owner:users!owner_id(id,full_name,role,is_active)';
     const unassigned = async () =>
       (await supabase.from('contacts').select(COLS).is('owner_id', null).eq('company_id', adminCompany.id)).data || [];
 
@@ -255,7 +259,16 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
       rows = [...owned, ...(await unassigned())];
     }
     setAllCustomers(rows);
+    // The "All" load is status-independent, so it is the full set of owners in scope.
+    if (!selectedSalesman) setRecordOwners((prev) => addRecordOwners(prev, rows));
   }, [adminCompany?.id, role, user?.id, getCompanyUserIds, selectedSalesman, teamMembers]);
+
+  // The drill-down list: team plus owners of customers in scope. Scope queries
+  // above keep using teamMembers.
+  const selectorMembers = useMemo(
+    () => withRecordOwners(teamMembers, recordOwners),
+    [teamMembers, recordOwners],
+  );
 
   const fetchSalesmen = useCallback(async () => {
     if (!adminCompany?.id || !canAssign) return;
@@ -450,11 +463,11 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
               />
             </div>
 
-            {canDrillDown && teamMembers.length > 0 && (
+            {canDrillDown && selectorMembers.length > 0 && (
               <SalesmanSelector
                 value={selectedSalesman}
                 onChange={(id) => { setSelectedSalesman(id); setSelected(new Set()); }}
-                teamMembers={teamMembers}
+                teamMembers={selectorMembers}
               />
             )}
 

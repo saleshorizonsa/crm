@@ -5,6 +5,7 @@ import { useCurrency } from 'contexts/CurrencyContext';
 import Icon from 'components/AppIcon';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
+import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
 import { blockIfPlanLocked } from 'utils/planApproval';
 import {
   fetchContributors,
@@ -65,6 +66,8 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
   const [monthlyTarget, setMonthlyTarget] = useState(0);
   const [contacts, setContacts]           = useState([]);
   const [teamMembers, setTeamMembers]     = useState([]);
+  // Owners of opportunities loaded under "All" — selector only (utils/recordOwners).
+  const [recordOwners, setRecordOwners]   = useState([]);
   const [saving, setSaving]               = useState(false);
 
   const [filterOwner, setFilterOwner]   = useState('all');
@@ -129,7 +132,7 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
           id, customer_name, customer_type, planned_amount, material_group,
           expected_month, notes, status, deal_id, converted_at, created_at,
           contact_id, owner_id, bounce_count, last_bounced_at, is_replacement, replaces_deal_id,
-          owner:users!owner_id(id, full_name, role),
+          owner:users!owner_id(id, full_name, role, is_active),
           contact:contacts!contact_id(id, first_name, last_name, company_name),
           deal:deals!deal_id(id, title, stage, amount)
         `)
@@ -151,6 +154,7 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
       const { data, error } = await query;
       if (error) throw error;
       setOpportunities(data || []);
+      if (filterOwner === 'all') setRecordOwners((prev) => addRecordOwners(prev, data));
     } catch (err) {
       console.error('fetchOpportunities:', err);
       setLoadError(err?.message || 'Could not load opportunities.');
@@ -191,8 +195,17 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
     setContacts(contactData || []);
   }, [company?.id, isDirector, isTeamLead, user?.id, role]);
 
+  // Declared before the fetches so a company switch clears first, then refills.
+  useEffect(() => { setRecordOwners([]); }, [company?.id, user?.id]);
   useEffect(() => { fetchSupport(); }, [fetchSupport]);
   useEffect(() => { fetchOpportunities(); }, [fetchOpportunities]);
+
+  // The drill-down list: team plus owners of loaded records. Scope queries above
+  // keep using teamMembers.
+  const selectorMembers = useMemo(
+    () => withRecordOwners(teamMembers, recordOwners),
+    [teamMembers, recordOwners],
+  );
   useEffect(() => { fetchTarget(ownerScope); }, [fetchTarget, ownerScope]);
 
   // ── Derived totals ────────────────────────────────────────────────────────
@@ -440,11 +453,11 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
           ))}
         </div>
 
-        {(isDirector || isTeamLead) && teamMembers.length > 0 && (
+        {(isDirector || isTeamLead) && selectorMembers.length > 0 && (
           <SalesmanSelector
             value={filterOwner === 'all' ? null : filterOwner}
             onChange={(id) => setFilterOwner(id || 'all')}
-            teamMembers={teamMembers}
+            teamMembers={selectorMembers}
           />
         )}
       </div>

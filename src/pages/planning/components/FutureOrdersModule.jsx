@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from 'lib/supabase';
 import { useAuth } from 'contexts/AuthContext';
 import { useCurrency } from 'contexts/CurrencyContext';
 import Icon from 'components/AppIcon';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
+import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
 
 const DIRECTOR_ROLES = ['director', 'head', 'admin'];
 const TEAM_ROLES     = ['manager', 'supervisor'];
@@ -40,6 +41,8 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, 
   const [orders, setOrders]           = useState([]);
   const [loading, setLoading]         = useState(true);
   const [teamMembers, setTeamMembers] = useState([]);
+  // Owners of orders loaded under "All" — selector only (utils/recordOwners).
+  const [recordOwners, setRecordOwners] = useState([]);
   const [filterStatus, setFilterStatus] = useState('pending');
   const [filterOwner, setFilterOwner]   = useState('all');
   const [movingId, setMovingId]       = useState(null);
@@ -61,7 +64,7 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, 
         .select(`
           id, customer_name, planned_amount, expected_month, status,
           opportunity_id, moved_at, created_at, contact_id, owner_id,
-          owner:users!owner_id(id, full_name, role)
+          owner:users!owner_id(id, full_name, role, is_active)
         `)
         .eq('company_id', company.id)
         .order('expected_month', { ascending: true });
@@ -81,6 +84,7 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, 
       const { data, error } = await query;
       if (error) throw error;
       setOrders(data || []);
+      if (filterOwner === 'all') setRecordOwners((prev) => addRecordOwners(prev, data));
     } catch (err) {
       console.error('fetchOrders:', err);
       setOrders([]);
@@ -89,8 +93,17 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, 
     }
   }, [company?.id, isDirector, isTeamLead, user?.id, filterOwner, filterStatus, teamMembers]);
 
+  // Declared before the fetches so a company switch clears first, then refills.
+  useEffect(() => { setRecordOwners([]); }, [company?.id, user?.id]);
   useEffect(() => { fetchTeam(); }, [fetchTeam]);
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  // The drill-down list: team plus owners of loaded orders. The scope query
+  // above keeps using teamMembers.
+  const selectorMembers = useMemo(
+    () => withRecordOwners(teamMembers, recordOwners),
+    [teamMembers, recordOwners],
+  );
 
   // ── Move a future order into the Current Sales Plan (opportunities table) ────
   // Shared by the manual "Move" button and the auto-move on load.
@@ -220,11 +233,11 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, 
             ))}
           </div>
 
-          {(isDirector || isTeamLead) && teamMembers.length > 0 && (
+          {(isDirector || isTeamLead) && selectorMembers.length > 0 && (
             <SalesmanSelector
               value={filterOwner === 'all' ? null : filterOwner}
               onChange={(id) => setFilterOwner(id || 'all')}
-              teamMembers={teamMembers}
+              teamMembers={selectorMembers}
             />
           )}
         </div>
