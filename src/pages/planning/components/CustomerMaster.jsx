@@ -26,6 +26,24 @@ function StatusBadge({ type }) {
   );
 }
 
+// Market (contacts.market): Domestic / Export. A classification tag only — it
+// drives no Target, Achieved or Coverage figure; achievement follows deal
+// ownership. Not the same thing as customer_type, which is the customer's status.
+const MARKET_LABEL = { domestic: 'Domestic', export: 'Export' };
+
+function MarketBadge({ market }) {
+  const isExport = market === 'export';
+  return (
+    <span
+      className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+        isExport ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
+      }`}
+    >
+      {isExport ? MARKET_LABEL.export : MARKET_LABEL.domestic}
+    </span>
+  );
+}
+
 export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOpportunities }) {
   const { user, userProfile } = useAuth();
   const role = userProfile?.role;
@@ -41,6 +59,14 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
   const [statusFilter, setStatusFilter] = useState('all');
   const [selected, setSelected] = useState(new Set());
   const [bulkOwner, setBulkOwner] = useState('');
+  // Market filter + bulk "Set Market". marketAvailable stays false until
+  // contacts.market exists (migrations/add_contacts_market.sql), so the page
+  // never selects or filters on a missing column.
+  const [marketAvailable, setMarketAvailable] = useState(false);
+  const [marketFilter, setMarketFilter] = useState('all');
+  const [bulkMarket, setBulkMarket] = useState('');
+  const [applyingMarket, setApplyingMarket] = useState(false);
+  const [marketResult, setMarketResult] = useState(null); // { tone: 'ok'|'warn'|'error', text }
   const [salesmen, setSalesmen] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [activeCustomer, setActiveCustomer] = useState(null);
@@ -172,6 +198,21 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
 
   useEffect(() => { fetchNewThisMonth(); }, [fetchNewThisMonth]);
 
+  // Does contacts.market exist yet? One tiny probe; any error means "not yet".
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('contacts')
+      .select('market')
+      .limit(1)
+      .then(({ error }) => {
+        if (!cancelled) setMarketAvailable(!error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const SELECT_COLS =
     'id,company_name,first_name,last_name,phone,mobile,email,city,region,country,customer_type,last_order_date,notes,source,assigned_at,owner_id,created_at,company_id,owner:users!owner_id(id,full_name,email)';
 
@@ -191,7 +232,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
 
       let query = supabase
         .from('contacts')
-        .select(SELECT_COLS)
+        .select(marketAvailable ? `${SELECT_COLS},market` : SELECT_COLS)
         .order('company_name', { ascending: true });
 
       if (statusFilter === 'unassigned') {
@@ -217,13 +258,17 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
         if (statusFilter !== 'all') query = query.eq('customer_type', statusFilter);
       }
 
+      // Market narrows whichever list the branches above built, alongside the
+      // status cards rather than instead of them.
+      if (marketAvailable && marketFilter !== 'all') query = query.eq('market', marketFilter);
+
       const { data, error } = await query;
       if (error) console.error('fetchCustomers error:', error);
       setCustomers(data || []);
     } finally {
       setLoading(false);
     }
-  }, [adminCompany?.id, statusFilter, role, user?.id, getCompanyUserIds, selectedSalesman, teamMembers]);
+  }, [adminCompany?.id, statusFilter, role, user?.id, getCompanyUserIds, selectedSalesman, teamMembers, marketAvailable, marketFilter]);
 
   // Stats are computed from the full list of customers the user can access,
   // independent of the active status filter — so the numbers stay stable when
@@ -331,6 +376,39 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
     fetchStats();
   };
 
+  // Bulk "Set Market". Unlike the assign action above, this counts what the
+  // database actually changed: an UPDATE that RLS refuses returns no error, the
+  // row is just not updated. So the ids come back (.select('id')) and anything
+  // missing is reported, and stays selected so it can be seen and retried.
+  const handleBulkSetMarket = async () => {
+    if (!bulkMarket || selected.size === 0) return;
+    const ids = [...selected];
+    const label = MARKET_LABEL[bulkMarket];
+    setApplyingMarket(true);
+    setMarketResult(null);
+    const { data, error } = await supabase
+      .from('contacts')
+      .update({ market: bulkMarket, updated_at: new Date().toISOString() })
+      .in('id', ids)
+      .select('id');
+    setApplyingMarket(false);
+
+    const changedIds = new Set(error ? [] : (data || []).map((r) => r.id));
+    const failedIds = ids.filter((id) => !changedIds.has(id));
+    const changed = changedIds.size;
+    const plural = (n) => `${n} customer${n === 1 ? '' : 's'}`;
+    let text = `${plural(changed)} set to ${label}`;
+    if (failedIds.length) {
+      text += ` · ${failedIds.length} couldn't be changed`;
+      text += error ? ` (${error.message})` : ' (no permission to edit them)';
+      console.error('handleBulkSetMarket:', error || `${failedIds.length} rows not updated`, failedIds);
+    }
+    setMarketResult({ tone: failedIds.length ? (changed ? 'warn' : 'error') : 'ok', text });
+    setSelected(new Set(failedIds));
+    setBulkMarket('');
+    fetchCustomers();
+  };
+
   const handleSelectAll = (checked) => {
     if (checked) {
       setSelected(new Set(filtered.map((c) => c.id)));
@@ -421,6 +499,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
     if (search) return `No customers match "${search}"`;
     if (statusFilter === 'unassigned') return 'No unassigned customers';
     if (statusFilter !== 'all') return `No ${statusFilter} customers`;
+    if (marketFilter !== 'all') return `No ${MARKET_LABEL[marketFilter]} customers`;
     return 'No customers yet. Add your first customer.';
   };
 
@@ -469,6 +548,19 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
                 onChange={(id) => { setSelectedSalesman(id); setSelected(new Set()); }}
                 teamMembers={selectorMembers}
               />
+            )}
+
+            {marketAvailable && (
+              <select
+                value={marketFilter}
+                onChange={(e) => { setMarketFilter(e.target.value); setSelected(new Set()); }}
+                aria-label="Market"
+                className="text-sm border border-border rounded-xl px-3 py-2 bg-background focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                <option value="all">All Markets</option>
+                <option value="domestic">Domestic</option>
+                <option value="export">Export</option>
+              </select>
             )}
 
             <button
@@ -584,11 +676,59 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
               >
                 Assign
               </button>
+              {marketAvailable && (
+                <div className="flex items-center gap-2 flex-wrap sm:border-l sm:border-primary/20 sm:pl-3">
+                  <select
+                    value={bulkMarket}
+                    onChange={(e) => setBulkMarket(e.target.value)}
+                    aria-label="Set market"
+                    className="text-sm border border-border rounded-lg px-2 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  >
+                    <option value="">— Set market —</option>
+                    <option value="domestic">Domestic</option>
+                    <option value="export">Export</option>
+                  </select>
+                  <button
+                    onClick={handleBulkSetMarket}
+                    disabled={!bulkMarket || applyingMarket}
+                    className="px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {applyingMarket ? 'Setting…' : 'Set Market'}
+                  </button>
+                </div>
+              )}
               <button
                 onClick={() => { setSelected(new Set()); setBulkOwner(''); }}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors ml-auto"
               >
                 Clear
+              </button>
+            </div>
+          )}
+
+          {/* Set Market result */}
+          {marketResult && (
+            <div
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border ${
+                marketResult.tone === 'ok'
+                  ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
+                  : marketResult.tone === 'warn'
+                    ? 'bg-amber-50 border-amber-200 text-amber-800'
+                    : 'bg-red-50 border-red-200 text-red-700'
+              }`}
+            >
+              <Icon
+                name={marketResult.tone === 'ok' ? 'CheckCircle2' : 'AlertTriangle'}
+                size={15}
+                className="flex-shrink-0"
+              />
+              <p className="text-sm">{marketResult.text}</p>
+              <button
+                onClick={() => setMarketResult(null)}
+                aria-label="Dismiss"
+                className="ml-auto opacity-60 hover:opacity-100"
+              >
+                <Icon name="X" size={14} />
               </button>
             </div>
           )}
@@ -619,6 +759,9 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
                     <th className="px-4 py-3 text-left font-medium text-muted-foreground">Phone</th>
                     <th className="px-4 py-3 text-left font-medium text-muted-foreground">City</th>
                     <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+                    {marketAvailable && (
+                      <th className="px-4 py-3 text-left font-medium text-muted-foreground">Market</th>
+                    )}
                     <th className="px-4 py-3 text-left font-medium text-muted-foreground">Assigned To</th>
                     <th className="px-4 py-3 text-left font-medium text-muted-foreground">Last Order</th>
                     <th className="px-4 py-3 text-right font-medium text-muted-foreground">Plan</th>
@@ -628,7 +771,7 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
                   {filtered.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={canAssign ? 9 : 8}
+                        colSpan={(canAssign ? 9 : 8) + (marketAvailable ? 1 : 0)}
                         className="px-4 py-16 text-center text-muted-foreground text-sm"
                       >
                         <div className="flex flex-col items-center gap-2">
@@ -678,6 +821,11 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
                         <td className="px-4 py-3">
                           <StatusBadge type={c.customer_type} />
                         </td>
+                        {marketAvailable && (
+                          <td className="px-4 py-3">
+                            <MarketBadge market={c.market} />
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           {c.owner ? (
                             <div className="flex items-center gap-2">

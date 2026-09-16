@@ -288,6 +288,7 @@ const UserManagement = () => {
             setSelectedUser(null);
             loadData();
           }}
+          onRefresh={loadData}
         />
       )}
     </div>
