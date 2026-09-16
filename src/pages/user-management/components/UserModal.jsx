@@ -183,14 +183,20 @@ const UserModal = ({ isOpen, onClose, onSave, user, mode, currentUser }) => {
             iconName="Mail"
           />
 
-          {/* Role */}
+          {/* Role — only an admin may grant or remove the admin role (enforced
+              in the database by migrations/restrict_admin_role_changes.sql), so
+              the field is locked when a non-admin opens an admin. */}
           <Select
             label="Role"
             value={formData.role}
             onChange={(e) => handleInputChange("role", e.target.value)}
             options={roleOptions}
             error={errors.role}
-            disabled={mode === "view" || isLoading}
+            disabled={
+              mode === "view" ||
+              isLoading ||
+              (currentUser.role !== "admin" && user?.role === "admin")
+            }
             required
           />
 
