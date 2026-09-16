@@ -3,6 +3,8 @@ import {
   targetPerPerson,
   winRateFromDeals,
   sumPlannedByOwner,
+  computeRequiredRaw,
+  computePlannedGap,
   computeCoverage,
 } from 'utils/planningCalculations';
 
@@ -12,7 +14,10 @@ import {
 // Every figure goes through utils/planningCalculations.js, so a division's
 // numbers follow the same rules as Planning, the dashboards and the Coverage
 // Console: contributors only (salesmen and supervisors), monthly active target
-// rows, 3-month win rate, invoiced achievement for the current month.
+// rows, 3-month win rate, invoiced achievement for the current month, next
+// month's pending future orders as carry-in.
+//
+// Levels: Company -> Division (supervisor card) -> Team -> Member -> Deal.
 
 export const DIVISION_PAGE_ROLES = ['director', 'manager'];
 
@@ -89,18 +94,71 @@ export function listedMembers({ users, userIds }) {
 }
 
 /**
+ * How a division opens.
+ *   mode 'supervisor'  one card per supervisor; each card's team is the
+ *                      supervisor plus the people under them in this division
+ *   mode 'team'        no supervisor but members exist — straight to the team list
+ *   mode 'empty'       nobody in the division
+ * Unassigned is not a real division, so it always opens as a team list.
+ *
+ * Team membership: with ONE supervisor in the division, the team is the whole
+ * division (every member belongs to it, whatever reports_to says). With several,
+ * each supervisor's team is them plus the division members who report to them;
+ * anyone reporting to none of them is returned in `unattached` so they are
+ * still shown, never silently dropped.
+ */
+export function divisionView({ group, users }) {
+  const members = listedMembers({ users, userIds: group?.userIds });
+  if (!group || group.id === UNASSIGNED) {
+    return { mode: members.length ? 'team' : 'empty', supervisors: [], members, unattached: [] };
+  }
+  const supervisors = members.filter((u) => u.role === 'supervisor');
+  if (!supervisors.length) {
+    return { mode: members.length ? 'team' : 'empty', supervisors: [], members, unattached: [] };
+  }
+  if (supervisors.length === 1) {
+    return {
+      mode: 'supervisor',
+      supervisors: [{ user: supervisors[0], teamIds: [...group.userIds] }],
+      members,
+      unattached: [],
+    };
+  }
+  const supIds = new Set(supervisors.map((s) => s.id));
+  const cards = supervisors.map((s) => ({
+    user: s,
+    teamIds: [s.id, ...group.userIds.filter((id) => !supIds.has(id) && (users || []).find((u) => u.id === id)?.reports_to === s.id)],
+  }));
+  const covered = new Set(cards.flatMap((c) => c.teamIds));
+  const unattached = members.filter((u) => !covered.has(u.id));
+  return { mode: 'supervisor', supervisors: cards, members, unattached };
+}
+
+/**
+ * The team list: the supervisor pinned FIRST (so their own deals stay
+ * reachable), then everyone else in the team by name.
+ */
+export function teamRows({ users, teamIds, supervisorId }) {
+  const listed = listedMembers({ users, userIds: teamIds });
+  const pinned = supervisorId ? listed.filter((u) => u.id === supervisorId) : [];
+  const rest = listed.filter((u) => u.id !== supervisorId);
+  return [...pinned, ...rest];
+}
+
+/**
  * Figures for one set of users.
  *
  * `data` is one fetch for the whole company:
- *   users     active company users
- *   deals     company deals, lost excluded
- *   targets   active monthly target rows overlapping the month (client_targets embedded)
- *   deals3m   deals created in the 3 completed months, for win rate
- *   opps      open opportunities expected this month
+ *   users         active company users
+ *   deals         company deals, lost excluded
+ *   targets       active monthly target rows overlapping the month (client_targets embedded)
+ *   deals3m       deals created in the 3 completed months, for win rate
+ *   opps          open opportunities expected this month
+ *   futureOrders  pending future orders expected NEXT month (carry-in)
  *   monthStart / monthEnd  yyyy-MM-dd
  */
 export function calcDivisionMetrics(userIds, data) {
-  const { users, deals, targets, deals3m, opps, monthStart, monthEnd } = data;
+  const { users, deals, targets, deals3m, opps, futureOrders, monthStart, monthEnd } = data;
   const scope = new Set(userIds || []);
   const contributorIds = (users || [])
     .filter((u) => scope.has(u.id) && CONTRIBUTOR_ROLES.includes(u.role))
@@ -117,9 +175,10 @@ export function calcDivisionMetrics(userIds, data) {
   const companyContributorIds = (users || [])
     .filter((u) => CONTRIBUTOR_ROLES.includes(u.role))
     .map((u) => u.id);
-  const winRatePct = mine.total > 0
-    ? mine.winRatePct
-    : winRateFromDeals({ deals: deals3m, ownerIds: companyContributorIds }).winRatePct;
+  const winRateBorrowed = mine.total === 0;
+  const winRatePct = winRateBorrowed
+    ? winRateFromDeals({ deals: deals3m, ownerIds: companyContributorIds }).winRatePct
+    : mine.winRatePct;
 
   const achieved = (deals || [])
     .filter(
@@ -132,12 +191,17 @@ export function calcDivisionMetrics(userIds, data) {
     )
     .reduce((sum, d) => sum + (d.final_amount || d.amount || 0), 0);
 
+  const deficit = Math.max(0, target - achieved);
+
   const openDeals = (deals || []).filter(
     (d) => isContributor.has(d.owner_id) && !['won', 'lost'].includes(d.stage),
   );
   const pipeline = openDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
 
   const planned = sumPlannedByOwner({ rows: opps, ownerIds: contributorIds }).total;
+  const carryIn = sumPlannedByOwner({ rows: futureOrders, ownerIds: contributorIds }).total;
+  const requiredRaw = computeRequiredRaw({ target, winRatePct });
+  const { required, plannedGap } = computePlannedGap({ requiredRaw, carryIn, planned });
 
   const { weightedFunnel, weightedPlanning, coverage } = computeCoverage({
     invoiced: achieved,
@@ -149,8 +213,14 @@ export function calcDivisionMetrics(userIds, data) {
   return {
     target,
     achieved,
+    deficit,
     winRatePct,
+    winRateBorrowed,
     planned,
+    carryIn,
+    requiredRaw,
+    required,
+    plannedGap,
     pipeline,
     coverage,
     weightedFunnel,
