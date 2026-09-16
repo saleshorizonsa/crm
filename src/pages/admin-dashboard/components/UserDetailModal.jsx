@@ -6,9 +6,13 @@ import {
   adminService,
   companyService,
 } from "../../../services/supabaseService";
+import AdminAccountActions from "./AdminAccountActions";
 
-const UserDetailModal = ({ user, onClose, onUpdate }) => {
+const UserDetailModal = ({ user, onClose, onUpdate, onRefresh }) => {
   const [editing, setEditing] = useState(false);
+  // Shown in the header; updated in place when an admin renames the user, so the
+  // modal can stay open to show the confirmation.
+  const [displayName, setDisplayName] = useState(user?.full_name || "");
   const [companies, setCompanies] = useState([]);
   const [supervisors, setSupervisors] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -134,11 +138,11 @@ const UserDetailModal = ({ user, onClose, onUpdate }) => {
                 className="w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold text-lg"
                 style={{ backgroundColor: config.color }}
               >
-                {(user.full_name || "U").substring(0, 2).toUpperCase()}
+                {(displayName || "U").substring(0, 2).toUpperCase()}
               </div>
               <div>
                 <h2 className="text-xl font-semibold text-gray-900 mb-1">
-                  {user.full_name || "Unnamed User"}
+                  {displayName || "Unnamed User"}
                 </h2>
                 <p className="text-sm text-gray-500 mb-2">{user.email}</p>
                 <div className="flex items-center gap-2">
@@ -281,6 +285,15 @@ const UserDetailModal = ({ user, onClose, onUpdate }) => {
                 </div>
               </div>
             </div>
+
+            {/* Edit Name / Set Password — renders for admins only */}
+            <AdminAccountActions
+              user={{ ...user, full_name: displayName }}
+              onNameChanged={(name) => {
+                setDisplayName(name);
+                onRefresh?.();
+              }}
+            />
 
             {/* Viewer read-only note */}
             {user.role === "viewer" && (
