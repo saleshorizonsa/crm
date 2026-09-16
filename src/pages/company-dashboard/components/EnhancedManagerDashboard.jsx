@@ -35,6 +35,11 @@ import BounceBackAlert from "../../../components/dashboard/BounceBackAlert";
 import ForecastVarianceAlert from "../../../components/dashboard/ForecastVarianceAlert";
 import TargetBreakdownCard from "../../../components/dashboard/TargetBreakdownCard";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
+import {
+  computeAchieved,
+  achievedAmount,
+  contributorIdsFrom,
+} from "../../../utils/planningCalculations";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
 import ForecastAISummary from "./forecast/ForecastAISummary";
@@ -296,6 +301,29 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     );
   }, [allDeals, activeDateRange.from, activeDateRange.to]);
 
+  // Team Achieved — the one shared rule (utils/planningCalculations.js), the same
+  // figure as this dashboard's KPI "Achieved (invoiced)" card: won AND invoiced, by
+  // invoice_date in the selected period, final value, active salesmen + supervisors
+  // in this team only. A manager's own deals therefore do not count (managers
+  // carry a yearly roll-up, not a monthly quota). It used to count won-but-not-
+  // invoiced deals by close date at `amount`, including the manager's own.
+  const teamAchieved = useMemo(() => {
+    const convertedAchievedAmount = (deal) => {
+      const amount = achievedAmount(deal);
+      const dealCurrency = deal.currency || preferredCurrency;
+      if (dealCurrency === preferredCurrency) return amount;
+      return convertCurrency(amount, dealCurrency, preferredCurrency);
+    };
+    return computeAchieved({
+      deals: allDeals,
+      contributorIds: contributorIdsFrom([effectiveUserProfile, ...(allSubordinates || [])]),
+      start: activeDateRange.from,
+      end: activeDateRange.to,
+      amountOf: convertedAchievedAmount,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allDeals, allSubordinates, effectiveUserProfile?.id, effectiveUserProfile?.role, effectiveUserProfile?.is_active, activeDateRange.from, activeDateRange.to, preferredCurrency]);
+
   // Percentage change vs previous equivalent period
   const changes = useMemo(() => {
     if (!allDeals.length || !activeDateRange?.from) {
@@ -518,27 +546,12 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       return filteredMyTargets;
     }
 
-    // Get subordinate IDs from allSubordinates (includes all team members)
-    const teamSubordinateIds = allSubordinates?.map((s) => s.id) || [];
-
-    const dealsInPeriod = allDeals.filter((deal) => {
-      if (deal.stage !== "won" || !deal.closed_at) return false;
-      return isInSelectedPeriod(deal.closed_at);
-    });
-
-    // Calculate manager's own won deals revenue from deals in the selected period
-    const managerRevenue =
-      dealsInPeriod
-        ?.filter((d) => d.owner_id === user?.id)
-        ?.reduce((sum, d) => sum + getConvertedAmount(d), 0) || 0;
-
-    // Calculate subordinates' won deals revenue from deals in the selected period
-    const subordinatesRevenue =
-      dealsInPeriod
-        ?.filter((d) => teamSubordinateIds.includes(d.owner_id))
-        ?.reduce((sum, d) => sum + getConvertedAmount(d), 0) || 0;
-
-    const totalProgress = managerRevenue + subordinatesRevenue;
+    // Achieved from the shared rule (teamAchieved above). "Your revenue" is the
+    // viewed manager's own share of it — 0 for a manager under the contributor
+    // rule — and "team revenue" is the rest.
+    const managerRevenue = teamAchieved.perPerson[effectiveUser.id] || 0;
+    const subordinatesRevenue = teamAchieved.total - managerRevenue;
+    const totalProgress = teamAchieved.total;
 
     // If there are no targets for this period, create a synthetic target to hold revenue data
     if (!filteredMyTargets.length) {
@@ -569,11 +582,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   }, [
     filteredMyTargets,
     allDeals,
-    activeDateRange.from,
-    activeDateRange.to,
-    user?.id,
-    allSubordinates,
-    preferredCurrency,
+    teamAchieved,
+    effectiveUser.id,
+    selectedMonth,
+    selectedQuarter,
   ]);
 
   // Calculate performance trend based on active filters
@@ -794,10 +806,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       const wonDeals = userDeals.filter((deal) => deal.stage === "won");
       const lostDeals = userDeals.filter((deal) => deal.stage === "lost");
       const closedDeals = wonDeals.length + lostDeals.length;
-      const totalValue = wonDeals.reduce(
-        (sum, deal) => sum + getConvertedAmount(deal),
-        0,
-      );
+      // Revenue per person = that person's share of Achieved (shared rule, see
+      // teamAchieved), so the members add up to the KPI "Achieved (invoiced)" card.
+      // Deal counts and win rate below still describe won/lost deals by close date.
+      const totalValue = teamAchieved.perPerson[teamUser.id] || 0;
 
       return {
         id: teamUser.id,
@@ -984,6 +996,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     selectedMonth,
     selectedQuarter,
     selectedYear,
+    teamAchieved,
   ]);
 
   const loadPipelineData = async () => {
@@ -1677,16 +1690,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                         {t("dashboard.achieved")}
                       </p>
                       <p className="text-xl font-bold text-green-700">
-                        {formatCurrency(
-                          targetsWithRecalculatedProgress.reduce(
-                            (sum, t) =>
-                              sum +
-                              parseFloat(
-                                t.calculated_progress || t.progress_amount || 0,
-                              ),
-                            0,
-                          ),
-                        )}
+                        {/* Once, not once per target row — adding it per row
+                            multiplied the team total by the number of targets. */}
+                        {formatCurrency(teamAchieved.total)}
                       </p>
                     </div>
                     <div className="p-3 bg-purple-50 rounded-lg">
@@ -1694,13 +1700,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                         {t("dashboard.yourRevenue")}
                       </p>
                       <p className="text-xl font-bold text-purple-700">
-                        {formatCurrency(
-                          targetsWithRecalculatedProgress.reduce(
-                            (sum, t) =>
-                              sum + parseFloat(t.manager_revenue || 0),
-                            0,
-                          ),
-                        )}
+                        {formatCurrency(teamAchieved.perPerson[effectiveUser.id] || 0)}
                       </p>
                     </div>
                     <div className="p-3 bg-amber-50 rounded-lg">
@@ -1709,12 +1709,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                       </p>
                       <p className="text-xl font-bold text-amber-700">
                         {formatCurrency(
-                          targetsWithRecalculatedProgress.reduce(
-                            (sum, t) =>
-                              sum +
-                              parseFloat(t.subordinates_contribution || 0),
-                            0,
-                          ),
+                          teamAchieved.total - (teamAchieved.perPerson[effectiveUser.id] || 0),
                         )}
                       </p>
                     </div>
@@ -1730,17 +1725,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                               (sum, t) =>
                                 sum + (parseFloat(t.target_amount) || 0),
                               0,
-                            ) -
-                              targetsWithRecalculatedProgress.reduce(
-                                (sum, t) =>
-                                  sum +
-                                  parseFloat(
-                                    t.calculated_progress ||
-                                      t.progress_amount ||
-                                      0,
-                                  ),
-                                0,
-                              ),
+                            ) - teamAchieved.total,
                           ),
                         )}
                       </p>
@@ -1751,10 +1736,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   {!targetsWithRecalculatedProgress[0]?.is_synthetic && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                       {targetsWithRecalculatedProgress.map((target) => {
-                        const progressAmount =
-                          target.calculated_progress ||
-                          target.progress_amount ||
-                          0;
+                        // Computed Achieved only — no fallback to the stored
+                        // progress_amount, which is stale when the real total is 0.
+                        const progressAmount = target.calculated_progress || 0;
                         const progress =
                           (parseFloat(progressAmount) /
                             parseFloat(target.target_amount || 1)) *

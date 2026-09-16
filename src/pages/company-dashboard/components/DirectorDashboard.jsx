@@ -29,6 +29,9 @@ import SalesTargetTable from "../../../components/SalesTargetTable";
 import {
   CONTRIBUTOR_ROLES,
   targetPerPerson,
+  computeAchieved,
+  achievedAmount,
+  contributorIdsFrom,
 } from "../../../utils/planningCalculations";
 
 // New enhanced components
@@ -411,6 +414,14 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       }) || []
     );
   }, [allDealsData, activeDateRange.from, activeDateRange.to]);
+
+  // Whose invoiced deals count as Achieved — the same active salesmen + supervisors
+  // the KPI strip uses (utils/planningCalculations.js), narrowed to the drilled-in
+  // employee when there is one.
+  const achievedContributorIds = useMemo(() => {
+    const ids = contributorIdsFrom(allEmployees);
+    return selectedEmployee?.id ? ids.filter((id) => id === selectedEmployee.id) : ids;
+  }, [allEmployees, selectedEmployee?.id]);
 
   // Percentage change vs previous equivalent period
   const changes = useMemo(() => {
@@ -846,16 +857,16 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     }
   }, [companies, activeDateRange.from, activeDateRange.to]);
 
-  // Recalculate companiesWithMetrics from ALL company deals (not period-filtered).
-  // Revenue = invoiced won deals this month (final value); Active Deals + Remaining
-  // Revenue = every open deal regardless of when it was created.
+  // Refresh the SELECTED company's card when its deals load. Revenue = Achieved,
+  // the one shared rule (utils/planningCalculations.js), for the selected period;
+  // Active Deals + Remaining Revenue = every open deal regardless of when it was
+  // created. allDealsData holds only the selected company's deals, so every other
+  // company keeps the figures loadCompaniesWithMetrics computed for it — this used
+  // to reset them to 0 and lock revenue to the current calendar month.
   useEffect(() => {
     if (companies.length > 0 && allDealsData.length > 0) {
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
       const conv = (d) => {
-        const amount = parseFloat(d.final_amount ?? d.amount) || 0;
+        const amount = achievedAmount(d);
         const dealCurrency = d.currency || preferredCurrency;
         return dealCurrency !== preferredCurrency
           ? convertCurrency(amount, dealCurrency, preferredCurrency)
@@ -864,17 +875,16 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
       const updatedCompanies = companies.map((company) => {
         const companyDeals = allDealsData.filter((d) => d.company_id === company.id);
+        const existingCompany = companiesWithMetrics.find((c) => c.id === company.id);
+        if (companyDeals.length === 0) return existingCompany || company;
 
-        // Revenue = invoiced won deals with invoice_date in the current month.
-        const invoicedWon = companyDeals.filter(
-          (d) =>
-            d.stage === "won" &&
-            d.is_invoiced === true &&
-            d.invoice_date &&
-            new Date(d.invoice_date) >= monthStart &&
-            new Date(d.invoice_date) <= monthEnd,
-        );
-        const totalRevenue = invoicedWon.reduce((sum, d) => sum + conv(d), 0);
+        const { total: totalRevenue } = computeAchieved({
+          deals: companyDeals,
+          contributorIds: contributorIdsFrom(allEmployees),
+          start: activeDateRange.from,
+          end: activeDateRange.to,
+          amountOf: conv,
+        });
 
         // Open deals (no date filter) → Active Deals + Remaining Revenue.
         const openDeals = companyDeals.filter((d) => !["won", "lost"].includes(d.stage));
@@ -885,8 +895,6 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             ? convertCurrency(amount, dealCurrency, preferredCurrency)
             : amount);
         }, 0);
-
-        const existingCompany = companiesWithMetrics.find((c) => c.id === company.id);
 
         return {
           ...company,
@@ -903,7 +911,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       });
       setCompaniesWithMetrics(updatedCompanies);
     }
-  }, [allDealsData, companies, preferredCurrency]);
+  }, [allDealsData, companies, preferredCurrency, allEmployees, activeDateRange.from, activeDateRange.to]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update selected company when prop changes
   useEffect(() => {
@@ -1692,14 +1700,6 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                 salesTargetService.getAssignedTargets(company.id),
               ]);
 
-            // Filter deals by the selected period. Won deals are windowed by
-            // invoice_date so revenue = achievement = invoiced deals only, matching
-            // the KPI Achieved card (This Year → YTD, This Month → the month, etc.).
-            const filteredDeals = (deals || []).filter((deal) => {
-              if (deal.stage === "won") return isInSelectedPeriod(deal.invoice_date);
-              return isInSelectedPeriod(deal.created_at);
-            });
-
             // Filter targets by selected period - only consider monthly targets
             const filteredTargets = (targets || []).filter((target) => {
               if (!target.period_start) return false;
@@ -1744,19 +1744,23 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               return true;
             });
 
-            // Revenue = invoiced won deals only (final value where negotiated).
-            const wonDeals = filteredDeals.filter(
-              (d) => d.stage === "won" && d.is_invoiced === true,
-            );
-            const totalRevenue = wonDeals.reduce((sum, d) => {
-              const amount = parseFloat(d.final_amount ?? d.amount) || 0;
-              const dealCurrency = d.currency || preferredCurrency;
-              const convertedAmount =
-                dealCurrency !== preferredCurrency
+            // Revenue = Achieved — the one shared rule (utils/planningCalculations.js):
+            // won AND invoiced, by invoice_date in the selected period, final value,
+            // this company's active salesmen + supervisors only. It used to count every
+            // owner, so a manager's own invoiced deal inflated this card above the KPI.
+            const { total: totalRevenue } = computeAchieved({
+              deals,
+              contributorIds: contributorIdsFrom(users),
+              start: activeDateRange.from,
+              end: activeDateRange.to,
+              amountOf: (d) => {
+                const amount = achievedAmount(d);
+                const dealCurrency = d.currency || preferredCurrency;
+                return dealCurrency !== preferredCurrency
                   ? convertCurrency(amount, dealCurrency, preferredCurrency)
                   : amount;
-              return sum + convertedAmount;
-            }, 0);
+              },
+            });
             // Open deals (no date filter) → Active Deals + Remaining Revenue.
             const openDeals = (deals || []).filter(
               (d) => !["won", "lost"].includes(d.stage),
@@ -1979,6 +1983,8 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         showAvg={!selectedEmployee}
         employees={allEmployees}
         annual={!selectedEmployee && isAnnualView ? annualData : null}
+        achievedRange={{ start: activeDateRange.from, end: activeDateRange.to }}
+        contributorIds={achievedContributorIds}
       />
 
       {/* Company Performance Grid */}

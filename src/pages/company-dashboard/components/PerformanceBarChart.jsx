@@ -13,6 +13,7 @@ import {
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
+import { computeAchieved, achievedAmount } from "../../../utils/planningCalculations";
 
 const PerformanceBarChart = ({
   dealsData = [],
@@ -25,6 +26,8 @@ const PerformanceBarChart = ({
   showAvg = true,
   employees = [],
   annual = null, // director annual view: { target, achieved, deficit, dealCount } → YTD summary tiles
+  achievedRange = null, // { start, end } yyyy-MM-dd — the dashboard's selected period
+  contributorIds = null, // whose deals count as Achieved (active salesmen + supervisors)
 }) => {
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { t } = useLanguage();
@@ -45,11 +48,33 @@ const PerformanceBarChart = ({
   // negotiated final_amount when present (falls back to amount) so revenue counts
   // the closing value; open deals have no final_amount and use amount.
   const getConvertedAmount = (deal) => {
-    const amount = parseFloat(deal.final_amount ?? deal.amount) || 0;
+    const amount = achievedAmount(deal);
     const dealCurrency = deal.currency || preferredCurrency;
     if (dealCurrency === preferredCurrency) return amount;
     return convertCurrency(amount, dealCurrency, preferredCurrency);
   };
+
+  // Revenue here IS Achieved, so it comes from the one shared rule
+  // (utils/planningCalculations.js): won AND invoiced, by invoice_date inside the
+  // selected period, final value, contributors only. It used to start from the
+  // dashboard's close-date-filtered deal list, which dropped deals invoiced in
+  // the period but closed earlier (and vice versa) and counted every owner.
+  const achievedDeals = useMemo(
+    () =>
+      computeAchieved({
+        deals: allDeals,
+        contributorIds,
+        start: achievedRange?.start || null,
+        end: achievedRange?.end || null,
+        amountOf: getConvertedAmount,
+      }).deals,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allDeals, contributorIds, achievedRange?.start, achievedRange?.end, preferredCurrency],
+  );
+
+  // An achieved deal's month and year, from its invoice_date string (no timezone shift).
+  const invoiceYear = (deal) => Number(String(deal.invoice_date).slice(0, 4));
+  const invoiceMonth = (deal) => Number(String(deal.invoice_date).slice(5, 7)) - 1;
 
   // Generate time period labels
   const getTimePeriodLabels = () => {
@@ -97,12 +122,10 @@ const PerformanceBarChart = ({
       // Unique salesmen who won a deal in THIS period — used as the avg divisor
       const activeOwners = new Set();
 
-      // Calculate revenue from deals
-      dealsData.forEach((deal) => {
-        // Won revenue is bucketed by invoice_date (achievement = invoiced).
-        const dealDate = new Date(deal.invoice_date || deal.closed_at || deal.created_at);
-        const dealYear = dealDate.getFullYear();
-        const dealMonth = dealDate.getMonth();
+      // Revenue = Achieved deals (shared rule above), bucketed by invoice month.
+      achievedDeals.forEach((deal) => {
+        const dealYear = invoiceYear(deal);
+        const dealMonth = invoiceMonth(deal);
 
         const countDeal = () => {
           revenue += getConvertedAmount(deal);
@@ -110,26 +133,16 @@ const PerformanceBarChart = ({
           if (deal.owner_id) activeOwners.add(deal.owner_id);
         };
 
-        if (
-          timePeriod === "month" &&
-          dealYear === year &&
-          dealMonth === period.month
-        ) {
-          if (deal.stage === "won" && deal.is_invoiced === true) {
-            countDeal();
-          }
+        if (timePeriod === "month" && dealYear === year && dealMonth === period.month) {
+          countDeal();
         } else if (
           timePeriod === "quarter" &&
           dealYear === year &&
           period.quarters.includes(dealMonth)
         ) {
-          if (deal.stage === "won" && deal.is_invoiced === true) {
-            countDeal();
-          }
+          countDeal();
         } else if (timePeriod === "year" && dealYear === period.year) {
-          if (deal.stage === "won" && deal.is_invoiced === true) {
-            countDeal();
-          }
+          countDeal();
         }
       });
 
@@ -168,7 +181,7 @@ const PerformanceBarChart = ({
         achievement: target > 0 ? Math.round((revenue / target) * 100) : 0,
       };
     });
-  }, [dealsData, targetsData, timePeriod, year]);
+  }, [achievedDeals, targetsData, timePeriod, year]);
 
   // Per-salesman revenue breakdown for the displayed range.
   // Includes every active salesman (zeros for non-performers) and counts
@@ -176,8 +189,7 @@ const PerformanceBarChart = ({
   const { salesmenBreakdown, activeSalesmenCount } = useMemo(() => {
     const currentYear = new Date().getFullYear();
     const inRange = (deal) => {
-      const dealDate = new Date(deal.invoice_date || deal.closed_at || deal.created_at);
-      const dealYear = dealDate.getFullYear();
+      const dealYear = invoiceYear(deal);
       if (timePeriod === "year") {
         return dealYear >= currentYear - 4 && dealYear <= currentYear;
       }
@@ -188,8 +200,9 @@ const PerformanceBarChart = ({
     const dealCountMap = {};
     const activeIds = new Set();
 
-    dealsData.forEach((deal) => {
-      if (deal.stage !== "won" || deal.is_invoiced !== true || !deal.owner_id || !inRange(deal)) return;
+    // Achieved deals only (shared rule), so the breakdown adds up to Total Revenue.
+    achievedDeals.forEach((deal) => {
+      if (!deal.owner_id || !inRange(deal)) return;
       const val = getConvertedAmount(deal);
       revenueMap[deal.owner_id] = (revenueMap[deal.owner_id] || 0) + val;
       dealCountMap[deal.owner_id] = (dealCountMap[deal.owner_id] || 0) + 1;
@@ -206,7 +219,7 @@ const PerformanceBarChart = ({
       .sort((a, b) => b.revenue - a.revenue);
 
     return { salesmenBreakdown: breakdown, activeSalesmenCount: activeIds.size };
-  }, [dealsData, salesmenList, timePeriod, year, preferredCurrency]);
+  }, [achievedDeals, salesmenList, timePeriod, year, preferredCurrency]);
 
   // Calculate summary stats
   const summaryStats = useMemo(() => {

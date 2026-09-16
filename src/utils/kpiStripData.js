@@ -7,6 +7,8 @@ import {
   computeRequiredRaw,
   computeCarryIn,
   computePlannedGap,
+  fetchAchieved,
+  fetchContributors,
 } from 'utils/planningCalculations';
 
 // TEMP: set true to re-enable the KPI diagnostic logs (see end of the function).
@@ -48,7 +50,8 @@ function threeMonthWindow() {
 //                 period (total_value, else the by_clients breakdown of the
 //                 same goal; by_products never counts). For "This Year",
 //                 the explicit annual target row is preferred when one exists.
-//   Achieved    = won-deal value closed this month
+//   Achieved    = invoiced won deals in the window, by invoice_date, final value —
+//                 fetchAchieved() in utils/planningCalculations.js
 //   Deficit     = max(0, Target − Achieved)
 //   Win Rate    = 3-month average (won ÷ total created, last 3 completed months;
 //                 defaults to 50% with no history)
@@ -104,21 +107,10 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
       monthlyTotal: Object.values(targetPer).reduce((sum, v) => sum + v, 0),
     });
   }
-  // 3. Achieved — INVOICED won deals for this month (by invoice_date). Achievement
-  //    is only counted once a deal is invoiced, not merely won/closed (director rule).
-  const { data: wonDeals } = await supabase
-    .from('deals')
-    .select('owner_id, amount, final_amount, invoice_date')
-    .eq('company_id', companyId)
-    .eq('stage', 'won')
-    .eq('is_invoiced', true)
-    .in('owner_id', scopeIds)
-    .gte('invoice_date', winStart)
-    .lte('invoice_date', winEnd);
-  const achievedPer = {};
-  (wonDeals || []).forEach((d) => {
-    const amt = parseFloat(d.final_amount ?? d.amount) || 0;
-    achievedPer[d.owner_id] = (achievedPer[d.owner_id] || 0) + amt;
+  // 3. Achieved — the one shared rule (utils/planningCalculations.js): INVOICED won
+  //    deals by invoice_date in the window, final value, contributors only.
+  const { perPerson: achievedPer, count: wonDealCount } = await fetchAchieved({
+    companyId, contributorIds: scopeIds, start: winStart, end: winEnd,
   });
 
   // 4. Win rate — deals created in the last 3 completed months, grouped by owner.
@@ -273,7 +265,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     console.log('ownerIds (scope requested):', ownerIds === null ? 'NULL → whole company' : ownerIds);
     console.log('users/scopeIds:', scopeIds.length, userList.map((u) => `${u.full_name} (${u.role})`));
     console.log('targets rows fetched:', (targets || []).length, targets);
-    console.log('won deals this month:', (wonDeals || []).length);
+    console.log('won deals this month:', wonDealCount);
     console.log('deals (3-mo window):', (deals3 || []).length, '| won:', won3);
     console.log('opportunities (open, this month):', (opps || []).length);
     console.log('salesmanData built:', salesmanData);
@@ -312,17 +304,17 @@ export async function computeDirectorAnnual({ companyId }) {
     monthlyTotal: 0,
   });
 
-  // YTD achieved = invoiced won deals this calendar year (final value where set).
-  const { data: won } = await supabase
-    .from('deals')
-    .select('amount, final_amount')
-    .eq('company_id', companyId)
-    .eq('stage', 'won')
-    .eq('is_invoiced', true)
-    .gte('invoice_date', yearStart)
-    .lte('invoice_date', yearEnd);
-  const achieved = (won || []).reduce((s, d) => s + (parseFloat(d.final_amount ?? d.amount) || 0), 0);
-  const dealCount = (won || []).length;
+  // YTD achieved — the one shared rule (utils/planningCalculations.js): invoiced
+  // won deals this calendar year, final value, CONTRIBUTORS only. This used to
+  // count every owner in the company, so the director's "YTD Revenue" disagreed
+  // with the KPI strip's annual Achieved by the managers' own deals.
+  const contributors = await fetchContributors({ companyId });
+  const { total: achieved, count: dealCount } = await fetchAchieved({
+    companyId,
+    contributorIds: contributors.map((c) => c.id),
+    start: yearStart,
+    end: yearEnd,
+  });
 
   const deficit = Math.max(0, target - achieved);
   const attainmentPct = target > 0 ? (achieved / target) * 100 : 0;

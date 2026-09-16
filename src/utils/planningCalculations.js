@@ -371,6 +371,80 @@ export function computeCoverage({ invoiced, openDeals, planned, winRatePct }) {
   };
 }
 
+// ── 7. ACHIEVED ─────────────────────────────────────────────────────────────
+/**
+ * The single definition of Achieved.
+ *
+ *   A deal counts when stage = 'won' AND is_invoiced = true, dated by its
+ *   invoice_date (yyyy-MM-dd) inside [start, end]. Its value is
+ *   final_amount ?? amount. Only CONTRIBUTORS' deals count — active salesmen and
+ *   supervisors (CONTRIBUTOR_ROLES) — so a manager's own deals do not move the
+ *   monthly achievement, exactly as they do not move the monthly target.
+ *
+ * Extracted from computeKpiStripData, which was the one correct copy. Five other
+ * places had drifted: Performance Summary picked deals by close date, Company
+ * Performance counted every owner (and one of its two writers was locked to the
+ * current month), and the manager dashboard counted won-but-not-invoiced deals at
+ * `amount`. For one month they showed 362,762 / 417,401 / 413,976 / 620,779 for
+ * the same thing.
+ */
+export const achievedAmount = (deal) => parseFloat(deal?.final_amount ?? deal?.amount) || 0;
+
+/** True when this one deal is invoiced achievement inside [start, end]. */
+export function isAchievedDeal(deal, { start = null, end = null } = {}) {
+  if (!deal || deal.stage !== 'won' || deal.is_invoiced !== true || !deal.invoice_date) return false;
+  const day = String(deal.invoice_date).slice(0, 10);
+  return (!start || day >= start) && (!end || day <= end);
+}
+
+/** Ids of the ACTIVE contributors in a list of user rows (needs role + is_active). */
+export function contributorIdsFrom(users) {
+  return (users || [])
+    .filter((u) => u && u.is_active === true && CONTRIBUTOR_ROLES.includes(u.role))
+    .map((u) => u.id);
+}
+
+/**
+ * Achieved from deal rows already in hand — for pages that load their deals once.
+ *
+ * @param {object[]} p.deals           deal rows (stage, is_invoiced, invoice_date, amount, final_amount, owner_id)
+ * @param {string[]} p.contributorIds  whose deals count (see contributorIdsFrom / fetchContributors)
+ * @param {string}   [p.start]         yyyy-MM-dd, inclusive
+ * @param {string}   [p.end]           yyyy-MM-dd, inclusive
+ * @param {function} [p.amountOf]      value of one deal; defaults to achievedAmount. A
+ *                                     screen that displays converted currency passes a
+ *                                     converter around achievedAmount — the RULE stays the same.
+ * @returns {{ total:number, perPerson:Record<string,number>, count:number, deals:object[] }}
+ */
+export function computeAchieved({ deals, contributorIds, start = null, end = null, amountOf = achievedAmount }) {
+  const scope = new Set(contributorIds || []);
+  const counted = (deals || []).filter((d) => scope.has(d.owner_id) && isAchievedDeal(d, { start, end }));
+  const perPerson = {};
+  counted.forEach((d) => {
+    perPerson[d.owner_id] = (perPerson[d.owner_id] || 0) + amountOf(d);
+  });
+  const total = Object.values(perPerson).reduce((sum, v) => sum + v, 0);
+  return { total, perPerson, count: counted.length, deals: counted };
+}
+
+/** Achieved straight from the database, same rule as computeAchieved. */
+export async function fetchAchieved({ companyId, contributorIds, start = null, end = null }) {
+  const empty = { total: 0, perPerson: {}, count: 0, deals: [] };
+  if (!companyId || !contributorIds?.length) return empty;
+  let q = supabase
+    .from('deals')
+    .select('id, owner_id, stage, is_invoiced, amount, final_amount, invoice_date')
+    .eq('company_id', companyId)
+    .eq('stage', 'won')
+    .eq('is_invoiced', true)
+    .in('owner_id', contributorIds);
+  if (start) q = q.gte('invoice_date', start);
+  if (end) q = q.lte('invoice_date', end);
+  const { data, error } = await q;
+  if (error) { console.error('fetchAchieved:', error); return empty; }
+  return computeAchieved({ deals: data, contributorIds, start, end });
+}
+
 // ── Orchestrator ────────────────────────────────────────────────────────────
 /** First/last day of the current month, as ISO strings and yyyy-MM-dd. */
 export function monthBounds(d = new Date()) {
