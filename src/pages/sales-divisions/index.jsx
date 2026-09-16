@@ -11,19 +11,23 @@ import {
   divisionView,
   teamRows,
   calcDivisionMetrics,
+  buildExceptions,
   healthOf,
 } from "utils/salesDivisionMetrics";
+import { DivisionCoverageHero, DivisionCycleLedger } from "./components/DivisionCoverageHero";
+import DivisionExceptionFeed from "./components/DivisionExceptionFeed";
 
 // Sales Divisions — Company → Division → Team → Member → Deal.
 //
-// A separate page from the Coverage Console: same look, its own code and data.
-// It groups people by product line (users.sales_division_id). Directors see the
-// whole company; managers see their own team. Current month only.
+// A separate page from the Coverage Console: its presentation (hero, coverage
+// equation, coverage + pacing rails, cycle ledger, exception feed) is COPIED
+// into ./components, never imported, and every number comes from
+// utils/salesDivisionMetrics.js -> utils/planningCalculations.js.
 //
-//   Company   the divisions (+ Unassigned) as rows
-//   Division  the supervisor's card: TEAM totals, their own figures below
-//   Team      the supervisor pinned first, then the rest of the team
-//   Member    that person's open deals
+//   Company   hero + ledger for the whole scope, the divisions, exception feed
+//   Division  hero + ledger for the division, the supervisor card, exception feed
+//   Team      hero + ledger for the team, the team table, exception feed
+//   Member    hero + ledger for that person, their open deals
 //   Deal      the deal record
 // A division with no supervisor opens straight to its team list, or to an empty
 // state when nobody is in it.
@@ -44,9 +48,7 @@ const pct = (n, d = 1) => (Number(n) || 0).toFixed(d) + "%";
 const stageLabel = (s) => String(s || "").replace(/_/g, " ");
 
 const fmtDate = (d) =>
-  d
-    ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-    : "—";
+  d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
 const dealName = (d) =>
   d?.contacts?.company_name ||
@@ -55,7 +57,7 @@ const dealName = (d) =>
   "Deal";
 
 const HEALTH = {
-  ok: { text: "Covered", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" },
+  ok: { text: "Healthy", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" },
   risk: { text: "At risk", cls: "bg-amber-50 text-amber-800 border-amber-200" },
   bad: { text: "Off plan", cls: "bg-red-50 text-red-800 border-red-200" },
   none: { text: "No target", cls: "bg-gray-50 text-gray-500 border-gray-200" },
@@ -66,9 +68,7 @@ const COLUMNS = ["Name", "Target", "Achieved", "Deficit", "Win rate", "Planned g
 function StatusChip({ m }) {
   const h = HEALTH[healthOf(m)];
   return (
-    <span className={`text-[10px] font-semibold px-2 py-1 rounded-full border whitespace-nowrap ${h.cls}`}>
-      {h.text}
-    </span>
+    <span className={`text-[10px] font-semibold px-2 py-1 rounded-full border whitespace-nowrap ${h.cls}`}>{h.text}</span>
   );
 }
 
@@ -90,10 +90,20 @@ function CoverageCell({ m }) {
   );
 }
 
+function Panel({ title, hint, children }) {
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden self-start">
+      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
+        {hint && <span className="text-xs text-gray-400 whitespace-nowrap">{hint}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function FigureTable({ rows, empty }) {
-  if (!rows.length) {
-    return <div className="py-12 text-center text-sm text-gray-400">{empty}</div>;
-  }
+  if (!rows.length) return <div className="py-12 text-center text-sm text-gray-400">{empty}</div>;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
@@ -173,10 +183,9 @@ export default function SalesDivisions() {
   const [divisionsNote, setDivisionsNote] = useState("");
 
   // Drilling changes state, not the route, so scroll back up by hand.
-  const scrollToTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
   const go = (next) => {
     setNav(next);
-    scrollToTop();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   // ── DATA ── one fetch, every level computed in memory.
@@ -190,7 +199,7 @@ export default function SalesDivisions() {
       const { startDate: monthStart, endDate: monthEnd } = monthBounds(now);
       const nextMonth = nextMonthBounds(now);
 
-      const [usersRes, divisionsRes, dealsRes, targetsRes, deals3mRes, oppsRes, futureRes] =
+      const [usersRes, divisionsRes, dealsRes, targetsRes, deals3mRes, oppsRes, futureRes, flagsRes, escalationsRes] =
         await Promise.all([
           supabase
             .from("users")
@@ -240,6 +249,17 @@ export default function SalesDivisions() {
             .eq("status", "pending")
             .gte("expected_month", nextMonth.startDate)
             .lte("expected_month", nextMonth.endDate),
+          // Exceptions — the Coverage Console's two sources.
+          supabase
+            .from("salesman_flags")
+            .select("id, owner_id, flag_type, flagged_at, details, reviewed")
+            .eq("company_id", company.id)
+            .eq("reviewed", false),
+          supabase
+            .from("escalation_logs")
+            .select("id, trigger_type, triggered_for, triggered_by, deal_id, details, resolved, created_at")
+            .eq("company_id", company.id)
+            .eq("resolved", false),
         ]);
 
       const failed = [usersRes, dealsRes, targetsRes, deals3mRes, oppsRes, futureRes].find((r) => r.error);
@@ -247,6 +267,9 @@ export default function SalesDivisions() {
       if (divisionsRes.error) {
         setDivisionsNote("Sales divisions could not be loaded, so everyone is shown under Unassigned.");
       }
+      // Exceptions never block the page (the Coverage Console treats them the same way).
+      if (flagsRes.error) console.warn("Sales Divisions: salesman_flags not loaded:", flagsRes.error.message);
+      if (escalationsRes.error) console.warn("Sales Divisions: escalation_logs not loaded:", escalationsRes.error.message);
 
       setRaw({
         users: usersRes.data || [],
@@ -256,6 +279,8 @@ export default function SalesDivisions() {
         deals3m: deals3mRes.data || [],
         opps: oppsRes.data || [],
         futureOrders: futureRes.data || [],
+        flags: flagsRes.error ? [] : flagsRes.data || [],
+        escalations: escalationsRes.error ? [] : escalationsRes.data || [],
         monthStart,
         monthEnd,
         now,
@@ -327,16 +352,9 @@ export default function SalesDivisions() {
   const currentMember = nav.member ? userById.get(nav.member) : null;
   const currentDeal = nav.deal ? raw.deals.find((d) => d.id === nav.deal) : null;
 
-  // Opening a division: supervisor card(s), or straight to the team, or empty.
   const openDivision = (group) => {
     const v = divisionView({ group, users: raw.users });
-    go({
-      level: v.mode === "team" ? "team" : "division",
-      division: group.id,
-      supervisor: null,
-      member: null,
-      deal: null,
-    });
+    go({ level: v.mode === "team" ? "team" : "division", division: group.id, supervisor: null, member: null, deal: null });
   };
 
   const levelIds =
@@ -350,28 +368,48 @@ export default function SalesDivisions() {
       ? [nav.member]
       : [];
   const metrics = metricsFor(levelIds);
+  const showExceptions = ["company", "division", "team"].includes(nav.level);
+  const exceptions = showExceptions ? buildExceptions(levelIds, raw) : [];
+
+  // Exception click: open that person's deal, inside their own division.
+  const jumpToException = (ex) => {
+    const g = groups.find((x) => x.userIds.includes(ex.ownerId));
+    const hasDeal = ex.dealId && raw.deals.some((d) => d.id === ex.dealId);
+    go({
+      level: hasDeal ? "deal" : "member",
+      division: g?.id || null,
+      supervisor: null,
+      member: ex.ownerId,
+      deal: hasDeal ? ex.dealId : null,
+    });
+  };
 
   const scopeLabel = role === "manager" ? "Manager view · your team" : "Director view · whole company";
 
   const hero = (() => {
+    const winRate = `${pct(metrics.winRatePct, 0)} win rate`;
     if (nav.level === "company")
       return {
         title: company?.name || "All Divisions",
-        sub: `${groups.length - 1} divisions · ${listedMembers({ users: raw.users, userIds: scopeIds }).length} team members`,
+        sub: `${groups.length - 1} divisions · ${listedMembers({ users: raw.users, userIds: scopeIds }).length} team members · ${winRate}`,
       };
     if (nav.level === "division")
       return {
         title: currentGroup?.name || "Division",
-        sub: view?.mode === "empty" ? "no supervisor assigned" : `${view?.members.length || 0} team members`,
+        sub:
+          view?.mode === "empty"
+            ? "No supervisor assigned"
+            : `Division total · ${view?.members.length || 0} team members · ${winRate}`,
       };
     if (nav.level === "team")
       return {
         title: currentCard ? `${currentCard.user.full_name}'s team` : currentGroup?.name || "Team",
-        sub: `${currentGroup?.name || ""} · ${teamRows({ users: raw.users, teamIds, supervisorId: nav.supervisor }).length} people`,
+        sub: `Team total · ${teamRows({ users: raw.users, teamIds, supervisorId: nav.supervisor }).length} people · ${winRate}`,
       };
-    if (nav.level === "member")
-      return { title: userName(nav.member), sub: `${currentMember?.role || ""} · ${currentGroup?.name || ""}` };
-    return { title: dealName(currentDeal), sub: `${userName(nav.member)} · deal record` };
+    return {
+      title: userName(nav.member),
+      sub: `${currentMember?.role || ""} · ${currentGroup?.name || ""} · ${winRate}`,
+    };
   })();
 
   // Breadcrumb. The division crumb returns to wherever that division opens.
@@ -392,9 +430,7 @@ export default function SalesDivisions() {
           to: { level: "team", division: currentGroup.id, supervisor: currentCard.user.id, member: null, deal: null },
         }
       : null,
-    currentMember
-      ? { key: "member", label: currentMember.full_name, to: { ...nav, level: "member", deal: null } }
-      : null,
+    currentMember ? { key: "member", label: currentMember.full_name, to: { ...nav, level: "member", deal: null } } : null,
     currentDeal ? { key: "deal", label: dealName(currentDeal), to: nav } : null,
   ].filter(Boolean);
 
@@ -425,30 +461,142 @@ export default function SalesDivisions() {
       : [];
 
   const dealRows =
-    nav.level === "member"
+    nav.level === "member" || nav.level === "deal"
       ? raw.deals
           .filter((d) => d.owner_id === nav.member && !["won", "lost"].includes(d.stage))
           .sort((a, b) => (b.amount || 0) - (a.amount || 0))
       : [];
 
-  const tiles = [
-    { label: "Target", value: `${compact(metrics.target)} SAR`, note: "this month" },
-    {
-      label: "Achieved",
-      value: `${compact(metrics.achieved)} SAR`,
-      note: metrics.target > 0 ? `${pct((metrics.achieved / metrics.target) * 100)} of target` : "invoiced",
-      cls: "text-emerald-700",
-    },
-    { label: "Deficit", value: `${compact(metrics.deficit)} SAR`, note: "target − achieved", cls: "text-red-600" },
-    { label: "Win rate", value: pct(metrics.winRatePct), note: metrics.winRateBorrowed ? "company rate (no deals yet)" : "3-month" },
-    { label: "Planned gap", value: `${compact(metrics.plannedGap)} SAR`, note: "still to plan", cls: "text-blue-700" },
-    {
-      label: "Coverage",
-      value: metrics.target > 0 ? pct(metrics.covRatio * 100, 0) : `${compact(metrics.coverage)} SAR`,
-      note: `${compact(metrics.coverage)} SAR vs target`,
-      cls: metrics.target > 0 ? (metrics.covRatio >= 1 ? "text-emerald-700" : "text-red-600") : "text-gray-900",
-    },
-  ];
+  // ── MAIN PANEL per level ──
+  const mainPanel = (() => {
+    if (nav.level === "company") {
+      return (
+        <Panel title="Sales divisions" hint="Click to drill down ▸">
+          <FigureTable rows={companyRows} empty="No divisions" />
+        </Panel>
+      );
+    }
+
+    if (nav.level === "division" && view) {
+      if (view.mode === "empty") {
+        return (
+          <div className="bg-white rounded-2xl border border-dashed border-gray-300 py-12 text-center self-start">
+            <p className="text-sm font-semibold text-gray-700">No supervisor assigned</p>
+            <p className="text-xs text-gray-400 mt-1">No team members assigned to this division yet</p>
+          </div>
+        );
+      }
+      return (
+        <div className="space-y-4 self-start">
+          {view.supervisors.map((card) => {
+            const team = metricsFor(card.teamIds);
+            const own = metricsFor([card.user.id]);
+            const others = teamRows({ users: raw.users, teamIds: card.teamIds, supervisorId: card.user.id }).length - 1;
+            return (
+              <button
+                key={card.user.id}
+                onClick={() => go({ ...nav, level: "team", supervisor: card.user.id, member: null, deal: null })}
+                className="w-full text-left bg-white rounded-2xl border border-gray-200 p-5 hover:border-indigo-300 hover:shadow-sm transition-all"
+              >
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-mono text-indigo-600 uppercase tracking-widest mb-1">Supervisor</p>
+                    <h3 className="text-lg font-bold text-gray-900 truncate">{card.user.full_name}</h3>
+                    <p className="text-xs text-gray-500 font-mono">
+                      Team of {others + 1} · {others} {others === 1 ? "person" : "people"} under them
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <StatusChip m={team} />
+                    <span className="text-xs text-gray-400 hidden sm:inline">View team &#9656;</span>
+                  </div>
+                </div>
+                <p className="text-[10px] font-mono text-gray-400 uppercase tracking-widest mb-2">Team total</p>
+                <Figures m={team} />
+                <div className="mt-4 pt-3 border-t border-gray-100">
+                  <p className="text-[10px] font-mono text-gray-400 uppercase tracking-widest mb-2">
+                    {card.user.full_name}'s own figures
+                  </p>
+                  <Figures m={own} small />
+                </div>
+              </button>
+            );
+          })}
+          {view.unattached.length > 0 && (
+            <Panel title="Not under a supervisor in this division">
+              <FigureTable
+                rows={view.unattached.map((u) => ({
+                  id: u.id,
+                  name: u.full_name,
+                  sub: u.role,
+                  m: metricsFor([u.id]),
+                  onClick: () => go({ ...nav, level: "member", supervisor: null, member: u.id, deal: null }),
+                }))}
+                empty=""
+              />
+            </Panel>
+          )}
+        </div>
+      );
+    }
+
+    if (nav.level === "team") {
+      return (
+        <Panel
+          title={
+            nav.supervisor
+              ? "Team"
+              : currentGroup?.id === UNASSIGNED
+              ? "People without a division"
+              : "Team — no supervisor assigned"
+          }
+          hint="Click a person for their deals ▸"
+        >
+          <FigureTable rows={teamList} empty="No team members assigned to this division yet" />
+        </Panel>
+      );
+    }
+
+    // member
+    return (
+      <Panel title="Open deals" hint="Click a deal for details ▸">
+        {dealRows.length === 0 ? (
+          <div className="py-12 text-center text-sm text-gray-400">No open deals</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50">
+                  {["Deal", "Stage", "Amount", "Expected close"].map((h) => (
+                    <th
+                      key={h}
+                      className="text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 whitespace-nowrap"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {dealRows.map((d) => (
+                  <tr
+                    key={d.id}
+                    onClick={() => go({ ...nav, level: "deal", deal: d.id })}
+                    className="cursor-pointer hover:bg-gray-50 transition-colors"
+                  >
+                    <td className="px-4 py-3 font-medium text-gray-900">{dealName(d)}</td>
+                    <td className="px-4 py-3 text-gray-600 capitalize whitespace-nowrap">{stageLabel(d.stage)}</td>
+                    <td className="px-4 py-3 font-mono text-gray-900 whitespace-nowrap">{SAR(d.amount)} SAR</td>
+                    <td className="px-4 py-3 font-mono text-gray-600 whitespace-nowrap">{fmtDate(d.expected_close_date)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+    );
+  })();
 
   // ── RENDER ──
   return (
@@ -466,6 +614,7 @@ export default function SalesDivisions() {
               <span className="text-sm font-semibold text-gray-900">Sales Divisions</span>
               <span className="text-xs text-gray-400 ml-2 font-mono">
                 {raw.now.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
+                {" · "}Day {metrics.dayOfMonth} of {metrics.totalDays}
               </span>
             </div>
           </div>
@@ -504,34 +653,13 @@ export default function SalesDivisions() {
           </div>
         )}
 
-        {/* ── HERO ── */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6">
-          <div className="flex items-start justify-between gap-4 mb-5">
-            <div className="min-w-0">
-              <p className="text-[10px] font-mono text-gray-400 uppercase tracking-widest mb-1">{scopeLabel}</p>
-              <h2 className="text-xl font-bold text-gray-900 truncate">{hero.title}</h2>
-              <p className="text-sm text-gray-500 mt-0.5 font-mono capitalize">{hero.sub}</p>
-            </div>
-            {nav.level !== "deal" && (
-              <span className={`flex-shrink-0 inline-block text-xs font-semibold px-3 py-1.5 rounded-lg border ${HEALTH[healthOf(metrics)].cls}`}>
-                {HEALTH[healthOf(metrics)].text}
-              </span>
-            )}
-          </div>
-
-          {nav.level !== "deal" ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              {tiles.map((t) => (
-                <div key={t.label} className="bg-gray-50 rounded-xl px-4 py-3">
-                  <div className="text-[10px] text-gray-400 uppercase tracking-widest font-mono">{t.label}</div>
-                  <div className={`text-base font-bold font-mono mt-1 ${t.cls || "text-gray-900"}`}>{t.value}</div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">{t.note}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            currentDeal && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {nav.level === "deal" && currentDeal ? (
+          <>
+            <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6">
+              <p className="text-[10px] font-mono text-gray-400 uppercase tracking-widest mb-1">Deal record</p>
+              <h2 className="text-xl font-bold text-gray-900 truncate">{dealName(currentDeal)}</h2>
+              <p className="text-sm text-gray-500 mt-0.5 font-mono">{userName(nav.member)}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-5">
                 {[
                   ["Stage", stageLabel(currentDeal.stage)],
                   ["Amount", `${SAR(currentDeal.amount)} SAR`],
@@ -543,174 +671,53 @@ export default function SalesDivisions() {
                   </div>
                 ))}
               </div>
-            )
-          )}
-
-          {nav.level === "member" && currentMember?.role === "manager" && (
-            <p className="mt-4 text-xs text-gray-500">
-              Managers carry a yearly team target, so their own deals are not counted in these monthly figures.
-              Figures count salesmen and supervisors only.
-            </p>
-          )}
-        </div>
-
-        {/* ── LEVEL 1: COMPANY ── */}
-        {nav.level === "company" && (
-          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-800">Sales divisions</h3>
-              <span className="text-xs text-gray-400">Click to drill down &#9656;</span>
             </div>
-            <FigureTable rows={companyRows} empty="No divisions" />
-          </div>
-        )}
-
-        {/* ── LEVEL 2: DIVISION (supervisor card) ── */}
-        {nav.level === "division" && view && (
-          <div className="space-y-4">
-            {view.mode === "empty" && (
-              <div className="bg-white rounded-2xl border border-dashed border-gray-300 py-12 text-center">
-                <p className="text-sm font-semibold text-gray-700">No supervisor assigned</p>
-                <p className="text-xs text-gray-400 mt-1">No team members assigned to this division yet</p>
+            <Panel title="Deal record">
+              <div className="divide-y divide-gray-50">
+                {[
+                  ["Deal", currentDeal.title || "—"],
+                  ["Customer", dealName(currentDeal)],
+                  ["Owner", userName(currentDeal.owner_id)],
+                  ["Stage", stageLabel(currentDeal.stage)],
+                  ["Amount", `${SAR(currentDeal.amount)} SAR`],
+                  ["Expected close", fmtDate(currentDeal.expected_close_date)],
+                  ["Forecast", currentDeal.forecast_amount ? `${SAR(currentDeal.forecast_amount)} SAR` : "—"],
+                  ["Invoiced", currentDeal.is_invoiced ? `Yes · ${fmtDate(currentDeal.invoice_date)}` : "No"],
+                  ["Created", fmtDate(currentDeal.created_at)],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex justify-between items-baseline gap-4 px-5 py-2.5">
+                    <span className="text-xs text-gray-500 font-mono">{k}</span>
+                    <span className="text-xs font-semibold font-mono text-gray-900 capitalize text-right">{v}</span>
+                  </div>
+                ))}
               </div>
+            </Panel>
+          </>
+        ) : (
+          <>
+            {/* ── HERO: status, coverage equation, coverage rail, pacing rail ── */}
+            <DivisionCoverageHero metrics={metrics} scope={scopeLabel} title={hero.title} sub={hero.sub} />
+
+            {nav.level === "member" && currentMember?.role === "manager" && (
+              <p className="text-xs text-gray-500 px-1">
+                Managers carry a yearly team target, so their own deals are not counted in these monthly figures.
+                Figures count salesmen and supervisors only.
+              </p>
             )}
-            {view.mode === "supervisor" &&
-              view.supervisors.map((card) => {
-                const team = metricsFor(card.teamIds);
-                const own = metricsFor([card.user.id]);
-                const others = teamRows({ users: raw.users, teamIds: card.teamIds, supervisorId: card.user.id }).length - 1;
-                return (
-                  <button
-                    key={card.user.id}
-                    onClick={() => go({ ...nav, level: "team", supervisor: card.user.id, member: null, deal: null })}
-                    className="w-full text-left bg-white rounded-2xl border border-gray-200 p-5 hover:border-indigo-300 hover:shadow-sm transition-all"
-                  >
-                    <div className="flex items-start justify-between gap-3 mb-4">
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-mono text-indigo-600 uppercase tracking-widest mb-1">Supervisor</p>
-                        <h3 className="text-lg font-bold text-gray-900 truncate">{card.user.full_name}</h3>
-                        <p className="text-xs text-gray-500 font-mono">
-                          Team of {others + 1} · {others} {others === 1 ? "person" : "people"} under them
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <StatusChip m={team} />
-                        <span className="text-xs text-gray-400 hidden sm:inline">View team &#9656;</span>
-                      </div>
-                    </div>
-                    <p className="text-[10px] font-mono text-gray-400 uppercase tracking-widest mb-2">Team total</p>
-                    <Figures m={team} />
-                    <div className="mt-4 pt-3 border-t border-gray-100">
-                      <p className="text-[10px] font-mono text-gray-400 uppercase tracking-widest mb-2">
-                        {card.user.full_name}'s own figures
-                      </p>
-                      <Figures m={own} small />
-                    </div>
-                  </button>
-                );
-              })}
-            {view.mode === "supervisor" && view.unattached.length > 0 && (
-              <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                <div className="px-5 py-3 border-b border-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-800">Not under a supervisor in this division</h3>
-                </div>
-                <FigureTable
-                  rows={view.unattached.map((u) => ({
-                    id: u.id,
-                    name: u.full_name,
-                    sub: u.role,
-                    m: metricsFor([u.id]),
-                    onClick: () => go({ ...nav, level: "member", supervisor: null, member: u.id, deal: null }),
-                  }))}
-                  empty=""
-                />
+
+            {/* ── LEDGER + this level's content ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+              <div className="lg:col-span-2">
+                <DivisionCycleLedger metrics={metrics} exceptionCount={showExceptions ? exceptions.length : null} />
               </div>
+              <div className="lg:col-span-3 min-w-0">{mainPanel}</div>
+            </div>
+
+            {/* ── EXCEPTIONS: company, division and team levels ── */}
+            {showExceptions && (
+              <DivisionExceptionFeed exceptions={exceptions} userName={userName} onJump={jumpToException} />
             )}
-          </div>
-        )}
-
-        {/* ── LEVEL 3: TEAM ── */}
-        {nav.level === "team" && (
-          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-800">
-                {nav.supervisor ? "Team" : currentGroup?.id === UNASSIGNED ? "People without a division" : "Team — no supervisor assigned"}
-              </h3>
-              <span className="text-xs text-gray-400">Click a person for their deals &#9656;</span>
-            </div>
-            <FigureTable rows={teamList} empty="No team members assigned to this division yet" />
-          </div>
-        )}
-
-        {/* ── LEVEL 4: MEMBER ── */}
-        {nav.level === "member" && (
-          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-800">Open deals</h3>
-              <span className="text-xs text-gray-400">Click a deal for details &#9656;</span>
-            </div>
-            {dealRows.length === 0 ? (
-              <div className="py-12 text-center text-sm text-gray-400">No open deals</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-gray-50">
-                      {["Deal", "Stage", "Amount", "Expected close"].map((h) => (
-                        <th
-                          key={h}
-                          className="text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 whitespace-nowrap"
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {dealRows.map((d) => (
-                      <tr
-                        key={d.id}
-                        onClick={() => go({ ...nav, level: "deal", deal: d.id })}
-                        className="cursor-pointer hover:bg-gray-50 transition-colors"
-                      >
-                        <td className="px-4 py-3 font-medium text-gray-900">{dealName(d)}</td>
-                        <td className="px-4 py-3 text-gray-600 capitalize whitespace-nowrap">{stageLabel(d.stage)}</td>
-                        <td className="px-4 py-3 font-mono text-gray-900 whitespace-nowrap">{SAR(d.amount)} SAR</td>
-                        <td className="px-4 py-3 font-mono text-gray-600 whitespace-nowrap">{fmtDate(d.expected_close_date)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── LEVEL 5: DEAL ── */}
-        {nav.level === "deal" && currentDeal && (
-          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-800">Deal record</h3>
-            </div>
-            <div className="divide-y divide-gray-50">
-              {[
-                ["Deal", currentDeal.title || "—"],
-                ["Customer", dealName(currentDeal)],
-                ["Owner", userName(currentDeal.owner_id)],
-                ["Stage", stageLabel(currentDeal.stage)],
-                ["Amount", `${SAR(currentDeal.amount)} SAR`],
-                ["Expected close", fmtDate(currentDeal.expected_close_date)],
-                ["Forecast", currentDeal.forecast_amount ? `${SAR(currentDeal.forecast_amount)} SAR` : "—"],
-                ["Invoiced", currentDeal.is_invoiced ? `Yes · ${fmtDate(currentDeal.invoice_date)}` : "No"],
-                ["Created", fmtDate(currentDeal.created_at)],
-              ].map(([k, v]) => (
-                <div key={k} className="flex justify-between items-baseline gap-4 px-5 py-2.5">
-                  <span className="text-xs text-gray-500 font-mono">{k}</span>
-                  <span className="text-xs font-semibold font-mono text-gray-900 capitalize text-right">{v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          </>
         )}
       </div>
     </div>

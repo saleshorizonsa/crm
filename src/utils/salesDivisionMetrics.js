@@ -159,6 +159,7 @@ export function teamRows({ users, teamIds, supervisorId }) {
  */
 export function calcDivisionMetrics(userIds, data) {
   const { users, deals, targets, deals3m, opps, futureOrders, monthStart, monthEnd } = data;
+  const now = data.now || new Date();
   const scope = new Set(userIds || []);
   const contributorIds = (users || [])
     .filter((u) => scope.has(u.id) && CONTRIBUTOR_ROLES.includes(u.role))
@@ -210,10 +211,23 @@ export function calcDivisionMetrics(userIds, data) {
     winRatePct,
   });
 
+  // Pacing, exactly as the Coverage Console derives it: achieved share of target
+  // against the share of the month elapsed, with a 15-point tolerance.
+  const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const dayOfMonth = now.getDate();
+  const elapsed = dayOfMonth / totalDays;
+  const pace = achieved / Math.max(target, 1);
+
   return {
     target,
     achieved,
     deficit,
+    pace,
+    elapsed,
+    dayOfMonth,
+    totalDays,
+    coverageOk: coverage >= target,
+    pacingOk: pace >= elapsed - 0.15,
     winRatePct,
     winRateBorrowed,
     planned,
@@ -230,10 +244,62 @@ export function calcDivisionMetrics(userIds, data) {
   };
 }
 
-/** ok = covered, risk = at least 70% covered, bad = below, none = no target. */
+/**
+ * Row status, the Coverage Console's rule: ok = coverage AND pacing pass,
+ * bad = both fail, risk = one fails. 'none' when there is no target to judge.
+ */
 export function healthOf(m) {
   if (!m || m.target <= 0) return 'none';
-  if (m.covRatio >= 1) return 'ok';
-  if (m.covRatio >= 0.7) return 'risk';
-  return 'bad';
+  if (m.coverageOk && m.pacingOk) return 'ok';
+  if (!m.coverageOk && !m.pacingOk) return 'bad';
+  return 'risk';
+}
+
+// ── Exceptions ──────────────────────────────────────────────────────────────
+// Copied from the Coverage Console's buildExceptions (coverage-console/index.jsx):
+// unreviewed salesman_flags and unresolved escalation_logs for the people in
+// view, critical first, then newest first.
+const FLAG_TITLES = {
+  bounce_back_2nd: '2nd Bounce-Back',
+  plan_missed_deadline: 'Plan Not Submitted',
+  forecast_mismatch: 'Forecast Variance',
+};
+
+const ESCALATION_TITLES = {
+  bounce_back_2nd: 'Escalation: 2nd Bounce',
+  mid_month_target_change: 'Target Changed',
+  forecast_mismatch: 'Forecast Mismatch',
+};
+
+export function buildExceptions(userIds, data) {
+  const ids = new Set(userIds || []);
+  const exs = [];
+  (data.flags || [])
+    .filter((f) => ids.has(f.owner_id))
+    .forEach((f) => {
+      exs.push({
+        sev: f.flag_type === 'bounce_back_2nd' ? 'critical' : 'warning',
+        type: f.flag_type,
+        title: FLAG_TITLES[f.flag_type] || f.flag_type,
+        ownerId: f.owner_id,
+        dealId: f.details?.deal_id || null,
+        createdAt: f.flagged_at,
+      });
+    });
+  (data.escalations || [])
+    .filter((e) => ids.has(e.triggered_for))
+    .forEach((e) => {
+      exs.push({
+        sev: 'critical',
+        type: e.trigger_type,
+        title: ESCALATION_TITLES[e.trigger_type] || e.trigger_type,
+        ownerId: e.triggered_for,
+        dealId: e.deal_id || null,
+        createdAt: e.created_at,
+      });
+    });
+  return exs.sort((a, b) => {
+    if (a.sev !== b.sev) return a.sev === 'critical' ? -1 : 1;
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
 }
