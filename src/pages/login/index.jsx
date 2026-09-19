@@ -7,6 +7,7 @@ import CompanyBranding from "./components/CompanyBranding";
 import DailyQuote from "../../components/DailyQuote";
 import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
+import { landingPathForRole } from "../../utils/landingPath";
 
 // Public storage URLs — no DB query / no auth needed (companies table is RLS-blocked pre-login).
 // Logos are publicly readable from the company-logos bucket; onError falls back to colored initials.
@@ -32,9 +33,7 @@ const Login = () => {
 
   useEffect(() => {
     if (user && !loading && userProfile) {
-      navigate(
-        userProfile.role === "admin" ? "/admin-dashboard" : "/company-dashboard"
-      );
+      navigate(landingPathForRole(userProfile.role));
     }
   }, [user, userProfile, loading, navigate]);
 

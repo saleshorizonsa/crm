@@ -51,16 +51,23 @@ const Header = ({
   };
 
   const navigationItems = [
-    {
-      label: t("nav.dashboard"),
-      path: "/company-dashboard",
-      icon: "LayoutDashboard",
-    },
-    {
-      label: t("nav.console"),
-      path: "/coverage-console",
-      icon: "LayoutGrid",
-    },
+    // Menu visibility only — both routes stay reachable by URL for every role.
+    // Directors work from Sales Divisions instead of the Dashboard.
+    ...(userProfile?.role !== "director"
+      ? [{
+          label: t("nav.dashboard"),
+          path: "/company-dashboard",
+          icon: "LayoutDashboard",
+        }]
+      : []),
+    // The Console is a supervisor's tool; admin/head/viewer keep it unchanged.
+    ...(!["director", "manager", "salesman"].includes(userProfile?.role)
+      ? [{
+          label: t("nav.console"),
+          path: "/coverage-console",
+          icon: "LayoutGrid",
+        }]
+      : []),
     // Directors and managers only — the route enforces the same list.
     ...(["director", "manager"].includes(userProfile?.role)
       ? [{ label: "Sales Divisions", path: "/sales-divisions", icon: "Layers" }]

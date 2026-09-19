@@ -1,5 +1,6 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { landingPathForRole } from "../utils/landingPath";
 
 export const HomeRedirect = () => {
   const { userProfile, loading } = useAuth();
@@ -20,11 +21,6 @@ export const HomeRedirect = () => {
     return <Navigate to="/pipeline-view" replace />;
   }
 
-  // Redirect based on role
-  if (userProfile?.role === "admin") {
-    return <Navigate to="/admin-dashboard" replace />;
-  }
-
-  // Default to company dashboard for all other roles
-  return <Navigate to="/company-dashboard" replace />;
+  // Admin → admin dashboard, director → sales divisions, everyone else → dashboard
+  return <Navigate to={landingPathForRole(userProfile?.role)} replace />;
 };
