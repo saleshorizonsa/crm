@@ -17,7 +17,8 @@ import {
 import { DivisionCoverageHero, DivisionCycleLedger } from "./components/DivisionCoverageHero";
 import DivisionExceptionFeed from "./components/DivisionExceptionFeed";
 
-// Sales Divisions — Company → Division → Team → Member → Deal.
+// Insights (route /insights; folder and component keep the sales-divisions name)
+// — Company → Division → Team → Member → Deal.
 //
 // A separate page from the Coverage Console: its presentation (hero, coverage
 // equation, coverage + pacing rails, cycle ledger, exception feed) is COPIED
@@ -328,7 +329,7 @@ export default function SalesDivisions() {
       <div className="min-h-screen bg-gray-50">
         <Header />
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-center">
-          <p className="text-sm font-semibold text-red-700 mb-2">Sales Divisions could not load</p>
+          <p className="text-sm font-semibold text-red-700 mb-2">Insights could not load</p>
           <p className="text-xs text-gray-500 font-mono mb-5">{error}</p>
           <button onClick={fetchAll} className="text-xs border border-gray-300 rounded-lg px-4 py-2 hover:bg-white">
             Retry
@@ -611,7 +612,7 @@ export default function SalesDivisions() {
               SD
             </div>
             <div className="min-w-0">
-              <span className="text-sm font-semibold text-gray-900">Sales Divisions</span>
+              <span className="text-sm font-semibold text-gray-900">Insights</span>
               <span className="text-xs text-gray-400 ml-2 font-mono">
                 {raw.now.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
                 {" · "}Day {metrics.dayOfMonth} of {metrics.totalDays}

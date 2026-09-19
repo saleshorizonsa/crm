@@ -52,7 +52,7 @@ const Header = ({
 
   const navigationItems = [
     // Menu visibility only — both routes stay reachable by URL for every role.
-    // Directors work from Sales Divisions instead of the Dashboard.
+    // Directors work from Insights instead of the Dashboard.
     ...(userProfile?.role !== "director"
       ? [{
           label: t("nav.dashboard"),
@@ -70,7 +70,7 @@ const Header = ({
       : []),
     // Directors and managers only — the route enforces the same list.
     ...(["director", "manager"].includes(userProfile?.role)
-      ? [{ label: "Sales Divisions", path: "/sales-divisions", icon: "Layers" }]
+      ? [{ label: "Insights", path: "/insights", icon: "Layers" }]
       : []),
     { label: t("nav.pipeline"), path: "/sales-pipeline", icon: "TrendingUp" },
     { label: t("nav.leads"),    path: "/lead-management", icon: "UserPlus"   },

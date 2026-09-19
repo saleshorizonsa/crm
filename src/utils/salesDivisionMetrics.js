@@ -8,7 +8,7 @@ import {
   computeCoverage,
 } from 'utils/planningCalculations';
 
-// Pure logic behind the Sales Divisions page (/sales-divisions). Kept out of the
+// Pure logic behind the Insights page (/insights). Kept out of the
 // component so the page and the verification audit run the same code.
 //
 // Every figure goes through utils/planningCalculations.js, so a division's

@@ -194,7 +194,7 @@ const Routes = () => {
                   }
                 />
                 <Route
-                  path="/sales-divisions"
+                  path="/insights"
                   element={
                     <ProtectedRoute allowedRoles={DIVISION_PAGE_ROLES}>
                       <SalesDivisions />

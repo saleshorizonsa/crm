@@ -1,7 +1,7 @@
 import React from "react";
 
 // Copied from pages/coverage-console/components/CoverageRail.jsx (not imported:
-// the Sales Divisions page keeps its own presentation files so the Coverage
+// the Insights page keeps its own presentation files so the Coverage
 // Console can change independently). Keep the two in step by hand.
 //
 // Horizontal stacked rail: invoiced + weighted funnel + weighted planning,
