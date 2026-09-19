@@ -5,8 +5,12 @@
 // Directors land on Sales Divisions because their Dashboard menu link is hidden
 // (see navigationItems in components/ui/Header.jsx); landing them on Dashboard
 // would strand them on a page with no way back to it.
+// Viewers are confined to /pipeline-view by ProtectedRoute, so that is where
+// they land. Sending them anywhere else only buys a redirect bounce — which is
+// what the login page used to do while HomeRedirect got it right.
 export function landingPathForRole(role) {
   if (role === 'admin') return '/admin-dashboard';
   if (role === 'director') return '/sales-divisions';
+  if (role === 'viewer') return '/pipeline-view';
   return '/company-dashboard';
 }

@@ -16,11 +16,6 @@ export const HomeRedirect = () => {
     );
   }
 
-  // Viewer role lands on the read-only pipeline page
-  if (userProfile?.role === "viewer") {
-    return <Navigate to="/pipeline-view" replace />;
-  }
-
-  // Admin → admin dashboard, director → sales divisions, everyone else → dashboard
+  // Every role's landing page lives in one place — viewer included.
   return <Navigate to={landingPathForRole(userProfile?.role)} replace />;
 };
