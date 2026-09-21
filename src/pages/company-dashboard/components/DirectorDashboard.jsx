@@ -31,7 +31,7 @@ import {
   targetPerPerson,
   computeAchieved,
   achievedAmount,
-  contributorIdsFrom,
+  achieverIdsFrom,
 } from "../../../utils/planningCalculations";
 
 // New enhanced components
@@ -415,11 +415,12 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     );
   }, [allDealsData, activeDateRange.from, activeDateRange.to]);
 
-  // Whose invoiced deals count as Achieved — the same active salesmen + supervisors
-  // the KPI strip uses (utils/planningCalculations.js), narrowed to the drilled-in
-  // employee when there is one.
+  // Whose invoiced deals count as Achieved — the same scope the KPI strip uses
+  // (utils/planningCalculations.js achieverIdsFrom: active salesmen + supervisors,
+  // plus any manager flagged is_contributor), narrowed to the drilled-in employee
+  // when there is one.
   const achievedContributorIds = useMemo(() => {
-    const ids = contributorIdsFrom(allEmployees);
+    const ids = achieverIdsFrom(allEmployees);
     return selectedEmployee?.id ? ids.filter((id) => id === selectedEmployee.id) : ids;
   }, [allEmployees, selectedEmployee?.id]);
 
@@ -880,7 +881,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
         const { total: totalRevenue } = computeAchieved({
           deals: companyDeals,
-          contributorIds: contributorIdsFrom(allEmployees),
+          contributorIds: achieverIdsFrom(allEmployees),
           start: activeDateRange.from,
           end: activeDateRange.to,
           amountOf: conv,
@@ -1746,11 +1747,12 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
             // Revenue = Achieved — the one shared rule (utils/planningCalculations.js):
             // won AND invoiced, by invoice_date in the selected period, final value,
-            // this company's active salesmen + supervisors only. It used to count every
-            // owner, so a manager's own invoiced deal inflated this card above the KPI.
+            // this company's active salesmen + supervisors plus any manager flagged
+            // is_contributor — the KPI's scope. It used to count every owner, so an
+            // unflagged manager's own invoiced deal inflated this card above the KPI.
             const { total: totalRevenue } = computeAchieved({
               deals,
-              contributorIds: contributorIdsFrom(users),
+              contributorIds: achieverIdsFrom(users),
               start: activeDateRange.from,
               end: activeDateRange.to,
               amountOf: (d) => {

@@ -38,7 +38,7 @@ import { computeKpiStripData } from "../../../utils/kpiStripData";
 import {
   computeAchieved,
   achievedAmount,
-  contributorIdsFrom,
+  achieverIdsFrom,
 } from "../../../utils/planningCalculations";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
@@ -304,9 +304,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   // Team Achieved — the one shared rule (utils/planningCalculations.js), the same
   // figure as this dashboard's KPI "Achieved (invoiced)" card: won AND invoiced, by
   // invoice_date in the selected period, final value, active salesmen + supervisors
-  // in this team only. A manager's own deals therefore do not count (managers
-  // carry a yearly roll-up, not a monthly quota). It used to count won-but-not-
-  // invoiced deals by close date at `amount`, including the manager's own.
+  // in this team. A manager's own deals count only when he is flagged
+  // users.is_contributor (achieverIdsFrom); otherwise they don't (managers carry a
+  // yearly roll-up, not a monthly quota). It used to count won-but-not-invoiced
+  // deals by close date at `amount`, including every manager's own.
   const teamAchieved = useMemo(() => {
     const convertedAchievedAmount = (deal) => {
       const amount = achievedAmount(deal);
@@ -316,13 +317,13 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     };
     return computeAchieved({
       deals: allDeals,
-      contributorIds: contributorIdsFrom([effectiveUserProfile, ...(allSubordinates || [])]),
+      contributorIds: achieverIdsFrom([effectiveUserProfile, ...(allSubordinates || [])]),
       start: activeDateRange.from,
       end: activeDateRange.to,
       amountOf: convertedAchievedAmount,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allDeals, allSubordinates, effectiveUserProfile?.id, effectiveUserProfile?.role, effectiveUserProfile?.is_active, activeDateRange.from, activeDateRange.to, preferredCurrency]);
+  }, [allDeals, allSubordinates, effectiveUserProfile?.id, effectiveUserProfile?.role, effectiveUserProfile?.is_active, effectiveUserProfile?.is_contributor, activeDateRange.from, activeDateRange.to, preferredCurrency]);
 
   // Percentage change vs previous equivalent period
   const changes = useMemo(() => {

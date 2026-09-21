@@ -18,6 +18,8 @@ import { fetchWinRate3m } from 'utils/winRate3m';
 // on purpose: they carry a YEARLY team roll-up, not a monthly total_value quota,
 // so including them would dwarf and double-count the monthly numbers — and their
 // future orders must not offset a target they never contributed to.
+// One exception, for Achieved only: a manager flagged users.is_contributor = true
+// has his own deals counted there (see isAchievedOnly / achieverIdsFrom).
 export const CONTRIBUTOR_ROLES = ['salesman', 'supervisor'];
 
 /** Active contributors in scope. `ownerIds = null` means the whole company. */
@@ -377,9 +379,9 @@ export function computeCoverage({ invoiced, openDeals, planned, winRatePct }) {
  *
  *   A deal counts when stage = 'won' AND is_invoiced = true, dated by its
  *   invoice_date (yyyy-MM-dd) inside [start, end]. Its value is
- *   final_amount ?? amount. Only CONTRIBUTORS' deals count — active salesmen and
- *   supervisors (CONTRIBUTOR_ROLES) — so a manager's own deals do not move the
- *   monthly achievement, exactly as they do not move the monthly target.
+ *   final_amount ?? amount. Only ACHIEVERS' deals count: active salesmen and
+ *   supervisors (CONTRIBUTOR_ROLES), plus any active user individually flagged
+ *   users.is_contributor = true (a manager who sells himself). See achieverIdsFrom.
  *
  * Extracted from computeKpiStripData, which was the one correct copy. Five other
  * places had drifted: Performance Summary picked deals by close date, Company
@@ -402,6 +404,49 @@ export function contributorIdsFrom(users) {
   return (users || [])
     .filter((u) => u && u.is_active === true && CONTRIBUTOR_ROLES.includes(u.role))
     .map((u) => u.id);
+}
+
+/**
+ * An active user OUTSIDE CONTRIBUTOR_ROLES who is individually flagged
+ * users.is_contributor = true: a manager who sells himself.
+ *
+ * Their own invoiced deals count toward ACHIEVED, and so toward every team and
+ * company Achieved total that contains them. Nothing else widens: Target, Win
+ * Rate, Planned and Carry-In stay on CONTRIBUTOR_ROLES, because a flagged
+ * manager still carries no monthly quota. Counting him in those would skew them
+ * rather than fix Achieved.
+ */
+export function isAchievedOnly(user) {
+  return !!user
+    && user.is_active === true
+    && user.is_contributor === true
+    && !CONTRIBUTOR_ROLES.includes(user.role);
+}
+
+/**
+ * Ids whose deals count toward ACHIEVED in a list of user rows: the contributors
+ * plus the flagged achieved-only users. Rows need role, is_active, is_contributor.
+ * Use this ONLY for Achieved — every other KPI keeps contributorIdsFrom.
+ */
+export function achieverIdsFrom(users) {
+  return [...contributorIdsFrom(users), ...(users || []).filter(isAchievedOnly).map((u) => u.id)];
+}
+
+/** Active flagged achieved-only users in scope (see isAchievedOnly). `ownerIds = null` = whole company. */
+export async function fetchAchievedOnlyUsers({ companyId, ownerIds = null }) {
+  if (!companyId) return [];
+  if (Array.isArray(ownerIds) && ownerIds.length === 0) return [];
+  let q = supabase
+    .from('users')
+    .select('id, full_name, role, is_active, is_contributor')
+    .eq('company_id', companyId)
+    .eq('is_active', true)
+    .eq('is_contributor', true)
+    .not('role', 'in', `(${CONTRIBUTOR_ROLES.join(',')})`);
+  if (Array.isArray(ownerIds)) q = q.in('id', ownerIds);
+  const { data, error } = await q;
+  if (error) { console.error('fetchAchievedOnlyUsers:', error); return []; }
+  return data || [];
 }
 
 /**
