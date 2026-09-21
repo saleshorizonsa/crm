@@ -9,6 +9,7 @@ import {
   computePlannedGap,
   fetchAchieved,
   fetchContributors,
+  fetchAchievedOnlyUsers,
 } from 'utils/planningCalculations';
 
 // TEMP: set true to re-enable the KPI diagnostic logs (see end of the function).
@@ -108,9 +109,15 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     });
   }
   // 3. Achieved — the one shared rule (utils/planningCalculations.js): INVOICED won
-  //    deals by invoice_date in the window, final value, contributors only.
+  //    deals by invoice_date in the window, final value. Scope = the contributors
+  //    PLUS any flagged achieved-only user (users.is_contributor, e.g. a manager who
+  //    sells himself). Only Achieved widens; every other block here stays on scopeIds.
+  const achievedOnlyUsers = await fetchAchievedOnlyUsers({ companyId, ownerIds });
   const { perPerson: achievedPer, count: wonDealCount } = await fetchAchieved({
-    companyId, contributorIds: scopeIds, start: winStart, end: winEnd,
+    companyId,
+    contributorIds: [...scopeIds, ...achievedOnlyUsers.map((u) => u.id)],
+    start: winStart,
+    end: winEnd,
   });
 
   // 4. Win rate — deals created in the last 3 completed months, grouped by owner.
@@ -215,6 +222,15 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
         planned, required, requiredRaw, futureCarryover, plannedGap,
       };
     })
+    // A flagged achieved-only user gets a row too, so the rows still add up to the
+    // Achieved total. It carries Achieved only: no quota, and Win Rate / Planned
+    // are not measured for him (null win rate, shown as "—").
+    .concat(achievedOnlyUsers.map((u) => ({
+      id: u.id, full_name: u.full_name, role: u.role, achievedOnly: true,
+      target: 0, achieved: achievedPer[u.id] || 0, deficit: 0,
+      winRate3m: null, winRateIsDefault: false,
+      planned: 0, required: 0, requiredRaw: 0, futureCarryover: 0, plannedGap: 0,
+    })))
     .sort((a, b) => b.target - a.target || b.achieved - a.achieved);
 
   // Totals across the whole scope. Annual view uses the company yearly target.
@@ -305,13 +321,13 @@ export async function computeDirectorAnnual({ companyId }) {
   });
 
   // YTD achieved — the one shared rule (utils/planningCalculations.js): invoiced
-  // won deals this calendar year, final value, CONTRIBUTORS only. This used to
-  // count every owner in the company, so the director's "YTD Revenue" disagreed
-  // with the KPI strip's annual Achieved by the managers' own deals.
+  // won deals this calendar year, final value, contributors plus flagged
+  // achieved-only users — the same scope as the KPI strip's annual Achieved.
   const contributors = await fetchContributors({ companyId });
+  const achievedOnlyUsers = await fetchAchievedOnlyUsers({ companyId });
   const { total: achieved, count: dealCount } = await fetchAchieved({
     companyId,
-    contributorIds: contributors.map((c) => c.id),
+    contributorIds: [...contributors, ...achievedOnlyUsers].map((c) => c.id),
     start: yearStart,
     end: yearEnd,
   });

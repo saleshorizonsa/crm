@@ -2121,7 +2121,7 @@ export const userService = {
       let query = supabase
         .from("users")
         .select(
-          "id, full_name, email, avatar_url, role, is_active, supervisor_id, created_at, updated_at",
+          "id, full_name, email, avatar_url, role, is_active, is_contributor, supervisor_id, created_at, updated_at",
         )
         .eq("company_id", companyId)
         .order("full_name");
@@ -2458,7 +2458,7 @@ export const userService = {
       const { data: allUsers, error: allUsersError } = await supabase
         .from("users")
         .select(
-          "id, full_name, email, role, is_active, supervisor_id, company_id",
+          "id, full_name, email, role, is_active, is_contributor, supervisor_id, company_id",
         )
         .eq("is_active", true)
         .limit(10);
@@ -2469,7 +2469,7 @@ export const userService = {
       const { data: directSubordinates, error: directError } = await supabase
         .from("users")
         .select(
-          "id, full_name, email, role, is_active, supervisor_id, company_id",
+          "id, full_name, email, role, is_active, is_contributor, supervisor_id, company_id",
         )
         .eq("supervisor_id", userId)
         .eq("is_active", true);
@@ -2488,7 +2488,7 @@ export const userService = {
           await supabase
             .from("users")
             .select(
-              "id, full_name, email, role, is_active, supervisor_id, company_id",
+              "id, full_name, email, role, is_active, is_contributor, supervisor_id, company_id",
             )
             .in("supervisor_id", subordinateIds)
             .eq("is_active", true);

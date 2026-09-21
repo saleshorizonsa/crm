@@ -1,5 +1,6 @@
 import {
   CONTRIBUTOR_ROLES,
+  isAchievedOnly,
   targetPerPerson,
   winRateFromDeals,
   sumPlannedByOwner,
@@ -181,10 +182,16 @@ export function calcDivisionMetrics(userIds, data) {
     ? winRateFromDeals({ deals: deals3m, ownerIds: companyContributorIds }).winRatePct
     : mine.winRatePct;
 
+  // Achieved alone also counts a flagged manager (users.is_contributor) in scope,
+  // the same scope as utils/planningCalculations.js achieverIdsFrom.
+  const isAchiever = new Set([
+    ...contributorIds,
+    ...(users || []).filter((u) => scope.has(u.id) && isAchievedOnly(u)).map((u) => u.id),
+  ]);
   const achieved = (deals || [])
     .filter(
       (d) =>
-        isContributor.has(d.owner_id) &&
+        isAchiever.has(d.owner_id) &&
         d.stage === 'won' &&
         d.is_invoiced === true &&
         d.invoice_date >= monthStart &&

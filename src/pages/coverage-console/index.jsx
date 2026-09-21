@@ -8,6 +8,7 @@ import OppHero from "./components/OppHero";
 import ExceptionFeed from "./components/ExceptionFeed";
 import {
   CONTRIBUTOR_ROLES,
+  isAchievedOnly,
   targetPerPerson,
   winRateFromDeals,
   sumPlannedByOwner,
@@ -128,7 +129,7 @@ export default function CoverageConsole() {
         // All active users
         supabase
           .from("users")
-          .select("id, full_name, role, reports_to, is_active")
+          .select("id, full_name, role, reports_to, is_active, is_contributor")
           .eq("company_id", company.id)
           .eq("is_active", true),
 
@@ -348,10 +349,16 @@ export default function CoverageConsole() {
     const winRatePct = mine.total > 0 ? mine.winRatePct : companyWide.winRatePct;
     const winRate = winRatePct / 100; // this file weights in fractions
 
-    // ── INVOICED (achieved) ──
+    // ── INVOICED (achieved) ── the one exception to the contributor rule above:
+    // a manager flagged users.is_contributor counts toward Achieved (only), the
+    // same scope as utils/planningCalculations.js achieverIdsFrom.
+    const achieverIds = [
+      ...contributorIds,
+      ...userIds.filter((id) => isAchievedOnly((users || []).find((x) => x.id === id))),
+    ];
     const invoicedDeals = (deals || []).filter(
       (d) =>
-        contributorIds.includes(d.owner_id) &&
+        achieverIds.includes(d.owner_id) &&
         d.stage === "won" &&
         d.is_invoiced === true &&
         d.invoice_date >= monthStart &&

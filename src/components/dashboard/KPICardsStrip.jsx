@@ -94,6 +94,11 @@ const POPUP_TITLES = {
 
 // Per-salesman breakdown table shown inside every popup. The active metric column
 // is emphasised.
+// A flagged achieved-only row (a manager who sells himself, kpiStripData) carries
+// Achieved and nothing else: he has no quota, and Win Rate / Planned are not
+// measured for him. Those cells read "—" rather than a misleading 0 or ✓.
+const NA = '—';
+
 function SalesmanTable({ rows, active, canDrill, onRowClick }) {
   const cell = (key, node) => (
     <td className={`px-3 py-2.5 text-right tabular-nums whitespace-nowrap ${
@@ -134,11 +139,11 @@ function SalesmanTable({ rows, active, canDrill, onRowClick }) {
                   <span className="truncate text-foreground font-medium max-w-[9rem]">{s.full_name}</span>
                 </div>
               </td>
-              {cell('target', `${fmtSAR(s.target)}`)}
+              {cell('target', s.achievedOnly ? NA : `${fmtSAR(s.target)}`)}
               {cell('achieved', `${fmtSAR(s.achieved)}`)}
-              {cell('deficit', s.deficit <= 0 ? '✓' : fmtSAR(s.deficit))}
-              {cell('winRate', `${s.winRate3m.toFixed(0)}%`)}
-              {cell('plannedGap', s.plannedGap <= 0 ? '✓' : fmtSAR(s.plannedGap))}
+              {cell('deficit', s.achievedOnly ? NA : s.deficit <= 0 ? '✓' : fmtSAR(s.deficit))}
+              {cell('winRate', s.achievedOnly ? NA : `${s.winRate3m.toFixed(0)}%`)}
+              {cell('plannedGap', s.achievedOnly ? NA : s.plannedGap <= 0 ? '✓' : fmtSAR(s.plannedGap))}
               {canDrill && (
                 <td className="px-3 py-2.5 text-right whitespace-nowrap">
                   <span className="text-[11px] text-blue-500">View details →</span>
@@ -221,11 +226,23 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
       </div>
 
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-4">
-        {stat('Target', fmtSAR(salesman.target), 'text-foreground')}
-        {stat('Achieved', fmtSAR(salesman.achieved), 'text-green-600')}
-        {stat('Deficit', salesman.deficit <= 0 ? '✓' : fmtSAR(salesman.deficit), salesman.deficit <= 0 ? 'text-green-600' : 'text-red-600')}
-        {stat('Win%', `${salesman.winRate3m.toFixed(0)}%`, 'text-purple-600')}
-        {stat('Gap', salesman.plannedGap <= 0 ? '✓' : fmtSAR(salesman.plannedGap), salesman.plannedGap <= 0 ? 'text-green-600' : 'text-red-600')}
+        {salesman.achievedOnly ? (
+          <>
+            {stat('Target', NA, 'text-muted-foreground')}
+            {stat('Achieved', fmtSAR(salesman.achieved), 'text-green-600')}
+            {stat('Deficit', NA, 'text-muted-foreground')}
+            {stat('Win%', NA, 'text-muted-foreground')}
+            {stat('Gap', NA, 'text-muted-foreground')}
+          </>
+        ) : (
+          <>
+            {stat('Target', fmtSAR(salesman.target), 'text-foreground')}
+            {stat('Achieved', fmtSAR(salesman.achieved), 'text-green-600')}
+            {stat('Deficit', salesman.deficit <= 0 ? '✓' : fmtSAR(salesman.deficit), salesman.deficit <= 0 ? 'text-green-600' : 'text-red-600')}
+            {stat('Win%', `${salesman.winRate3m.toFixed(0)}%`, 'text-purple-600')}
+            {stat('Gap', salesman.plannedGap <= 0 ? '✓' : fmtSAR(salesman.plannedGap), salesman.plannedGap <= 0 ? 'text-green-600' : 'text-red-600')}
+          </>
+        )}
       </div>
 
       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
@@ -285,6 +302,8 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
   const canDrill = ['manager', 'supervisor'].includes(role);
   const isSalesman = role === 'salesman';
   const selfRow = isSalesman ? (salesmanData[0] || null) : null;
+  // A flagged manager's achieved-only row is listed but is not a salesman.
+  const salesmanCount = salesmanData.filter((s) => !s.achievedOnly).length;
   const viewSalesman = drillSalesman || selfRow; // whose detail the popup shows
 
   const [drillDeals, setDrillDeals] = useState([]);
@@ -510,7 +529,7 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                     {POPUP_TITLES[activePopup]}
                     {isSalesman
                       ? ' — My numbers'
-                      : ` — ${salesmanData.length} salesman${salesmanData.length === 1 ? '' : 'en'}`}
+                      : ` — ${salesmanCount} salesman${salesmanCount === 1 ? '' : 'en'}`}
                   </h2>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {activePopup === 'winRate'

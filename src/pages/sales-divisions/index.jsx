@@ -204,7 +204,7 @@ export default function SalesDivisions() {
         await Promise.all([
           supabase
             .from("users")
-            .select("id, full_name, role, reports_to, is_active, sales_division_id")
+            .select("id, full_name, role, reports_to, is_active, sales_division_id, is_contributor")
             .eq("company_id", company.id)
             .eq("is_active", true),
           supabase
