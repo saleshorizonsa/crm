@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Icon from 'components/AppIcon';
 import { supabase } from 'lib/supabase';
 import { STALE_INVOICE_DAYS } from 'utils/planningCalculations';
@@ -6,6 +7,15 @@ import { STALE_INVOICE_DAYS } from 'utils/planningCalculations';
 // Whole-SAR integer formatter.
 const fmtSAR = (n) =>
   new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
+
+// "22 Sep 2026" — the exact won date in the Won-Not-Invoiced drill-down. Built by
+// hand: toLocaleDateString('en-GB') renders September as "Sept" on current ICU.
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtWonDate = (d) => {
+  const dt = d ? new Date(d) : null;
+  if (!dt || Number.isNaN(dt.getTime())) return '—';
+  return `${dt.getDate()} ${MONTHS_SHORT[dt.getMonth()]} ${dt.getFullYear()}`;
+};
 
 const MONTH_LABEL = () =>
   new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
@@ -283,9 +293,13 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
   const [drillSalesman, setDrillSalesman] = useState(null);
   const [showHealthPopup, setShowHealthPopup] = useState(false);
   const [showInvoicePopup, setShowInvoicePopup] = useState(false);
+  // Which Won-Not-Invoiced row is expanded (one at a time); cleared on close.
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState(null);
+  const navigate = useNavigate();
 
   // Reset any drill-down when switching popups or closing.
   useEffect(() => { setDrillSalesman(null); }, [activePopup]);
+  useEffect(() => { if (!showInvoicePopup) setExpandedInvoiceId(null); }, [showInvoicePopup]);
 
   // Close whichever overlay is open on Escape.
   useEffect(() => {
@@ -575,26 +589,71 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                 {wni.items.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-6">Nothing pending invoice.</p>
                 ) : (
-                  wni.items.map((d) => (
-                    <div key={d.id} className="flex items-center justify-between gap-3 p-2.5 bg-muted/30 rounded-lg">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm text-foreground truncate max-w-[12rem]">{d.title || '—'}</span>
-                          {d.isStale && (
-                            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border uppercase tracking-wide bg-amber-50 text-amber-700 border-amber-200">
-                              Stale
+                  wni.items.map((d) => {
+                    const isOpen = expandedInvoiceId === d.id;
+                    // Same won-date fallback as daysSinceWon() in planningCalculations.js.
+                    const wonAt = d.closed_at || d.stage_changed_at || d.created_at;
+                    return (
+                      <div key={d.id} className="bg-muted/30 rounded-lg overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedInvoiceId(isOpen ? null : d.id)}
+                          aria-expanded={isOpen}
+                          className="w-full flex items-center justify-between gap-3 p-2.5 text-left hover:bg-muted/60 transition-colors"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm text-foreground truncate max-w-[12rem]">{d.title || '—'}</span>
+                              {d.isStale && (
+                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border uppercase tracking-wide bg-amber-50 text-amber-700 border-amber-200">
+                                  Stale
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              {nameOf(d.owner_id)} · {d.daysSinceWon}d since won
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-sm font-semibold tabular-nums text-foreground">
+                              {fmtSAR(d.final_amount ?? d.amount)} SAR
                             </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          {nameOf(d.owner_id)} · {d.daysSinceWon}d since won
-                        </p>
+                            <Icon
+                              name="ChevronDown"
+                              size={14}
+                              className={`text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                            />
+                          </div>
+                        </button>
+                        {isOpen && (
+                          <div className="px-3 pb-3 pt-1 border-t border-border/60">
+                            <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-xs mt-2">
+                              <dt className="text-muted-foreground">Customer</dt>
+                              <dd className="text-foreground">{d.customer || '—'}</dd>
+                              <dt className="text-muted-foreground">Invoice #</dt>
+                              <dd className="text-foreground">{d.invoice_number || 'Not yet invoiced'}</dd>
+                              <dt className="text-muted-foreground">Won date</dt>
+                              <dd className="text-foreground">{fmtWonDate(wonAt)}</dd>
+                              <dt className="text-muted-foreground">Manager</dt>
+                              <dd className="text-foreground">{d.managerName || '—'}</dd>
+                            </dl>
+                            <div className="flex justify-end mt-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowInvoicePopup(false);
+                                  navigate('/sales-pipeline', { state: { openDealId: d.id } });
+                                }}
+                                className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                              >
+                                Open deal →
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <span className="text-sm font-semibold tabular-nums text-foreground flex-shrink-0">
-                        {fmtSAR(d.final_amount ?? d.amount)} SAR
-                      </span>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
               <div className="px-6 py-3 border-t border-border flex justify-end flex-shrink-0">

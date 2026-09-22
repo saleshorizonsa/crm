@@ -132,12 +132,50 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   //     only; see wonNotInvoicedList in utils/planningCalculations.js.
   const { data: wonDeals } = await supabase
     .from('deals')
-    .select('id, title, owner_id, stage, is_invoiced, amount, final_amount, closed_at, stage_changed_at, created_at')
+    .select(
+      'id, title, owner_id, stage, is_invoiced, invoice_number, amount, final_amount, closed_at, stage_changed_at, created_at, contact_id, contacts!contact_id(first_name, last_name, company_name)',
+    )
     .eq('company_id', companyId)
     .eq('stage', 'won')
     .in('owner_id', achievedScopeIds);
+  const wonNotInvoicedItems = wonNotInvoicedList({ deals: wonDeals, ownerIds: achievedScopeIds });
+
+  // Drill-down detail for the popup: each owner's manager, and a customer label.
+  // The manager is resolved through supervisor_id — the hierarchy column the app
+  // maintains — falling back to reports_to only when supervisor_id is empty. In
+  // JASCO Steels and IMDADAT reports_to is a stale backfill that disagrees with
+  // supervisor_id, so reading it first would name the wrong manager there.
+  const ownerIdsForManagers = [...new Set(wonNotInvoicedItems.map((d) => d.owner_id).filter(Boolean))];
+  const managerOf = {};
+  if (ownerIdsForManagers.length) {
+    const { data: owners } = await supabase
+      .from('users')
+      .select('id, supervisor_id, reports_to')
+      .in('id', ownerIdsForManagers);
+    const managerIdOf = Object.fromEntries(
+      (owners || []).map((u) => [u.id, u.supervisor_id || u.reports_to || null]),
+    );
+    const managerIds = [...new Set(Object.values(managerIdOf).filter(Boolean))];
+    const { data: managers } = managerIds.length
+      ? await supabase.from('users').select('id, full_name').in('id', managerIds)
+      : { data: [] };
+    const managerName = Object.fromEntries((managers || []).map((m) => [m.id, m.full_name]));
+    Object.entries(managerIdOf).forEach(([ownerId, mId]) => {
+      managerOf[ownerId] = (mId && managerName[mId]) || null;
+    });
+  }
+  const customerOf = (d) => {
+    const c = d.contacts;
+    if (c?.company_name) return c.company_name;
+    const person = [c?.first_name, c?.last_name].filter(Boolean).join(' ');
+    return person || null;
+  };
   const wonNotInvoiced = summarizeWonNotInvoiced(
-    wonNotInvoicedList({ deals: wonDeals, ownerIds: achievedScopeIds }),
+    wonNotInvoicedItems.map((d) => ({
+      ...d,
+      customer: customerOf(d),
+      managerName: managerOf[d.owner_id] || null,
+    })),
   );
 
   // 4. Win rate — deals created in the last 3 completed months, grouped by owner.

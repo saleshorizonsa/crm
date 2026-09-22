@@ -162,6 +162,24 @@ const SalesPipeline = () => {
     }
   }, []);
 
+  // Deep link to one deal (e.g. "Open deal →" in the KPI strip's Won, Not Yet
+  // Invoiced list): state.openDealId opens that deal in the existing DealModal.
+  // Unlike the effect above this cannot run only on mount — deals load
+  // asynchronously — so it waits for the load to finish. replaceState clears the
+  // browser's copy so a refresh doesn't reopen it, but React Router keeps
+  // location.state in memory, so the ref (per navigation, via location.key)
+  // stops a later setDeals — a save, a stage move — from reopening the modal.
+  const openedDealForKeyRef = React.useRef(null);
+  useEffect(() => {
+    const openDealId = location.state?.openDealId;
+    if (!openDealId || isLoading || openedDealForKeyRef.current === location.key) return;
+    openedDealForKeyRef.current = location.key;
+    const deal = deals.find((d) => d.id === openDealId);
+    if (deal) handleEditDeal(deal);
+    else console.warn("openDealId not found in the loaded deals:", openDealId);
+    window.history.replaceState({}, document.title);
+  }, [deals, isLoading, location.key, location.state]);
+
   // Add cache timestamp to track data freshness
   const [lastFetchTime, setLastFetchTime] = useState(null);
   const loadingRef = React.useRef(false);
