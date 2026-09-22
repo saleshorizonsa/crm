@@ -140,28 +140,30 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     .in('owner_id', achievedScopeIds);
   const wonNotInvoicedItems = wonNotInvoicedList({ deals: wonDeals, ownerIds: achievedScopeIds });
 
-  // Drill-down detail for the popup: each owner's manager, and a customer label.
-  // The manager is resolved through supervisor_id — the hierarchy column the app
-  // maintains — falling back to reports_to only when supervisor_id is empty. In
-  // JASCO Steels and IMDADAT reports_to is a stale backfill that disagrees with
-  // supervisor_id, so reading it first would name the wrong manager there.
-  const ownerIdsForManagers = [...new Set(wonNotInvoicedItems.map((d) => d.owner_id).filter(Boolean))];
-  const managerOf = {};
-  if (ownerIdsForManagers.length) {
+  // Drill-down detail for the popup: who each owner DIRECTLY reports to (name and
+  // role; that person is often a supervisor, not a manager), and a customer label.
+  // Resolved through supervisor_id — the hierarchy column the app maintains —
+  // falling back to reports_to only when supervisor_id is empty. In JASCO Steels
+  // and IMDADAT reports_to is a stale backfill that disagrees with supervisor_id,
+  // so reading it first would name the wrong person there.
+  const ownerIdsForReportsTo = [...new Set(wonNotInvoicedItems.map((d) => d.owner_id).filter(Boolean))];
+  const reportsToOf = {}; // owner_id -> { name, role }
+  if (ownerIdsForReportsTo.length) {
     const { data: owners } = await supabase
       .from('users')
       .select('id, supervisor_id, reports_to')
-      .in('id', ownerIdsForManagers);
-    const managerIdOf = Object.fromEntries(
+      .in('id', ownerIdsForReportsTo);
+    const reportsToIdOf = Object.fromEntries(
       (owners || []).map((u) => [u.id, u.supervisor_id || u.reports_to || null]),
     );
-    const managerIds = [...new Set(Object.values(managerIdOf).filter(Boolean))];
-    const { data: managers } = managerIds.length
-      ? await supabase.from('users').select('id, full_name').in('id', managerIds)
+    const reportsToIds = [...new Set(Object.values(reportsToIdOf).filter(Boolean))];
+    const { data: superiors } = reportsToIds.length
+      ? await supabase.from('users').select('id, full_name, role').in('id', reportsToIds)
       : { data: [] };
-    const managerName = Object.fromEntries((managers || []).map((m) => [m.id, m.full_name]));
-    Object.entries(managerIdOf).forEach(([ownerId, mId]) => {
-      managerOf[ownerId] = (mId && managerName[mId]) || null;
+    const superiorById = Object.fromEntries((superiors || []).map((s) => [s.id, s]));
+    Object.entries(reportsToIdOf).forEach(([ownerId, sId]) => {
+      const s = sId ? superiorById[sId] : null;
+      reportsToOf[ownerId] = s ? { name: s.full_name || null, role: s.role || null } : null;
     });
   }
   const customerOf = (d) => {
@@ -174,7 +176,8 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     wonNotInvoicedItems.map((d) => ({
       ...d,
       customer: customerOf(d),
-      managerName: managerOf[d.owner_id] || null,
+      reportsToName: reportsToOf[d.owner_id]?.name || null,
+      reportsToRole: reportsToOf[d.owner_id]?.role || null,
     })),
   );
 

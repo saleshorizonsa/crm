@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Icon from 'components/AppIcon';
 import { supabase } from 'lib/supabase';
 import { STALE_INVOICE_DAYS } from 'utils/planningCalculations';
+import { capitalize } from 'utils/helper';
 
 // Whole-SAR integer formatter.
 const fmtSAR = (n) =>
@@ -634,8 +635,12 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                               <dd className="text-foreground">{d.invoice_number || 'Not yet invoiced'}</dd>
                               <dt className="text-muted-foreground">Won date</dt>
                               <dd className="text-foreground">{fmtWonDate(wonAt)}</dd>
-                              <dt className="text-muted-foreground">Manager</dt>
-                              <dd className="text-foreground">{d.managerName || '—'}</dd>
+                              <dt className="text-muted-foreground">Reports To</dt>
+                              <dd className="text-foreground">
+                                {d.reportsToName
+                                  ? `${d.reportsToName}${d.reportsToRole ? ` (${capitalize(d.reportsToRole)})` : ''}`
+                                  : '—'}
+                              </dd>
                             </dl>
                             <div className="flex justify-end mt-2">
                               <button
