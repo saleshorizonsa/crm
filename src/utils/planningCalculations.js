@@ -490,6 +490,82 @@ export async function fetchAchieved({ companyId, contributorIds, start = null, e
   return computeAchieved({ deals: data, contributorIds, start, end });
 }
 
+// ── WON, NOT YET INVOICED (visibility only) ────────────────────────────────
+/**
+ * Pure visibility into deals stuck between winning and invoicing. This never
+ * changes Achieved (see isAchievedDeal above) — a deal here just hasn't
+ * reached is_invoiced = true yet, and drops out of this list the moment it
+ * does, becoming Achieved instead. No new table, no persistence: computed
+ * from the same deal rows every screen already fetches.
+ */
+export const STALE_INVOICE_DAYS = 7;
+
+/** Days since a deal was won: closed_at, else stage_changed_at, else created_at. */
+export function daysSinceWon(deal, now = new Date()) {
+  const wonAt = deal?.closed_at || deal?.stage_changed_at || deal?.created_at;
+  if (!wonAt) return 0;
+  return Math.max(0, Math.floor((now - new Date(wonAt)) / 86400000));
+}
+
+/** True when a deal is won but not (yet) invoiced. */
+export function isWonNotInvoiced(deal) {
+  return !!deal && deal?.stage === 'won' && deal?.is_invoiced !== true;
+}
+
+/**
+ * Won-but-uninvoiced deals in scope, from deal rows already in hand, each
+ * annotated with daysSinceWon and isStale (>= thresholdDays). Oldest first,
+ * so the longest-waiting deal leads.
+ *
+ * @param {object[]} p.deals       deal rows (stage, is_invoiced, owner_id, plus a won-date field)
+ * @param {string[]} [p.ownerIds]  scope; omitted/null = every owner in `deals`
+ */
+export function wonNotInvoicedList({ deals, ownerIds = null, now = new Date(), thresholdDays = STALE_INVOICE_DAYS }) {
+  const scope = Array.isArray(ownerIds) ? new Set(ownerIds) : null;
+  return (deals || [])
+    .filter((d) => (!scope || scope.has(d.owner_id)) && isWonNotInvoiced(d))
+    .map((d) => {
+      const days = daysSinceWon(d, now);
+      return { ...d, daysSinceWon: days, isStale: days >= thresholdDays };
+    })
+    .sort((a, b) => b.daysSinceWon - a.daysSinceWon);
+}
+
+/** Counts/values summary of a wonNotInvoicedList() result, for a KPI card. */
+export function summarizeWonNotInvoiced(list) {
+  const items = list || [];
+  const stale = items.filter((d) => d.isStale);
+  return {
+    count: items.length,
+    total: items.reduce((s, d) => s + achievedAmount(d), 0),
+    staleCount: stale.length,
+    staleValue: stale.reduce((s, d) => s + achievedAmount(d), 0),
+    oldestDays: items.length ? items[0].daysSinceWon : 0,
+    items,
+  };
+}
+
+/**
+ * Synthetic exceptions for STALE won-but-uninvoiced deals, shaped exactly
+ * like the flag/escalation items buildExceptions() already produces
+ * (utils/salesDivisionMetrics.js, coverage-console/index.jsx), so
+ * ExceptionFeed / DivisionExceptionFeed render them with no changes.
+ */
+export function wonNotInvoicedExceptions({ deals, ownerIds = null, now = new Date(), thresholdDays = STALE_INVOICE_DAYS }) {
+  return wonNotInvoicedList({ deals, ownerIds, now, thresholdDays })
+    .filter((d) => d.isStale)
+    .map((d) => ({
+      sev: 'warning',
+      type: 'stale_invoice',
+      title: `Won ${d.daysSinceWon}d, Not Invoiced`,
+      ownerId: d.owner_id,
+      dealId: d.id,
+      createdAt: d.closed_at || d.stage_changed_at || d.created_at,
+      amount: achievedAmount(d),
+      daysSinceWon: d.daysSinceWon,
+    }));
+}
+
 // ── Orchestrator ────────────────────────────────────────────────────────────
 /** First/last day of the current month, as ISO strings and yyyy-MM-dd. */
 export function monthBounds(d = new Date()) {

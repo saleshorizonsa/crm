@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Icon from 'components/AppIcon';
 import { supabase } from 'lib/supabase';
+import { STALE_INVOICE_DAYS } from 'utils/planningCalculations';
 
 // Whole-SAR integer formatter.
 const fmtSAR = (n) =>
@@ -281,21 +282,23 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
   const [activePopup, setActivePopup] = useState(null);
   const [drillSalesman, setDrillSalesman] = useState(null);
   const [showHealthPopup, setShowHealthPopup] = useState(false);
+  const [showInvoicePopup, setShowInvoicePopup] = useState(false);
 
   // Reset any drill-down when switching popups or closing.
   useEffect(() => { setDrillSalesman(null); }, [activePopup]);
 
   // Close whichever overlay is open on Escape.
   useEffect(() => {
-    if (!activePopup && !showHealthPopup) return;
+    if (!activePopup && !showHealthPopup && !showInvoicePopup) return;
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
       setActivePopup(null);
       setShowHealthPopup(false);
+      setShowInvoicePopup(false);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [activePopup, showHealthPopup]);
+  }, [activePopup, showHealthPopup, showInvoicePopup]);
 
   // Managers/supervisors can drill into an individual salesman's data. A plain
   // salesman sees their OWN rich view directly (their single row, no team table).
@@ -340,6 +343,8 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
   }, [viewSalesman?.id, activePopup]);
 
   const cards = cardDefs(totals, { period });
+  const wni = totals?.wonNotInvoiced;
+  const nameOf = (id) => salesmanData.find((s) => s.id === id)?.full_name || 'Unknown';
 
   return (
     <div className="mb-6">
@@ -507,6 +512,98 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Won, not yet invoiced — visibility only, never affects Achieved/Deficit
+          above. Flags deals sitting won-but-uninvoiced past STALE_INVOICE_DAYS. */}
+      {!loading && wni && wni.count > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowInvoicePopup(true)}
+          className={`w-full flex items-center gap-3 px-5 py-3 rounded-xl border mt-3 text-left hover:shadow-sm transition-all ${
+            wni.staleCount > 0 ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'
+          }`}
+        >
+          <div
+            className={`w-3 h-3 rounded-full flex-shrink-0 ${
+              wni.staleCount > 0 ? 'bg-amber-500 animate-pulse' : 'bg-blue-500'
+            }`}
+          />
+          <div className="flex-1 min-w-0">
+            <span className={`font-semibold text-sm ${wni.staleCount > 0 ? 'text-amber-700' : 'text-blue-700'}`}>
+              {wni.count} won deal{wni.count === 1 ? '' : 's'} not yet invoiced
+            </span>
+            <span className="text-xs text-muted-foreground ml-3">
+              {wni.staleCount > 0
+                ? `${wni.staleCount} over ${STALE_INVOICE_DAYS} days · oldest ${wni.oldestDays}d`
+                : 'All within the first week'}
+            </span>
+          </div>
+          <span className="text-xs font-medium text-foreground flex-shrink-0">{fmtSAR(wni.total)} SAR</span>
+          <Icon name="ChevronRight" size={14} className="text-muted-foreground flex-shrink-0" />
+        </button>
+      )}
+
+      {/* Won, not yet invoiced — deal list */}
+      {showInvoicePopup && wni && (
+        <>
+          <div
+            className="fixed inset-0 z-[600] bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowInvoicePopup(false)}
+          />
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden pointer-events-auto border border-border">
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between flex-shrink-0">
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">Won, Not Yet Invoiced</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {wni.count} deal{wni.count === 1 ? '' : 's'} · {fmtSAR(wni.total)} SAR · flagged after {STALE_INVOICE_DAYS} days
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowInvoicePopup(false)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
+                >
+                  <Icon name="X" size={16} className="text-muted-foreground" />
+                </button>
+              </div>
+              <div className="px-4 py-4 overflow-y-auto flex-1 space-y-2">
+                {wni.items.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">Nothing pending invoice.</p>
+                ) : (
+                  wni.items.map((d) => (
+                    <div key={d.id} className="flex items-center justify-between gap-3 p-2.5 bg-muted/30 rounded-lg">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm text-foreground truncate max-w-[12rem]">{d.title || '—'}</span>
+                          {d.isStale && (
+                            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border uppercase tracking-wide bg-amber-50 text-amber-700 border-amber-200">
+                              Stale
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {nameOf(d.owner_id)} · {d.daysSinceWon}d since won
+                        </p>
+                      </div>
+                      <span className="text-sm font-semibold tabular-nums text-foreground flex-shrink-0">
+                        {fmtSAR(d.final_amount ?? d.amount)} SAR
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="px-6 py-3 border-t border-border flex justify-end flex-shrink-0">
+                <button
+                  onClick={() => setShowInvoicePopup(false)}
+                  className="px-4 py-2 text-sm border border-border rounded-xl text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  Close
+                </button>
               </div>
             </div>
           </div>

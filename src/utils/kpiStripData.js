@@ -10,6 +10,8 @@ import {
   fetchAchieved,
   fetchContributors,
   fetchAchievedOnlyUsers,
+  wonNotInvoicedList,
+  summarizeWonNotInvoiced,
 } from 'utils/planningCalculations';
 
 // TEMP: set true to re-enable the KPI diagnostic logs (see end of the function).
@@ -19,10 +21,13 @@ const KPI_DEBUG = false;
 // utils/planningCalculations.js so Planning, Coverage Console and the
 // dashboards cannot drift apart again.
 
+const EMPTY_WON_NOT_INVOICED = { count: 0, total: 0, staleCount: 0, staleValue: 0, oldestDays: 0, items: [] };
+
 const EMPTY_TOTALS = {
   target: 0, achieved: 0, deficit: 0,
   winRate3m: 0, winRateIsDefault: true,
   planned: 0, required: 0, requiredRaw: 0, futureCarryover: 0, plannedGap: 0,
+  wonNotInvoiced: EMPTY_WON_NOT_INVOICED,
 };
 
 function monthBounds() {
@@ -113,12 +118,27 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   //    PLUS any flagged achieved-only user (users.is_contributor, e.g. a manager who
   //    sells himself). Only Achieved widens; every other block here stays on scopeIds.
   const achievedOnlyUsers = await fetchAchievedOnlyUsers({ companyId, ownerIds });
+  const achievedScopeIds = [...scopeIds, ...achievedOnlyUsers.map((u) => u.id)];
   const { perPerson: achievedPer, count: wonDealCount } = await fetchAchieved({
     companyId,
-    contributorIds: [...scopeIds, ...achievedOnlyUsers.map((u) => u.id)],
+    contributorIds: achievedScopeIds,
     start: winStart,
     end: winEnd,
   });
+
+  // 3b. Won, not yet invoiced — a status, not a monthly figure, so it is NOT
+  //     windowed by `range` the way Achieved is: a deal won last quarter and
+  //     still sitting uninvoiced belongs here until it's invoiced. Visibility
+  //     only; see wonNotInvoicedList in utils/planningCalculations.js.
+  const { data: wonDeals } = await supabase
+    .from('deals')
+    .select('id, title, owner_id, stage, is_invoiced, amount, final_amount, closed_at, stage_changed_at, created_at')
+    .eq('company_id', companyId)
+    .eq('stage', 'won')
+    .in('owner_id', achievedScopeIds);
+  const wonNotInvoiced = summarizeWonNotInvoiced(
+    wonNotInvoicedList({ deals: wonDeals, ownerIds: achievedScopeIds }),
+  );
 
   // 4. Win rate — deals created in the last 3 completed months, grouped by owner.
   //    fetchWinRate3m() in utils/winRate3m.js is the canonical source for the
@@ -271,6 +291,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     attainmentPct, funnelValue,
     coverageValue, coverageHealthy, coveragePct,
     pacingPct, pacingHealthy, daysElapsed, totalDaysInMonth, isHealthy,
+    wonNotInvoiced,
   };
 
   // TEMP debug — helps diagnose wrong team/director KPI values. Remove once fixed.

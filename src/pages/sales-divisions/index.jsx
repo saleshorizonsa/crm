@@ -215,7 +215,7 @@ export default function SalesDivisions() {
           supabase
             .from("deals")
             .select(
-              "id, title, stage, amount, final_amount, is_invoiced, invoice_date, owner_id, forecast_amount, expected_close_date, created_at, contacts!contact_id(first_name, last_name, company_name)"
+              "id, title, stage, amount, final_amount, is_invoiced, invoice_date, owner_id, forecast_amount, expected_close_date, stage_changed_at, created_at, contacts!contact_id(first_name, last_name, company_name)"
             )
             .eq("company_id", company.id)
             .not("stage", "eq", "lost"),

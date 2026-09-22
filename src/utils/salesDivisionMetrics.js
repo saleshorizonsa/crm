@@ -7,6 +7,7 @@ import {
   computeRequiredRaw,
   computePlannedGap,
   computeCoverage,
+  wonNotInvoicedExceptions,
 } from 'utils/planningCalculations';
 
 // Pure logic behind the Insights page (/insights). Kept out of the
@@ -281,6 +282,9 @@ const ESCALATION_TITLES = {
 export function buildExceptions(userIds, data) {
   const ids = new Set(userIds || []);
   const exs = [];
+  // Won, not yet invoiced, stuck 7+ days — visibility only, never touches
+  // Achieved. See wonNotInvoicedExceptions in utils/planningCalculations.js.
+  exs.push(...wonNotInvoicedExceptions({ deals: data.deals, ownerIds: userIds, now: data.now }));
   (data.flags || [])
     .filter((f) => ids.has(f.owner_id))
     .forEach((f) => {

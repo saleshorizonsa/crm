@@ -16,6 +16,7 @@ import {
   computePlannedGap,
   monthBounds,
   nextMonthBounds,
+  wonNotInvoicedExceptions,
 } from "utils/planningCalculations";
 
 // ── STATE ────────────────────────────────────────────────────────────────────
@@ -465,10 +466,16 @@ export default function CoverageConsole() {
   };
 
   function buildExceptions(userIds, data) {
-    const { flags, escalations, users } = data;
+    const { flags, escalations, users, deals, now } = data;
     const exs = [];
     const teamOf = (ownerId) =>
       users.find((u) => u.id === ownerId)?.reports_to || null;
+
+    // Won, not yet invoiced, stuck 7+ days — visibility only, never touches
+    // Achieved. See wonNotInvoicedExceptions in utils/planningCalculations.js.
+    wonNotInvoicedExceptions({ deals, ownerIds: userIds, now }).forEach((ex) => {
+      exs.push({ ...ex, teamId: teamOf(ex.ownerId) });
+    });
 
     (flags || [])
       .filter((f) => userIds.includes(f.owner_id))
