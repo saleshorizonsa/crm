@@ -1238,17 +1238,27 @@ const DealModal = ({
     }
     setProductErrors([]);
 
-    // Feature 3D: when marking Won with no final value yet, prompt user
+    // Feature 3D: when marking Won with no final value yet, prompt user.
+    // Compare against dealData.amount — the value being saved NOW (recalculated
+    // from the product lines above) — never the `deal` prop, which is the deal as
+    // it was before this edit. Reading the prop meant that changing the price and
+    // marking Won in one save asked about the OLD price, and "Yes" stored the old
+    // price as final_amount (the value Achieved counts) next to the new amount.
     if (formData.stage === 'won' && deal?.id && !deal.final_amount && !showFinalValue) {
+      const currentValue = dealData.amount || 0;
       const sameValue = window.confirm(
-        `Is the closed value the same as the initial value?\n${formatCurrency(deal.initial_amount || deal.amount || 0, preferredCurrency)}`
+        `Is the closed value the same as the current deal value?\n${formatCurrency(currentValue, preferredCurrency)}`
       );
       if (sameValue) {
-        dealData.final_amount          = deal.initial_amount || deal.amount || 0;
+        dealData.final_amount          = currentValue;
         dealData.value_change_reason   = 'no_change';
         dealData.value_changed_at      = new Date().toISOString();
         dealData.value_changed_by      = user?.id;
       } else {
+        // Open the final-value section pre-filled with the value just entered, so
+        // the user only adjusts it and picks a reason (Feature 3C below) instead
+        // of retyping it. Nothing is saved on this pass.
+        setFinalAmount(String(Math.round(currentValue * 100) / 100));
         setShowFinalValue(true);
         return;
       }
