@@ -6,6 +6,7 @@ import Input from "../../../components/ui/Input";
 import Select from "../../../components/ui/Select";
 import ContactSearchInput from "../../../components/ui/ContactSearchInput";
 import LostReasonModal from "./LostReasonModal";
+import ProductLineReconcilePanel from "./ProductLineReconcilePanel";
 import ReplacementModal from "../../../components/deals/ReplacementModal";
 import MeetingModal from "../../calendar/components/MeetingModal";
 import LogActivityModal from "../../../components/LogActivityModal";
@@ -416,8 +417,6 @@ const DealModal = ({
   // Feature 1: product validation errors
   const [productErrors, setProductErrors] = useState([]);
   // Feature 2: inline editing state
-  const [editingProductId, setEditingProductId] = useState(null);
-  const [editValues, setEditValues] = useState({});
   // Feature 3: initial vs final value
   const [showFinalValue, setShowFinalValue] = useState(false);
   const [finalAmount, setFinalAmount] = useState('');
@@ -426,11 +425,11 @@ const DealModal = ({
   // when the final value rises because of a quantity increase. A deal owned by
   // Alseyed drifted exactly this way — final_amount raised, lines untouched,
   // because lines lock after Contact Made — so this step unlocks them here only.
-  const [reconcileEdits, setReconcileEdits] = useState({}); // line id -> { quantity, price }
-  const [reconcileSavingId, setReconcileSavingId] = useState(null);
-  // Negotiation-stage product-line editing: the reason for THIS edit session.
-  const [negotiationReason, setNegotiationReason] = useState('');
-  const reconcileBaselineRef = useRef(null); // line id -> { qty, price } when the step opened
+  // The product-line edit session, the ONE way a saved deal's lines change now,
+  // at every stage: open the panel, pick a reason, edit a line, save that line.
+  const [lineEditorOpen, setLineEditorOpen] = useState(false);
+  const [lineEditReason, setLineEditReason] = useState('');
+  const [changedLineIds, setChangedLineIds] = useState([]); // ids changed in this session
   // What the reconciliation panel itself changed: the deal amount it produced, and
   // a line-by-line description. Lets the save tell "the amount moved because of
   // THIS panel" apart from any other amount edit — see executeSave.
@@ -993,42 +992,54 @@ const DealModal = ({
     { value: "high", label: t("tasks.high") },
   ];
 
-  // Feature 2: line editing in lead/qualified/negotiation; add+remove in lead and
-  // negotiation. Negotiation is pre-close, so lines may still move — but unlike
-  // lead/qualified every change there is recorded (see logProductLineChange).
+  // ── ONE product-line edit flow, every stage ───────────────────────────────
+  // A saved deal's lines change in exactly one place now: ProductLineReconcilePanel,
+  // opened from "Edit product lines" (any stage) or by the Final Value flow's
+  // Quantity Increase step. Both need a reason first, both record every change.
+  // The old free inline editing at Lead/Qualified is gone — that was the last way
+  // to move a deal's value with nothing recorded.
   //
-  // Keyed to the stage SELECTED RIGHT NOW, not the saved deal.stage: switching the
-  // stage to Won locks the lines immediately, before the save, so nothing can be
-  // edited on the way out of Negotiation. At Won the only route is the Final Value
-  // + Quantity Increase reconcile panel.
+  // The stage is read from the form, not the saved deal, so switching to Won takes
+  // effect immediately rather than after the save.
   const effectiveStage = formData?.stage || deal?.stage;
-  const isNegotiationEdit = effectiveStage === 'negotiation';
-  // At Negotiation nothing unlocks until a reason is chosen for this edit session.
-  const negotiationUnlocked = !isNegotiationEdit || !!negotiationReason;
-  const canEditProducts =
-    ['lead', 'contact_made', 'negotiation'].includes(effectiveStage) && negotiationUnlocked;
-  const canAddRemoveProducts =
-    effectiveStage === 'lead' || (isNegotiationEdit && negotiationUnlocked);
+  const halala = (n) => Math.round((parseFloat(n) || 0) * 100) / 100;
 
-  // Every product-line change made during Negotiation is written to
-  // deal_amount_changes — the table the amount-change gate already logs to — so
-  // "who changed which line, when and why" is queryable per deal:
+  // The Final Value flow's Quantity Increase step is the same panel, pinned to that
+  // reason; otherwise the session carries whichever reason the user picked.
+  const finalValueReconcile = showFinalValue && changeReason === 'quantity_increase';
+  const activeLineReason = finalValueReconcile ? 'quantity_increase' : lineEditReason;
+  const lineEditorVisible = !!deal?.id && (lineEditorOpen || finalValueReconcile);
+  // Lines can only be added or removed while a reason-backed session is open.
+  const canAddRemoveProducts = lineEditorVisible && !!activeLineReason;
+
+  // A quantity increase on the Final Value flow MUST touch a line; an ordinary
+  // session simply cannot be saved while it is open and nothing has changed yet
+  // (close it and nothing is pending). A deal with no lines has nothing to
+  // reconcile and is never stuck.
+  const reconcileNeeded = finalValueReconcile && !!deal?.id && dealProducts.length > 0;
+  const openSessionPending = lineEditorOpen && !!lineEditReason && changedLineIds.length === 0;
+  const reconcileSatisfied =
+    (!reconcileNeeded || changedLineIds.length > 0) && !openSessionPending;
+
+  // Every line change is written to deal_amount_changes — the table the
+  // amount-change gate already logs to — so "who changed which line, when and
+  // why" is queryable per deal, at every stage:
   //   select * from deal_amount_changes where deal_id = ... and change_type = 'product_line'
   const logProductLineChange = async ({ action, label, before, after, oldTotal, newTotal }) => {
-    if (!isNegotiationEdit || !deal?.id || !negotiationReason) return;
-    const reasonLabel = CHANGE_REASONS.find((r) => r.value === negotiationReason)?.label || negotiationReason;
+    if (!deal?.id || !activeLineReason) return;
+    const reasonLabel = CHANGE_REASONS.find((r) => r.value === activeLineReason)?.label || activeLineReason;
     try {
       await supabase.from('deal_amount_changes').insert({
         deal_id: deal.id,
         company_id: company?.id,
         changed_by: user?.id,
-        old_amount: Math.round((parseFloat(oldTotal) || 0) * 100) / 100,
-        new_amount: Math.round((parseFloat(newTotal) || 0) * 100) / 100,
+        old_amount: halala(oldTotal),
+        new_amount: halala(newTotal),
         change_type: 'product_line',
         old_value: before ?? null,
         new_value: after ?? null,
-        reason: `Negotiation ${action} — ${label} [${reasonLabel}]`,
-        stage_at_change: 'negotiation',
+        reason: `${action} — ${label} [${reasonLabel}]`,
+        stage_at_change: effectiveStage || null,
       });
     } catch (err) {
       // Never block the edit itself on the audit write.
@@ -1036,96 +1047,39 @@ const DealModal = ({
     }
   };
 
-  // The edit session ends the moment the deal stops being at Negotiation —
-  // including switching the stage to Won in the form, before any save. Clearing
-  // the reason re-locks the lines, and closing the inline editor makes sure no
-  // half-finished row edit survives the transition.
-  useEffect(() => {
-    if (!isNegotiationEdit) setNegotiationReason('');
-  }, [isNegotiationEdit]);
-  useEffect(() => {
-    if (!canEditProducts) { setEditingProductId(null); setEditValues({}); }
-  }, [canEditProducts]);
-  // A freshly opened deal always starts with no session reason.
-  useEffect(() => { setNegotiationReason(''); }, [isOpen, deal?.id]);
-
-  // ── Quantity-increase reconciliation ──────────────────────────────────────
-  // Reading one product line, and the halala rounding used to compare them.
-  const lineQty = (p) => parseFloat(p?.uom_value ?? p?.quantity ?? 0) || 0;
-  const linePrice = (p) => parseFloat(p?.unit_price ?? 0) || 0;
-  const lineTotalOf = (p) => parseFloat(p?.line_total) || lineQty(p) * linePrice(p);
-  const halala = (n) => Math.round((parseFloat(n) || 0) * 100) / 100;
-
-  // Snapshot the lines as they were when this step opened, so "changed" means
-  // changed HERE — not just different from whatever they were earlier.
-  useEffect(() => {
-    if (!(showFinalValue && changeReason === 'quantity_increase')) {
-      reconcileBaselineRef.current = null;
-      reconcileChangeRef.current = { amount: null, notes: [] };
-      setReconcileEdits({});
-      return;
-    }
-    if (!reconcileBaselineRef.current && dealProducts.length > 0) {
-      reconcileBaselineRef.current = Object.fromEntries(
-        dealProducts.map((p) => [p.id, { qty: halala(lineQty(p)), price: halala(linePrice(p)) }]),
-      );
-    }
-  }, [showFinalValue, changeReason, dealProducts]);
-
-  // Only a quantity increase demands it, and only when there are lines to fix:
-  // a deal with no product lines has nothing to reconcile and must not be stuck.
-  const reconcileNeeded =
-    showFinalValue && changeReason === 'quantity_increase' && !!deal?.id && dealProducts.length > 0;
-  const reconcileChangedIds = dealProducts
-    .filter((p) => {
-      const was = reconcileBaselineRef.current?.[p.id];
-      return was && (halala(lineQty(p)) !== was.qty || halala(linePrice(p)) !== was.price);
-    })
-    .map((p) => p.id);
-  const reconcileSatisfied = !reconcileNeeded || reconcileChangedIds.length > 0;
-  const reconcileLinesTotal = dealProducts.reduce((sum, p) => sum + lineTotalOf(p), 0);
-
-  // Persist one line straight to deal_products — the same write the inline editor
-  // does — so a reconciliation survives even if the deal-level save then fails.
-  const saveReconciledLine = async (item) => {
-    const edit = reconcileEdits[item.id] || {};
-    const qty = parseFloat(edit.quantity ?? lineQty(item)) || 0;
-    const price = parseFloat(edit.price ?? linePrice(item)) || 0;
-    if (qty <= 0 || price <= 0) return;
-    setReconcileSavingId(item.id);
-    const lineTotal = qty * price;
-    const { error } = await supabase
-      .from('deal_products')
-      .update({ uom_value: qty, quantity: qty, unit_price: price, line_total: lineTotal, updated_at: new Date().toISOString() })
-      .eq('id', item.id);
-    setReconcileSavingId(null);
-    if (error) {
-      setErrors((prev) => ({ ...prev, finalValue: `Could not update that product line: ${error.message}` }));
-      return;
-    }
-    const updated = dealProducts.map((p) =>
-      p.id === item.id ? { ...p, uom_value: qty, quantity: qty, unit_price: price, line_total: lineTotal } : p,
-    );
+  // One line was saved by the panel: refresh the lines and the deal amount, mark
+  // the session as having changed something, record the audit row, and remember
+  // the amount produced so the generic free-text amount prompt can be skipped.
+  const handleLineSaved = (updated, info) => {
     setDealProducts(updated);
     const newTotal = updated.reduce((s, p) => s + (parseFloat(p.line_total) || 0), 0);
     setFormData((prev) => ({ ...prev, amount: newTotal }));
-    setReconcileEdits((prev) => { const next = { ...prev }; delete next[item.id]; return next; });
+    setChangedLineIds((prev) => (prev.includes(info.item.id) ? prev : [...prev, info.item.id]));
     setErrors((prev) => ({ ...prev, finalValue: '' }));
-
-    // Remember what this panel did, so the generic "why did the amount change?"
-    // prompt can be skipped for exactly this amount — the panel already captured
-    // a more specific reason (which line, and its old and new qty/rate).
-    const was = reconcileBaselineRef.current?.[item.id];
-    const label = item.product?.material || item.product_name || 'line';
-    const notes = reconcileChangeRef.current.notes.filter((n) => n.id !== item.id);
-    notes.push({
-      id: item.id,
-      text: was
-        ? `${label}: qty ${was.qty} → ${qty}, rate ${was.price} → ${price}`
-        : `${label}: qty ${qty}, rate ${price}`,
+    logProductLineChange({
+      action: 'line edited',
+      label: info.label,
+      before: info.before,
+      after: info.after,
+      oldTotal: info.oldTotal,
+      newTotal: info.newTotal,
     });
+    const notes = reconcileChangeRef.current.notes.filter((n) => n.id !== info.item.id);
+    notes.push({ id: info.item.id, text: `${info.label}: ${info.before} → ${info.after}` });
     reconcileChangeRef.current = { amount: halala(newTotal), notes };
   };
+
+  // Closing the session, or leaving the Final Value step, clears it: the reason,
+  // what it changed, and the record used to skip the amount prompt.
+  const endLineEditSession = () => {
+    setLineEditorOpen(false);
+    setLineEditReason('');
+    setChangedLineIds([]);
+    reconcileChangeRef.current = { amount: null, notes: [] };
+  };
+  // Reopening a deal, or switching stage, always starts from no session.
+  useEffect(() => { endLineEditSession(); }, [isOpen, deal?.id, effectiveStage]);
+  useEffect(() => { if (!finalValueReconcile && !lineEditorOpen) setChangedLineIds([]); }, [finalValueReconcile, lineEditorOpen]);
 
   // Convert contacts to dropdown options
   const contactOptions = contacts.map((contact) => ({
@@ -1463,7 +1417,9 @@ const DealModal = ({
       if (!reconcileSatisfied) {
         setErrors(prev => ({
           ...prev,
-          finalValue: 'Quantity Increase: update the quantity (or rate) on at least one product line below, so the line items match the new value.',
+          finalValue: openSessionPending
+            ? 'Product line editing is open: change a line and save it, or press Done to close without changes.'
+            : 'Quantity Increase: update the quantity (or rate) on at least one product line below, so the line items match the new value.',
         }));
         document.querySelector('[data-section="qty-reconcile"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
@@ -1934,18 +1890,18 @@ const DealModal = ({
                       )}
                     </div>
 
-                    {/* Quantity Increase → reconcile the product lines. The lines are
-                        locked after Contact Made, which is exactly why a quantity
-                        increase used to be recorded on the value alone; they are
-                        editable here, for this step only. */}
-                    {changeReason === 'quantity_increase' && deal?.id && (
+                    {/* Quantity Increase → reconcile the product lines. The same
+                        panel used everywhere else, pinned to this reason and
+                        mandatory here: the value cannot rise for a quantity
+                        increase while the lines keep the old quantities. */}
+                    {finalValueReconcile && deal?.id && (
                       <div
                         data-section="qty-reconcile"
                         className={`rounded-xl border p-3 ${
                           reconcileSatisfied ? 'bg-green-50/60 border-green-200' : 'bg-amber-50 border-amber-300'
                         }`}
                       >
-                        <div className="flex items-start gap-2">
+                        <div className="flex items-start gap-2 mb-3">
                           <Icon
                             name={reconcileSatisfied ? 'CheckCircle' : 'AlertTriangle'}
                             size={14}
@@ -1956,7 +1912,7 @@ const DealModal = ({
                               {dealProducts.length === 0
                                 ? 'No product lines on this deal — nothing to reconcile.'
                                 : reconcileSatisfied
-                                  ? `Product lines updated (${reconcileChangedIds.length} of ${dealProducts.length}).`
+                                  ? `Product lines updated (${changedLineIds.length} of ${dealProducts.length}).`
                                   : 'Update the product lines to match the increase'}
                             </p>
                             <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -1964,81 +1920,16 @@ const DealModal = ({
                             </p>
                           </div>
                         </div>
-
-                        {dealProducts.length > 0 && (
-                          <>
-                            <div className="space-y-2 max-h-48 overflow-y-auto mt-3">
-                              {dealProducts.map((item) => {
-                                const edit = reconcileEdits[item.id] || {};
-                                const qtyVal = edit.quantity ?? String(lineQty(item) || '');
-                                const priceVal = edit.price ?? String(linePrice(item) || '');
-                                const draftTotal = (parseFloat(qtyVal) || 0) * (parseFloat(priceVal) || 0);
-                                const isDirty =
-                                  halala(qtyVal) !== halala(lineQty(item)) || halala(priceVal) !== halala(linePrice(item));
-                                const isChanged = reconcileChangedIds.includes(item.id);
-                                return (
-                                  <div key={item.id} className="flex items-center gap-2 p-2 bg-card rounded-lg border border-border text-xs">
-                                    <div className="flex-1 min-w-0">
-                                      <span className="font-medium text-card-foreground truncate block">
-                                        {item.product?.material || item.product_name || 'Product'}
-                                      </span>
-                                      {isChanged && (
-                                        <span className="text-[10px] font-semibold text-green-700">Updated</span>
-                                      )}
-                                    </div>
-                                    <input
-                                      type="number" min="0" step="0.01" value={qtyVal}
-                                      onChange={(e) => setReconcileEdits((p) => ({ ...p, [item.id]: { ...edit, quantity: e.target.value } }))}
-                                      className="w-20 px-2 py-1 border border-border rounded-lg text-right tabular-nums focus:outline-none focus:border-primary"
-                                      title={`${(item.uom_type || 'QTY').toUpperCase()}`}
-                                    />
-                                    <input
-                                      type="number" min="0" step="0.01" value={priceVal}
-                                      onChange={(e) => setReconcileEdits((p) => ({ ...p, [item.id]: { ...edit, price: e.target.value } }))}
-                                      className="w-24 px-2 py-1 border border-border rounded-lg text-right tabular-nums focus:outline-none focus:border-primary"
-                                      title="Rate"
-                                    />
-                                    <span className="w-24 text-right font-semibold text-primary tabular-nums">
-                                      {formatCurrency(draftTotal, preferredCurrency)}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      disabled={!isDirty || reconcileSavingId === item.id}
-                                      onClick={() => saveReconciledLine(item)}
-                                      className={`px-2 py-1 rounded-lg border text-[11px] font-medium ${
-                                        isDirty
-                                          ? 'border-green-300 text-green-700 hover:bg-green-50'
-                                          : 'border-border text-muted-foreground opacity-50 cursor-not-allowed'
-                                      }`}
-                                    >
-                                      {reconcileSavingId === item.id ? 'Saving…' : 'Save line'}
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            {/* Lines vs final value — informational: freight and rounding
-                                make small differences legitimate, so this never blocks. */}
-                            {(() => {
-                              const finalVal = parseFloat(finalAmount) || 0;
-                              const diff = reconcileLinesTotal - finalVal;
-                              const close = Math.abs(diff) < Math.max(1, finalVal * 0.01);
-                              return (
-                                <div className="flex items-center justify-between gap-3 mt-3 pt-2 border-t border-border/60 text-xs">
-                                  <span className="text-muted-foreground">
-                                    Product lines: <span className="font-semibold text-card-foreground tabular-nums">{formatCurrency(reconcileLinesTotal, preferredCurrency)}</span>
-                                    <span className="mx-2">vs</span>
-                                    Final Value: <span className="font-semibold text-card-foreground tabular-nums">{formatCurrency(finalVal, preferredCurrency)}</span>
-                                  </span>
-                                  <span className={`font-semibold tabular-nums ${close ? 'text-green-600' : 'text-amber-600'}`}>
-                                    {diff === 0 ? 'Match' : `${diff > 0 ? '+' : ''}${formatCurrency(diff, preferredCurrency)}`}
-                                  </span>
-                                </div>
-                              );
-                            })()}
-                          </>
-                        )}
+                        <ProductLineReconcilePanel
+                          dealId={deal.id}
+                          lines={dealProducts}
+                          compareTo={parseFloat(finalAmount) || 0}
+                          changedIds={changedLineIds}
+                          onLineSaved={handleLineSaved}
+                          onError={(msg) => setErrors((prev) => ({ ...prev, finalValue: msg }))}
+                          formatCurrency={formatCurrency}
+                          currency={preferredCurrency}
+                        />
                       </div>
                     )}
 
@@ -2177,6 +2068,12 @@ const DealModal = ({
                     </span>
                   )}
                 </h3>
+                {/* Adding lines to a SAVED deal needs the same reason-backed
+                    session as editing one — this button was previously open at
+                    every stage, including Won, which left a way to change a
+                    deal's value with nothing recorded. A deal being created is
+                    exempt: its lines are not saved yet. */}
+                {(!deal?.id || canAddRemoveProducts) && (
                 <button
                   type="button"
                   onClick={() => setShowProductPicker(p => !p)}
@@ -2185,6 +2082,7 @@ const DealModal = ({
                   <Icon name={showProductPicker ? "ChevronUp" : "Plus"} size={14} />
                   {showProductPicker ? 'Hide Products' : 'Select Products'}
                 </button>
+                )}
               </div>
 
               {/* Multi-select product picker panel */}
@@ -2246,18 +2144,13 @@ const DealModal = ({
                         <div className="space-y-2 max-h-40 overflow-y-auto">
                           {productsToShow.map((item, idx) => {
                             const productData  = item.product;
-                            const isEditing    = canEditProducts && deal?.id && editingProductId === item.id;
                             const qtyError     = productErrors.find(e => e.index === idx && e.field === 'quantity');
                             const priceError   = productErrors.find(e => e.index === idx && e.field === 'price');
                             const currentQty   = parseFloat(item.uom_value || item.quantity || 0);
                             const currentPrice = parseFloat(item.unit_price || 0);
-                            const editQty      = parseFloat(editValues.quantity || 0);
-                            const editPrice    = parseFloat(editValues.price || 0);
-                            const liveTotal    = isEditing
-                              ? editQty * editPrice
-                              : (parseFloat(item.line_total) || currentQty * currentPrice);
+                            const liveTotal    = parseFloat(item.line_total) || currentQty * currentPrice;
                             const cp = parseFloat(item.cost_price || item.product?.cost_price || 0);
-                            const liveQty = isEditing ? editQty : currentQty;
+                            const liveQty = currentQty;
                             const mp = liveTotal > 0 ? ((liveTotal - liveQty * cp) / liveTotal) * 100 : null;
 
                             return (
@@ -2281,122 +2174,44 @@ const DealModal = ({
                                   </div>
                                 </div>
 
-                                {/* Values — editable for lead/qualified existing deals */}
+                                {/* Values — display only. Lines are changed through
+                                    the reason-gated panel below (every stage), never
+                                    by clicking a number here. */}
                                 <div className="flex items-center gap-2 ml-4 text-xs">
-                                  {isEditing ? (
-                                    <>
-                                      <div className="flex flex-col items-end">
-                                        <input
-                                          type="number" min="0" step="0.01" autoFocus
-                                          value={editValues.quantity ?? (item.uom_value || item.quantity || '')}
-                                          onChange={e => setEditValues(v => ({ ...v, quantity: e.target.value }))}
-                                          className="w-20 text-sm px-2 py-1 border border-blue-300 rounded-lg text-right focus:outline-none focus:border-blue-500"
-                                        />
-                                        {qtyError && <span className="text-xs text-red-500 mt-0.5">Required</span>}
-                                      </div>
-                                      <div className="flex flex-col items-end">
-                                        <input
-                                          type="number" min="0" step="0.01"
-                                          value={editValues.price ?? (item.unit_price || '')}
-                                          onChange={e => setEditValues(v => ({ ...v, price: e.target.value }))}
-                                          className="w-28 text-sm px-2 py-1 border border-blue-300 rounded-lg text-right focus:outline-none focus:border-blue-500"
-                                        />
-                                        {priceError && <span className="text-xs text-red-500 mt-0.5">Required</span>}
-                                      </div>
-                                      <span className="text-primary font-semibold w-24 text-right tabular-nums">
-                                        {formatCurrency(liveTotal, preferredCurrency)}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={async () => {
-                                          const qty   = parseFloat(editValues.quantity || 0);
-                                          const price = parseFloat(editValues.price || 0);
-                                          if (qty <= 0 || price <= 0) return;
-                                          const lineTotal = qty * price;
-                                          const { error } = await supabase
-                                            .from('deal_products')
-                                            .update({ uom_value: qty, quantity: qty, unit_price: price, line_total: lineTotal, updated_at: new Date().toISOString() })
-                                            .eq('id', item.id);
-                                          if (!error) {
-                                            const updated = dealProducts.map(p =>
-                                              p.id === item.id ? { ...p, uom_value: qty, quantity: qty, unit_price: price, line_total: lineTotal } : p
-                                            );
-                                            const oldTotal = dealProducts.reduce((s, p) => s + parseFloat(p.line_total || 0), 0);
-                                            const newTotal = updated.reduce((s, p) => s + parseFloat(p.line_total || 0), 0);
-                                            setDealProducts(updated);
-                                            setFormData(prev => ({ ...prev, amount: newTotal }));
-                                            setEditingProductId(null);
-                                            setEditValues({});
-                                            // Negotiation only: record what this line was and became.
-                                            logProductLineChange({
-                                              action: 'line edited',
-                                              label: productData?.material || 'line',
-                                              before: `qty ${currentQty}, rate ${currentPrice}`,
-                                              after: `qty ${qty}, rate ${price}`,
-                                              oldTotal, newTotal,
-                                            });
-                                          }
-                                        }}
-                                        className="p-1 text-green-600 hover:bg-green-50 rounded"
-                                        title="Save"
-                                      >
-                                        <Icon name="Check" size={14} />
-                                      </button>
-                                      <button type="button" onClick={() => { setEditingProductId(null); setEditValues({}); }} className="p-1 text-muted-foreground hover:bg-muted rounded" title="Cancel">
-                                        <Icon name="X" size={14} />
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span
-                                        className={`text-muted-foreground ${canEditProducts && deal?.id ? 'cursor-pointer hover:text-blue-600' : ''}`}
-                                        onClick={() => { if (!canEditProducts || !deal?.id) return; setEditingProductId(item.id); setEditValues({ quantity: item.uom_value || item.quantity || '', price: item.unit_price || '' }); }}
-                                      >
-                                        {(item.uom_type || 'QTY').toUpperCase()}:{' '}
-                                        <span className={`font-semibold ${qtyError ? 'text-red-600' : 'text-card-foreground'}`}>
-                                          {currentQty > 0 ? currentQty.toFixed(2) : '—'}
-                                        </span>
-                                      </span>
-                                      <span
-                                        className={`text-muted-foreground ${canEditProducts && deal?.id ? 'cursor-pointer hover:text-blue-600' : ''}`}
-                                        onClick={() => { if (!canEditProducts || !deal?.id) return; setEditingProductId(item.id); setEditValues({ quantity: item.uom_value || item.quantity || '', price: item.unit_price || '' }); }}
-                                      >
-                                        {t("deals.rate")}:{' '}
-                                        <span className={`font-semibold ${priceError ? 'text-red-600' : 'text-card-foreground'}`}>
-                                          {currentPrice > 0 ? formatCurrency(currentPrice, preferredCurrency) : '—'}
-                                        </span>
-                                      </span>
-                                      {mp != null && userProfile?.role !== 'salesman' && (
-                                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
-                                          mp >= 20 ? 'bg-green-100 text-green-700' : mp >= 10 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
-                                        }`}>{mp.toFixed(1)}%</span>
-                                      )}
-                                      <span className="text-primary font-semibold tabular-nums">
-                                        {t("common.total")}:{' '}
-                                        {formatCurrency(liveTotal, preferredCurrency)}
-                                      </span>
-                                      {canEditProducts && deal?.id && (
-                                        <button
-                                          type="button"
-                                          onClick={() => { setEditingProductId(item.id); setEditValues({ quantity: item.uom_value || item.quantity || '', price: item.unit_price || '' }); }}
-                                          className="p-1 text-muted-foreground hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                                          title="Edit qty / price"
-                                        >
-                                          <Icon name="Pencil" size={13} />
-                                        </button>
-                                      )}
-                                      {(!deal?.id || canAddRemoveProducts) && (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleRemoveProduct(deal ? item.id : idx)}
-                                          disabled={isLoadingProducts}
-                                          className={`text-destructive hover:text-destructive/80 disabled:opacity-50 ml-1 ${deal?.id ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}
-                                          title={t("deals.removeProduct")}
-                                        >
-                                          <Icon name="Trash2" size={14} />
-                                        </button>
-                                      )}
-                                    </>
+                                  <span className="text-muted-foreground">
+                                    {(item.uom_type || 'QTY').toUpperCase()}:{' '}
+                                    <span className={`font-semibold ${qtyError ? 'text-red-600' : 'text-card-foreground'}`}>
+                                      {currentQty > 0 ? currentQty.toFixed(2) : '—'}
+                                    </span>
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    {t("deals.rate")}:{' '}
+                                    <span className={`font-semibold ${priceError ? 'text-red-600' : 'text-card-foreground'}`}>
+                                      {currentPrice > 0 ? formatCurrency(currentPrice, preferredCurrency) : '—'}
+                                    </span>
+                                  </span>
+                                  {mp != null && userProfile?.role !== 'salesman' && (
+                                    <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
+                                      mp >= 20 ? 'bg-green-100 text-green-700' : mp >= 10 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                                    }`}>{mp.toFixed(1)}%</span>
+                                  )}
+                                  <span className="text-primary font-semibold tabular-nums">
+                                    {t("common.total")}:{' '}
+                                    {formatCurrency(liveTotal, preferredCurrency)}
+                                  </span>
+                                  {/* Removing a line needs the same reason-backed session
+                                      as editing one; a deal being created is exempt,
+                                      its lines are not saved yet. */}
+                                  {(!deal?.id || canAddRemoveProducts) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveProduct(deal ? item.id : idx)}
+                                      disabled={isLoadingProducts}
+                                      className={`text-destructive hover:text-destructive/80 disabled:opacity-50 ml-1 ${deal?.id ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}
+                                      title={t("deals.removeProduct")}
+                                    >
+                                      <Icon name="Trash2" size={14} />
+                                    </button>
                                   )}
                                 </div>
                               </div>
@@ -2448,50 +2263,75 @@ const DealModal = ({
 
                 {/* Negotiation — lines stay editable, but only once a reason for
                     this edit session is chosen, and every change is recorded. */}
-                {deal?.id && isNegotiationEdit && (
-                  <div className={`mt-2 rounded-xl border p-3 ${negotiationReason ? 'bg-green-50/60 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Icon
-                        name={negotiationReason ? 'Unlock' : 'Lock'}
-                        size={13}
-                        className={negotiationReason ? 'text-green-600' : 'text-blue-600'}
-                      />
-                      <span className={`text-xs font-semibold ${negotiationReason ? 'text-green-700' : 'text-blue-700'}`}>
-                        Negotiation stage — why are the product lines changing?
-                      </span>
-                      <select
-                        value={negotiationReason}
-                        onChange={(e) => setNegotiationReason(e.target.value)}
-                        className="text-xs px-2 py-1 border border-border rounded-lg bg-card focus:outline-none focus:border-primary"
+                {/* One affordance at EVERY stage: product lines change only here,
+                    behind a reason, and every change is recorded. The Final Value
+                    flow's Quantity Increase step shows the same panel, so this one
+                    stays out of the way while that is open. */}
+                {deal?.id && !finalValueReconcile && (
+                  <div className="mt-2">
+                    {!lineEditorOpen ? (
+                      <button
+                        type="button"
+                        onClick={() => setLineEditorOpen(true)}
+                        className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700"
                       >
-                        <option value="">Select a reason…</option>
-                        {CHANGE_REASONS.map((r) => (
-                          <option key={r.value} value={r.value}>{r.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground mt-1">
-                      {negotiationReason
-                        ? 'Lines unlocked — edit qty or price, add or remove products. Each change is recorded against this deal with your name and this reason.'
-                        : 'Pick a reason to unlock the lines. Changes at this stage are recorded; at Won they are locked again.'}
-                    </p>
+                        <Icon name="Pencil" size={13} />
+                        Edit product lines
+                      </button>
+                    ) : (
+                      <div className={`rounded-xl border p-3 ${lineEditReason ? 'bg-green-50/60 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Icon
+                            name={lineEditReason ? 'Unlock' : 'Lock'}
+                            size={13}
+                            className={lineEditReason ? 'text-green-600' : 'text-blue-600'}
+                          />
+                          <span className={`text-xs font-semibold ${lineEditReason ? 'text-green-700' : 'text-blue-700'}`}>
+                            Why are the product lines changing?
+                          </span>
+                          <select
+                            value={lineEditReason}
+                            onChange={(e) => setLineEditReason(e.target.value)}
+                            className="text-xs px-2 py-1 border border-border rounded-lg bg-card focus:outline-none focus:border-primary"
+                          >
+                            <option value="">Select a reason…</option>
+                            {CHANGE_REASONS.map((r) => (
+                              <option key={r.value} value={r.value}>{r.label}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={endLineEditSession}
+                            className="ml-auto text-xs text-muted-foreground hover:text-destructive"
+                          >
+                            Done
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1 mb-2">
+                          {lineEditReason
+                            ? 'Edit a qty or rate and save that line, or add/remove products. Each change is recorded against this deal with your name and this reason.'
+                            : 'Pick a reason to unlock the lines. Every change is recorded, at every stage.'}
+                        </p>
+                        {lineEditReason && (
+                          <ProductLineReconcilePanel
+                            dealId={deal.id}
+                            lines={dealProducts}
+                            changedIds={changedLineIds}
+                            onLineSaved={handleLineSaved}
+                            onError={(msg) => setErrors((prev) => ({ ...prev, finalValue: msg }))}
+                            formatCurrency={formatCurrency}
+                            currency={preferredCurrency}
+                          />
+                        )}
+                        {openSessionPending && (
+                          <p className="text-[11px] text-amber-700 mt-2 flex items-center gap-1">
+                            <Icon name="AlertTriangle" size={11} />
+                            Save is disabled until a line actually changes — or press Done to close without changes.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-
-                {/* Feature 2: stage hint */}
-                {deal?.id && canEditProducts && !isNegotiationEdit && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                    <Icon name="Info" size={11} />
-                    {effectiveStage === 'lead'
-                      ? 'Lead stage — click any qty or price to edit. Add or remove products freely.'
-                      : 'Qualified stage — click qty or price to edit. Products cannot be added or removed.'}
-                  </p>
-                )}
-                {deal?.id && !canEditProducts && !isNegotiationEdit && (
-                  <p className="text-xs text-amber-600 flex items-center gap-1 mt-1">
-                    <Icon name="Lock" size={11} />
-                    Products are locked at {effectiveStage === 'proposal_sent' ? 'Proposal' : effectiveStage} stage. Use Final Value to record changes.
-                  </p>
                 )}
 
                 {!deal && selectedProducts.length === 0 && !showProductPicker && (

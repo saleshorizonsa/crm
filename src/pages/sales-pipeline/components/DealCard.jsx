@@ -48,11 +48,13 @@ const leadDaysLeft = (deal) => {
   return LEAD_SLA_DAYS - elapsed;
 };
 
+// onDealUpdate is still accepted and still passed down by PipelineStage, but this
+// card no longer calls it: the inline amount editor it drove is gone (amounts are
+// changed in the deal modal, behind the reason-gated product-line panel). The prop
+// stays so the interface with PipelineStage / DealsList is unchanged.
 const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onMoveToFuture, showProductSummary = false, periodFrom }) => {
-  const [isEditing, setIsEditing] = useState(false);
   const isLeadStage = deal?.stage === 'lead';
   const daysUntilExpiry = isLeadStage ? leadDaysLeft(deal) : null;
-  const [editAmount, setEditAmount] = useState(deal?.amount);
   const [productCount, setProductCount] = useState(0);
   const [contactCount, setContactCount] = useState(0);
   const [showLogContact, setShowLogContact] = useState(false);
@@ -135,16 +137,6 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onMoveToFut
   };
 
   // --- Handlers ---
-  const handleAmountEdit = (e) => {
-    e.stopPropagation();
-    setIsEditing(true);
-  };
-
-  const handleAmountSave = () => {
-    onDealUpdate(deal.id, { amount: parseFloat(editAmount) });
-    setIsEditing(false);
-  };
-
   // --- Render ---
   return (
     <div
@@ -210,38 +202,17 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onMoveToFut
         </div>
       </div>
 
-      {/* --- Amount --- */}
-      <div
-        className="mb-3 flex items-center justify-between"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {isEditing ? (
-          <input
-            type="number"
-            value={editAmount}
-            onChange={(e) => setEditAmount(e.target.value)}
-            onBlur={handleAmountSave}
-            className="text-lg font-bold border-b border-gray-300 focus:border-primary outline-none px-1"
-            autoFocus
-          />
-        ) : (
-          <div
-            className="flex items-center space-x-1"
-            onClick={handleAmountEdit}
-          >
-            <span className="text-lg font-bold text-gray-900">
-              {/* Always treat the stored amount as the display currency — never
-                  convert by deal.currency, so a deal saved with a stray currency
-                  (e.g. USD) can't silently show a 3.75× exchange-converted value. */}
-              {formatCurrency(deal?.amount, preferredCurrency)}
-            </span>
-            <Icon
-              name="Edit2"
-              size={12}
-              className="text-gray-400 opacity-0 group-hover:opacity-100 transition"
-            />
-          </div>
-        )}
+      {/* --- Amount --- display only. The amount is edited in the deal modal,
+           through the reason-gated product-line panel, so a card click can't
+           change a deal's value without a recorded reason. The click falls
+           through to the card, which opens the deal. */}
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-lg font-bold text-gray-900">
+          {/* Always treat the stored amount as the display currency — never
+              convert by deal.currency, so a deal saved with a stray currency
+              (e.g. USD) can't silently show a 3.75× exchange-converted value. */}
+          {formatCurrency(deal?.amount, preferredCurrency)}
+        </span>
       </div>
 
       {/* --- Margin Indicator --- */}
