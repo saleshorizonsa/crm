@@ -99,6 +99,33 @@ function cardDefs(totals, opts = {}) {
   ];
 }
 
+// Won-Not-Invoiced grouping — display only; the deals, their values and the
+// top-line total are exactly what summarizeWonNotInvoiced() produced. Every
+// group's subtotal is a sum over the same items, so the sections always add up
+// to the total in the header whichever mode is on.
+function buildInvoiceGroups(items, mode, nameOf) {
+  const valueOf = (d) => parseFloat(d.final_amount ?? d.amount) || 0;
+  const sum = (list) => list.reduce((s, d) => s + valueOf(d), 0);
+
+  if (mode === 'age') {
+    const stale = items.filter((d) => d.isStale);
+    const fresh = items.filter((d) => !d.isStale);
+    return [
+      { key: 'stale', label: `Stale (${STALE_INVOICE_DAYS}+ days)`, items: stale, total: sum(stale) },
+      { key: 'fresh', label: 'Within first week', items: fresh, total: sum(fresh) },
+    ].filter((g) => g.items.length > 0);
+  }
+
+  const byOwner = new Map();
+  items.forEach((d) => {
+    if (!byOwner.has(d.owner_id)) byOwner.set(d.owner_id, []);
+    byOwner.get(d.owner_id).push(d);
+  });
+  return [...byOwner.entries()]
+    .map(([ownerId, list]) => ({ key: ownerId, label: nameOf(ownerId), items: list, total: sum(list) }))
+    .sort((a, b) => b.total - a.total);
+}
+
 const POPUP_TITLES = {
   target: 'Target', achieved: 'Achieved', deficit: 'Deficit',
   winRate: 'Win Rate', plannedGap: 'Planned Gap',
@@ -296,11 +323,19 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
   const [showInvoicePopup, setShowInvoicePopup] = useState(false);
   // Which Won-Not-Invoiced row is expanded (one at a time); cleared on close.
   const [expandedInvoiceId, setExpandedInvoiceId] = useState(null);
+  // How that list is grouped, and which group sections are collapsed. Owner
+  // first: the usual question is "whose invoices are these?".
+  const [invoiceGroupMode, setInvoiceGroupMode] = useState('owner');
+  const [collapsedGroups, setCollapsedGroups] = useState([]);
   const navigate = useNavigate();
 
   // Reset any drill-down when switching popups or closing.
   useEffect(() => { setDrillSalesman(null); }, [activePopup]);
-  useEffect(() => { if (!showInvoicePopup) setExpandedInvoiceId(null); }, [showInvoicePopup]);
+  useEffect(() => {
+    if (!showInvoicePopup) { setExpandedInvoiceId(null); setCollapsedGroups([]); }
+  }, [showInvoicePopup]);
+  // Switching grouping re-sections the same deals; start from everything open.
+  useEffect(() => { setCollapsedGroups([]); }, [invoiceGroupMode]);
 
   // Close whichever overlay is open on Escape.
   useEffect(() => {
@@ -360,6 +395,79 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
   const cards = cardDefs(totals, { period });
   const wni = totals?.wonNotInvoiced;
   const nameOf = (id) => salesmanData.find((s) => s.id === id)?.full_name || 'Unknown';
+
+  // One deal row — identical markup in every grouping mode, so the stale
+  // badge, the expand/collapse detail and "Open deal →" behave the same.
+  const renderInvoiceRow = (d) => {
+    const isOpen = expandedInvoiceId === d.id;
+    // Same won-date fallback as daysSinceWon() in planningCalculations.js.
+    const wonAt = d.closed_at || d.stage_changed_at || d.created_at;
+    return (
+      <div key={d.id} className="bg-muted/30 rounded-lg overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setExpandedInvoiceId(isOpen ? null : d.id)}
+          aria-expanded={isOpen}
+          className="w-full flex items-center justify-between gap-3 p-2.5 text-left hover:bg-muted/60 transition-colors"
+        >
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-foreground truncate max-w-[12rem]">{d.title || '—'}</span>
+              {d.isStale && (
+                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border uppercase tracking-wide bg-amber-50 text-amber-700 border-amber-200">
+                  Stale
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {nameOf(d.owner_id)} · {d.daysSinceWon}d since won
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="text-sm font-semibold tabular-nums text-foreground">
+              {fmtSAR(d.final_amount ?? d.amount)} SAR
+            </span>
+            <Icon
+              name="ChevronDown"
+              size={14}
+              className={`text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            />
+          </div>
+        </button>
+        {isOpen && (
+          <div className="px-3 pb-3 pt-1 border-t border-border/60">
+            <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-xs mt-2">
+              <dt className="text-muted-foreground">Customer</dt>
+              <dd className="text-foreground">{d.customer || '—'}</dd>
+              <dt className="text-muted-foreground">Invoice #</dt>
+              <dd className="text-foreground">{d.invoice_number || 'Not yet invoiced'}</dd>
+              <dt className="text-muted-foreground">Won date</dt>
+              <dd className="text-foreground">{fmtWonDate(wonAt)}</dd>
+              <dt className="text-muted-foreground">Reports To</dt>
+              <dd className="text-foreground">
+                {d.reportsToName
+                  ? `${d.reportsToName}${d.reportsToRole ? ` (${capitalize(d.reportsToRole)})` : ''}`
+                  : '—'}
+              </dd>
+            </dl>
+            <div className="flex justify-end mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowInvoicePopup(false);
+                  navigate('/sales-pipeline', { state: { openDealId: d.id } });
+                }}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+              >
+                Open deal →
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
 
   return (
     <div className="mb-6">
@@ -586,77 +694,56 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                   <Icon name="X" size={16} className="text-muted-foreground" />
                 </button>
               </div>
-              <div className="px-4 py-4 overflow-y-auto flex-1 space-y-2">
+              {/* Grouping — display only. Both modes show the same deals, so the
+                  section subtotals always add up to the total in the header. */}
+              <div className="px-4 pt-3 flex items-center gap-1 flex-shrink-0">
+                {[['owner', 'By Owner'], ['age', 'By Age']].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setInvoiceGroupMode(mode)}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+                      invoiceGroupMode === mode
+                        ? 'bg-blue-50 border-blue-300 text-blue-700'
+                        : 'border-border text-muted-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="px-4 py-3 overflow-y-auto flex-1 space-y-3">
                 {wni.items.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-6">Nothing pending invoice.</p>
                 ) : (
-                  wni.items.map((d) => {
-                    const isOpen = expandedInvoiceId === d.id;
-                    // Same won-date fallback as daysSinceWon() in planningCalculations.js.
-                    const wonAt = d.closed_at || d.stage_changed_at || d.created_at;
+                  buildInvoiceGroups(wni.items, invoiceGroupMode, nameOf).map((g) => {
+                    const open = !collapsedGroups.includes(g.key);
                     return (
-                      <div key={d.id} className="bg-muted/30 rounded-lg overflow-hidden">
+                      <section key={g.key}>
                         <button
                           type="button"
-                          onClick={() => setExpandedInvoiceId(isOpen ? null : d.id)}
-                          aria-expanded={isOpen}
-                          className="w-full flex items-center justify-between gap-3 p-2.5 text-left hover:bg-muted/60 transition-colors"
+                          onClick={() => setCollapsedGroups((prev) =>
+                            prev.includes(g.key) ? prev.filter((k) => k !== g.key) : [...prev, g.key])}
+                          aria-expanded={open}
+                          className="w-full flex items-center justify-between gap-3 px-2.5 py-2 rounded-lg bg-muted/60 hover:bg-muted text-left transition-colors"
                         >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm text-foreground truncate max-w-[12rem]">{d.title || '—'}</span>
-                              {d.isStale && (
-                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border uppercase tracking-wide bg-amber-50 text-amber-700 border-amber-200">
-                                  Stale
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-muted-foreground mt-0.5">
-                              {nameOf(d.owner_id)} · {d.daysSinceWon}d since won
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <span className="text-sm font-semibold tabular-nums text-foreground">
-                              {fmtSAR(d.final_amount ?? d.amount)} SAR
-                            </span>
+                          <span className="flex items-center gap-2 min-w-0">
                             <Icon
                               name="ChevronDown"
-                              size={14}
-                              className={`text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                              size={13}
+                              className={`text-muted-foreground transition-transform ${open ? '' : '-rotate-90'}`}
                             />
-                          </div>
+                            <span className="text-xs font-semibold text-foreground truncate">{g.label}</span>
+                            <span className="text-[11px] text-muted-foreground flex-shrink-0">
+                              {g.items.length} deal{g.items.length === 1 ? '' : 's'}
+                            </span>
+                          </span>
+                          <span className="text-xs font-semibold tabular-nums text-foreground flex-shrink-0">
+                            {fmtSAR(g.total)} SAR
+                          </span>
                         </button>
-                        {isOpen && (
-                          <div className="px-3 pb-3 pt-1 border-t border-border/60">
-                            <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-xs mt-2">
-                              <dt className="text-muted-foreground">Customer</dt>
-                              <dd className="text-foreground">{d.customer || '—'}</dd>
-                              <dt className="text-muted-foreground">Invoice #</dt>
-                              <dd className="text-foreground">{d.invoice_number || 'Not yet invoiced'}</dd>
-                              <dt className="text-muted-foreground">Won date</dt>
-                              <dd className="text-foreground">{fmtWonDate(wonAt)}</dd>
-                              <dt className="text-muted-foreground">Reports To</dt>
-                              <dd className="text-foreground">
-                                {d.reportsToName
-                                  ? `${d.reportsToName}${d.reportsToRole ? ` (${capitalize(d.reportsToRole)})` : ''}`
-                                  : '—'}
-                              </dd>
-                            </dl>
-                            <div className="flex justify-end mt-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setShowInvoicePopup(false);
-                                  navigate('/sales-pipeline', { state: { openDealId: d.id } });
-                                }}
-                                className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
-                              >
-                                Open deal →
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                        {open && <div className="space-y-2 mt-2">{g.items.map(renderInvoiceRow)}</div>}
+                      </section>
                     );
                   })
                 )}
