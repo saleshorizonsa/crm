@@ -422,6 +422,13 @@ const DealModal = ({
   const [showFinalValue, setShowFinalValue] = useState(false);
   const [finalAmount, setFinalAmount] = useState('');
   const [changeReason, setChangeReason] = useState('');
+  // Quantity-increase reconciliation: the product lines must actually be updated
+  // when the final value rises because of a quantity increase. A deal owned by
+  // Alseyed drifted exactly this way — final_amount raised, lines untouched,
+  // because lines lock after Contact Made — so this step unlocks them here only.
+  const [reconcileEdits, setReconcileEdits] = useState({}); // line id -> { quantity, price }
+  const [reconcileSavingId, setReconcileSavingId] = useState(null);
+  const reconcileBaselineRef = useRef(null); // line id -> { qty, price } when the step opened
   const [changeNotes, setChangeNotes] = useState('');
 
   // Amount-change audit: editing an existing deal's amount requires a reason.
@@ -957,6 +964,68 @@ const DealModal = ({
 
   // Feature 2: editing allowed only in lead/qualified; removal only in lead
   const canEditProducts = deal?.stage === 'lead' || deal?.stage === 'contact_made';
+
+  // ── Quantity-increase reconciliation ──────────────────────────────────────
+  // Reading one product line, and the halala rounding used to compare them.
+  const lineQty = (p) => parseFloat(p?.uom_value ?? p?.quantity ?? 0) || 0;
+  const linePrice = (p) => parseFloat(p?.unit_price ?? 0) || 0;
+  const lineTotalOf = (p) => parseFloat(p?.line_total) || lineQty(p) * linePrice(p);
+  const halala = (n) => Math.round((parseFloat(n) || 0) * 100) / 100;
+
+  // Snapshot the lines as they were when this step opened, so "changed" means
+  // changed HERE — not just different from whatever they were earlier.
+  useEffect(() => {
+    if (!(showFinalValue && changeReason === 'quantity_increase')) {
+      reconcileBaselineRef.current = null;
+      setReconcileEdits({});
+      return;
+    }
+    if (!reconcileBaselineRef.current && dealProducts.length > 0) {
+      reconcileBaselineRef.current = Object.fromEntries(
+        dealProducts.map((p) => [p.id, { qty: halala(lineQty(p)), price: halala(linePrice(p)) }]),
+      );
+    }
+  }, [showFinalValue, changeReason, dealProducts]);
+
+  // Only a quantity increase demands it, and only when there are lines to fix:
+  // a deal with no product lines has nothing to reconcile and must not be stuck.
+  const reconcileNeeded =
+    showFinalValue && changeReason === 'quantity_increase' && !!deal?.id && dealProducts.length > 0;
+  const reconcileChangedIds = dealProducts
+    .filter((p) => {
+      const was = reconcileBaselineRef.current?.[p.id];
+      return was && (halala(lineQty(p)) !== was.qty || halala(linePrice(p)) !== was.price);
+    })
+    .map((p) => p.id);
+  const reconcileSatisfied = !reconcileNeeded || reconcileChangedIds.length > 0;
+  const reconcileLinesTotal = dealProducts.reduce((sum, p) => sum + lineTotalOf(p), 0);
+
+  // Persist one line straight to deal_products — the same write the inline editor
+  // does — so a reconciliation survives even if the deal-level save then fails.
+  const saveReconciledLine = async (item) => {
+    const edit = reconcileEdits[item.id] || {};
+    const qty = parseFloat(edit.quantity ?? lineQty(item)) || 0;
+    const price = parseFloat(edit.price ?? linePrice(item)) || 0;
+    if (qty <= 0 || price <= 0) return;
+    setReconcileSavingId(item.id);
+    const lineTotal = qty * price;
+    const { error } = await supabase
+      .from('deal_products')
+      .update({ uom_value: qty, quantity: qty, unit_price: price, line_total: lineTotal, updated_at: new Date().toISOString() })
+      .eq('id', item.id);
+    setReconcileSavingId(null);
+    if (error) {
+      setErrors((prev) => ({ ...prev, finalValue: `Could not update that product line: ${error.message}` }));
+      return;
+    }
+    const updated = dealProducts.map((p) =>
+      p.id === item.id ? { ...p, uom_value: qty, quantity: qty, unit_price: price, line_total: lineTotal } : p,
+    );
+    setDealProducts(updated);
+    setFormData((prev) => ({ ...prev, amount: updated.reduce((s, p) => s + (parseFloat(p.line_total) || 0), 0) }));
+    setReconcileEdits((prev) => { const next = { ...prev }; delete next[item.id]; return next; });
+    setErrors((prev) => ({ ...prev, finalValue: '' }));
+  };
   const canAddRemoveProducts = deal?.stage === 'lead';
 
   // Convert contacts to dropdown options
@@ -1272,6 +1341,17 @@ const DealModal = ({
       }
       if (changeReason === 'other' && !changeNotes.trim()) {
         setErrors(prev => ({ ...prev, finalValue: 'Please add a comment for Other reason' }));
+        return;
+      }
+      // A quantity increase must be reflected in the product lines themselves.
+      // Without this, final_amount rises while the lines keep the old quantities
+      // and the two silently disagree from then on.
+      if (!reconcileSatisfied) {
+        setErrors(prev => ({
+          ...prev,
+          finalValue: 'Quantity Increase: update the quantity (or rate) on at least one product line below, so the line items match the new value.',
+        }));
+        document.querySelector('[data-section="qty-reconcile"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
       dealData.final_amount          = parseFloat(finalAmount);
@@ -1739,6 +1819,114 @@ const DealModal = ({
                         </p>
                       )}
                     </div>
+
+                    {/* Quantity Increase → reconcile the product lines. The lines are
+                        locked after Contact Made, which is exactly why a quantity
+                        increase used to be recorded on the value alone; they are
+                        editable here, for this step only. */}
+                    {changeReason === 'quantity_increase' && deal?.id && (
+                      <div
+                        data-section="qty-reconcile"
+                        className={`rounded-xl border p-3 ${
+                          reconcileSatisfied ? 'bg-green-50/60 border-green-200' : 'bg-amber-50 border-amber-300'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <Icon
+                            name={reconcileSatisfied ? 'CheckCircle' : 'AlertTriangle'}
+                            size={14}
+                            className={`mt-0.5 flex-shrink-0 ${reconcileSatisfied ? 'text-green-600' : 'text-amber-600'}`}
+                          />
+                          <div className="min-w-0">
+                            <p className={`text-xs font-semibold ${reconcileSatisfied ? 'text-green-700' : 'text-amber-800'}`}>
+                              {dealProducts.length === 0
+                                ? 'No product lines on this deal — nothing to reconcile.'
+                                : reconcileSatisfied
+                                  ? `Product lines updated (${reconcileChangedIds.length} of ${dealProducts.length}).`
+                                  : 'Update the product lines to match the increase'}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              Edit only the line(s) that actually changed. Each line saves on its own.
+                            </p>
+                          </div>
+                        </div>
+
+                        {dealProducts.length > 0 && (
+                          <>
+                            <div className="space-y-2 max-h-48 overflow-y-auto mt-3">
+                              {dealProducts.map((item) => {
+                                const edit = reconcileEdits[item.id] || {};
+                                const qtyVal = edit.quantity ?? String(lineQty(item) || '');
+                                const priceVal = edit.price ?? String(linePrice(item) || '');
+                                const draftTotal = (parseFloat(qtyVal) || 0) * (parseFloat(priceVal) || 0);
+                                const isDirty =
+                                  halala(qtyVal) !== halala(lineQty(item)) || halala(priceVal) !== halala(linePrice(item));
+                                const isChanged = reconcileChangedIds.includes(item.id);
+                                return (
+                                  <div key={item.id} className="flex items-center gap-2 p-2 bg-card rounded-lg border border-border text-xs">
+                                    <div className="flex-1 min-w-0">
+                                      <span className="font-medium text-card-foreground truncate block">
+                                        {item.product?.material || item.product_name || 'Product'}
+                                      </span>
+                                      {isChanged && (
+                                        <span className="text-[10px] font-semibold text-green-700">Updated</span>
+                                      )}
+                                    </div>
+                                    <input
+                                      type="number" min="0" step="0.01" value={qtyVal}
+                                      onChange={(e) => setReconcileEdits((p) => ({ ...p, [item.id]: { ...edit, quantity: e.target.value } }))}
+                                      className="w-20 px-2 py-1 border border-border rounded-lg text-right tabular-nums focus:outline-none focus:border-primary"
+                                      title={`${(item.uom_type || 'QTY').toUpperCase()}`}
+                                    />
+                                    <input
+                                      type="number" min="0" step="0.01" value={priceVal}
+                                      onChange={(e) => setReconcileEdits((p) => ({ ...p, [item.id]: { ...edit, price: e.target.value } }))}
+                                      className="w-24 px-2 py-1 border border-border rounded-lg text-right tabular-nums focus:outline-none focus:border-primary"
+                                      title="Rate"
+                                    />
+                                    <span className="w-24 text-right font-semibold text-primary tabular-nums">
+                                      {formatCurrency(draftTotal, preferredCurrency)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      disabled={!isDirty || reconcileSavingId === item.id}
+                                      onClick={() => saveReconciledLine(item)}
+                                      className={`px-2 py-1 rounded-lg border text-[11px] font-medium ${
+                                        isDirty
+                                          ? 'border-green-300 text-green-700 hover:bg-green-50'
+                                          : 'border-border text-muted-foreground opacity-50 cursor-not-allowed'
+                                      }`}
+                                    >
+                                      {reconcileSavingId === item.id ? 'Saving…' : 'Save line'}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Lines vs final value — informational: freight and rounding
+                                make small differences legitimate, so this never blocks. */}
+                            {(() => {
+                              const finalVal = parseFloat(finalAmount) || 0;
+                              const diff = reconcileLinesTotal - finalVal;
+                              const close = Math.abs(diff) < Math.max(1, finalVal * 0.01);
+                              return (
+                                <div className="flex items-center justify-between gap-3 mt-3 pt-2 border-t border-border/60 text-xs">
+                                  <span className="text-muted-foreground">
+                                    Product lines: <span className="font-semibold text-card-foreground tabular-nums">{formatCurrency(reconcileLinesTotal, preferredCurrency)}</span>
+                                    <span className="mx-2">vs</span>
+                                    Final Value: <span className="font-semibold text-card-foreground tabular-nums">{formatCurrency(finalVal, preferredCurrency)}</span>
+                                  </span>
+                                  <span className={`font-semibold tabular-nums ${close ? 'text-green-600' : 'text-amber-600'}`}>
+                                    {diff === 0 ? 'Match' : `${diff > 0 ? '+' : ''}${formatCurrency(diff, preferredCurrency)}`}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                          </>
+                        )}
+                      </div>
+                    )}
 
                     {changeReason === 'other' && (
                       <div>
@@ -2597,7 +2785,9 @@ const DealModal = ({
               variant="default"
               onClick={handleSave}
               loading={isSaving}
-              disabled={isDeleting}
+              // Blocked until at least one product line is actually reconciled
+              // (quantity-increase step only; see reconcileNeeded).
+              disabled={isDeleting || !reconcileSatisfied}
               iconName="Save"
               iconPosition="left"
             >
