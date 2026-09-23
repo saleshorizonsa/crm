@@ -26,31 +26,6 @@ function cardDefs(totals, opts = {}) {
     value: `${(t.winRate3m || 0).toFixed(1)}%`, valueClass: 'text-purple-600',
     sub: `3-month avg${t.winRateIsDefault ? ' (default)' : ''}`,
   };
-  // In Funnel — RAW open-deal value, deliberately unweighted, the same definition
-  // the Current Sales Plan summary uses so the two views cannot disagree. (The
-  // Coverage breakdown below shows this same figure multiplied by the win rate;
-  // that is the coverage maths, not this card.)
-  const inFunnelCard = {
-    key: 'inFunnel', label: 'In Funnel', strip: 'bg-blue-500',
-    value: `${fmtSAR(t.funnelValue)} SAR`, valueClass: 'text-blue-600',
-    sub: 'Open deals, unweighted',
-    noPopup: true,
-  };
-  // Still to Find — what the target needs beyond Achieved, the funnel AND the
-  // plan. Deliberately named apart from Deficit (target vs achieved alone):
-  // the two differ a lot — one scope reads 498,552 Deficit against 0 here — and
-  // two cards both called "what's left" would be read as a contradiction.
-  const stillToFind = Math.max(
-    0,
-    (t.target || 0) - (t.achieved || 0) - (t.funnelValue || 0) - (t.planned || 0),
-  );
-  const stillToFindCard = {
-    key: 'stillToFind', label: 'Still to Find', strip: stillToFind > 0 ? 'bg-amber-500' : 'bg-green-500',
-    value: (t.target || 0) > 0 ? `${fmtSAR(stillToFind)} SAR` : '—',
-    valueClass: (t.target || 0) <= 0 ? 'text-muted-foreground' : stillToFind > 0 ? 'text-amber-600' : 'text-green-600',
-    sub: 'After achieved + funnel + plan',
-    noPopup: true,
-  };
   const plannedGapCard = {
     key: 'plannedGap', label: 'Planned Gap', strip: onTrack ? 'bg-green-500' : 'bg-red-500',
     value: onTrack ? 'On Track ✓' : `${fmtSAR(t.plannedGap)} SAR`,
@@ -85,8 +60,6 @@ function cardDefs(totals, opts = {}) {
           ? (isAnnual ? 'Annual target met' : 'Target met')
           : `${pct(t.deficit, t.target)}% of ${isAnnual ? 'annual target' : 'target'} remaining`,
       },
-      stillToFindCard,
-      inFunnelCard,
       winRateCard,
       plannedGapCard,
     ];
@@ -109,8 +82,6 @@ function cardDefs(totals, opts = {}) {
       valueClass: targetMet ? 'text-green-600' : 'text-red-600',
       sub: targetMet ? 'Target met' : `${pct(t.deficit, t.target)}% of target remaining`,
     },
-    stillToFindCard,
-    inFunnelCard,
     winRateCard,
     plannedGapCard,
   ];
@@ -372,19 +343,12 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
 
   return (
     <div className="mb-6">
-      {/* Seven cards: two per row on a phone, four from md, all seven from xl. */}
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {cards.map((c) => (
           <button
             key={c.key}
-            type="button"
-            // In Funnel and Still to Find have no per-salesman popup (the table
-            // behind these popups has no column for either), so they don't pretend
-            // to be clickable.
-            onClick={c.noPopup ? undefined : () => setActivePopup(c.key)}
-            className={`bg-card rounded-2xl border border-border p-4 relative overflow-hidden text-left transition-all ${
-              c.noPopup ? 'cursor-default' : 'hover:shadow-md hover:border-blue-300'
-            }`}
+            onClick={() => setActivePopup(c.key)}
+            className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden text-left hover:shadow-md hover:border-blue-300 transition-all"
           >
             <div className={`absolute top-0 left-0 right-0 h-1 ${c.strip}`} />
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
