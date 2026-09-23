@@ -1006,10 +1006,14 @@ const DealModal = ({
 
   // The Final Value flow's Quantity Increase step is the same panel, pinned to that
   // reason; otherwise the session carries whichever reason the user picked.
-  const finalValueReconcile = showFinalValue && changeReason === 'quantity_increase';
+  // A Lost deal is closed: its lines are a record of what was quoted and are not
+  // edited at all — no panel, no add or remove, not even behind a reason.
+  const isLostDeal = effectiveStage === 'lost';
+  const finalValueReconcile = showFinalValue && changeReason === 'quantity_increase' && !isLostDeal;
   const activeLineReason = finalValueReconcile ? 'quantity_increase' : lineEditReason;
-  const lineEditorVisible = !!deal?.id && (lineEditorOpen || finalValueReconcile);
-  // Lines can only be added or removed while a reason-backed session is open.
+  const lineEditorVisible = !!deal?.id && !isLostDeal && (lineEditorOpen || finalValueReconcile);
+  // Lines can only be added or removed while a reason-backed session is open —
+  // at every stage including Proposal Sent, and never on a Lost deal.
   const canAddRemoveProducts = lineEditorVisible && !!activeLineReason;
 
   // A quantity increase on the Final Value flow MUST touch a line; an ordinary
@@ -1017,7 +1021,7 @@ const DealModal = ({
   // (close it and nothing is pending). A deal with no lines has nothing to
   // reconcile and is never stuck.
   const reconcileNeeded = finalValueReconcile && !!deal?.id && dealProducts.length > 0;
-  const openSessionPending = lineEditorOpen && !!lineEditReason && changedLineIds.length === 0;
+  const openSessionPending = lineEditorOpen && !isLostDeal && !!lineEditReason && changedLineIds.length === 0;
   const reconcileSatisfied =
     (!reconcileNeeded || changedLineIds.length > 0) && !openSessionPending;
 
@@ -2267,7 +2271,14 @@ const DealModal = ({
                     behind a reason, and every change is recorded. The Final Value
                     flow's Quantity Increase step shows the same panel, so this one
                     stays out of the way while that is open. */}
-                {deal?.id && !finalValueReconcile && (
+                {deal?.id && isLostDeal && (
+                  <p className="text-xs text-amber-600 flex items-center gap-1 mt-2">
+                    <Icon name="Lock" size={11} />
+                    Products are locked — this deal is Lost. Its lines stay as they were quoted.
+                  </p>
+                )}
+
+                {deal?.id && !isLostDeal && !finalValueReconcile && (
                   <div className="mt-2">
                     {!lineEditorOpen ? (
                       <button
