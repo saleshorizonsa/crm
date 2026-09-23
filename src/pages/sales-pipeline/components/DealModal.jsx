@@ -428,6 +428,8 @@ const DealModal = ({
   // because lines lock after Contact Made — so this step unlocks them here only.
   const [reconcileEdits, setReconcileEdits] = useState({}); // line id -> { quantity, price }
   const [reconcileSavingId, setReconcileSavingId] = useState(null);
+  // Negotiation-stage product-line editing: the reason for THIS edit session.
+  const [negotiationReason, setNegotiationReason] = useState('');
   const reconcileBaselineRef = useRef(null); // line id -> { qty, price } when the step opened
   // What the reconciliation panel itself changed: the deal amount it produced, and
   // a line-by-line description. Lets the save tell "the amount moved because of
@@ -828,6 +830,8 @@ const DealModal = ({
     if (deal?.id) {
       // Existing deal — persist each product to the DB immediately (same as single-add)
       setIsLoadingProducts(true);
+      const addedAtNegotiation = [];
+      const totalBeforeAdd = dealProducts.reduce((sum, p) => sum + parseFloat(p.line_total || 0), 0);
       try {
         for (const productId of selectedProductIds) {
           const product = allProducts.find(p => p.id === productId);
@@ -854,6 +858,7 @@ const DealModal = ({
             product.cost_price || null,
           );
           if (error) throw error;
+          addedAtNegotiation.push(`${product.material} (qty ${quantity}, rate ${unitPrice})`);
         }
 
         if (errors.products) setErrors(prev => ({ ...prev, products: '' }));
@@ -864,6 +869,16 @@ const DealModal = ({
           (sum, p) => sum + parseFloat(p.line_total || 0), 0
         );
         setFormData(prev => ({ ...prev, amount: newAmount }));
+        // Negotiation only: record what was added, as one entry.
+        if (addedAtNegotiation.length) {
+          logProductLineChange({
+            action: addedAtNegotiation.length === 1 ? 'line added' : `${addedAtNegotiation.length} lines added`,
+            label: addedAtNegotiation.join('; '),
+            before: 'not on deal',
+            after: addedAtNegotiation.join('; '),
+            oldTotal: totalBeforeAdd, newTotal: newAmount,
+          });
+        }
       } catch (err) {
         console.error('Error adding products via picker:', err);
         alert('Failed to add some products: ' + (err.message || err));
@@ -921,6 +936,8 @@ const DealModal = ({
 
       setIsLoadingProducts(true);
       try {
+        const removed = dealProducts.find((p) => p.id === indexOrId);
+        const oldTotal = dealProducts.reduce((sum, p) => sum + parseFloat(p.line_total || 0), 0);
         const { error } =
           await dealProductService.removeProductFromDeal(indexOrId, deal.id);
         if (error) throw error;
@@ -935,6 +952,16 @@ const DealModal = ({
           ), 0
         );
         setFormData((prev) => ({ ...prev, amount: Math.max(0, newAmount) }));
+        // Negotiation only: record the removal.
+        logProductLineChange({
+          action: 'line removed',
+          label: removed?.product?.material || 'line',
+          before: removed
+            ? `qty ${removed.uom_value ?? removed.quantity}, rate ${removed.unit_price}`
+            : null,
+          after: 'removed',
+          oldTotal, newTotal: newAmount,
+        });
       } catch (error) {
         console.error("Error removing product:", error);
         alert("Failed to remove product");
@@ -966,8 +993,61 @@ const DealModal = ({
     { value: "high", label: t("tasks.high") },
   ];
 
-  // Feature 2: editing allowed only in lead/qualified; removal only in lead
-  const canEditProducts = deal?.stage === 'lead' || deal?.stage === 'contact_made';
+  // Feature 2: line editing in lead/qualified/negotiation; add+remove in lead and
+  // negotiation. Negotiation is pre-close, so lines may still move — but unlike
+  // lead/qualified every change there is recorded (see logProductLineChange).
+  //
+  // Keyed to the stage SELECTED RIGHT NOW, not the saved deal.stage: switching the
+  // stage to Won locks the lines immediately, before the save, so nothing can be
+  // edited on the way out of Negotiation. At Won the only route is the Final Value
+  // + Quantity Increase reconcile panel.
+  const effectiveStage = formData?.stage || deal?.stage;
+  const isNegotiationEdit = effectiveStage === 'negotiation';
+  // At Negotiation nothing unlocks until a reason is chosen for this edit session.
+  const negotiationUnlocked = !isNegotiationEdit || !!negotiationReason;
+  const canEditProducts =
+    ['lead', 'contact_made', 'negotiation'].includes(effectiveStage) && negotiationUnlocked;
+  const canAddRemoveProducts =
+    effectiveStage === 'lead' || (isNegotiationEdit && negotiationUnlocked);
+
+  // Every product-line change made during Negotiation is written to
+  // deal_amount_changes — the table the amount-change gate already logs to — so
+  // "who changed which line, when and why" is queryable per deal:
+  //   select * from deal_amount_changes where deal_id = ... and change_type = 'product_line'
+  const logProductLineChange = async ({ action, label, before, after, oldTotal, newTotal }) => {
+    if (!isNegotiationEdit || !deal?.id || !negotiationReason) return;
+    const reasonLabel = CHANGE_REASONS.find((r) => r.value === negotiationReason)?.label || negotiationReason;
+    try {
+      await supabase.from('deal_amount_changes').insert({
+        deal_id: deal.id,
+        company_id: company?.id,
+        changed_by: user?.id,
+        old_amount: Math.round((parseFloat(oldTotal) || 0) * 100) / 100,
+        new_amount: Math.round((parseFloat(newTotal) || 0) * 100) / 100,
+        change_type: 'product_line',
+        old_value: before ?? null,
+        new_value: after ?? null,
+        reason: `Negotiation ${action} — ${label} [${reasonLabel}]`,
+        stage_at_change: 'negotiation',
+      });
+    } catch (err) {
+      // Never block the edit itself on the audit write.
+      console.error('logProductLineChange:', err);
+    }
+  };
+
+  // The edit session ends the moment the deal stops being at Negotiation —
+  // including switching the stage to Won in the form, before any save. Clearing
+  // the reason re-locks the lines, and closing the inline editor makes sure no
+  // half-finished row edit survives the transition.
+  useEffect(() => {
+    if (!isNegotiationEdit) setNegotiationReason('');
+  }, [isNegotiationEdit]);
+  useEffect(() => {
+    if (!canEditProducts) { setEditingProductId(null); setEditValues({}); }
+  }, [canEditProducts]);
+  // A freshly opened deal always starts with no session reason.
+  useEffect(() => { setNegotiationReason(''); }, [isOpen, deal?.id]);
 
   // ── Quantity-increase reconciliation ──────────────────────────────────────
   // Reading one product line, and the halala rounding used to compare them.
@@ -1046,7 +1126,6 @@ const DealModal = ({
     });
     reconcileChangeRef.current = { amount: halala(newTotal), notes };
   };
-  const canAddRemoveProducts = deal?.stage === 'lead';
 
   // Convert contacts to dropdown options
   const contactOptions = contacts.map((contact) => ({
@@ -2242,10 +2321,20 @@ const DealModal = ({
                                             const updated = dealProducts.map(p =>
                                               p.id === item.id ? { ...p, uom_value: qty, quantity: qty, unit_price: price, line_total: lineTotal } : p
                                             );
+                                            const oldTotal = dealProducts.reduce((s, p) => s + parseFloat(p.line_total || 0), 0);
+                                            const newTotal = updated.reduce((s, p) => s + parseFloat(p.line_total || 0), 0);
                                             setDealProducts(updated);
-                                            setFormData(prev => ({ ...prev, amount: updated.reduce((s, p) => s + parseFloat(p.line_total || 0), 0) }));
+                                            setFormData(prev => ({ ...prev, amount: newTotal }));
                                             setEditingProductId(null);
                                             setEditValues({});
+                                            // Negotiation only: record what this line was and became.
+                                            logProductLineChange({
+                                              action: 'line edited',
+                                              label: productData?.material || 'line',
+                                              before: `qty ${currentQty}, rate ${currentPrice}`,
+                                              after: `qty ${qty}, rate ${price}`,
+                                              oldTotal, newTotal,
+                                            });
                                           }
                                         }}
                                         className="p-1 text-green-600 hover:bg-green-50 rounded"
@@ -2357,19 +2446,51 @@ const DealModal = ({
                   </div>
                 )}
 
+                {/* Negotiation — lines stay editable, but only once a reason for
+                    this edit session is chosen, and every change is recorded. */}
+                {deal?.id && isNegotiationEdit && (
+                  <div className={`mt-2 rounded-xl border p-3 ${negotiationReason ? 'bg-green-50/60 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Icon
+                        name={negotiationReason ? 'Unlock' : 'Lock'}
+                        size={13}
+                        className={negotiationReason ? 'text-green-600' : 'text-blue-600'}
+                      />
+                      <span className={`text-xs font-semibold ${negotiationReason ? 'text-green-700' : 'text-blue-700'}`}>
+                        Negotiation stage — why are the product lines changing?
+                      </span>
+                      <select
+                        value={negotiationReason}
+                        onChange={(e) => setNegotiationReason(e.target.value)}
+                        className="text-xs px-2 py-1 border border-border rounded-lg bg-card focus:outline-none focus:border-primary"
+                      >
+                        <option value="">Select a reason…</option>
+                        {CHANGE_REASONS.map((r) => (
+                          <option key={r.value} value={r.value}>{r.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      {negotiationReason
+                        ? 'Lines unlocked — edit qty or price, add or remove products. Each change is recorded against this deal with your name and this reason.'
+                        : 'Pick a reason to unlock the lines. Changes at this stage are recorded; at Won they are locked again.'}
+                    </p>
+                  </div>
+                )}
+
                 {/* Feature 2: stage hint */}
-                {deal?.id && canEditProducts && (
+                {deal?.id && canEditProducts && !isNegotiationEdit && (
                   <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                     <Icon name="Info" size={11} />
-                    {deal.stage === 'lead'
+                    {effectiveStage === 'lead'
                       ? 'Lead stage — click any qty or price to edit. Add or remove products freely.'
                       : 'Qualified stage — click qty or price to edit. Products cannot be added or removed.'}
                   </p>
                 )}
-                {deal?.id && !canEditProducts && (
+                {deal?.id && !canEditProducts && !isNegotiationEdit && (
                   <p className="text-xs text-amber-600 flex items-center gap-1 mt-1">
                     <Icon name="Lock" size={11} />
-                    Products are locked at {deal.stage === 'proposal_sent' ? 'Proposal' : deal.stage} stage. Use Final Value to record changes.
+                    Products are locked at {effectiveStage === 'proposal_sent' ? 'Proposal' : effectiveStage} stage. Use Final Value to record changes.
                   </p>
                 )}
 
