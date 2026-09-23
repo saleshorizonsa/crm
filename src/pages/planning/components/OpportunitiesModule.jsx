@@ -10,6 +10,8 @@ import { blockIfPlanLocked } from 'utils/planApproval';
 import {
   fetchContributors,
   fetchMonthlyTargets,
+  fetchAchieved,
+  fetchAchievedOnlyUsers,
   targetPerPerson,
   monthBounds,
 } from 'utils/planningCalculations';
@@ -64,6 +66,11 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
   const [loading, setLoading]             = useState(true);
   const [loadError, setLoadError]         = useState(null);
   const [monthlyTarget, setMonthlyTarget] = useState(0);
+  // In Funnel = raw value of every OPEN deal in scope (not won/lost), unweighted —
+  // the same figure the KPI strip shows, so the two views cannot disagree.
+  const [funnelValue, setFunnelValue] = useState(0);
+  // This month's Achieved for the same scope (invoiced won deals, final value).
+  const [achievedThisMonth, setAchievedThisMonth] = useState(0);
   const [contacts, setContacts]           = useState([]);
   const [teamMembers, setTeamMembers]     = useState([]);
   // Owners of opportunities loaded under "All" — selector only (utils/recordOwners).
@@ -118,6 +125,42 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
     setMonthlyTarget(
       Object.values(targetPerPerson(rows)).reduce((sum, v) => sum + v, 0),
     );
+  }, [company?.id]);
+
+  // ── Fetch: In Funnel + this month's Achieved ──────────────────────────────
+  // In Funnel is the raw open-deal value for the scope — the same query and the
+  // same unweighted definition as the KPI strip's funnel figure
+  // (utils/kpiStripData.js), so Planning and the dashboards agree. Achieved comes
+  // from the one shared rule, scoped to this month; together they feed Remaining.
+  const fetchFunnelAndAchieved = useCallback(async (ids) => {
+    if (!company?.id || !ids?.length) { setFunnelValue(0); setAchievedThisMonth(0); return; }
+
+    // Narrowed exactly as the KPI strip narrows them, so the same scope produces
+    // the same two numbers on both screens: the funnel over contributors, and
+    // Achieved over contributors plus any flagged achieved-only manager. Using
+    // the raw owner ids here would count a manager's open deals in one view and
+    // not the other — the drift this shared rule exists to prevent.
+    const contributors = await fetchContributors({ companyId: company.id, ownerIds: ids });
+    const contributorIds = contributors.map((c) => c.id);
+    if (!contributorIds.length) { setFunnelValue(0); setAchievedThisMonth(0); return; }
+
+    const { data: openDeals } = await supabase
+      .from('deals')
+      .select('owner_id, amount')
+      .eq('company_id', company.id)
+      .in('owner_id', contributorIds)
+      .not('stage', 'in', '("won","lost")');
+    setFunnelValue((openDeals || []).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0));
+
+    const achievedOnly = await fetchAchievedOnlyUsers({ companyId: company.id, ownerIds: ids });
+    const { startDate, endDate } = monthBounds();
+    const { total } = await fetchAchieved({
+      companyId: company.id,
+      contributorIds: [...contributorIds, ...achievedOnly.map((u) => u.id)],
+      start: startDate,
+      end: endDate,
+    });
+    setAchievedThisMonth(total);
   }, [company?.id]);
 
   // ── Fetch: opportunities ──────────────────────────────────────────────────
@@ -207,6 +250,7 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
     [teamMembers, recordOwners],
   );
   useEffect(() => { fetchTarget(ownerScope); }, [fetchTarget, ownerScope]);
+  useEffect(() => { fetchFunnelAndAchieved(ownerScope); }, [fetchFunnelAndAchieved, ownerScope]);
 
   // ── Derived totals ────────────────────────────────────────────────────────
   const totalPlanned = opportunities.reduce(
@@ -214,6 +258,10 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
   );
   const planningPct   = monthlyTarget > 0 ? Math.min((totalPlanned / monthlyTarget) * 100, 100) : 0;
   const unplanned     = Math.max(0, monthlyTarget - totalPlanned);
+  // Remaining = what the target still needs once THIS month's invoiced revenue,
+  // the open funnel and the plan are all counted. Distinct from Still Unplanned
+  // (target vs plan alone) and from the KPI strip's Deficit (target vs achieved).
+  const remaining     = Math.max(0, monthlyTarget - achievedThisMonth - funnelValue - totalPlanned);
   const isUnderPlanned = monthlyTarget > 0 && totalPlanned < monthlyTarget;
 
   // ── Save (create / update) ────────────────────────────────────────────────
@@ -373,7 +421,9 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+        {/* Five cards: two per row on a phone, three across from sm, all five
+            from xl — five in a row on a small screen is unreadable. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 mb-4">
           <div className="bg-muted rounded-xl p-4 text-center">
             <p className="text-xl font-bold text-foreground tabular-nums">
               {formatCurrency(monthlyTarget)}
@@ -396,6 +446,25 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               {isUnderPlanned ? 'Still Unplanned' : 'Fully Planned ✓'}
+            </p>
+          </div>
+          <div className="bg-muted rounded-xl p-4 text-center">
+            <p className="text-xl font-bold text-blue-600 tabular-nums">
+              {formatCurrency(funnelValue)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">In Funnel</p>
+          </div>
+          <div className="bg-muted rounded-xl p-4 text-center">
+            <p className={`text-xl font-bold tabular-nums ${
+              monthlyTarget <= 0 ? 'text-muted-foreground' : remaining > 0 ? 'text-red-600' : 'text-green-600'
+            }`}>
+              {/* No target set → "—", the same way the other cards treat a
+                  missing target, rather than a meaningless 0. */}
+              {monthlyTarget > 0 ? formatCurrency(remaining) : '—'}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Remaining
+              <span className="block text-[10px] text-muted-foreground/80">after achieved + funnel + plan</span>
             </p>
           </div>
         </div>
