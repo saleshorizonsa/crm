@@ -429,6 +429,10 @@ const DealModal = ({
   const [reconcileEdits, setReconcileEdits] = useState({}); // line id -> { quantity, price }
   const [reconcileSavingId, setReconcileSavingId] = useState(null);
   const reconcileBaselineRef = useRef(null); // line id -> { qty, price } when the step opened
+  // What the reconciliation panel itself changed: the deal amount it produced, and
+  // a line-by-line description. Lets the save tell "the amount moved because of
+  // THIS panel" apart from any other amount edit — see executeSave.
+  const reconcileChangeRef = useRef({ amount: null, notes: [] });
   const [changeNotes, setChangeNotes] = useState('');
 
   // Amount-change audit: editing an existing deal's amount requires a reason.
@@ -977,6 +981,7 @@ const DealModal = ({
   useEffect(() => {
     if (!(showFinalValue && changeReason === 'quantity_increase')) {
       reconcileBaselineRef.current = null;
+      reconcileChangeRef.current = { amount: null, notes: [] };
       setReconcileEdits({});
       return;
     }
@@ -1022,9 +1027,24 @@ const DealModal = ({
       p.id === item.id ? { ...p, uom_value: qty, quantity: qty, unit_price: price, line_total: lineTotal } : p,
     );
     setDealProducts(updated);
-    setFormData((prev) => ({ ...prev, amount: updated.reduce((s, p) => s + (parseFloat(p.line_total) || 0), 0) }));
+    const newTotal = updated.reduce((s, p) => s + (parseFloat(p.line_total) || 0), 0);
+    setFormData((prev) => ({ ...prev, amount: newTotal }));
     setReconcileEdits((prev) => { const next = { ...prev }; delete next[item.id]; return next; });
     setErrors((prev) => ({ ...prev, finalValue: '' }));
+
+    // Remember what this panel did, so the generic "why did the amount change?"
+    // prompt can be skipped for exactly this amount — the panel already captured
+    // a more specific reason (which line, and its old and new qty/rate).
+    const was = reconcileBaselineRef.current?.[item.id];
+    const label = item.product?.material || item.product_name || 'line';
+    const notes = reconcileChangeRef.current.notes.filter((n) => n.id !== item.id);
+    notes.push({
+      id: item.id,
+      text: was
+        ? `${label}: qty ${was.qty} → ${qty}, rate ${was.price} → ${price}`
+        : `${label}: qty ${qty}, rate ${price}`,
+    });
+    reconcileChangeRef.current = { amount: halala(newTotal), notes };
   };
   const canAddRemoveProducts = deal?.stage === 'lead';
 
@@ -1147,7 +1167,22 @@ const DealModal = ({
     const oldAmount = Math.round(parseFloat(deal?.amount || 0) * 100) / 100;
     const newAmount = Math.round(parseFloat(dealData.amount || 0) * 100) / 100;
     const amountChanged = !!deal?.id && oldAmount !== newAmount;
-    if (amountChanged && !reasonText) {
+
+    // One exception to that gate: the Quantity Increase reconciliation panel. It
+    // already demanded a structured reason — which line, old and new qty/rate —
+    // so asking again for free text adds a second prompt and says less. The
+    // exception is deliberately narrow: it applies only when the amount being
+    // saved is exactly the total that panel produced, so any later edit through
+    // any other path (or at Lead/Contact Made, where lines are editable anyway)
+    // still asks. The change is still logged and the manager still notified,
+    // using the panel's own description instead of typed text.
+    const panelChange = reconcileChangeRef.current;
+    const fromReconcilePanel =
+      amountChanged && panelChange.amount != null && panelChange.amount === newAmount && panelChange.notes.length > 0;
+    const effectiveReason =
+      reasonText || (fromReconcilePanel ? `Quantity Increase reconciliation — ${panelChange.notes.map((n) => n.text).join('; ')}` : null);
+
+    if (amountChanged && !effectiveReason) {
       pendingSaveRef.current = dealData;
       setEditReason('');
       setEditReasonError('');
@@ -1162,8 +1197,8 @@ const DealModal = ({
       const savedDeal = await onSave(dealData);
 
       // Record the amount change + notify the owner's manager (best-effort).
-      if (amountChanged && reasonText && (savedDeal?.id || deal?.id)) {
-        await logAmountChange(deal, oldAmount, newAmount, reasonText, dealData.stage);
+      if (amountChanged && effectiveReason && (savedDeal?.id || deal?.id)) {
+        await logAmountChange(deal, oldAmount, newAmount, effectiveReason, dealData.stage);
       }
 
       console.log("Saved deal:", savedDeal);
