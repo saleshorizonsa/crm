@@ -85,11 +85,18 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
   const [form, setForm]             = useState(() => emptyForm(currentMonth));
 
   // ── Owner scope for the target calculation ────────────────────────────────
+  // "All" for a manager or supervisor means THEIR TEAM INCLUDING THEMSELVES —
+  // the same scope fetchOpportunities() below already uses ([user.id, ...team]).
+  // This used to be the downline alone, so a team lead's own records were listed
+  // in the plan while being left out of every number computed from this scope:
+  // supervisor Alseyed Diba saw In Funnel 0.00 with 1,510,602.80 of his own open
+  // deals, and his own monthly target never counted either (Amer was short
+  // 501,088, Kamal 152,500).
   const ownerScope = useMemo(() => {
     if (filterOwner !== 'all') return [filterOwner];
     if (isDirector || isTeamLead) {
-      const ids = teamMembers.map((m) => m.id);
-      return ids.length ? ids : [user?.id].filter(Boolean);
+      const ids = [user?.id, ...teamMembers.map((m) => m.id)].filter(Boolean);
+      return [...new Set(ids)];
     }
     return [user?.id].filter(Boolean);
   }, [filterOwner, isDirector, isTeamLead, teamMembers, user?.id]);
