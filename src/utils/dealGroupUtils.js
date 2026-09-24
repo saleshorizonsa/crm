@@ -71,24 +71,41 @@ export function getDealProductSummary(deal, maxItems = 2) {
 
 /**
  * Determine if a deal is NEW or CARRY_FORWARD for the given period.
- * NEW          = deal created within this period
- * CARRY_FORWARD = deal created before this period but active/closing in it
+ *
+ *   NEW           created inside this period
+ *   CARRY_FORWARD created before this period, still active/closing in it
+ *   FUTURE        created AFTER this period — belongs to a later one
+ *
+ * `periodTo` bounds the period at the top. Without it this only asked
+ * `created >= periodFrom`, so looking at July also counted every deal created in
+ * August and September as "New This Period" — July and August reported the same
+ * 36 deals. Omitting periodTo keeps the old open-ended behaviour, so callers
+ * that genuinely mean "from this date onwards" are unaffected.
  */
-export function getDealOrigin(deal, periodFrom) {
+export function getDealOrigin(deal, periodFrom, periodTo = null) {
   const originDate = deal.creation_date || deal.created_at;
   if (!originDate || !periodFrom) return 'new';
   const created = new Date(originDate);
   const from    = new Date(periodFrom);
   created.setHours(0, 0, 0, 0);
   from.setHours(0, 0, 0, 0);
-  return created >= from ? 'new' : 'carry_forward';
+  if (created < from) return 'carry_forward';
+  if (periodTo) {
+    const to = new Date(periodTo);
+    to.setHours(23, 59, 59, 999);
+    if (created > to) return 'future';
+  }
+  return 'new';
 }
 
 /**
- * For Won deals — 'won_new' if created this period, 'won_carry' if carried forward.
+ * For Won deals — 'won_new' if created this period, 'won_carry' if carried
+ * forward. A deal created after the period is neither: it is 'future'.
  */
-export function getWonDealOrigin(deal, periodFrom) {
-  return getDealOrigin(deal, periodFrom) === 'new' ? 'won_new' : 'won_carry';
+export function getWonDealOrigin(deal, periodFrom, periodTo = null) {
+  const origin = getDealOrigin(deal, periodFrom, periodTo);
+  if (origin === 'future') return 'future';
+  return origin === 'new' ? 'won_new' : 'won_carry';
 }
 
 /**
@@ -148,14 +165,20 @@ export function classifyDealsByOrigin(deals, periodFrom, ctx = {}) {
   const lostThisPeriod = [];
 
   (deals || []).forEach(deal => {
-    const origin = getDealOrigin(deal, periodFrom);
+    // 'future' = created after this period, so it belongs to a later one and is
+    // counted in neither New nor Carried Forward here. Won/Lost This Period are
+    // dated by stage_changed_at and are unaffected by where the deal came from.
+    const origin = getDealOrigin(deal, periodFrom, periodTo);
     if (deal.stage === 'won') {
-      origin === 'new' ? wonNew.push(deal) : wonCarry.push(deal);
+      if (origin === 'new') wonNew.push(deal);
+      else if (origin === 'carry_forward') wonCarry.push(deal);
       if (inPeriod(deal.stage_changed_at, periodFrom, periodTo)) wonThisPeriod.push(deal);
     } else if (deal.stage === 'lost') {
       if (inPeriod(deal.stage_changed_at, periodFrom, periodTo)) lostThisPeriod.push(deal);
-    } else {
-      origin === 'new' ? newDeals.push(deal) : carryDeals.push(deal);
+    } else if (origin === 'new') {
+      newDeals.push(deal);
+    } else if (origin === 'carry_forward') {
+      carryDeals.push(deal);
     }
   });
 
