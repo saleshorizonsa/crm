@@ -104,23 +104,99 @@ export function getOriginLabel(deal, periodFrom) {
     : `From ${format(created, 'MMM yyyy')}`;
 }
 
+/** yyyy-MM-dd for a Date or date-ish string, local time (no UTC shift). */
+const ymd = (d) => {
+  if (!d) return null;
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return null;
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+};
+
+/** Is this date inside [from, to]? `to` omitted = open-ended. Day precision. */
+const inPeriod = (date, from, to) => {
+  const day = ymd(date);
+  if (!day || !from) return false;
+  return day >= ymd(from) && (!to || day <= ymd(to));
+};
+
+/** First day of the month a date falls in, as yyyy-MM-01. */
+const monthStart = (d) => (ymd(d) ? `${ymd(d).slice(0, 7)}-01` : null);
+
 /**
  * Classify and summarise a list of deals by origin for analytics.
+ *
+ * `deals` is the list the screen already holds — nothing is fetched here.
+ *
+ * @param {object}   [ctx]
+ * @param {string}   [ctx.periodTo]          end of the viewed period (yyyy-MM-dd)
+ * @param {object[]} [ctx.linkedOpportunities] opportunities with a deal_id:
+ *   { deal_id, expected_month }. Marks which new deals came from a plan entry.
+ * @param {object[]} [ctx.closeDateChanges]  rows from deal_close_date_changes:
+ *   { deal_id, old_date, new_date }. Feeds "Transferred to Future".
  */
-export function classifyDealsByOrigin(deals, periodFrom) {
+export function classifyDealsByOrigin(deals, periodFrom, ctx = {}) {
+  const { periodTo = null, linkedOpportunities = [], closeDateChanges = [] } = ctx;
+
   const newDeals   = [];
   const carryDeals = [];
   const wonNew     = [];
   const wonCarry   = [];
+  // Closed IN this period, whatever their origin — a deal carried forward from
+  // months ago that closes now belongs here, which is exactly what wonNew /
+  // wonCarry (about when a deal ENTERED the funnel) cannot tell you.
+  const wonThisPeriod  = [];
+  const lostThisPeriod = [];
 
   (deals || []).forEach(deal => {
     const origin = getDealOrigin(deal, periodFrom);
     if (deal.stage === 'won') {
       origin === 'new' ? wonNew.push(deal) : wonCarry.push(deal);
-    } else if (deal.stage !== 'lost') {
+      if (inPeriod(deal.stage_changed_at, periodFrom, periodTo)) wonThisPeriod.push(deal);
+    } else if (deal.stage === 'lost') {
+      if (inPeriod(deal.stage_changed_at, periodFrom, periodTo)) lostThisPeriod.push(deal);
+    } else {
       origin === 'new' ? newDeals.push(deal) : carryDeals.push(deal);
     }
   });
+
+  // ── New This Period, split by where the deal came from ────────────────────
+  // Transferred = a real conversion happened (the deal id is an
+  // opportunities.deal_id) AND that plan entry was planned for the period being
+  // viewed. A conversion from a plan entry expected in some other month counts
+  // as a direct lead here, by decision — it was not this period's plan.
+  //
+  // Direct is derived by SUBTRACTION from the same array, never counted
+  // separately, so transferred + direct === newDeals can never drift apart.
+  const plannedForPeriod = new Set(
+    (linkedOpportunities || [])
+      .filter((o) => o?.deal_id && o?.expected_month)
+      .filter((o) => {
+        const m = monthStart(o.expected_month);
+        return m && m >= monthStart(periodFrom) && (!periodTo || m <= ymd(periodTo));
+      })
+      .map((o) => o.deal_id),
+  );
+  const newFromPlan = newDeals.filter((d) => plannedForPeriod.has(d.id));
+  const fromPlanIds = new Set(newFromPlan.map((d) => d.id));
+  const newDirect   = newDeals.filter((d) => !fromPlanIds.has(d.id));
+
+  // ── Transferred to Future ─────────────────────────────────────────────────
+  // Pushed OUT of this period: a logged close-date change whose old date fell in
+  // this period and whose new date lands in a later month, on a deal that is
+  // still open. Explicitly NOT lost — the deal is alive, just not this period's.
+  // Only tracked from the day deal_close_date_changes started recording.
+  const openById = new Map(
+    (deals || []).filter((d) => d.stage !== 'won' && d.stage !== 'lost').map((d) => [d.id, d]),
+  );
+  const pushedIds = new Set(
+    (closeDateChanges || [])
+      .filter((c) => c?.deal_id && c?.old_date && c?.new_date)
+      .filter((c) => inPeriod(c.old_date, periodFrom, periodTo))
+      .filter((c) => monthStart(c.new_date) > monthStart(c.old_date))
+      .filter((c) => openById.has(c.deal_id))
+      .map((c) => c.deal_id),
+  );
+  const transferredToFuture = [...pushedIds].map((id) => openById.get(id));
 
   const sum = arr => arr.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
 
@@ -139,5 +215,29 @@ export function classifyDealsByOrigin(deals, periodFrom) {
     wonCarryValue:  sum(wonCarry),
     totalOpenCount: newDeals.length + carryDeals.length,
     totalOpenValue: sum(newDeals) + sum(carryDeals),
+
+    // New This Period, split (the two always add back to newCount/newValue)
+    newFromPlan,
+    newDirect,
+    newFromPlanCount: newFromPlan.length,
+    newDirectCount:   newDirect.length,
+    newFromPlanValue: sum(newFromPlan),
+    newDirectValue:   sum(newDirect),
+
+    // Closed in this period, any origin
+    wonThisPeriod,
+    lostThisPeriod,
+    wonThisPeriodCount:  wonThisPeriod.length,
+    lostThisPeriodCount: lostThisPeriod.length,
+    wonThisPeriodValue:  sum(wonThisPeriod),
+    lostThisPeriodValue: sum(lostThisPeriod),
+
+    // Pushed out of this period, still open
+    transferredToFuture,
+    transferredToFutureCount: transferredToFuture.length,
+    transferredToFutureValue: sum(transferredToFuture),
+    // What is left of this period's open pipeline once the pushed-out deals go.
+    remainingOpenCount: newDeals.length + carryDeals.length - transferredToFuture.length,
+    remainingOpenValue: sum(newDeals) + sum(carryDeals) - sum(transferredToFuture),
   };
 }

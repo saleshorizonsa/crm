@@ -23,7 +23,7 @@ import {
 } from "../../services/supabaseService";
 import { exportToExcel } from "../../utils/exportUtils";
 import { now } from "d3";
-import { format, startOfMonth } from 'date-fns';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { resolveDateRange } from "../../components/ui/DateRangePicker";
 import { getDealOrigin } from "../../utils/dealGroupUtils";
@@ -882,6 +882,12 @@ const SalesPipeline = () => {
             activePeriodFrom={
               filters.customDateRange?.from ||
               format(startOfMonth(new Date()), 'yyyy-MM-dd')
+            }
+            // The period's end, for the figures that ask "closed in this
+            // period?" rather than "entered the funnel in it?".
+            activePeriodTo={
+              filters.customDateRange?.to ||
+              format(endOfMonth(new Date()), 'yyyy-MM-dd')
             }
             onStageFilter={(stageId) => {
               const newFilters = { ...filters, stage: stageId };

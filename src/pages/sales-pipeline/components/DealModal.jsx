@@ -1156,6 +1156,28 @@ const DealModal = ({
     }
   };
 
+  // Append-only log of expected_close_date being moved OUT to a later date.
+  // Nothing before this shipped is recorded — there is no history of past edits
+  // anywhere — so the breakdown only describes moves from here on.
+  const logCloseDateMove = async (dealObj, nextDate) => {
+    const before = dealObj?.expected_close_date ? String(dealObj.expected_close_date).slice(0, 10) : null;
+    const after = nextDate ? String(nextDate).slice(0, 10) : null;
+    if (!dealObj?.id || !before || !after || after <= before) return;
+    try {
+      const { error } = await supabase.from('deal_close_date_changes').insert({
+        deal_id: dealObj.id,
+        company_id: company?.id || null,
+        old_date: before,
+        new_date: after,
+        changed_by: user?.id || null,
+      });
+      // 42P01 = migrations/add_deal_close_date_changes.sql not applied yet.
+      if (error && error.code !== '42P01') console.warn('logCloseDateMove:', error.message);
+    } catch (err) {
+      console.warn('logCloseDateMove:', err?.message || err);
+    }
+  };
+
   const notifyManager = async (dealObj, oldAmount, newAmount, reason) => {
     try {
       const { data: owner } = await supabase
@@ -1237,6 +1259,13 @@ const DealModal = ({
       if (amountChanged && effectiveReason && (savedDeal?.id || deal?.id)) {
         await logAmountChange(deal, oldAmount, newAmount, effectiveReason, dealData.stage);
       }
+
+      // Record a close date pushed to a LATER date, so the Pipeline Origin
+      // Breakdown can show the deal as transferred out of its period rather than
+      // lost in it. Only later moves are logged — pulling a date forward is not
+      // a transfer. Best-effort: logged after the save succeeded, and a failure
+      // (including the table not existing yet) never touches the save.
+      await logCloseDateMove(deal, dealData.expected_close_date);
 
       console.log("Saved deal:", savedDeal);
 

@@ -23,7 +23,7 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import FunnelChart from "./FunnelChart";
 import { useLanguage } from "../../../i18n";
-import { format, startOfMonth } from 'date-fns';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { groupDealsByMaterialGroup, classifyDealsByOrigin } from "../../../utils/dealGroupUtils";
 
 const LOST_CODE_LABELS = {
@@ -49,7 +49,7 @@ const LOST_CODE_LABELS = {
   CAPACITY:          "Capacity not available",
 };
 
-const PipelineAnalytics = ({ deals, onStageFilter, activePeriodFrom }) => {
+const PipelineAnalytics = ({ deals, onStageFilter, activePeriodFrom, activePeriodTo }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [collapseToggle, setCollapseToggle] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
@@ -57,6 +57,37 @@ const PipelineAnalytics = ({ deals, onStageFilter, activePeriodFrom }) => {
   const { t } = useLanguage();
   const canSeeLostReasons = userProfile?.role !== "salesman";
   const [lostChartData, setLostChartData] = useState([]);
+
+  // Two light lookups for the Pipeline Origin Breakdown, fetched once per screen
+  // like the lost-reason query below — never per card. The deals themselves come
+  // from the `deals` prop the page already holds.
+  //   linkedOpps  — which deals came from a Current Sales Plan entry, and the
+  //                 month that entry was planned for.
+  //   closeMoves  — logged expected_close_date moves (Transferred to Future).
+  const [linkedOpps, setLinkedOpps] = useState([]);
+  const [closeMoves, setCloseMoves] = useState([]);
+  useEffect(() => {
+    if (!company?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data: opps } = await supabase
+        .from('opportunities')
+        .select('deal_id, expected_month')
+        .eq('company_id', company.id)
+        .not('deal_id', 'is', null);
+      if (!cancelled) setLinkedOpps(opps || []);
+
+      // 42P01 until migrations/add_deal_close_date_changes.sql is applied: the
+      // card then simply shows nothing transferred, which is the truth.
+      const { data: moves, error } = await supabase
+        .from('deal_close_date_changes')
+        .select('deal_id, old_date, new_date')
+        .eq('company_id', company.id);
+      if (error && error.code !== '42P01') console.warn('close-date moves:', error.message);
+      if (!cancelled) setCloseMoves(moves || []);
+    })();
+    return () => { cancelled = true; };
+  }, [company?.id]);
 
   // Fetch lost deal reason distribution directly (separate from the deals prop)
   useEffect(() => {
@@ -465,7 +496,12 @@ const PipelineAnalytics = ({ deals, onStageFilter, activePeriodFrom }) => {
             {/* Pipeline Origin Breakdown */}
             {(() => {
               const periodFrom = activePeriodFrom || format(startOfMonth(new Date()), 'yyyy-MM-dd');
-              const origin = classifyDealsByOrigin(deals || [], periodFrom);
+              const periodTo = activePeriodTo || format(endOfMonth(new Date(periodFrom)), 'yyyy-MM-dd');
+              const origin = classifyDealsByOrigin(deals || [], periodFrom, {
+                periodTo,
+                linkedOpportunities: linkedOpps,
+                closeDateChanges: closeMoves,
+              });
               return (
                 <div className="mt-5 pt-5 border-t border-border-tertiary">
                   <h4 className="text-sm font-semibold text-card-foreground mb-4">Pipeline Origin Breakdown</h4>
@@ -477,6 +513,25 @@ const PipelineAnalytics = ({ deals, onStageFilter, activePeriodFrom }) => {
                       </div>
                       <div className="text-lg font-bold text-green-700">{formatCurrency(origin.newValue, preferredCurrency)}</div>
                       <div className="text-xs text-green-600 mt-0.5">{origin.newCount} deals</div>
+                      {/* Where those new deals came from. Direct is derived by
+                          subtraction in classifyDealsByOrigin, so these two
+                          always add back to the figure above. */}
+                      <div className="mt-2 pt-2 border-t border-green-200/70 space-y-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-[11px] text-green-700">↳ Transferred from Plan</span>
+                          <span className="text-[11px] font-semibold text-green-800 tabular-nums">
+                            {formatCurrency(origin.newFromPlanValue, preferredCurrency)}
+                            <span className="font-normal text-green-600"> · {origin.newFromPlanCount}</span>
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-[11px] text-green-700">↳ Direct New Leads</span>
+                          <span className="text-[11px] font-semibold text-green-800 tabular-nums">
+                            {formatCurrency(origin.newDirectValue, preferredCurrency)}
+                            <span className="font-normal text-green-600"> · {origin.newDirectCount}</span>
+                          </span>
+                        </div>
+                      </div>
                     </div>
                     <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
                       <div className="flex items-center gap-2 mb-2">
@@ -502,6 +557,59 @@ const PipelineAnalytics = ({ deals, onStageFilter, activePeriodFrom }) => {
                       <div className="text-lg font-bold text-purple-700">{formatCurrency(origin.wonCarryValue, preferredCurrency)}</div>
                       <div className="text-xs text-purple-600 mt-0.5">{origin.wonCarryCount} deals</div>
                     </div>
+                  </div>
+
+                  {/* Closed IN this period, whatever their origin — the cards
+                      above count when a deal ENTERED the funnel, which is a
+                      different question. A deal carried forward from months ago
+                      and won now appears here and not in "Won — New Deals". */}
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-emerald-600 text-sm">✓</span>
+                        <span className="text-xs font-semibold text-emerald-700">Total Won This Period</span>
+                      </div>
+                      <div className="text-lg font-bold text-emerald-700">{formatCurrency(origin.wonThisPeriodValue, preferredCurrency)}</div>
+                      <div className="text-xs text-emerald-600 mt-0.5">{origin.wonThisPeriodCount} deals · any origin</div>
+                    </div>
+                    <div className="bg-red-50 rounded-xl p-3 border border-red-100">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-red-600 text-sm">✕</span>
+                        <span className="text-xs font-semibold text-red-700">Lost This Period</span>
+                      </div>
+                      <div className="text-lg font-bold text-red-700">{formatCurrency(origin.lostThisPeriodValue, preferredCurrency)}</div>
+                      <div className="text-xs text-red-600 mt-0.5">{origin.lostThisPeriodCount} deals · any origin</div>
+                    </div>
+                  </div>
+
+                  {/* Pushed out of this period, still alive — never counted as
+                      lost. Recorded only from the day the close-date log
+                      started, so earlier periods read zero. */}
+                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 mb-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-slate-500 text-sm">→</span>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-slate-700">Transferred to Future</div>
+                          <div className="text-[11px] text-slate-500">
+                            Close date moved to a later month · still open, not lost
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-lg font-bold text-slate-700">{formatCurrency(origin.transferredToFutureValue, preferredCurrency)}</div>
+                        <div className="text-[11px] text-slate-500">{origin.transferredToFutureCount} deals</div>
+                      </div>
+                    </div>
+                    {origin.transferredToFutureCount > 0 && (
+                      <div className="flex items-baseline justify-between gap-2 mt-2 pt-2 border-t border-slate-200 text-[11px]">
+                        <span className="text-slate-600">Open pipeline after transfers out</span>
+                        <span className="font-semibold text-slate-800 tabular-nums">
+                          {formatCurrency(origin.remainingOpenValue, preferredCurrency)}
+                          <span className="font-normal text-slate-500"> · {origin.remainingOpenCount}</span>
+                        </span>
+                      </div>
+                    )}
                   </div>
                   {origin.totalOpenCount > 0 && (
                     <div className="bg-muted/30 rounded-lg p-3">
