@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { sendNotificationEmail } from '../utils/notificationEmail';
 
 const TITLE_MAP = {
   steel: [
@@ -233,6 +234,13 @@ export const leadService = {
           data:       { lead_id: inserted.id, company_name: lead.company_name, assigned_by: userId },
           is_read:    false,
         }).then(() => {}).catch(() => {});
+        // Same alert by email, fire-and-forget (utils/notificationEmail.js).
+        sendNotificationEmail({
+          userId: assignedTo,
+          type: 'lead_assigned',
+          title: 'New lead assigned',
+          message: `${lead.first_name} ${lead.last_name}${lead.company_name ? ' from ' + lead.company_name : ''}`,
+        });
       }
     }
 

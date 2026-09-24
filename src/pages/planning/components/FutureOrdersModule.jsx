@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from 'lib/supabase';
+import { sendNotificationEmail } from 'utils/notificationEmail';
 import { useAuth } from 'contexts/AuthContext';
 import { useCurrency } from 'contexts/CurrencyContext';
 import Icon from 'components/AppIcon';
@@ -163,6 +164,13 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, 
         message: `"${order.customer_name}" reached its planned month and was moved to your Current Sales Plan.`,
         metadata:   { future_order_id: order.id },
         is_read:    false,
+      });
+      // Same alert by email, fire-and-forget (utils/notificationEmail.js).
+      sendNotificationEmail({
+        userId: order.owner_id,
+        type: 'future_order_moved',
+        title: '📅 Future Order Moved to Current Sales Plan',
+        message: `"${order.customer_name}" reached its planned month and was moved to your Current Sales Plan.`,
       });
     } catch (_) { /* notifications are best-effort */ }
   }

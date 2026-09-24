@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { sendNotificationEmail, sendNotificationEmails } from "../utils/notificationEmail";
 import { calculateLeadScore } from "../utils/leadScoring";
 import { handleTargetChange } from "../utils/targetChangeHandler";
 import { forecastFieldsFor } from "../utils/forecastCalc";
@@ -3599,6 +3600,13 @@ export const salesTargetService = {
             is_read: false,
           },
         ]);
+        // Same alert by email, fire-and-forget (utils/notificationEmail.js).
+        sendNotificationEmail({
+          userId: targetData.assignedTo,
+          type: "target_assigned",
+          title: "New Sales Target Assigned",
+          message: `${assignerName} has assigned you a ${targetData.periodType} target of ${formattedAmount}.`,
+        });
       } catch (notifError) {
         console.error("Error creating notification:", notifError);
         // Don't fail the target creation if notification fails
@@ -5328,6 +5336,15 @@ export const notificationService = {
         .select()
         .single();
 
+      // Same alert by email, fire-and-forget (utils/notificationEmail.js).
+      if (!error) {
+        sendNotificationEmail({
+          userId: notificationData?.user_id,
+          type: notificationData?.type,
+          title: notificationData?.title,
+          message: notificationData?.message,
+        });
+      }
       return { data, error };
     } catch (error) {
       console.error("Error creating notification:", error);
@@ -5548,6 +5565,9 @@ export const notificationService = {
 
         if (error) {
           console.error("Error creating notifications:", error);
+        } else {
+          // Same alerts by email, fire-and-forget (utils/notificationEmail.js).
+          sendNotificationEmails(notifications);
         }
       }
 

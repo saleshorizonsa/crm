@@ -1,4 +1,5 @@
 import { supabase } from 'lib/supabase';
+import { sendNotificationEmail } from 'utils/notificationEmail';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 
 // Manager approval workflow for monthly sales plans.
@@ -178,6 +179,8 @@ async function notify({ userId, companyId, type, title, message, metadata }) {
       metadata: metadata || null,
       is_read: false,
     });
+    // Same alert by email, fire-and-forget (utils/notificationEmail.js).
+    sendNotificationEmail({ userId, type, title, message });
   } catch (_) { /* best-effort */ }
 }
 

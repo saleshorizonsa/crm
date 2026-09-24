@@ -13,6 +13,7 @@ import Button from "../../components/ui/Button";
 import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { sendNotificationEmail } from "../../utils/notificationEmail";
 import { useLanguage } from "../../i18n";
 import { useLocation, Navigate } from "react-router-dom";
 import {
@@ -579,6 +580,16 @@ const SalesPipeline = () => {
                 "Owner notification failed (non-fatal):",
                 notifyErr.code, notifyErr.message, notifyErr.details, notifyErr.hint,
               );
+            } else {
+              // Same alert by email, fire-and-forget (utils/notificationEmail.js).
+              sendNotificationEmail({
+                userId: trueOwnerId,
+                type: "deal_changed",
+                title: "📋 Your Deal Was Updated by Your Manager",
+                message: stageChanged
+                  ? `${actorName} moved "${dealLabel}" to ${data.stage} on your behalf.`
+                  : `${actorName} updated "${dealLabel}" on your behalf.`,
+              });
             }
           } catch (notifyThrown) {
             console.error("Owner notification threw (non-fatal):", notifyThrown);

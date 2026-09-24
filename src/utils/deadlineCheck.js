@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { sendNotificationEmails } from './notificationEmail';
 
 // Plan-submission deadline = the 25th of each month. After the 25th, any active
 // salesman/supervisor who hasn't submitted their plan is flagged, and both they
@@ -83,6 +84,8 @@ export async function checkPlanDeadlines(companyId, _actorId, _role) {
       });
       try {
         await supabase.from('notifications').insert(notes);
+        // Same alerts by email, fire-and-forget (utils/notificationEmail.js).
+        sendNotificationEmails(notes);
       } catch (_) { /* notifications are best-effort */ }
     }
   } catch (err) {

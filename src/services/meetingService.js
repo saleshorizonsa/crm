@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { sendNotificationEmail } from '../utils/notificationEmail';
 
 const MEETING_SELECT = `
   *,
@@ -200,5 +201,12 @@ export const meetingService = {
       data:       { meeting_id: meeting.id },
       is_read:    false,
     }).catch(() => {});
+    // Same alert by email, fire-and-forget (utils/notificationEmail.js).
+    sendNotificationEmail({
+      userId: meeting.created_by,
+      type: 'meeting_reminder',
+      title: `Meeting scheduled: ${meeting.title}`,
+      message: `${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} at ${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+    });
   },
 };

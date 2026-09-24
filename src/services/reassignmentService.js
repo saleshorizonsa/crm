@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { sendNotificationEmail } from "../utils/notificationEmail";
 
 // Reassign Records — moving a person's open work to someone else, typically
 // before they are deactivated.
@@ -269,6 +270,13 @@ export async function applyReassignment({ companyId, actor, fromUser, toUser, se
     futureOrders.moved.length && plural(futureOrders.moved.length, "future order"),
     contacts.moved.length && plural(contacts.moved.length, "contact"),
   ].filter(Boolean);
+  // Same alert by email, fire-and-forget (utils/notificationEmail.js).
+  sendNotificationEmail({
+    userId: toUser.id,
+    type: "records_reassigned",
+    title: "📋 Records Assigned to You",
+    message: `${actor.full_name} assigned you ${parts.join(", ")} previously owned by ${fromUser.full_name}.`,
+  });
   const { error: notifyError } = await supabase.from("notifications").insert({
     user_id: toUser.id,
     company_id: companyId,

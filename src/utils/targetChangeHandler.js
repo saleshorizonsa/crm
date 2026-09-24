@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { sendNotificationEmails } from './notificationEmail';
 import { fetchWinRate3m } from './winRate3m';
 
 const fmtSAR = (n) => new Intl.NumberFormat('en-SA', { maximumFractionDigits: 0 }).format(Number(n) || 0);
@@ -89,6 +90,8 @@ export async function handleTargetChange({
 
   try {
     await supabase.from('notifications').insert(notes);
+    // Same alerts by email, fire-and-forget (utils/notificationEmail.js).
+    sendNotificationEmails(notes);
   } catch (_) { /* notifications are best-effort */ }
 
   // Audit trail — best-effort; the table may not exist yet.

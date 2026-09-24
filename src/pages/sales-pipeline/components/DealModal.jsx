@@ -14,6 +14,7 @@ import ActivityTimeline from "../../../components/ActivityTimeline";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
+import { sendNotificationEmail } from "../../../utils/notificationEmail";
 import {
   currencyService,
   productService,
@@ -1177,6 +1178,13 @@ const DealModal = ({
         message: `${owner.full_name} changed deal "${dealObj.title || 'Unknown'}": ${desc}. Reason: "${reason}"`,
         is_read:    false,
         metadata:   { deal_id: dealObj.id, old_amount: oldAmount, new_amount: newAmount, reason },
+      });
+      // Same alert by email, fire-and-forget (utils/notificationEmail.js).
+      sendNotificationEmail({
+        userId: owner.reports_to,
+        type: 'deal_changed',
+        title: '✏️ Deal Modified',
+        message: `${owner.full_name} changed deal "${dealObj.title || 'Unknown'}": ${desc}. Reason: "${reason}"`,
       });
     } catch (_) { /* notifications are best-effort */ }
   };

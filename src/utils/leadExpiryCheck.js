@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { sendNotificationEmail } from './notificationEmail';
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 
@@ -52,6 +53,8 @@ async function notify({ userId, companyId, type, title, message, metadata }) {
       metadata:   metadata || null,
       is_read:    false,
     });
+    // Same alert by email, fire-and-forget (utils/notificationEmail.js).
+    sendNotificationEmail({ userId, type, title, message });
   } catch (_) { /* notifications are best-effort */ }
 }
 
