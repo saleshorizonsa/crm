@@ -126,6 +126,12 @@ const ManagerSalesTargetAssignment = ({
   const [divisions, setDivisions] = useState([]);
   const [divisionByUser, setDivisionByUser] = useState({});
   const [selectedDivision, setSelectedDivision] = useState("all");
+  // Assigning members to a division — the other half of the filter above, which
+  // could read users.sales_division_id but never set it. Scoped to this
+  // manager's own team plus himself; nothing company-wide here.
+  const [showDivisionManager, setShowDivisionManager] = useState(false);
+  const [savingDivisionFor, setSavingDivisionFor] = useState(null);
+  const [divisionError, setDivisionError] = useState("");
 
   const periodTypes = [
     { value: "weekly", label: "Weekly" },
@@ -190,7 +196,10 @@ const ManagerSalesTargetAssignment = ({
   // the team list itself.
   useEffect(() => {
     const divisionCompanyId = companyId || userProfile?.company_id;
-    if (!divisionCompanyId || subordinates.length === 0) {
+    // Loaded whenever there is a company, not only when the manager has
+    // subordinates: he can put HIMSELF in a division, and the divisions have to
+    // be listable for that even with an empty team.
+    if (!divisionCompanyId) {
       setDivisions([]);
       setDivisionByUser({});
       return;
@@ -209,7 +218,7 @@ const ManagerSalesTargetAssignment = ({
         supabase
           .from("users")
           .select("id, sales_division_id")
-          .in("id", subordinates.map((s) => s.id)),
+          .in("id", [userProfile?.id, ...subordinates.map((s) => s.id)].filter(Boolean)),
       ]);
       if (cancelled) return;
       if (divisionsError || membersError) {
@@ -225,9 +234,55 @@ const ManagerSalesTargetAssignment = ({
     return () => {
       cancelled = true;
     };
-  }, [companyId, userProfile?.company_id, subordinates]);
+  }, [companyId, userProfile?.company_id, userProfile?.id, subordinates]);
 
   const showDivisionFilter = divisions.length > 0 && !isEditing;
+
+  // Who this manager may place in a division: his own subtree (the same list the
+  // "Assign To" dropdown uses — getUserSubordinates already returns ACTIVE users
+  // only, so an inactive person never appears) plus himself. Deliberately not
+  // company-wide: assigning outside his team would be an admin concern.
+  const assignableMembers = useMemo(() => {
+    const self = userProfile?.id
+      ? [{
+          id: userProfile.id,
+          full_name: userProfile.full_name || userProfile.email,
+          email: userProfile.email,
+          role: userProfile.role,
+          isSelf: true,
+        }]
+      : [];
+    const team = (subordinates || []).filter((u) => u.is_active !== false);
+    return [...self, ...team];
+  }, [userProfile?.id, userProfile?.full_name, userProfile?.email, userProfile?.role, subordinates]);
+
+  // A person belongs to ONE division at a time: sales_division_id is a single
+  // column and groupByDivision() (utils/salesDivisionMetrics.js) buckets each
+  // user into exactly one division, everything else "Unassigned". So choosing a
+  // division replaces the previous one, and "Unassigned" clears it to null.
+  const assignDivision = async (userId, divisionId) => {
+    if (!userId) return;
+    setSavingDivisionFor(userId);
+    setDivisionError("");
+    const nextId = divisionId === "unassigned" || !divisionId ? null : divisionId;
+    try {
+      const { error: updateError } = await supabase
+        .from("users")
+        .update({ sales_division_id: nextId, updated_at: new Date().toISOString() })
+        .eq("id", userId);
+      if (updateError) throw updateError;
+      // Reflect it locally so the filter above and this list agree immediately;
+      // a reload reads the same value back from the database.
+      setDivisionByUser((prev) => ({ ...prev, [userId]: nextId }));
+    } catch (err) {
+      console.error("assignDivision:", err);
+      setDivisionError(
+        err?.message || "Could not save the division. Please try again.",
+      );
+    } finally {
+      setSavingDivisionFor(null);
+    }
+  };
 
   const visibleSubordinates = useMemo(
     () =>
@@ -665,6 +720,70 @@ const ManagerSalesTargetAssignment = ({
                 ...divisions.map((d) => ({ value: d.id, label: d.name })),
               ]}
             />
+
+            {/* The other half of the filter above: put people IN a division.
+                Manual by design — a new joiner is assigned here when they
+                arrive, nothing happens automatically. */}
+            <button
+              type="button"
+              onClick={() => setShowDivisionManager((v) => !v)}
+              className="mt-2 flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700"
+            >
+              <Icon name={showDivisionManager ? "ChevronUp" : "Users"} size={13} />
+              {showDivisionManager ? "Hide division members" : "Manage division members"}
+            </button>
+
+            {showDivisionManager && (
+              <div className="mt-2 rounded-xl border border-border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground mb-2">
+                  Your team and yourself. Each person is in one division at a time —
+                  picking a new one replaces the old.
+                </p>
+                {divisionError && (
+                  <p className="text-xs text-destructive flex items-center gap-1 mb-2">
+                    <Icon name="AlertCircle" size={12} />
+                    {divisionError}
+                  </p>
+                )}
+                {assignableMembers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {loadingSubordinates ? "Loading team…" : "No team members to assign."}
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {assignableMembers.map((member) => (
+                      <div
+                        key={member.id}
+                        className="flex items-center justify-between gap-3 bg-card rounded-lg border border-border px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <span className="text-xs font-medium text-card-foreground truncate block">
+                            {member.full_name || member.email}
+                            {member.isSelf && (
+                              <span className="ml-1 text-[10px] font-semibold text-blue-600">(you)</span>
+                            )}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {capitalize(member.role || "")}
+                          </span>
+                        </div>
+                        <div className="w-44 flex-shrink-0">
+                          <Select
+                            value={divisionByUser[member.id] || "unassigned"}
+                            onChange={(value) => assignDivision(member.id, value)}
+                            disabled={savingDivisionFor === member.id}
+                            options={[
+                              { value: "unassigned", label: "— Unassigned —" },
+                              ...divisions.map((d) => ({ value: d.id, label: d.name })),
+                            ]}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
