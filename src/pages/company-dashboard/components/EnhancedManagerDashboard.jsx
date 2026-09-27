@@ -58,6 +58,7 @@ import {
   isAnnualRange,
 } from "../../../utils/dashboardDateUtils";
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
+import { ownAllocation } from '../../../utils/selfTarget';
 import { Edit2 } from "lucide-react";
 import SalesTargetTable from "../../../components/SalesTargetTable";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
@@ -385,12 +386,18 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     );
   }, [allTasks, activeDateRange.from, activeDateRange.to]);
 
-  // Filter targets whose period overlaps with activeDateRange
+  // Filter targets whose period overlaps with activeDateRange.
+  //
+  // A target the manager set for HIMSELF (assigned_by = assigned_to) is dropped
+  // here: it is a carve-out of the allocation the Director gave him, not extra
+  // target on top, so counting both would report him against more than he was
+  // ever given. It still spends his team budget on the assignment screen, where
+  // it is counted with the targets he has handed out. See utils/selfTarget.js.
   const filteredMyTargets = useMemo(() => {
     if (!myTargets) return myTargets;
     const from = new Date(activeDateRange.from + 'T00:00:00');
     const to   = new Date(activeDateRange.to   + 'T23:59:59');
-    return myTargets.filter((target) => {
+    return ownAllocation(myTargets).filter((target) => {
       const targetStart = new Date(target.period_start);
       const targetEnd   = new Date(target.period_end);
       return targetStart <= to && targetEnd >= from;

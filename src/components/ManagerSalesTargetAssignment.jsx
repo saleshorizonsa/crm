@@ -8,6 +8,7 @@ import { salesTargetService, userService, activityService } from "../services/su
 import { useAuth } from "../contexts/AuthContext";
 import { useCurrency } from "../contexts/CurrencyContext";
 import { capitalize } from "utils/helper";
+import { ownAllocation, sumTargetAmount } from "utils/selfTarget";
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { supabase } from "../lib/supabase";
 import {
@@ -146,19 +147,17 @@ const ManagerSalesTargetAssignment = ({
   ];
 
   // Calculate available budget
+  //
+  // A target the manager set for HIMSELF lands in both lists: it is a row
+  // assigned TO him (so it arrives in managerTargets) and a row assigned BY him
+  // (so it arrives in existingTeamTargets). Counted in both it would cancel
+  // out, leaving the budget untouched by money he has already earmarked.
+  // Excluding it from the allocation side — utils/selfTarget.js — makes it
+  // behave exactly like a team member's target: it spends the budget once, and
+  // his own allocation stays whatever the Director gave him.
   const calculateAvailableBudget = () => {
-    const totalAllocated =
-      managerTargets?.reduce(
-        (sum, t) => sum + (parseFloat(t.target_amount) || 0),
-        0
-      ) || 0;
-
-    const totalAssigned =
-      existingTeamTargets?.reduce(
-        (sum, t) => sum + (parseFloat(t.target_amount) || 0),
-        0
-      ) || 0;
-
+    const totalAllocated = sumTargetAmount(ownAllocation(managerTargets));
+    const totalAssigned = sumTargetAmount(existingTeamTargets);
     return Math.max(0, totalAllocated - totalAssigned);
   };
 
@@ -293,12 +292,33 @@ const ManagerSalesTargetAssignment = ({
     }
   };
 
+  // The manager can target HIMSELF, but only once he is a division member —
+  // the same condition as anyone else in this list. Without a division he does
+  // not appear at all, so nothing changes for a manager who never uses this.
+  // (He was previously absent because loadSubordinates only ever returns his
+  // supervisors and salesmen. That was the exclusion, not a filtering bug.)
+  const selfAsAssignee = useMemo(() => {
+    if (!userProfile?.id || !divisionByUser[userProfile.id]) return null;
+    return {
+      id: userProfile.id,
+      full_name: userProfile.full_name || userProfile.email,
+      email: userProfile.email,
+      role: userProfile.role,
+      isSelf: true,
+    };
+  }, [userProfile?.id, userProfile?.full_name, userProfile?.email, userProfile?.role, divisionByUser]);
+
+  const assignableTargetPeople = useMemo(
+    () => (selfAsAssignee ? [...subordinates, selfAsAssignee] : subordinates),
+    [subordinates, selfAsAssignee],
+  );
+
   const visibleSubordinates = useMemo(
     () =>
       !showDivisionFilter || selectedDivision === "all"
-        ? subordinates
-        : subordinates.filter((u) => divisionByUser[u.id] === selectedDivision),
-    [showDivisionFilter, selectedDivision, subordinates, divisionByUser]
+        ? assignableTargetPeople
+        : assignableTargetPeople.filter((u) => divisionByUser[u.id] === selectedDivision),
+    [showDivisionFilter, selectedDivision, assignableTargetPeople, divisionByUser]
   );
 
   const divisionIsEmpty =
@@ -849,7 +869,7 @@ const ManagerSalesTargetAssignment = ({
                 value: user.id,
                 label: `${user.full_name || user.email} (${capitalize(
                   user.role
-                )})`,
+                )})${user.isSelf ? " — yourself" : ""}`,
               }))}
             />
           )}
