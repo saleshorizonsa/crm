@@ -132,6 +132,11 @@ const ManagerSalesTargetAssignment = ({
   const [showDivisionManager, setShowDivisionManager] = useState(false);
   const [savingDivisionFor, setSavingDivisionFor] = useState(null);
   const [divisionError, setDivisionError] = useState("");
+  // Picking a division stages the choice; a Save button per row writes it. The
+  // first version saved on change with no button and no confirmation, so there
+  // was no way to tell whether anything had happened.
+  const [pendingDivision, setPendingDivision] = useState({});
+  const [savedDivisionFor, setSavedDivisionFor] = useState(null);
 
   const periodTypes = [
     { value: "weekly", label: "Weekly" },
@@ -274,6 +279,10 @@ const ManagerSalesTargetAssignment = ({
       // Reflect it locally so the filter above and this list agree immediately;
       // a reload reads the same value back from the database.
       setDivisionByUser((prev) => ({ ...prev, [userId]: nextId }));
+      setPendingDivision((prev) => { const next = { ...prev }; delete next[userId]; return next; });
+      // Visible confirmation that the write landed, not just a silent change.
+      setSavedDivisionFor(userId);
+      setTimeout(() => setSavedDivisionFor((cur) => (cur === userId ? null : cur)), 2500);
     } catch (err) {
       console.error("assignDivision:", err);
       setDivisionError(
@@ -736,8 +745,8 @@ const ManagerSalesTargetAssignment = ({
             {showDivisionManager && (
               <div className="mt-2 rounded-xl border border-border bg-muted/30 p-3">
                 <p className="text-xs text-muted-foreground mb-2">
-                  Your team and yourself. Each person is in one division at a time —
-                  picking a new one replaces the old.
+                  Your team and yourself. Pick a division, then press <strong>Save</strong> on that
+                  row. Each person is in one division at a time — saving a new one replaces the old.
                 </p>
                 {divisionError && (
                   <p className="text-xs text-destructive flex items-center gap-1 mb-2">
@@ -751,35 +760,66 @@ const ManagerSalesTargetAssignment = ({
                   </p>
                 ) : (
                   <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {assignableMembers.map((member) => (
-                      <div
-                        key={member.id}
-                        className="flex items-center justify-between gap-3 bg-card rounded-lg border border-border px-3 py-2"
-                      >
-                        <div className="min-w-0">
-                          <span className="text-xs font-medium text-card-foreground truncate block">
-                            {member.full_name || member.email}
-                            {member.isSelf && (
-                              <span className="ml-1 text-[10px] font-semibold text-blue-600">(you)</span>
+                    {assignableMembers.map((member) => {
+                      const current = divisionByUser[member.id] || "unassigned";
+                      const chosen = pendingDivision[member.id] ?? current;
+                      const isDirty = chosen !== current;
+                      const isSaving = savingDivisionFor === member.id;
+                      return (
+                        <div
+                          key={member.id}
+                          className="flex items-center justify-between gap-3 bg-card rounded-lg border border-border px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <span className="text-xs font-medium text-card-foreground truncate block">
+                              {member.full_name || member.email}
+                              {member.isSelf && (
+                                <span className="ml-1 text-[10px] font-semibold text-blue-600">(you)</span>
+                              )}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {capitalize(member.role || "")}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="w-40">
+                              <Select
+                                value={chosen}
+                                onChange={(value) =>
+                                  setPendingDivision((prev) => ({
+                                    ...prev,
+                                    [member.id]: value || "unassigned",
+                                  }))
+                                }
+                                disabled={isSaving}
+                                options={[
+                                  { value: "unassigned", label: "— Unassigned —" },
+                                  ...divisions.map((d) => ({ value: d.id, label: d.name })),
+                                ]}
+                              />
+                            </div>
+                            {savedDivisionFor === member.id && !isDirty ? (
+                              <span className="w-16 text-[11px] font-semibold text-green-600 flex items-center gap-1">
+                                <Icon name="Check" size={12} /> Saved
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={!isDirty || isSaving}
+                                onClick={() => assignDivision(member.id, chosen)}
+                                className={`w-16 px-2 py-1 rounded-lg border text-[11px] font-medium ${
+                                  isDirty && !isSaving
+                                    ? "border-green-300 text-green-700 hover:bg-green-50"
+                                    : "border-border text-muted-foreground opacity-50 cursor-not-allowed"
+                                }`}
+                              >
+                                {isSaving ? "Saving…" : "Save"}
+                              </button>
                             )}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {capitalize(member.role || "")}
-                          </span>
+                          </div>
                         </div>
-                        <div className="w-44 flex-shrink-0">
-                          <Select
-                            value={divisionByUser[member.id] || "unassigned"}
-                            onChange={(value) => assignDivision(member.id, value)}
-                            disabled={savingDivisionFor === member.id}
-                            options={[
-                              { value: "unassigned", label: "— Unassigned —" },
-                              ...divisions.map((d) => ({ value: d.id, label: d.name })),
-                            ]}
-                          />
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
