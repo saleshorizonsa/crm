@@ -432,6 +432,24 @@ export function achieverIdsFrom(users) {
   return [...contributorIdsFrom(users), ...(users || []).filter(isAchievedOnly).map((u) => u.id)];
 }
 
+/**
+ * Whose monthly TARGET counts — now exactly whose Achieved counts.
+ *
+ * Achieved was widened for flagged managers first, and Target was deliberately
+ * left on roles alone. That asymmetry flattered a flagged manager: his invoiced
+ * revenue counted everywhere while the target he set himself counted almost
+ * nowhere, so his attainment read high and the company's target read low. The
+ * two scopes are one thing now, under two names so each call site still says
+ * which side of the equation it is on.
+ *
+ * A plain manager is still excluded: only CONTRIBUTOR_ROLES plus individually
+ * flagged users. And only MONTHLY rows are ever summed (fetchMonthlyTargets and
+ * every caller filter period_type = 'monthly'), so a manager's yearly
+ * allocation — 40,660,779 for the manager this was built for — can never be
+ * pulled into a monthly total.
+ */
+export const targetOwnerIdsFrom = achieverIdsFrom;
+
 /** Active flagged achieved-only users in scope (see isAchievedOnly). `ownerIds = null` = whole company. */
 export async function fetchAchievedOnlyUsers({ companyId, ownerIds = null }) {
   if (!companyId) return [];

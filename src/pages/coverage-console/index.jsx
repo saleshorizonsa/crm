@@ -331,8 +331,17 @@ export default function CoverageConsole() {
     // by_clients rows, never both, and by_products never counts. The old filter
     // kept total_value rows ONLY, which dropped anyone who recorded their month
     // as by_clients entirely.
+    //
+    // Counted over the same people as INVOICED below — contributors plus any
+    // flagged manager — so a flagged manager's own monthly target is not missing
+    // from the target his invoiced revenue is measured against. Only monthly rows
+    // are fetched, so a yearly allocation cannot enter this sum.
+    const achieverIdsForTarget = [
+      ...contributorIds,
+      ...userIds.filter((id) => isAchievedOnly((users || []).find((x) => x.id === id))),
+    ];
     const targetPer = targetPerPerson(
-      (targets || []).filter((t) => contributorIds.includes(t.assigned_to))
+      (targets || []).filter((t) => achieverIdsForTarget.includes(t.assigned_to))
     );
     const target = Object.values(targetPer).reduce((sum, v) => sum + v, 0);
 

@@ -94,12 +94,20 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   const winStart = range?.start || mb.startDate;
   const winEnd = range?.end || mb.endDate;
 
+  // Flagged achieved-only users (users.is_contributor) are resolved FIRST now,
+  // because Target uses the same scope as Achieved: a flagged manager's own
+  // monthly target counts exactly like a salesman's. Only MONTHLY rows are ever
+  // read (fetchMonthlyTargets filters period_type), so his yearly allocation
+  // cannot leak into a monthly sum.
+  const achievedOnlyUsers = await fetchAchievedOnlyUsers({ companyId, ownerIds });
+  const achievedScopeIds = [...scopeIds, ...achievedOnlyUsers.map((u) => u.id)];
+
   // 2a. Per-contributor MONTHLY targets overlapping the window. A person can hold
   //     a `total_value` (overall) target and/or `by_clients` targets — the overall
   //     value is the manager-set goal, so: use total_value when present, otherwise
   //     sum the by_clients rows (never mix the two — they're two views of one goal).
   const targetRows = await fetchMonthlyTargets({
-    companyId, contributorIds: scopeIds, start: winStart, end: winEnd,
+    companyId, contributorIds: achievedScopeIds, start: winStart, end: winEnd,
   });
   const targetPer = targetPerPerson(targetRows);
   // 2b. Annual view → prefer an explicit YEARLY target for this scope (the company
@@ -114,11 +122,9 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     });
   }
   // 3. Achieved — the one shared rule (utils/planningCalculations.js): INVOICED won
-  //    deals by invoice_date in the window, final value. Scope = the contributors
-  //    PLUS any flagged achieved-only user (users.is_contributor, e.g. a manager who
-  //    sells himself). Only Achieved widens; every other block here stays on scopeIds.
-  const achievedOnlyUsers = await fetchAchievedOnlyUsers({ companyId, ownerIds });
-  const achievedScopeIds = [...scopeIds, ...achievedOnlyUsers.map((u) => u.id)];
+  //    deals by invoice_date in the window, final value, over the same scope as
+  //    Target above. Win Rate, Planned and Carry-In still stay on scopeIds: those
+  //    measure a quota-carrying contributor's pipeline discipline.
   const { perPerson: achievedPer, count: wonDealCount } = await fetchAchieved({
     companyId,
     contributorIds: achievedScopeIds,
@@ -286,12 +292,19 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     // A flagged achieved-only user gets a row too, so the rows still add up to the
     // Achieved total. It carries Achieved only: no quota, and Win Rate / Planned
     // are not measured for him (null win rate, shown as "—").
-    .concat(achievedOnlyUsers.map((u) => ({
-      id: u.id, full_name: u.full_name, role: u.role, achievedOnly: true,
-      target: 0, achieved: achievedPer[u.id] || 0, deficit: 0,
-      winRate3m: null, winRateIsDefault: false,
-      planned: 0, required: 0, requiredRaw: 0, futureCarryover: 0, plannedGap: 0,
-    })))
+    // A flagged user's row now carries Target and Deficit as well as Achieved —
+    // the whole point of this parity pass. Win Rate and Planned Gap stay blank
+    // for him ("—"), since those remain contributor-only measures.
+    .concat(achievedOnlyUsers.map((u) => {
+      const target = targetPer[u.id] || 0;
+      const achieved = achievedPer[u.id] || 0;
+      return {
+        id: u.id, full_name: u.full_name, role: u.role, achievedOnly: true,
+        target, achieved, deficit: Math.max(0, target - achieved),
+        winRate3m: null, winRateIsDefault: false,
+        planned: 0, required: 0, requiredRaw: 0, futureCarryover: 0, plannedGap: 0,
+      };
+    }))
     .sort((a, b) => b.target - a.target || b.achieved - a.achieved);
 
   // Totals across the whole scope. Annual view uses the company yearly target.

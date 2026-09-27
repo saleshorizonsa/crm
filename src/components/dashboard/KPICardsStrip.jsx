@@ -133,9 +133,10 @@ const POPUP_TITLES = {
 
 // Per-salesman breakdown table shown inside every popup. The active metric column
 // is emphasised.
-// A flagged achieved-only row (a manager who sells himself, kpiStripData) carries
-// Achieved and nothing else: he has no quota, and Win Rate / Planned are not
-// measured for him. Those cells read "—" rather than a misleading 0 or ✓.
+// A flagged row (a manager who sells himself, kpiStripData) now carries Target,
+// Achieved and Deficit like anyone else — his own monthly target counts since the
+// Target scope was widened to match Achieved. Win Rate and Planned Gap stay
+// unmeasured for him and read "—" rather than a misleading 0 or ✓.
 const NA = '—';
 
 function SalesmanTable({ rows, active, canDrill, onRowClick }) {
@@ -178,9 +179,9 @@ function SalesmanTable({ rows, active, canDrill, onRowClick }) {
                   <span className="truncate text-foreground font-medium max-w-[9rem]">{s.full_name}</span>
                 </div>
               </td>
-              {cell('target', s.achievedOnly ? NA : `${fmtSAR(s.target)}`)}
+              {cell('target', `${fmtSAR(s.target)}`)}
               {cell('achieved', `${fmtSAR(s.achieved)}`)}
-              {cell('deficit', s.achievedOnly ? NA : s.deficit <= 0 ? '✓' : fmtSAR(s.deficit))}
+              {cell('deficit', s.deficit <= 0 ? '✓' : fmtSAR(s.deficit))}
               {cell('winRate', s.achievedOnly ? NA : `${s.winRate3m.toFixed(0)}%`)}
               {cell('plannedGap', s.achievedOnly ? NA : s.plannedGap <= 0 ? '✓' : fmtSAR(s.plannedGap))}
               {canDrill && (
@@ -267,9 +268,9 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-4">
         {salesman.achievedOnly ? (
           <>
-            {stat('Target', NA, 'text-muted-foreground')}
+            {stat('Target', fmtSAR(salesman.target), 'text-foreground')}
             {stat('Achieved', fmtSAR(salesman.achieved), 'text-green-600')}
-            {stat('Deficit', NA, 'text-muted-foreground')}
+            {stat('Deficit', salesman.deficit <= 0 ? '✓' : fmtSAR(salesman.deficit), salesman.deficit <= 0 ? 'text-green-600' : 'text-red-600')}
             {stat('Win%', NA, 'text-muted-foreground')}
             {stat('Gap', NA, 'text-muted-foreground')}
           </>

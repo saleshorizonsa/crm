@@ -27,7 +27,6 @@ import SalesTargetAssignment from "../../../components/SalesTargetAssignment";
 import DirectorSalesTargetAssignment from "../../../components/DirectorSalesTargetAssignment";
 import SalesTargetTable from "../../../components/SalesTargetTable";
 import {
-  CONTRIBUTOR_ROLES,
   targetPerPerson,
   computeAchieved,
   achievedAmount,
@@ -419,6 +418,14 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   // (utils/planningCalculations.js achieverIdsFrom: active salesmen + supervisors,
   // plus any manager flagged is_contributor), narrowed to the drilled-in employee
   // when there is one.
+  // Whose monthly target counts on this screen — the same set as Achieved, so a
+  // flagged manager's own target is not missing from the company total his
+  // revenue is measured against.
+  const countableTargetOwnerIds = useMemo(
+    () => new Set(achieverIdsFrom(allEmployees)),
+    [allEmployees],
+  );
+
   const achievedContributorIds = useMemo(() => {
     const ids = achieverIdsFrom(allEmployees);
     return selectedEmployee?.id ? ids.filter((id) => id === selectedEmployee.id) : ids;
@@ -1462,7 +1469,10 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           const activeTargets = targets.filter((target) => {
             if ((target.period_type || "monthly") !== "monthly") return false;
             if ((target.status || "active") !== "active") return false;
-            if (!CONTRIBUTOR_ROLES.includes(target.assignee?.role)) return false;
+            // Contributors, plus any flagged manager who sells himself — the
+            // same people whose invoiced revenue counts. allEmployees carries
+            // is_contributor; the embedded assignee row does not.
+            if (!countableTargetOwnerIds.has(target.assigned_to)) return false;
             const start = new Date(target.period_start);
             const end = new Date(target.period_end);
             return start <= now && end >= now;
@@ -1788,10 +1798,13 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               const roleById = new Map(
                 (users || []).map((u) => [u.id, u.role]),
               );
+              // Same widening as the card above: contributors plus flagged
+              // managers. `users` here comes from getCompanyUsers, which selects
+              // is_contributor, so achieverIdsFrom can see the flag.
+              const countableIds = new Set(achieverIdsFrom(users || []));
               const countableTargets = filteredTargets.filter((t) => {
                 if ((t.status || "active") !== "active") return false;
-                const r = roleById.get(t.assigned_to) || t.assignee?.role;
-                return CONTRIBUTOR_ROLES.includes(r);
+                return countableIds.has(t.assigned_to);
               });
               totalTargetAmount = Object.values(
                 targetPerPerson(countableTargets),

@@ -13,7 +13,7 @@ import {
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
-import { computeAchieved, achievedAmount } from "../../../utils/planningCalculations";
+import { computeAchieved, achievedAmount, achieverIdsFrom } from "../../../utils/planningCalculations";
 
 const PerformanceBarChart = ({
   dealsData = [],
@@ -36,11 +36,15 @@ const PerformanceBarChart = ({
   const [showBreakdown, setShowBreakdown] = useState(true);
 
   // Active salesmen only (matches the totalSalesmen prop derivation)
+  // Everyone whose revenue is counted in the totals above gets a row here:
+  // salesmen, supervisors, and any flagged manager. It used to list salesmen
+  // only, so supervisors — who carry targets and close deals — were missing
+  // from the breakdown while their revenue sat in the total.
   const salesmenList = useMemo(
-    () =>
-      (employees || []).filter(
-        (e) => e.role === "salesman" && e.is_active !== false,
-      ),
+    () => {
+      const countable = new Set(achieverIdsFrom(employees || []));
+      return (employees || []).filter((e) => countable.has(e.id));
+    },
     [employees],
   );
 

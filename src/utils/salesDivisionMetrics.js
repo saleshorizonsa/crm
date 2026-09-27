@@ -167,9 +167,18 @@ export function calcDivisionMetrics(userIds, data) {
     .filter((u) => scope.has(u.id) && CONTRIBUTOR_ROLES.includes(u.role))
     .map((u) => u.id);
   const isContributor = new Set(contributorIds);
+  // Target counts over the same people as Achieved below: contributors plus any
+  // flagged manager who sells himself. Without this a division carried by a
+  // flagged manager — Export, in the case this was built for — showed Achieved
+  // against a target of 0. Only monthly rows reach here (the page's query filters
+  // period_type), so a manager's yearly allocation cannot appear.
+  const isAchiever = new Set([
+    ...contributorIds,
+    ...(users || []).filter((u) => scope.has(u.id) && isAchievedOnly(u)).map((u) => u.id),
+  ]);
 
   const target = Object.values(
-    targetPerPerson((targets || []).filter((t) => isContributor.has(t.assigned_to))),
+    targetPerPerson((targets || []).filter((t) => isAchiever.has(t.assigned_to))),
   ).reduce((sum, v) => sum + v, 0);
 
   // A group with no deals in the window borrows the company contributors' rate,
@@ -183,12 +192,6 @@ export function calcDivisionMetrics(userIds, data) {
     ? winRateFromDeals({ deals: deals3m, ownerIds: companyContributorIds }).winRatePct
     : mine.winRatePct;
 
-  // Achieved alone also counts a flagged manager (users.is_contributor) in scope,
-  // the same scope as utils/planningCalculations.js achieverIdsFrom.
-  const isAchiever = new Set([
-    ...contributorIds,
-    ...(users || []).filter((u) => scope.has(u.id) && isAchievedOnly(u)).map((u) => u.id),
-  ]);
   const achieved = (deals || [])
     .filter(
       (d) =>
