@@ -1,6 +1,13 @@
 -- ============================================================================
--- DRAFT — NOT APPLIED. Stage 2 of the users-RLS work, for review before Stage 3
--- (apply on preview, test five roles, then explicit sign-off before production).
+-- APPLIED to production 2026-09-27 (migration `enable_users_rls`), after a
+-- rolled-back dry run of this exact text plus a 14-probe-per-role sweep over
+-- admin, director, manager, supervisor, salesman, viewer and anon. The live
+-- results matched the dry run cell for cell; see the ONE AMENDMENT note below.
+--
+-- Rollback, if a role turns out to be locked out:
+--   alter table public.users disable row level security;
+-- (the policies can stay in place while disabled — they are inert, which is
+--  exactly the state this migration exists to leave behind.)
 --
 -- Problem: public.users has RLS DISABLED. The two "Admins and directors ..."
 -- policies are inert, so any authenticated user can read or write any column on
@@ -85,6 +92,14 @@ grant execute on function public.current_user_role() to authenticated, anon, ser
 -- The comparison is made on the whole row as jsonb minus the columns a manager
 -- may move, so a column added to users later is protected automatically instead
 -- of being forgotten here.
+--
+-- ONE AMENDMENT to the reviewed draft, made during the dry run: full_name is
+-- also allowed, but ONLY on the caller's own row. /account-settings is linked
+-- in the header user menu for every role and saves users.full_name for the
+-- signed-in user (AccountSettings.jsx handleSave -> updateUserProfile). Without
+-- this, that page would raise 42501 for manager, supervisor, salesman and
+-- viewer. Someone else's row (downline only, per the policy) stays
+-- sales_division_id and nothing else — proved by the downName probe.
 create or replace function public.enforce_users_column_scope()
 returns trigger
 language plpgsql
@@ -105,13 +120,23 @@ begin
     return new;                       -- full write, exactly as today
   end if;
 
-  -- Everyone else may change sales_division_id (and the updated_at stamp that
-  -- goes with it) and nothing else.
-  if (to_jsonb(new) - 'sales_division_id' - 'updated_at')
-     is distinct from
-     (to_jsonb(old) - 'sales_division_id' - 'updated_at') then
-    raise exception 'Only an administrator or director can change a user''s details.'
-      using errcode = 'insufficient_privilege';
+  if new.id = caller_id then
+    -- Own row: Account Settings (linked in the header for every role) saves
+    -- full_name; sales_division_id is the manager self-service carve-out.
+    if (to_jsonb(new) - 'sales_division_id' - 'full_name' - 'updated_at')
+       is distinct from
+       (to_jsonb(old) - 'sales_division_id' - 'full_name' - 'updated_at') then
+      raise exception 'Only an administrator or director can change a user''s details.'
+        using errcode = 'insufficient_privilege';
+    end if;
+  else
+    -- Someone else's row (downline only, per the policy): division and nothing else.
+    if (to_jsonb(new) - 'sales_division_id' - 'updated_at')
+       is distinct from
+       (to_jsonb(old) - 'sales_division_id' - 'updated_at') then
+      raise exception 'Only an administrator or director can change a user''s details.'
+        using errcode = 'insufficient_privilege';
+    end if;
   end if;
 
   return new;
@@ -178,7 +203,12 @@ create policy "users_update_own_division"
   );
 
 -- No DELETE policy: deleting a user stays a service-role action (the delete-user
--- edge function), as it is today.
+-- edge function), as it is today. Consequence, measured: the Delete User button
+-- on the legacy /user-management page (no role guard, no nav link, the only
+-- caller of userService.deleteUser) now affects 0 rows and reports no error, so
+-- it silently does nothing. Today that same button lets ANY signed-in user
+-- delete ANY user row, so this is a net improvement; fixing the page properly
+-- means routing it through the service-role edge function.
 
 alter table public.users enable row level security;
 
