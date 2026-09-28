@@ -321,7 +321,10 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   const winRateIsDefault = total3 === 0;
   const winRate3m = companyWinRate3m;
   const planned = Object.values(plannedPer).reduce((s, v) => s + v, 0);
-  const requiredRaw = computeRequiredRaw({ target, winRatePct: winRate3m });
+  // Over the scope's own deficit, matching the per-salesman rows above. Missing
+  // this left the strip's headline card demanding pipeline (952,885.34 for
+  // JASCO PVC in September 2026) while every row beneath it read 0.00.
+  const requiredRaw = computeRequiredRaw({ target: deficit, winRatePct: winRate3m });
   const futureCarryover = carryInTotal;
   const { required, plannedGap } = computePlannedGap({
     requiredRaw, carryIn: futureCarryover, planned,
