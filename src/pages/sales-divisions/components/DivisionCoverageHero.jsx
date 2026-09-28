@@ -135,16 +135,10 @@ export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
     // exists for months that have rows, so target-derived rows are dropped.
     ...(metrics.isAllTime
       ? []
-      : [[
-        "Target",
-        SAR(metrics.target) + " SAR",
-        metrics.annualOnlyAchievers?.length
-          ? `excludes ${metrics.annualOnlyAchievers.map((u) => u.full_name).join(", ")} — measured annually`
-          : "",
-      ]]),
+      : [["Target", SAR(metrics.target) + " SAR", ""]]),
     [
       "Achieved",
-      SAR(metrics.achievedCounted) + " SAR",
+      SAR(metrics.achieved) + " SAR",
       metrics.isAllTime
         ? "all time"
         : metrics.pace !== null
@@ -152,15 +146,6 @@ export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
           : "selected period",
       "pos",
     ],
-    // Real revenue, shown rather than hidden — it simply cannot be measured
-    // against a target that excludes the person who booked it.
-    ...(metrics.achievedAnnualOnly > 0
-      ? [[
-        "… also invoiced",
-        SAR(metrics.achievedAnnualOnly) + " SAR",
-        `${metrics.annualOnlyAchievers.map((u) => u.full_name).join(", ")} · annual target, not counted above`,
-      ]]
-      : []),
     ...(metrics.isAllTime
       ? []
       : [["Gap to target", SAR(metrics.deficit) + " SAR", "", "neg"]]),

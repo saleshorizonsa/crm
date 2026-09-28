@@ -95,7 +95,7 @@ const PlanningPage = () => {
   const [summaryData, setSummaryData] = useState({
     target: 0,
     achieved: 0,
-    achievedCounted: 0, achievedAnnualOnly: 0, annualOnlyAchievers: [], attainmentPct: null,
+    attainmentPct: null,
     remainingTarget: 0,
     winRate3m: 0,
     winRateIsDefault: false,
@@ -275,7 +275,7 @@ const PlanningPage = () => {
 
   const emptySummary = {
     target: 0, achieved: 0, remainingTarget: 0,
-    achievedCounted: 0, achievedAnnualOnly: 0, annualOnlyAchievers: [], attainmentPct: null,
+    attainmentPct: null,
     winRate3m: 0, winRateIsDefault: false, requiredPlan: 0,
     plannedOpen: 0, openFunnel: 0, availableCoverage: 0,
     coveragePct: null, plannedGap: 0, hasTargetRows: false,
@@ -358,9 +358,6 @@ const PlanningPage = () => {
       setSummaryData({
         target: sum.target,
         achieved: sum.achieved,
-        achievedCounted: sum.achievedCounted,
-        achievedAnnualOnly: sum.achievedAnnualOnly,
-        annualOnlyAchievers: sum.annualOnlyAchievers,
         attainmentPct: sum.attainmentPct,
         remainingTarget: sum.remainingTarget,
         winRate3m: sum.winRatePct,
@@ -620,32 +617,16 @@ const PlanningPage = () => {
             )}
             {/* Remaining Target is the input to Required Plan, so show the
                 subtraction rather than leaving the manager to guess it. */}
-            {/* A manager measured ANNUALLY holds no monthly target row, so he
-                cannot be inside this figure — but his invoiced revenue is real
-                and is shown below. Saying so beats a silent exclusion. */}
-            {!summaryLoading && summaryData.annualOnlyAchievers?.length > 0 && (
-              <p className="text-xs text-amber-700 mt-1">
-                Excludes {summaryData.annualOnlyAchievers.map((u) => u.full_name).join(", ")}
-                {" — measured annually"}
-              </p>
-            )}
             {!summaryLoading && summaryData.target > 0 && (
               <div className="mt-2 pt-2 border-t border-border">
                 <p className="text-xs text-green-600">
-                  Achieved: <span className="tabular-nums">{fmtSAR(summaryData.achievedCounted)} SAR</span>
+                  Achieved: <span className="tabular-nums">{fmtSAR(summaryData.achieved)} SAR</span>
                   {summaryData.attainmentPct !== null && (
                     <span className="text-muted-foreground">
                       {" "}({summaryData.attainmentPct.toFixed(0)}% of target)
                     </span>
                   )}
                 </p>
-                {summaryData.achievedAnnualOnly > 0 && (
-                  <p className="text-xs text-amber-700 mt-0.5">
-                    + {fmtSAR(summaryData.achievedAnnualOnly)} SAR invoiced by{" "}
-                    {summaryData.annualOnlyAchievers.map((u) => u.full_name).join(", ")}
-                    {" (annual target, not counted above)"}
-                  </p>
-                )}
                 {/* "Gap to target" app-wide for target − achieved; "Remaining"
                     was a third name for the same thing the KPI strip calls
                     Deficit. */}

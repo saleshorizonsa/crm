@@ -9,8 +9,6 @@ import {
   fetchAchieved,
   fetchContributors,
   fetchAchievedOnlyUsers,
-  fetchAnnualOnlyAchievers,
-  splitAchievedByMeasurement,
   wonNotInvoicedList,
   summarizeWonNotInvoiced,
 } from 'utils/planningCalculations';
@@ -26,7 +24,6 @@ const EMPTY_WON_NOT_INVOICED = { count: 0, total: 0, staleCount: 0, staleValue: 
 
 const EMPTY_TOTALS = {
   target: 0, achieved: 0, deficit: 0,
-  achievedCounted: 0, achievedAnnualOnly: 0, annualOnlyAchievers: [],
   winRate3m: 0, winRateIsDefault: true,
   planned: 0, required: 0, requiredRaw: 0, futureCarryover: 0, plannedGap: 0,
   wonNotInvoiced: EMPTY_WON_NOT_INVOICED,
@@ -331,21 +328,11 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     ? (annualTargetTotal || 0)
     : Object.values(targetPer).reduce((s, v) => s + v, 0);
   const achieved = Object.values(achievedPer).reduce((s, v) => s + v, 0);
-  // A flagged manager measured ANNUALLY has no monthly target row, so he adds to
-  // Achieved and nothing to Target. His revenue is still in `achieved`; it just
-  // no longer drives the deficit, the required pipeline or the attainment shown
-  // against a target that excludes him. Identified by shape, not by name.
-  const annualOnlyAchievers = range?.isAnnual
-    ? []
-    : await fetchAnnualOnlyAchievers({
-      companyId, scopeIds: achievedScopeIds, start: winStart, end: winEnd,
-    });
-  const achievedSplit = splitAchievedByMeasurement({
-    perPerson: achievedPer, annualOnlyIds: annualOnlyAchievers.map((u) => u.id),
-  });
-  const achievedCounted = achievedSplit.counted;
-  const achievedAnnualOnly = achievedSplit.annualOnly;
-  const deficit = Math.max(0, target - achievedCounted);
+  // Everyone in scope counts in full, including a contributor-flagged manager
+  // whose only target row is yearly: his revenue is in `achieved` and his
+  // yearly allocation is never spread into the monthly Target, so attainment
+  // can exceed 100% (business decision, 2026-09-28).
+  const deficit = Math.max(0, target - achieved);
   // Scope total win rate = company/team 3-month average (already computed above).
   const winRateIsDefault = total3 === 0;
   const winRate3m = companyWinRate3m;
@@ -360,12 +347,11 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   const futureCarryover = carryInTotal;
   const required = requiredRaw;
   const plannedGap = Math.max(0, requiredRaw - (planned + monthFunnelTotal));
-  // Like-for-like: the people this month's target actually covers.
-  const attainmentPct = target > 0 ? (achievedCounted / target) * 100 : 0;
+  const attainmentPct = target > 0 ? (achieved / target) * 100 : 0;
 
   // Coverage check: Achieved + (Funnel × WinRate) + (Planning × WinRate) ≥ Target.
   const wrFrac = winRate3m / 100;
-  const coverageValue = achievedCounted + funnelValue * wrFrac + planned * wrFrac;
+  const coverageValue = achieved + funnelValue * wrFrac + planned * wrFrac;
   const coverageHealthy = target > 0 ? coverageValue >= target : true;
   const coveragePct = target > 0 ? (coverageValue / target) * 100 : 100;
 
@@ -379,8 +365,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   const isHealthy = coverageHealthy && pacingHealthy;
 
   const totals = {
-    target, achieved, achievedCounted, achievedAnnualOnly, annualOnlyAchievers,
-    deficit, winRate3m, winRateIsDefault,
+    target, achieved, deficit, winRate3m, winRateIsDefault,
     planned, monthFunnel: monthFunnelTotal, required, requiredRaw, futureCarryover, plannedGap,
     attainmentPct, funnelValue,
     coverageValue, coverageHealthy, coveragePct,

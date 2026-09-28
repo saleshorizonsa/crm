@@ -29,8 +29,6 @@ import {
   computeRequiredRaw,
   fetchAchieved,
   fetchAchievedOnlyUsers,
-  fetchAnnualOnlyAchievers,
-  splitAchievedByMeasurement,
 } from './planningCalculations';
 
 /**
@@ -200,7 +198,6 @@ export async function computePlanningPageSummary({
 }) {
   const empty = {
     target: 0, achieved: 0, remainingTarget: 0,
-    achievedCounted: 0, achievedAnnualOnly: 0, annualOnlyAchievers: [],
     attainmentPct: null,
     winRatePct: 0, winRateIsDefault: true,
     requiredPlan: 0,
@@ -231,22 +228,16 @@ export async function computePlanningPageSummary({
   const target = Object.values(targetPerPerson(targetRows)).reduce((s, v) => s + v, 0);
 
   // ── Achieved: the one strict definition — won AND invoiced, by invoice_date.
-  const { total: achieved, perPerson: achievedPer } = await fetchAchieved({
+  const { total: achieved } = await fetchAchieved({
     companyId, contributorIds: scopeIds, start, end,
   });
 
-  // A flagged manager measured ANNUALLY holds no monthly target row, so he adds
-  // to Achieved while adding nothing to Target. Counting his revenue against a
-  // target that excludes him made JASCO PVC read 101.3% in September 2026 when
-  // the people who actually carry September targets were at 31.8% — and, because
-  // the pipeline requirement derives from target − achieved, it cancelled the
-  // company's entire requirement to 0.00. His revenue is still reported (below,
-  // and in `achieved`), it just no longer drives figures whose target excludes him.
-  const annualOnly = await fetchAnnualOnlyAchievers({ companyId, scopeIds, start, end });
-  const annualOnlyIds = annualOnly.map((u) => u.id);
-  const split = splitAchievedByMeasurement({ perPerson: achievedPer, annualOnlyIds });
-
-  const remainingTarget = Math.max(0, target - split.counted);
+  // Every contributor-flagged person in scope counts here in full, including a
+  // manager whose only target row is yearly. His invoiced revenue lands in
+  // Achieved while his yearly allocation is never spread into the monthly
+  // Target, so attainment can read above 100% — an accepted consequence of
+  // measuring him like any other flagged manager (business decision, 2026-09-28).
+  const remainingTarget = Math.max(0, target - achieved);
 
   const { winRatePct, isDefault } = await computeWinRate({
     companyId, ownerIds, withFallback: true,
@@ -274,11 +265,8 @@ export async function computePlanningPageSummary({
 
   return {
     target,
-    achieved,                       // everything invoiced in scope — unchanged
-    achievedCounted: split.counted, // measured against this month's target
-    achievedAnnualOnly: split.annualOnly,
-    annualOnlyAchievers: annualOnly, // [{ id, full_name }] for the label
-    attainmentPct: target > 0 ? (split.counted / target) * 100 : null,
+    achieved,
+    attainmentPct: target > 0 ? (achieved / target) * 100 : null,
     remainingTarget,
     winRatePct, winRateIsDefault: isDefault,
     requiredPlan,

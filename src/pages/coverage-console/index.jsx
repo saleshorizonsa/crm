@@ -16,7 +16,6 @@ import {
 import {
   CONTRIBUTOR_ROLES,
   isAchievedOnly,
-  annualOnlyAchieversFrom,
   targetPerPerson,
   winRateFromDeals,
   sumPlannedByOwner,
@@ -175,10 +174,7 @@ export default function CoverageConsole() {
           )
           .eq("company_id", company.id)
           .eq("status", "active")
-          // Yearly rows are fetched too — NOT to be summed (calcMetrics filters
-          // to monthly before targetPerPerson), but so a manager measured
-          // annually can be identified and labelled rather than silently
-          // inflating Achieved against a target that excludes him.
+          .eq("period_type", "monthly")
           .lte("period_start", monthEnd)
           .gte("period_end", monthStart),
 
@@ -434,24 +430,6 @@ export default function CoverageConsole() {
       0
     );
 
-    // A flagged manager measured ANNUALLY holds no monthly target row, so he
-    // adds to Achieved and nothing to Target. His revenue stays in `invoiced`
-    // and is shown on its own line; it no longer drives the gap to target, the
-    // required pipeline or the attainment measured against a target that
-    // excludes him. Identified by shape, never by name.
-    const annualOnlyAchievers = annualOnlyAchieversFrom({
-      users,
-      targets,
-      scopeIds: achieverIds,
-      start: monthStart,
-      end: monthEnd,
-    });
-    const annualOnlyIds = new Set(annualOnlyAchievers.map((u) => u.id));
-    const invoicedAnnualOnly = invoicedDeals
-      .filter((d) => annualOnlyIds.has(d.owner_id))
-      .reduce((sum, d) => sum + (d.final_amount || d.amount || 0), 0);
-    const invoicedCounted = invoiced - invoicedAnnualOnly;
-
     // ── FUNNEL ──
     const openDeals = (deals || []).filter(
       (d) =>
@@ -502,7 +480,7 @@ export default function CoverageConsole() {
     // 1,499,724.53 against a 1,481,075.00 target - the month was made - and this
     // still demanded 952,885.34 of fresh pipeline, while Planning correctly read
     // 0.00. Same basis as planningPageSummary.js now.
-    const remainingTarget = Math.max(0, target - invoicedCounted);
+    const remainingTarget = Math.max(0, target - invoiced);
     const requiredPlan = computeRequiredRaw({ target: remainingTarget, winRatePct });
 
     // ── CARRY-IN ── next month's committed orders. Shown for visibility only:
@@ -525,9 +503,6 @@ export default function CoverageConsole() {
     return {
       target,
       invoiced,
-      invoicedCounted,
-      invoicedAnnualOnly,
-      annualOnlyAchievers,
       remainingTarget,
       funnel,
       weightedFunnel,
@@ -549,9 +524,9 @@ export default function CoverageConsole() {
       // says nothing about a finished quarter. null, not a substitute figure —
       // the rails and the row status check for it and hide rather than guess.
       pacingOk: isCurrentMonth
-        ? invoicedCounted / Math.max(target, 1) >= elapsed - 0.15
+        ? invoiced / Math.max(target, 1) >= elapsed - 0.15
         : null,
-      pace: isCurrentMonth ? invoicedCounted / Math.max(target, 1) : null,
+      pace: isCurrentMonth ? invoiced / Math.max(target, 1) : null,
       elapsed: isCurrentMonth ? elapsed : null,
       totalDays: isCurrentMonth ? totalDays : null,
       dayOfMonth: isCurrentMonth ? now.getDate() : null,
@@ -1196,18 +1171,10 @@ export default function CoverageConsole() {
                   // for that range rather than shown as a false ratio.
                   ...(isAllTime
                     ? []
-                    : [[
-                      "Target",
-                      SAR(metrics.target) + " SAR",
-                      metrics.annualOnlyAchievers?.length
-                        ? `excludes ${metrics.annualOnlyAchievers
-                          .map((u) => u.full_name)
-                          .join(", ")} — measured annually`
-                        : "",
-                    ]]),
+                    : [["Target", SAR(metrics.target) + " SAR", ""]]),
                   [
                     "Achieved",
-                    SAR(metrics.invoicedCounted) + " SAR",
+                    SAR(metrics.invoiced) + " SAR",
                     isAllTime
                       ? "all time"
                       : metrics.pace !== null
@@ -1215,17 +1182,6 @@ export default function CoverageConsole() {
                         : periodLabel,
                     "pos",
                   ],
-                  // Real revenue, shown rather than hidden — it just cannot be
-                  // measured against a target that excludes who booked it.
-                  ...(metrics.invoicedAnnualOnly > 0
-                    ? [[
-                      "… also invoiced",
-                      SAR(metrics.invoicedAnnualOnly) + " SAR",
-                      `${metrics.annualOnlyAchievers
-                        .map((u) => u.full_name)
-                        .join(", ")} · annual target, not counted above`,
-                    ]]
-                    : []),
                   ...(isAllTime
                     ? []
                     : [[

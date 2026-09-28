@@ -247,6 +247,7 @@ export default function SalesDivisions() {
             )
             .eq("company_id", company.id)
             .eq("status", "active")
+            .eq("period_type", "monthly")
             .lte("period_start", monthEnd)
             .gte("period_end", monthStart),
           supabase
