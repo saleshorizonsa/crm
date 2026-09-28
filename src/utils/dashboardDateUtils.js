@@ -123,6 +123,40 @@ export function isAnnualRange(from, to) {
 /**
  * Five plain-English quick-select date ranges for dashboard buttons.
  */
+/**
+ * Is this range exactly the CURRENT month, still in progress?
+ *
+ * Three things are only meaningful for that range and are hidden otherwise:
+ * the pacing verdict (it divides by the day of the month), the Future carry-in
+ * line (it means "what is visible for next month", forward-looking), and the
+ * Coverage Console's combined row status (half of which is pacing). For a past,
+ * future or multi-month range no verdict is more honest than a misleading one.
+ */
+export function isCurrentMonthRange(from, to) {
+  if (!from || !to) return false;
+  const n = new Date();
+  const start = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-01`;
+  const end = new Date(n.getFullYear(), n.getMonth() + 1, 0);
+  const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+  return from === start && to === endStr;
+}
+
+/**
+ * "All Time" (2025-01-01 .. today) as getQuickRanges builds it.
+ *
+ * Targets are only ever recorded per month, and the earliest rows in this
+ * database are 2026, so an all-time TARGET is the same 2026 sum while Achieved
+ * spans everything — a ratio between two different spans. Target-derived
+ * figures are suppressed for this range rather than shown as a false
+ * comparison; Achieved and the funnel are still real and still shown.
+ */
+export function isAllTimeRange(from, to) {
+  if (!from || !to) return false;
+  const n = new Date();
+  const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  return from === '2025-01-01' && to >= today;
+}
+
 export function getQuickRanges() {
   const now   = new Date();
   const year  = now.getFullYear();

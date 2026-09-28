@@ -3,6 +3,13 @@ import { supabase } from "lib/supabase";
 import { useAuth } from "contexts/AuthContext";
 import Header from "components/ui/Header";
 import { monthBounds, nextMonthBounds } from "utils/planningCalculations";
+import QuickDateSelector from "components/QuickDateSelector";
+import { useDateRange } from "contexts/DateRangeContext";
+import {
+  periodLabelFromRange,
+  isCurrentMonthRange,
+  isAllTimeRange,
+} from "utils/dashboardDateUtils";
 import {
   UNASSIGNED,
   scopeUserIds,
@@ -178,6 +185,15 @@ export default function SalesDivisions() {
   const role = userProfile?.role;
 
   const [nav, setNav] = useState(INIT_NAV);
+  // Selected period, shared with Planning, the dashboards and the Console.
+  const { dateRange, setRange } = useDateRange();
+  const defMonth = monthBounds(new Date());
+  const rangeStart = dateRange?.from || defMonth.startDate;
+  const rangeEnd = dateRange?.to || defMonth.endDate;
+  const periodLabel = periodLabelFromRange(rangeStart, rangeEnd);
+  const isCurrentMonth = isCurrentMonthRange(rangeStart, rangeEnd);
+  const isAllTime = isAllTimeRange(rangeStart, rangeEnd);
+
   const [raw, setRaw] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -197,7 +213,12 @@ export default function SalesDivisions() {
     setDivisionsNote("");
     try {
       const now = new Date();
-      const { startDate: monthStart, endDate: monthEnd } = monthBounds(now);
+      // The SELECTED period, shared with Planning, the dashboards and the
+      // Coverage Console. This page used to hard-wire monthBounds(now).
+      const monthStart = rangeStart;
+      const monthEnd = rangeEnd;
+      // Carry-in stays relative to TODAY: it is a live forward-looking figure,
+      // and it is hidden outside the current month anyway.
       const nextMonth = nextMonthBounds(now);
 
       const [usersRes, divisionsRes, dealsRes, targetsRes, deals3mRes, oppsRes, futureRes, flagsRes, escalationsRes] =
@@ -284,6 +305,8 @@ export default function SalesDivisions() {
         monthStart,
         monthEnd,
         now,
+        isCurrentMonth,
+        isAllTime,
       });
     } catch (e) {
       console.error("Sales Divisions load failed:", e);
@@ -291,7 +314,7 @@ export default function SalesDivisions() {
     } finally {
       setLoading(false);
     }
-  }, [company?.id]);
+  }, [company?.id, rangeStart, rangeEnd, isCurrentMonth, isAllTime]);
 
   useEffect(() => {
     if (!company?.id) return;
@@ -612,17 +635,14 @@ export default function SalesDivisions() {
             </div>
             <div className="min-w-0">
               <span className="text-sm font-semibold text-gray-900">Insights</span>
-              {/* Insights always measures the CURRENT month and has no period
-                  control — see the same chip on the Coverage Console. */}
-              <span
-                className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 align-middle"
-                title="Insights always shows the current month. It does not follow the period selected on the dashboards or on Planning."
-              >
-                This month only —{" "}
-                {raw.now.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
-                <span className="text-amber-600 font-normal">
-                  {" · "}day {metrics.dayOfMonth} of {metrics.totalDays}
-                </span>
+              {/* The selected period, shared with Planning, the dashboards and
+                  the Coverage Console. Replaces the "This month only" chip now
+                  that the page follows the selector. */}
+              <span className="text-xs text-gray-500 ml-2 font-mono">
+                {periodLabel}
+                {isCurrentMonth && metrics.dayOfMonth
+                  ? ` · day ${metrics.dayOfMonth} of ${metrics.totalDays}`
+                  : ""}
               </span>
             </div>
           </div>
@@ -632,6 +652,15 @@ export default function SalesDivisions() {
           >
             &#8635; Refresh
           </button>
+        </div>
+
+        {/* Period selector — same DateRangeContext as Planning, the dashboards
+            and the Coverage Console, so a period picked anywhere holds here. */}
+        <div className="max-w-7xl mx-auto px-6 pb-3">
+          <QuickDateSelector
+            activeDateRange={{ from: rangeStart, to: rangeEnd }}
+            onRangeChange={(r) => setRange({ from: r.from, to: r.to })}
+          />
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-3 flex items-center gap-2 flex-wrap">
@@ -704,7 +733,13 @@ export default function SalesDivisions() {
         ) : (
           <>
             {/* ── HERO: status, coverage equation, coverage rail, pacing rail ── */}
-            <DivisionCoverageHero metrics={metrics} scope={scopeLabel} title={hero.title} sub={hero.sub} />
+            <DivisionCoverageHero
+              metrics={metrics}
+              scope={scopeLabel}
+              title={hero.title}
+              sub={hero.sub}
+              periodLabel={periodLabel}
+            />
 
             {nav.level === "member" && currentMember?.role === "manager" && (
               <p className="text-xs text-gray-500 px-1">

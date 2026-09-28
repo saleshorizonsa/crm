@@ -6,6 +6,13 @@ import CoverageRail from "./components/CoverageRail";
 import PacingRail from "./components/PacingRail";
 import OppHero from "./components/OppHero";
 import ExceptionFeed from "./components/ExceptionFeed";
+import QuickDateSelector from "components/QuickDateSelector";
+import { useDateRange } from "contexts/DateRangeContext";
+import {
+  periodLabelFromRange,
+  isCurrentMonthRange,
+  isAllTimeRange,
+} from "utils/dashboardDateUtils";
 import {
   CONTRIBUTOR_ROLES,
   isAchievedOnly,
@@ -38,6 +45,18 @@ const DIRECTOR_ROLES = ["director", "admin", "head"];
 export default function CoverageConsole() {
   const { user, company, userProfile } = useAuth();
   const role = userProfile?.role;
+
+  // ── Selected period, shared with Planning and the dashboards ───────────────
+  const { dateRange, setRange } = useDateRange();
+  const defMonth = monthBounds(new Date());
+  const rangeStart = dateRange?.from || defMonth.startDate;
+  const rangeEnd = dateRange?.to || defMonth.endDate;
+  const periodLabel = periodLabelFromRange(rangeStart, rangeEnd);
+  // Pacing, the row status and Future carry-in only mean anything for the
+  // current month in progress; target-derived figures mean nothing for All Time
+  // (targets exist per month, Achieved spans everything).
+  const isCurrentMonth = isCurrentMonthRange(rangeStart, rangeEnd);
+  const isAllTime = isAllTimeRange(rangeStart, rangeEnd);
 
   const [nav, setNav] = useState(INIT_STATE);
   const [raw, setRaw] = useState(null);
@@ -99,12 +118,24 @@ export default function CoverageConsole() {
     setError("");
     try {
       const now = new Date();
-      // monthBounds() formats from LOCAL date parts. toISOString() was used
-      // here, which in GMT+3 shifted the window back a day: monthStart came out
-      // as the 31st of the previous month and monthEnd as the 29th. That pulled
-      // the previous month's target rows into this month's Target and dropped
-      // anything dated the last day of the month.
-      const { startDate: monthStart, endDate: monthEnd } = monthBounds(now);
+      // The SELECTED period, shared with Planning and the dashboards through
+      // DateRangeContext. This console used to hard-wire monthBounds(now), so
+      // arriving here with "This Year" picked elsewhere silently showed the
+      // current month instead.
+      //
+      // monthBounds() still supplies the DEFAULT when no range has been chosen.
+      // It formats from LOCAL date parts: toISOString() was used here once and
+      // in GMT+3 shifted the window back a day, pulling the previous month's
+      // target rows in and dropping anything dated the last day of the month.
+      const monthStart = rangeStart;
+      const monthEnd = rangeEnd;
+      // Today's calendar month, for the things that must stay as-of-today
+      // whatever period is selected: the exception feeds and the 3-month
+      // win-rate window.
+      const todayMonth = monthBounds(now);
+      // Carry-in is "next month" relative to TODAY, not to the selected period —
+      // it is a live forward-looking figure and is hidden outside the current
+      // month anyway (see isCurrentMonth).
       const nextMonth = nextMonthBounds(now);
 
       const [
@@ -204,14 +235,16 @@ export default function CoverageConsole() {
           .eq("company_id", company.id)
           .eq("reviewed", false),
 
-        // Bounce-backs this month
+        // Bounce-backs — THIS calendar month, always. Exceptions are live
+        // operational alerts, not historical figures: they must not shift when
+        // someone selects a past quarter. Anchored to today, not to the range.
         supabase
           .from("bounce_back_logs")
           .select(
             "id, owner_id, opportunity_id, bounced_at, escalated, bounce_count"
           )
           .eq("company_id", company.id)
-          .gte("bounced_at", monthStart),
+          .gte("bounced_at", todayMonth.startDate),
 
         // Contact reports this month
         supabase
@@ -220,7 +253,7 @@ export default function CoverageConsole() {
             "id, deal_id, owner_id, contact_date, contact_type, customer_response, next_action, follow_up_date, is_audited, created_at"
           )
           .eq("company_id", company.id)
-          .gte("created_at", monthStart),
+          .gte("created_at", todayMonth.startDate),
 
         // Unresolved escalations
         supabase
@@ -246,6 +279,8 @@ export default function CoverageConsole() {
         monthStart,
         monthEnd,
         now,
+        isCurrentMonth,
+        isAllTime,
       });
     } catch (e) {
       console.error("Coverage Console load failed:", e);
@@ -253,7 +288,7 @@ export default function CoverageConsole() {
     } finally {
       setLoading(false);
     }
-  }, [company?.id]);
+  }, [company?.id, rangeStart, rangeEnd, isCurrentMonth, isAllTime]);
 
   useEffect(() => {
     if (!company?.id) return;
@@ -318,6 +353,10 @@ export default function CoverageConsole() {
       monthEnd,
       now,
     } = data;
+    // Period-shape flags. Default true/false keeps calcMetrics usable from a
+    // caller that does not supply them (the verification harness does not).
+    const isCurrentMonth = data.isCurrentMonth !== false;
+    const isAllTime = data.isAllTime === true;
 
     const totalDays = new Date(
       now.getFullYear(),
@@ -505,11 +544,22 @@ export default function CoverageConsole() {
       invoicedDeals,
       contributorIds,
       coverageOk: coverage >= target,
-      pacingOk: invoicedCounted / Math.max(target, 1) >= elapsed - 0.15,
-      pace: invoicedCounted / Math.max(target, 1),
-      elapsed,
-      totalDays,
-      dayOfMonth: now.getDate(),
+      // Pacing divides achievement by the share of the MONTH elapsed, so it is
+      // meaningless for a past, future or multi-month period: "day 28 of 30"
+      // says nothing about a finished quarter. null, not a substitute figure —
+      // the rails and the row status check for it and hide rather than guess.
+      pacingOk: isCurrentMonth
+        ? invoicedCounted / Math.max(target, 1) >= elapsed - 0.15
+        : null,
+      pace: isCurrentMonth ? invoicedCounted / Math.max(target, 1) : null,
+      elapsed: isCurrentMonth ? elapsed : null,
+      totalDays: isCurrentMonth ? totalDays : null,
+      dayOfMonth: isCurrentMonth ? now.getDate() : null,
+      isCurrentMonth,
+      // All Time compares an Achieved spanning everything with a Target that
+      // only exists for the months that have rows. Target-derived figures are
+      // suppressed rather than shown as a false ratio.
+      isAllTime,
     };
   }
 
@@ -694,12 +744,19 @@ export default function CoverageConsole() {
 
   // ── DRILL ROWS ─────────────────────────────────────────────────────────────
 
-  const healthOf = (m) =>
-    m?.coverageOk && m?.pacingOk
+  // Combined coverage + pacing verdict. Outside the current month pacing is
+  // null, so the status degrades to COVERAGE ONLY rather than silently treating
+  // "no pacing verdict" as a failure — which would have turned every past month
+  // amber. The header says which of the two is in force.
+  const healthOf = (m) => {
+    if (!m) return "risk";
+    if (m.pacingOk === null) return m.coverageOk ? "ok" : "bad";
+    return m.coverageOk && m.pacingOk
       ? "ok"
-      : !m?.coverageOk && !m?.pacingOk
+      : !m.coverageOk && !m.pacingOk
       ? "bad"
       : "risk";
+  };
 
   const drillRows = (() => {
     if (nav.level === "company") {
@@ -879,16 +936,29 @@ export default function CoverageConsole() {
       : null,
   ].filter(Boolean);
 
-  const statusChip = metrics
-    ? metrics.coverageOk && metrics.pacingOk
-      ? {
-          text: "Healthy",
-          cls: "bg-emerald-50 text-emerald-800 border-emerald-200",
-        }
-      : !metrics.coverageOk && !metrics.pacingOk
-      ? { text: "Off Plan", cls: "bg-red-50 text-red-800 border-red-200" }
-      : { text: "At Risk", cls: "bg-amber-50 text-amber-800 border-amber-200" }
-    : null;
+  // Same degradation as healthOf: coverage-only outside the current month, and
+  // the label says so rather than letting "Healthy" quietly mean something
+  // narrower than it did yesterday.
+  const statusChip = (() => {
+    if (!metrics) return null;
+    const ok = metrics.pacingOk === null
+      ? metrics.coverageOk
+      : metrics.coverageOk && metrics.pacingOk;
+    const bad = metrics.pacingOk === null
+      ? !metrics.coverageOk
+      : !metrics.coverageOk && !metrics.pacingOk;
+    const suffix = metrics.pacingOk === null ? " (coverage only)" : "";
+    if (ok) {
+      return {
+        text: `Healthy${suffix}`,
+        cls: "bg-emerald-50 text-emerald-800 border-emerald-200",
+      };
+    }
+    if (bad) {
+      return { text: `Off Plan${suffix}`, cls: "bg-red-50 text-red-800 border-red-200" };
+    }
+    return { text: "At Risk", cls: "bg-amber-50 text-amber-800 border-amber-200" };
+  })();
 
   // ── RENDER ─────────────────────────────────────────────────────────────────
 
@@ -908,29 +978,15 @@ export default function CoverageConsole() {
               <span className="text-sm font-semibold text-gray-900">
                 Coverage Console
               </span>
-              {/* This page always measures the CURRENT month and has no period
-                  control, unlike Planning and the dashboards, which follow the
-                  shared date range. That was stated only in small grey text, so
-                  arriving here with "This Year" selected elsewhere looked like
-                  the filter had been applied. Say it as a chip instead. */}
-              <span
-                className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 align-middle"
-                title="The Coverage Console always shows the current month. It does not follow the period selected on the dashboards or on Planning."
-              >
-                This month only —{" "}
-                {raw.now.toLocaleDateString("en-GB", {
-                  month: "long",
-                  year: "numeric",
-                })}
-                <span className="text-amber-600 font-normal">
-                  {" · "}day {metrics?.dayOfMonth ?? raw.now.getDate()} of{" "}
-                  {metrics?.totalDays ??
-                    new Date(
-                      raw.now.getFullYear(),
-                      raw.now.getMonth() + 1,
-                      0
-                    ).getDate()}
-                </span>
+              {/* The selected period, shared with Planning and the dashboards.
+                  This replaces the "This month only" chip: the page follows the
+                  selector now, so the chip would be untrue. Day-of-month is
+                  shown only while that is what is being measured. */}
+              <span className="text-xs text-gray-500 ml-2 font-mono">
+                {periodLabel}
+                {isCurrentMonth && metrics?.dayOfMonth
+                  ? ` · day ${metrics.dayOfMonth} of ${metrics.totalDays}`
+                  : ""}
               </span>
             </div>
           </div>
@@ -941,6 +997,15 @@ export default function CoverageConsole() {
           >
             &#8635; Refresh
           </button>
+        </div>
+
+        {/* Period selector — the same DateRangeContext Planning and the
+            dashboards use, so a period picked on one screen holds here. */}
+        <div className="max-w-7xl mx-auto px-6 pb-3">
+          <QuickDateSelector
+            activeDateRange={{ from: rangeStart, to: rangeEnd }}
+            onRangeChange={(r) => setRange({ from: r.from, to: r.to })}
+          />
         </div>
 
         {/* Breadcrumb */}
@@ -1008,20 +1073,24 @@ export default function CoverageConsole() {
                       %
                     </span>
                   </div>
-                  <div>
-                    Pacing{" "}
-                    <span
-                      className={
-                        metrics.pacingOk
-                          ? "text-emerald-600 font-semibold"
-                          : "text-amber-600 font-semibold"
-                      }
-                    >
-                      {metrics.pacingOk ? "PASS" : "FAIL"}{" "}
-                      {(metrics.pace * 100).toFixed(1)}% vs{" "}
-                      {(metrics.elapsed * 100).toFixed(1)}%
-                    </span>
-                  </div>
+                  {/* Hidden, not substituted, whenever the selected period is
+                      not the current month — pace and elapsed are null there. */}
+                  {metrics.pacingOk !== null && (
+                    <div>
+                      Pacing{" "}
+                      <span
+                        className={
+                          metrics.pacingOk
+                            ? "text-emerald-600 font-semibold"
+                            : "text-amber-600 font-semibold"
+                        }
+                      >
+                        {metrics.pacingOk ? "PASS" : "FAIL"}{" "}
+                        {(metrics.pace * 100).toFixed(1)}% vs{" "}
+                        {(metrics.elapsed * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1073,15 +1142,27 @@ export default function CoverageConsole() {
                   compact={compact}
                   SAR={SAR}
                 />
-                <div className="mt-4">
-                  <PacingRail
-                    pace={metrics.pace}
-                    elapsed={metrics.elapsed}
-                    dayOfMonth={metrics.dayOfMonth}
-                    totalDays={metrics.totalDays}
-                    pctFmt={pctFmt}
-                  />
-                </div>
+                {/* Pacing is a day-of-month verdict, so it is shown only while
+                    the current month is what is selected. For any other period
+                    it is hidden entirely rather than computed against a month
+                    that has ended or not started. */}
+                {isCurrentMonth ? (
+                  <div className="mt-4">
+                    <PacingRail
+                      pace={metrics.pace}
+                      elapsed={metrics.elapsed}
+                      dayOfMonth={metrics.dayOfMonth}
+                      totalDays={metrics.totalDays}
+                      pctFmt={pctFmt}
+                    />
+                  </div>
+                ) : (
+                  <p className="mt-4 text-[11px] text-gray-500">
+                    Pacing is measured against the days elapsed in the current
+                    month, so it is not shown for {periodLabel}. Status above is
+                    coverage only.
+                  </p>
+                )}
               </>
             )}
 
@@ -1109,19 +1190,29 @@ export default function CoverageConsole() {
             {nav.level !== "opportunity" && metrics && (
               <div className="divide-y divide-gray-50">
                 {[
-                  [
-                    "Target",
-                    SAR(metrics.target) + " SAR",
-                    metrics.annualOnlyAchievers?.length
-                      ? `excludes ${metrics.annualOnlyAchievers
-                        .map((u) => u.full_name)
-                        .join(", ")} — measured annually`
-                      : "",
-                  ],
+                  // Targets exist per month and the earliest are 2026, so an
+                  // All Time target is a 2026 sum sitting beside an Achieved
+                  // that spans everything. Every target-derived row is dropped
+                  // for that range rather than shown as a false ratio.
+                  ...(isAllTime
+                    ? []
+                    : [[
+                      "Target",
+                      SAR(metrics.target) + " SAR",
+                      metrics.annualOnlyAchievers?.length
+                        ? `excludes ${metrics.annualOnlyAchievers
+                          .map((u) => u.full_name)
+                          .join(", ")} — measured annually`
+                        : "",
+                    ]]),
                   [
                     "Achieved",
                     SAR(metrics.invoicedCounted) + " SAR",
-                    (metrics.pace * 100).toFixed(1) + "% of target",
+                    isAllTime
+                      ? "all time"
+                      : metrics.pace !== null
+                        ? (metrics.pace * 100).toFixed(1) + "% of target"
+                        : periodLabel,
                     "pos",
                   ],
                   // Real revenue, shown rather than hidden — it just cannot be
@@ -1135,42 +1226,51 @@ export default function CoverageConsole() {
                         .join(", ")} · annual target, not counted above`,
                     ]]
                     : []),
-                  [
-                    "Gap to target",
-                    SAR(metrics.remainingTarget) + " SAR",
-                    "",
-                    "neg",
-                  ],
+                  ...(isAllTime
+                    ? []
+                    : [[
+                      "Gap to target",
+                      SAR(metrics.remainingTarget) + " SAR",
+                      "",
+                      "neg",
+                    ]]),
                   [
                     "Win rate",
                     (metrics.winRate * 100).toFixed(1) + "%",
-                    "3-month average",
+                    "3-month average · to date",
                   ],
+                  ...(isAllTime
+                    ? []
+                    : [[
+                      "Required pipeline",
+                      SAR(metrics.requiredPlan) + " SAR",
+                      "gap to target ÷ win rate",
+                    ]]),
+                  ["Planned pipeline", SAR(metrics.planning) + " SAR", `open plan · ${periodLabel}`],
                   [
-                    "Required pipeline",
-                    SAR(metrics.requiredPlan) + " SAR",
-                    "gap to target ÷ win rate",
-                  ],
-                  ["Planned pipeline", SAR(metrics.planning) + " SAR", "open plan, this month"],
-                  [
-                    "Open funnel (this month)",
+                    "Open funnel",
                     SAR(metrics.monthFunnel) + " SAR",
-                    "open deals closing this month",
+                    `open deals closing in ${periodLabel}`,
                   ],
-                  [
-                    "New pipeline needed",
-                    SAR(metrics.plannedGap) + " SAR",
-                    "required − plan − funnel",
-                    "neg",
-                  ],
-                  // Kept for visibility, no longer netted off the requirement:
-                  // it is NEXT month's commitment, and subtracting it understated
-                  // what still had to be built this month.
-                  [
-                    "Future carry-in",
-                    SAR(metrics.future) + " SAR",
-                    "next month · not netted",
-                  ],
+                  ...(isAllTime
+                    ? []
+                    : [[
+                      "New pipeline needed",
+                      SAR(metrics.plannedGap) + " SAR",
+                      "required − plan − funnel",
+                      "neg",
+                    ]]),
+                  // Not netted off the requirement, and only meaningful while
+                  // the current month is selected: "what is visible for next
+                  // month" is a live forward-looking figure, not a property of
+                  // a past quarter.
+                  ...(isCurrentMonth
+                    ? [[
+                      "Future carry-in",
+                      SAR(metrics.future) + " SAR",
+                      "next month · not netted",
+                    ]]
+                    : []),
                   [
                     "Open exceptions",
                     String(exceptions.length),

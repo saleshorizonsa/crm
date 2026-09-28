@@ -21,6 +21,13 @@ const pctFmt = (n, d = 1) => ((n || 0) * 100).toFixed(d) + "%";
 
 export function statusChipOf(metrics) {
   if (!metrics) return null;
+  // Coverage-only outside the current month, where pacing is null — and the
+  // label says so, rather than "Healthy" quietly meaning something narrower.
+  if (metrics.pacingOk === null) {
+    return metrics.coverageOk
+      ? { text: "Healthy (coverage only)", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" }
+      : { text: "Off Plan (coverage only)", cls: "bg-red-50 text-red-800 border-red-200" };
+  }
   if (metrics.coverageOk && metrics.pacingOk)
     return { text: "Healthy", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" };
   if (!metrics.coverageOk && !metrics.pacingOk)
@@ -28,7 +35,7 @@ export function statusChipOf(metrics) {
   return { text: "At Risk", cls: "bg-amber-50 text-amber-800 border-amber-200" };
 }
 
-export function DivisionCoverageHero({ metrics, scope, title, sub }) {
+export function DivisionCoverageHero({ metrics, scope, title, sub, periodLabel }) {
   const chip = statusChipOf(metrics);
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6">
@@ -51,13 +58,17 @@ export function DivisionCoverageHero({ metrics, scope, title, sub }) {
                 {((metrics.coverage / Math.max(metrics.target, 1)) * 100).toFixed(0)}%
               </span>
             </div>
-            <div>
-              Pacing{" "}
-              <span className={metrics.pacingOk ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
-                {metrics.pacingOk ? "PASS" : "FAIL"} {(metrics.pace * 100).toFixed(1)}% vs{" "}
-                {(metrics.elapsed * 100).toFixed(1)}%
-              </span>
-            </div>
+            {/* Pacing is a day-of-month verdict — hidden, not substituted,
+                whenever the selected period is not the current month. */}
+            {metrics.pacingOk !== null && (
+              <div>
+                Pacing{" "}
+                <span className={metrics.pacingOk ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
+                  {metrics.pacingOk ? "PASS" : "FAIL"} {(metrics.pace * 100).toFixed(1)}% vs{" "}
+                  {(metrics.elapsed * 100).toFixed(1)}%
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -94,29 +105,53 @@ export function DivisionCoverageHero({ metrics, scope, title, sub }) {
         compact={compact}
         SAR={SAR}
       />
-      <div className="mt-4">
-        <DivisionPacingRail
-          pace={metrics.pace}
-          elapsed={metrics.elapsed}
-          dayOfMonth={metrics.dayOfMonth}
-          totalDays={metrics.totalDays}
-          pctFmt={pctFmt}
-        />
-      </div>
+      {/* Pacing is a day-of-month verdict, so the rail is shown only while the
+          current month is what is selected — hidden, not computed against a
+          month that has ended or not started. */}
+      {metrics.pacingOk !== null ? (
+        <div className="mt-4">
+          <DivisionPacingRail
+            pace={metrics.pace}
+            elapsed={metrics.elapsed}
+            dayOfMonth={metrics.dayOfMonth}
+            totalDays={metrics.totalDays}
+            pctFmt={pctFmt}
+          />
+        </div>
+      ) : (
+        <p className="mt-4 text-[11px] text-gray-500">
+          Pacing is measured against the days elapsed in the current month, so it
+          is not shown for {periodLabel || "this period"}. Status above is
+          coverage only.
+        </p>
+      )}
     </div>
   );
 }
 
 export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
   const rows = [
+    // All Time compares an Achieved spanning everything with a Target that only
+    // exists for months that have rows, so target-derived rows are dropped.
+    ...(metrics.isAllTime
+      ? []
+      : [[
+        "Target",
+        SAR(metrics.target) + " SAR",
+        metrics.annualOnlyAchievers?.length
+          ? `excludes ${metrics.annualOnlyAchievers.map((u) => u.full_name).join(", ")} — measured annually`
+          : "",
+      ]]),
     [
-      "Target",
-      SAR(metrics.target) + " SAR",
-      metrics.annualOnlyAchievers?.length
-        ? `excludes ${metrics.annualOnlyAchievers.map((u) => u.full_name).join(", ")} — measured annually`
-        : "",
+      "Achieved",
+      SAR(metrics.achievedCounted) + " SAR",
+      metrics.isAllTime
+        ? "all time"
+        : metrics.pace !== null
+          ? (metrics.pace * 100).toFixed(1) + "% of target"
+          : "selected period",
+      "pos",
     ],
-    ["Achieved", SAR(metrics.achievedCounted) + " SAR", (metrics.pace * 100).toFixed(1) + "% of target", "pos"],
     // Real revenue, shown rather than hidden — it simply cannot be measured
     // against a target that excludes the person who booked it.
     ...(metrics.achievedAnnualOnly > 0
@@ -126,20 +161,28 @@ export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
         `${metrics.annualOnlyAchievers.map((u) => u.full_name).join(", ")} · annual target, not counted above`,
       ]]
       : []),
-    ["Gap to target", SAR(metrics.deficit) + " SAR", "", "neg"],
+    ...(metrics.isAllTime
+      ? []
+      : [["Gap to target", SAR(metrics.deficit) + " SAR", "", "neg"]]),
     [
       "Win rate",
       metrics.winRatePct.toFixed(1) + "%",
-      metrics.winRateBorrowed ? "company rate (no deals in 3 months)" : "3-month average",
+      metrics.winRateBorrowed ? "company rate (no deals in 3 months)" : "3-month average · to date",
     ],
-    ["Required pipeline", SAR(metrics.requiredRaw) + " SAR", "gap to target ÷ win rate"],
-    ["Planned pipeline", SAR(metrics.planned) + " SAR", "open plan, this month"],
-    ["Open funnel (this month)", SAR(metrics.monthFunnel) + " SAR", "open deals closing this month"],
-    ["New pipeline needed", SAR(metrics.plannedGap) + " SAR", "required − plan − funnel", "neg"],
-    // Kept for visibility, no longer netted off the requirement: it is NEXT
-    // month's commitment, and subtracting it understated what still had to be
-    // built this month.
-    ["Future carry-in", SAR(metrics.carryIn) + " SAR", "next month · not netted"],
+    ...(metrics.isAllTime
+      ? []
+      : [["Required pipeline", SAR(metrics.requiredRaw) + " SAR", "gap to target ÷ win rate"]]),
+    ["Planned pipeline", SAR(metrics.planned) + " SAR", "open plan · selected period"],
+    ["Open funnel", SAR(metrics.monthFunnel) + " SAR", "open deals closing in the period"],
+    ...(metrics.isAllTime
+      ? []
+      : [["New pipeline needed", SAR(metrics.plannedGap) + " SAR", "required − plan − funnel", "neg"]]),
+    // Not netted off the requirement, and only meaningful while the current
+    // month is selected: it is a live forward-looking figure, not a property of
+    // a past quarter.
+    ...(metrics.isCurrentMonth
+      ? [["Future carry-in", SAR(metrics.carryIn) + " SAR", "next month · not netted"]]
+      : []),
   ];
   if (exceptionCount !== null) {
     rows.push(["Open exceptions", String(exceptionCount), "", exceptionCount > 0 ? "neg" : ""]);

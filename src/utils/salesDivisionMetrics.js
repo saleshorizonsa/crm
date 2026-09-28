@@ -165,6 +165,11 @@ export function teamRows({ users, teamIds, supervisorId }) {
 export function calcDivisionMetrics(userIds, data) {
   const { users, deals, targets, deals3m, opps, futureOrders, monthStart, monthEnd } = data;
   const now = data.now || new Date();
+  // Period-shape flags, defaulted so a caller that omits them (the verification
+  // harness) behaves exactly as before. Pacing only means something for the
+  // current month in progress; target-derived figures mean nothing for All Time.
+  const isCurrentMonth = data.isCurrentMonth !== false;
+  const isAllTime = data.isAllTime === true;
   const scope = new Set(userIds || []);
   const contributorIds = (users || [])
     .filter((u) => scope.has(u.id) && CONTRIBUTOR_ROLES.includes(u.role))
@@ -290,12 +295,16 @@ export function calcDivisionMetrics(userIds, data) {
     target,
     achieved,
     deficit,
-    pace,
-    elapsed,
-    dayOfMonth,
-    totalDays,
+    // Pacing divides by the share of the MONTH elapsed, so outside the current
+    // month it is null and the UI hides the verdict instead of guessing one.
+    pace: isCurrentMonth ? pace : null,
+    elapsed: isCurrentMonth ? elapsed : null,
+    dayOfMonth: isCurrentMonth ? dayOfMonth : null,
+    totalDays: isCurrentMonth ? totalDays : null,
+    isCurrentMonth,
+    isAllTime,
     coverageOk: coverage >= target,
-    pacingOk: pace >= elapsed - 0.15,
+    pacingOk: isCurrentMonth ? pace >= elapsed - 0.15 : null,
     winRatePct,
     winRateBorrowed,
     achievedCounted,
@@ -323,6 +332,10 @@ export function calcDivisionMetrics(userIds, data) {
  */
 export function healthOf(m) {
   if (!m || m.target <= 0) return 'none';
+  // Outside the current month pacing is null, so the verdict degrades to
+  // COVERAGE ONLY rather than treating "no pacing verdict" as a failure, which
+  // would have turned every past month amber.
+  if (m.pacingOk === null) return m.coverageOk ? 'ok' : 'bad';
   if (m.coverageOk && m.pacingOk) return 'ok';
   if (!m.coverageOk && !m.pacingOk) return 'bad';
   return 'risk';
