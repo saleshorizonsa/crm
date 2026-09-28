@@ -64,7 +64,7 @@ const HEALTH = {
   none: { text: "No target", cls: "bg-gray-50 text-gray-500 border-gray-200" },
 };
 
-const COLUMNS = ["Name", "Target", "Achieved", "Deficit", "Win rate", "Planned gap", "Coverage", "Status"];
+const COLUMNS = ["Name", "Target", "Achieved", "Gap to target", "Win rate", "New pipeline needed", "Coverage", "Status"];
 
 function StatusChip({ m }) {
   const h = HEALTH[healthOf(m)];
@@ -157,9 +157,9 @@ function Figures({ m, small = false }) {
   const items = [
     ["Target", `${compact(m.target)} SAR`, "text-gray-900"],
     ["Achieved", `${compact(m.achieved)} SAR`, "text-emerald-700"],
-    ["Deficit", `${compact(m.deficit)} SAR`, "text-red-600"],
+    ["Gap to target", `${compact(m.deficit)} SAR`, "text-red-600"],
     ["Win rate", pct(m.winRatePct), "text-gray-900"],
-    ["Planned gap", `${compact(m.plannedGap)} SAR`, "text-blue-700"],
+    ["New pipeline needed", `${compact(m.plannedGap)} SAR`, "text-blue-700"],
   ];
   return (
     <div className={`grid grid-cols-2 sm:grid-cols-5 ${small ? "gap-2" : "gap-3"}`}>
@@ -613,9 +613,17 @@ export default function SalesDivisions() {
             </div>
             <div className="min-w-0">
               <span className="text-sm font-semibold text-gray-900">Insights</span>
-              <span className="text-xs text-gray-400 ml-2 font-mono">
+              {/* Insights always measures the CURRENT month and has no period
+                  control — see the same chip on the Coverage Console. */}
+              <span
+                className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 align-middle"
+                title="Insights always shows the current month. It does not follow the period selected on the dashboards or on Planning."
+              >
+                This month only —{" "}
                 {raw.now.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
-                {" · "}Day {metrics.dayOfMonth} of {metrics.totalDays}
+                <span className="text-amber-600 font-normal">
+                  {" · "}day {metrics.dayOfMonth} of {metrics.totalDays}
+                </span>
               </span>
             </div>
           </div>

@@ -411,7 +411,15 @@ export default function CoverageConsole() {
     // ── REQUIRED PLAN ── shared rule: with no win rate at all, assume 50%
     // (target x 2). This used to return 0, which reported "no plan needed"
     // for a team that simply had no closed deals yet.
-    const requiredPlan = computeRequiredRaw({ target, winRatePct });
+    //
+    // Measured over what is STILL MISSING (target - invoiced, floor 0), not over
+    // the untouched original target. Dividing the raw target meant the figure
+    // never fell as revenue landed: on 2026-09-28 JASCO PVC had invoiced
+    // 1,499,724.53 against a 1,481,075.00 target - the month was made - and this
+    // still demanded 952,885.34 of fresh pipeline, while Planning correctly read
+    // 0.00. Same basis as planningPageSummary.js now.
+    const remainingTarget = Math.max(0, target - invoiced);
+    const requiredPlan = computeRequiredRaw({ target: remainingTarget, winRatePct });
 
     // ── CARRY-IN ── next month's committed orders, contributors only.
     const future = sumPlannedByOwner({
@@ -429,6 +437,7 @@ export default function CoverageConsole() {
     return {
       target,
       invoiced,
+      remainingTarget,
       funnel,
       weightedFunnel,
       planning,
@@ -846,18 +855,29 @@ export default function CoverageConsole() {
               <span className="text-sm font-semibold text-gray-900">
                 Coverage Console
               </span>
-              <span className="text-xs text-gray-400 ml-2 font-mono">
+              {/* This page always measures the CURRENT month and has no period
+                  control, unlike Planning and the dashboards, which follow the
+                  shared date range. That was stated only in small grey text, so
+                  arriving here with "This Year" selected elsewhere looked like
+                  the filter had been applied. Say it as a chip instead. */}
+              <span
+                className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 align-middle"
+                title="The Coverage Console always shows the current month. It does not follow the period selected on the dashboards or on Planning."
+              >
+                This month only —{" "}
                 {raw.now.toLocaleDateString("en-GB", {
                   month: "long",
                   year: "numeric",
                 })}
-                {" · "}Day {metrics?.dayOfMonth ?? raw.now.getDate()} of{" "}
-                {metrics?.totalDays ??
-                  new Date(
-                    raw.now.getFullYear(),
-                    raw.now.getMonth() + 1,
-                    0
-                  ).getDate()}
+                <span className="text-amber-600 font-normal">
+                  {" · "}day {metrics?.dayOfMonth ?? raw.now.getDate()} of{" "}
+                  {metrics?.totalDays ??
+                    new Date(
+                      raw.now.getFullYear(),
+                      raw.now.getMonth() + 1,
+                      0
+                    ).getDate()}
+                </span>
               </span>
             </div>
           </div>
@@ -1057,14 +1077,29 @@ export default function CoverageConsole() {
                   [
                     "Required pipeline",
                     SAR(metrics.requiredPlan) + " SAR",
-                    "target ÷ win rate",
+                    "gap to target ÷ win rate",
                   ],
-                  ["Planned pipeline", SAR(metrics.planning) + " SAR", ""],
-                  ["Planned gap", SAR(metrics.plannedGap) + " SAR", "", "neg"],
                   [
                     "Future carry-in",
                     SAR(metrics.future) + " SAR",
                     "reduces req. plan",
+                  ],
+                  // Without this row the ledger did not close on screen: the gap
+                  // below is computed from the carry-in-netted figure while
+                  // "Required pipeline" above shows the raw one, so subtracting
+                  // the displayed numbers gave the wrong answer by exactly the
+                  // carry-in.
+                  [
+                    "Required after carry-in",
+                    SAR(metrics.adjustedRequired) + " SAR",
+                    "required − carry-in",
+                  ],
+                  ["Planned pipeline", SAR(metrics.planning) + " SAR", ""],
+                  [
+                    "New pipeline needed",
+                    SAR(metrics.plannedGap) + " SAR",
+                    "after carry-in − planned",
+                    "neg",
                   ],
                   [
                     "Open exceptions",

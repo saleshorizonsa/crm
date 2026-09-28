@@ -215,7 +215,12 @@ export function calcDivisionMetrics(userIds, data) {
 
   const planned = sumPlannedByOwner({ rows: opps, ownerIds: contributorIds }).total;
   const carryIn = sumPlannedByOwner({ rows: futureOrders, ownerIds: contributorIds }).total;
-  const requiredRaw = computeRequiredRaw({ target, winRatePct });
+  // Required pipeline is measured over what is STILL MISSING (deficit), not over
+  // the untouched target: once a month's target is achieved, "new pipeline
+  // needed" must read zero rather than keep demanding pipeline against a number
+  // that revenue can never reduce. Same basis as planningPageSummary.js and the
+  // Coverage Console.
+  const requiredRaw = computeRequiredRaw({ target: deficit, winRatePct });
   const { required, plannedGap } = computePlannedGap({ requiredRaw, carryIn, planned });
 
   const { weightedFunnel, weightedPlanning, coverage } = computeCoverage({

@@ -77,7 +77,7 @@ const CoverageRail = ({
         <div className="ml-auto text-[10px] font-mono">
           {gap > 0 ? (
             <span className="text-red-600 font-semibold">
-              Short {compact(gap)} SAR
+              Coverage shortfall {compact(gap)} SAR
             </span>
           ) : (
             <span className="text-emerald-700 font-semibold">

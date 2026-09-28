@@ -39,7 +39,7 @@ function cardDefs(totals, opts = {}) {
     sub: `3-month avg${t.winRateIsDefault ? ' (default)' : ''}`,
   };
   const plannedGapCard = {
-    key: 'plannedGap', label: 'Planned Gap', strip: onTrack ? 'bg-green-500' : 'bg-red-500',
+    key: 'plannedGap', label: 'New pipeline needed', strip: onTrack ? 'bg-green-500' : 'bg-red-500',
     value: onTrack ? 'On Track ✓' : `${fmtSAR(t.plannedGap)} SAR`,
     valueClass: onTrack ? 'text-green-600' : 'text-red-600',
     sub: onTrack
@@ -65,7 +65,7 @@ function cardDefs(totals, opts = {}) {
         sub: `${achievedWindow} · ${(t.attainmentPct || 0).toFixed(1)}% of target`,
       },
       {
-        key: 'deficit', label: isAnnual ? 'Annual Deficit' : 'Deficit', strip: met ? 'bg-green-500' : 'bg-red-500',
+        key: 'deficit', label: isAnnual ? 'Annual gap to target' : 'Gap to target', strip: met ? 'bg-green-500' : 'bg-red-500',
         value: met ? 'Target met ✓' : `${fmtSAR(t.deficit)} SAR`,
         valueClass: met ? 'text-green-600' : 'text-red-600',
         sub: met
@@ -89,7 +89,7 @@ function cardDefs(totals, opts = {}) {
       sub: `${(t.attainmentPct || 0).toFixed(1)}% of target`,
     },
     {
-      key: 'deficit', label: 'Deficit', strip: targetMet ? 'bg-green-500' : 'bg-red-500',
+      key: 'deficit', label: 'Gap to target', strip: targetMet ? 'bg-green-500' : 'bg-red-500',
       value: targetMet ? 'Target met ✓' : `${fmtSAR(t.deficit)} SAR`,
       valueClass: targetMet ? 'text-green-600' : 'text-red-600',
       sub: targetMet ? 'Target met' : `${pct(t.deficit, t.target)}% of target remaining`,
@@ -127,8 +127,8 @@ function buildInvoiceGroups(items, mode, nameOf) {
 }
 
 const POPUP_TITLES = {
-  target: 'Target', achieved: 'Achieved', deficit: 'Deficit',
-  winRate: 'Win Rate', plannedGap: 'Planned Gap',
+  target: 'Target', achieved: 'Achieved', deficit: 'Gap to target',
+  winRate: 'Win Rate', plannedGap: 'New pipeline needed',
 };
 
 // Per-salesman breakdown table shown inside every popup. The active metric column
@@ -156,9 +156,9 @@ function SalesmanTable({ rows, active, canDrill, onRowClick }) {
             <th className="px-3 py-2 text-left font-medium">Salesman</th>
             <th className="px-3 py-2 text-right font-medium">Target</th>
             <th className="px-3 py-2 text-right font-medium">Achieved</th>
-            <th className="px-3 py-2 text-right font-medium">Deficit</th>
+            <th className="px-3 py-2 text-right font-medium">Gap to target</th>
             <th className="px-3 py-2 text-right font-medium">Win%</th>
-            <th className="px-3 py-2 text-right font-medium">Planned Gap</th>
+            <th className="px-3 py-2 text-right font-medium">New pipeline needed</th>
             {canDrill && <th className="px-3 py-2" />}
           </tr>
         </thead>
@@ -270,17 +270,17 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
           <>
             {stat('Target', fmtSAR(salesman.target), 'text-foreground')}
             {stat('Achieved', fmtSAR(salesman.achieved), 'text-green-600')}
-            {stat('Deficit', salesman.deficit <= 0 ? '✓' : fmtSAR(salesman.deficit), salesman.deficit <= 0 ? 'text-green-600' : 'text-red-600')}
+            {stat('Gap to target', salesman.deficit <= 0 ? '✓' : fmtSAR(salesman.deficit), salesman.deficit <= 0 ? 'text-green-600' : 'text-red-600')}
             {stat('Win%', NA, 'text-muted-foreground')}
-            {stat('Gap', NA, 'text-muted-foreground')}
+            {stat('New pipeline', NA, 'text-muted-foreground')}
           </>
         ) : (
           <>
             {stat('Target', fmtSAR(salesman.target), 'text-foreground')}
             {stat('Achieved', fmtSAR(salesman.achieved), 'text-green-600')}
-            {stat('Deficit', salesman.deficit <= 0 ? '✓' : fmtSAR(salesman.deficit), salesman.deficit <= 0 ? 'text-green-600' : 'text-red-600')}
+            {stat('Gap to target', salesman.deficit <= 0 ? '✓' : fmtSAR(salesman.deficit), salesman.deficit <= 0 ? 'text-green-600' : 'text-red-600')}
             {stat('Win%', `${salesman.winRate3m.toFixed(0)}%`, 'text-purple-600')}
-            {stat('Gap', salesman.plannedGap <= 0 ? '✓' : fmtSAR(salesman.plannedGap), salesman.plannedGap <= 0 ? 'text-green-600' : 'text-red-600')}
+            {stat('New pipeline', salesman.plannedGap <= 0 ? '✓' : fmtSAR(salesman.plannedGap), salesman.plannedGap <= 0 ? 'text-green-600' : 'text-red-600')}
           </>
         )}
       </div>

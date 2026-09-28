@@ -619,8 +619,11 @@ const PlanningPage = () => {
                 <p className="text-xs text-green-600">
                   Achieved: <span className="tabular-nums">{fmtSAR(summaryData.achieved)} SAR</span>
                 </p>
+                {/* "Gap to target" app-wide for target − achieved; "Remaining"
+                    was a third name for the same thing the KPI strip calls
+                    Deficit. */}
                 <p className="text-xs text-foreground font-medium mt-0.5">
-                  Remaining: <span className="tabular-nums">{fmtSAR(summaryData.remainingTarget)} SAR</span>
+                  Gap to target: <span className="tabular-nums">{fmtSAR(summaryData.remainingTarget)} SAR</span>
                 </p>
               </div>
             )}

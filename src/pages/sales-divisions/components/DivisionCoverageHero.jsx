@@ -117,10 +117,14 @@ export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
       metrics.winRatePct.toFixed(1) + "%",
       metrics.winRateBorrowed ? "company rate (no deals in 3 months)" : "3-month average",
     ],
-    ["Required pipeline", SAR(metrics.requiredRaw) + " SAR", "target ÷ win rate"],
-    ["Planned pipeline", SAR(metrics.planned) + " SAR", ""],
-    ["Planned gap", SAR(metrics.plannedGap) + " SAR", "", "neg"],
+    ["Required pipeline", SAR(metrics.requiredRaw) + " SAR", "gap to target ÷ win rate"],
     ["Future carry-in", SAR(metrics.carryIn) + " SAR", "reduces req. plan"],
+    // Without this row the ledger did not close on screen: the figure below is
+    // computed from the carry-in-netted required, while "Required pipeline"
+    // above shows the raw one.
+    ["Required after carry-in", SAR(metrics.required) + " SAR", "required − carry-in"],
+    ["Planned pipeline", SAR(metrics.planned) + " SAR", ""],
+    ["New pipeline needed", SAR(metrics.plannedGap) + " SAR", "after carry-in − planned", "neg"],
   ];
   if (exceptionCount !== null) {
     rows.push(["Open exceptions", String(exceptionCount), "", exceptionCount > 0 ? "neg" : ""]);

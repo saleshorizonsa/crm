@@ -277,7 +277,11 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
       const deficit = Math.max(0, target - achieved);
       const { rate: winRate3m, isDefault: winRateIsDefault } = resolveWinRate(u.id);
       const planned = plannedPer[u.id] || 0;
-      const requiredRaw = computeRequiredRaw({ target, winRatePct: winRate3m });
+      // Over what is STILL MISSING (deficit), not the untouched target — the
+      // same basis as planningPageSummary.js, the Coverage Console and Insights.
+      // Dividing the raw target kept demanding pipeline from a salesman who had
+      // already made his month.
+      const requiredRaw = computeRequiredRaw({ target: deficit, winRatePct: winRate3m });
       const futureCarryover = carryPer[u.id] || 0;
       const { required, plannedGap } = computePlannedGap({
         requiredRaw, carryIn: futureCarryover, planned,
