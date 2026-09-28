@@ -44,7 +44,17 @@ function MarketBadge({ market }) {
   );
 }
 
-export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOpportunities }) {
+export default function CustomerMaster({
+  adminCompany,
+  onCompanyChange,
+  onGoToOpportunities,
+  // The salesman filter is owned by the Planning page: this is the tab the page
+  // OPENS on, so its selector is the first one a user meets, and the summary
+  // cards above have to follow it. While each tab kept its own copy, filtering
+  // here changed this list and left the cards on the full team scope.
+  filterOwner = 'all',
+  onFilterOwnerChange,
+}) {
   const { user, userProfile } = useAuth();
   const role = userProfile?.role;
   const canAssign = ['manager', 'supervisor', 'admin', 'director'].includes(role);
@@ -71,7 +81,10 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
   const [showAdd, setShowAdd] = useState(false);
   const [activeCustomer, setActiveCustomer] = useState(null);
   // Drill-down selector: null = "All Salesmen" (in scope); otherwise a user id.
-  const [selectedSalesman, setSelectedSalesman] = useState(null);
+  // Controlled by the page. Kept as null-or-id here because that is what this
+  // file's queries and SalesmanSelector already expect; the page stores 'all'.
+  const selectedSalesman = filterOwner === 'all' ? null : filterOwner;
+  const setSelectedSalesman = (id) => onFilterOwnerChange?.(id || 'all');
   const [teamMembers, setTeamMembers] = useState([]);
   // Owners of customers loaded under "All" — selector only (utils/recordOwners).
   const [recordOwners, setRecordOwners] = useState([]);
@@ -107,10 +120,14 @@ export default function CustomerMaster({ adminCompany, onCompanyChange, onGoToOp
 
   useEffect(() => { fetchTeamMembers(); }, [fetchTeamMembers]);
 
-  // Reset the drill-down and inline-planning state when switching company so
-  // stale ids / green badges can't leak across companies.
+  // Reset the inline-planning state when switching company so stale ids / green
+  // badges can't leak across companies.
+  //
+  // The salesman drill-down is NOT reset here any more: it belongs to the page
+  // now, and this effect also runs on mount, so re-entering this tab would have
+  // silently cleared a selection made on another tab. The page clears it when
+  // the company actually changes.
   useEffect(() => {
-    setSelectedSalesman(null);
     setRecordOwners([]);
     setActiveRow(null);
     setInlineAmount('');

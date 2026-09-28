@@ -116,9 +116,38 @@ const PlanningPage = () => {
   // cards used to ignore the salesman entirely — filterOwner was not even in
   // fetchPlanningSummary's dependency list, so drilling into one person changed
   // the list underneath and left the consolidated numbers above it untouched.
+  // One filter for the WHOLE page, not one per tab. Customer Master, Current
+  // Sales Plan and Future Orders each used to keep a private salesman filter, so
+  // picking a salesman on the tab the page opens on (Customer Master) narrowed
+  // that list and left the cards on the full team scope — they only ever
+  // followed the Current Sales Plan tab's copy.
   const [filterOwner, setFilterOwner] = useState("all");
   const [filterProductGroup, setFilterProductGroup] = useState(null);
   const [productGroups, setProductGroups] = useState([]);
+
+  // Switching company must not carry a stale owner id across. Runs on mount too,
+  // where it is a no-op, so no first-render guard is needed.
+  useEffect(() => {
+    setFilterOwner("all");
+    setFilterProductGroup(null);
+  }, [adminCompany?.id]);
+
+  // Name for the filter chip, so the cards visibly say WHO they describe rather
+  // than just "one salesman".
+  const [filterOwnerName, setFilterOwnerName] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (filterOwner === "all") { setFilterOwnerName(""); return; }
+      const { data } = await supabase
+        .from("users")
+        .select("full_name")
+        .eq("id", filterOwner)
+        .maybeSingle();
+      if (!cancelled) setFilterOwnerName(data?.full_name || "");
+    })();
+    return () => { cancelled = true; };
+  }, [filterOwner]);
 
   const companyId = adminCompany?.id;
   const isDirectorRole = DIRECTOR_ROLES.includes(role);
@@ -487,7 +516,7 @@ const PlanningPage = () => {
                 className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
               >
                 <Icon name="User" size={12} />
-                One salesman
+                {filterOwnerName || "One salesman"}
                 <Icon name="X" size={12} />
               </button>
             )}
@@ -700,6 +729,8 @@ const PlanningPage = () => {
               adminCompany={adminCompany}
               onCompanyChange={setAdminCompany}
               onGoToOpportunities={() => setActiveTab("opportunities")}
+              filterOwner={filterOwner}
+              onFilterOwnerChange={setFilterOwner}
             />
           )}
 
@@ -722,6 +753,8 @@ const PlanningPage = () => {
               adminCompany={adminCompany}
               onGoToOpportunities={() => setActiveTab("opportunities")}
               onOrderChange={fetchPlanningSummary}
+              filterOwner={filterOwner}
+              onFilterOwnerChange={setFilterOwner}
             />
           )}
 

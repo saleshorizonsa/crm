@@ -29,7 +29,15 @@ const daysInFutureOrders = (order) =>
 const isParkedOrder = (order) =>
   order.status === 'pending' && daysInFutureOrders(order) >= PARKED_THRESHOLD;
 
-export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, onOrderChange }) {
+export default function FutureOrdersModule({
+  adminCompany,
+  onGoToOpportunities,
+  onOrderChange,
+  // Owned by the Planning page, so the summary cards follow this selector too
+  // instead of only the one on the Current Sales Plan tab.
+  filterOwner = 'all',
+  onFilterOwnerChange,
+}) {
   const { user, company: authCompany, userProfile } = useAuth();
   const { formatCurrency } = useCurrency();
 
@@ -44,7 +52,7 @@ export default function FutureOrdersModule({ adminCompany, onGoToOpportunities, 
   // Owners of orders loaded under "All" — selector only (utils/recordOwners).
   const [recordOwners, setRecordOwners] = useState([]);
   const [filterStatus, setFilterStatus] = useState('pending');
-  const [filterOwner, setFilterOwner]   = useState('all');
+  const setFilterOwner = (id) => onFilterOwnerChange?.(id === 'all' ? 'all' : id);
   const [movingId, setMovingId]       = useState(null);
 
   // ── Team members (feed the salesman drill-down) ─────────────────────────────
