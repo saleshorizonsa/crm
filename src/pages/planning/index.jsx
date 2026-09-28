@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "contexts/AuthContext";
 import { supabase } from "lib/supabase";
 import Header from "components/ui/Header";
@@ -109,6 +109,10 @@ const PlanningPage = () => {
     untaggedFunnel: 0,
   });
   const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryError, setSummaryError] = useState(null);
+  // Monotonic request id — see fetchPlanningSummary. useRef so it survives
+  // re-renders without causing one.
+  const summaryReq = useRef(0);
 
   // ── Filters, owned here because the cards above the tabs follow them ────────
   // The salesman selector and the product-group selector are rendered inside the
@@ -277,12 +281,28 @@ const PlanningPage = () => {
   };
 
   const fetchPlanningSummary = useCallback(async () => {
+    // Every filter or period change starts a new request while the previous one
+    // may still be in flight, and each of these takes ~1-2s (eight round trips).
+    // Nothing used to discard the older one, so whichever RESOLVED LAST wrote the
+    // cards — and the unfiltered request is the slower of the two, because it
+    // covers every contributor. Land it after a filtered one and the cards snap
+    // back to team-wide numbers with a filter visibly applied, until the next
+    // refetch (clicking the period again) happens to win the race.
+    //
+    // A sequence number fixes it regardless of resolve order: only the newest
+    // request may write. AbortController is not an option here — these go
+    // through the supabase client, not raw fetch.
+    const seq = summaryReq.current + 1;
+    summaryReq.current = seq;
+    const isCurrent = () => seq === summaryReq.current;
+
     if (!companyId) {
-      setSummaryData(emptySummary);
-      setSummaryLoading(false);
+      if (isCurrent()) { setSummaryData(emptySummary); setSummaryLoading(false); }
       return;
     }
     setSummaryLoading(true);
+    setSummaryError(null);
+    const startedAt = Date.now();
     try {
       // ── ONE definition for EVERY role ──────────────────────────────────
       // This page, the Coverage Console and the dashboards each carried their
@@ -319,6 +339,20 @@ const PlanningPage = () => {
         productGroup: filterProductGroup,
       });
 
+      // One line per refresh, so "the cards didn't update" can be answered from
+      // the console instead of guessed at: which request, for which filter and
+      // period, how long it took, and whether it was applied or discarded.
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[planning summary] #${seq} ${isCurrent() ? "APPLIED" : "DISCARDED (stale)"}`,
+        { owner: filterOwner, productGroup: filterProductGroup, from: rangeStart, to: rangeEnd,
+          ms: Date.now() - startedAt, target: sum.target, achieved: sum.achieved },
+      );
+
+      // A newer filter/period was picked while this was in flight: its result is
+      // the one the user is waiting for, so drop this one on the floor.
+      if (!isCurrent()) return;
+
       setSummaryData({
         target: sum.target,
         achieved: sum.achieved,
@@ -336,9 +370,15 @@ const PlanningPage = () => {
         untaggedFunnel: sum.untaggedFunnel,
       });
     } catch (err) {
+      // Swallowing this left the PREVIOUS filter's numbers on screen with the
+      // new filter applied — wrong figures that look like real ones. Say so.
       console.error("Planning summary:", err);
+      if (isCurrent()) {
+        setSummaryData(emptySummary);
+        setSummaryError(err?.message || "Could not load the summary.");
+      }
     } finally {
-      setSummaryLoading(false);
+      if (isCurrent()) setSummaryLoading(false);
     }
   }, [companyId, role, user?.id, rangeStart, rangeEnd, filterOwner, filterProductGroup]);
 
@@ -535,6 +575,24 @@ const PlanningPage = () => {
                 Target is all-products — no target carries a product group yet
               </span>
             )}
+          </div>
+        )}
+
+        {/* A failed refresh used to leave the previous filter's numbers on
+            screen, which is worse than showing nothing. */}
+        {summaryError && (
+          <div className="flex items-start gap-2 p-3 mb-3 rounded-xl bg-red-50 border border-red-200">
+            <Icon name="AlertCircle" size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-red-700">Could not update the summary</p>
+              <p className="text-xs text-red-600 mt-0.5">{summaryError}</p>
+            </div>
+            <button
+              onClick={fetchPlanningSummary}
+              className="ml-auto text-xs px-3 py-1.5 border border-red-300 rounded-lg text-red-700 hover:bg-red-100 transition-colors flex-shrink-0"
+            >
+              Retry
+            </button>
           </div>
         )}
 
