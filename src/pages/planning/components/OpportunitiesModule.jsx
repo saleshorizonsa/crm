@@ -93,6 +93,9 @@ export default function OpportunitiesModule({
   const [loading, setLoading]             = useState(true);
   const [loadError, setLoadError]         = useState(null);
   const [monthlyTarget, setMonthlyTarget] = useState(0);
+  // Does anyone in scope actually hold a monthly target row? "No target" and
+  // "target of 0" look identical in a number but mean opposite things here.
+  const [hasTargetRows, setHasTargetRows] = useState(false);
   // In Funnel = raw value of every OPEN deal in scope (not won/lost), unweighted —
   // the same figure the KPI strip shows, so the two views cannot disagree.
   const [funnelValue, setFunnelValue] = useState(0);
@@ -138,26 +141,46 @@ export default function OpportunitiesModule({
   // also pinned planningPct to ~0% and isUnderPlanned permanently true. The
   // window was built from toISOString() as well, pulling in the previous
   // month's rows (the same bleed fixed in the Coverage Console).
-  const fetchTarget = useCallback(async (ids) => {
-    if (!company?.id || !ids?.length) { setMonthlyTarget(0); return; }
+  // Whose numbers this scope covers: contributors, plus any flagged manager who
+  // sells himself — the scope Target and Achieved now share everywhere else.
+  //
+  // With ONE person explicitly selected, that person is used even if the
+  // narrowing would drop them. Picking a single name is a deliberate act: a
+  // manager choosing himself or a director meant that person, not "nobody".
+  // Before this, such a pick left the scope empty and the tile silently read 0 —
+  // indistinguishable from a real zero target, and shown as "Fully Planned ✓".
+  const resolveScopeIds = useCallback(async (ids) => {
+    if (!company?.id || !ids?.length) return [];
+    const [contributors, flagged] = await Promise.all([
+      fetchContributors({ companyId: company.id, ownerIds: ids }),
+      fetchAchievedOnlyUsers({ companyId: company.id, ownerIds: ids }),
+    ]);
+    const scopeIds = [...new Set([...contributors.map((c) => c.id), ...flagged.map((u) => u.id)])];
+    if (scopeIds.length) return scopeIds;
+    return ids.length === 1 ? [...ids] : [];
+  }, [company?.id]);
 
-    const contributors = await fetchContributors({
-      companyId: company.id,
-      ownerIds: ids,
-    });
-    const contributorIds = contributors.map((c) => c.id);
-    if (!contributorIds.length) { setMonthlyTarget(0); return; }
+  const fetchTarget = useCallback(async (ids) => {
+    if (!company?.id || !ids?.length) { setMonthlyTarget(0); setHasTargetRows(false); return; }
+
+    const scopeIds = await resolveScopeIds(ids);
+    if (!scopeIds.length) { setMonthlyTarget(0); setHasTargetRows(false); return; }
 
     const rows = await fetchMonthlyTargets({
       companyId: company.id,
-      contributorIds,
+      contributorIds: scopeIds,
       start: period.start,
       end: period.end,
     });
+    // Whether a target EXISTS is its own fact, separate from its value. Nobody
+    // in scope holding a target row reads "No target assigned" rather than
+    // "Fully Planned ✓" — which is what a plan against a 0 target used to claim,
+    // for salesmen with no target row as much as for a picked manager.
+    setHasTargetRows(rows.length > 0);
     setMonthlyTarget(
       Object.values(targetPerPerson(rows)).reduce((sum, v) => sum + v, 0),
     );
-  }, [company?.id, period.start, period.end]);
+  }, [company?.id, resolveScopeIds, period.start, period.end]);
 
   // ── Fetch: In Funnel + this month's Achieved ──────────────────────────────
   // In Funnel is the raw open-deal value for the scope — the same query and the
@@ -167,32 +190,30 @@ export default function OpportunitiesModule({
   const fetchFunnelAndAchieved = useCallback(async (ids) => {
     if (!company?.id || !ids?.length) { setFunnelValue(0); setAchievedThisMonth(0); return; }
 
-    // Narrowed exactly as the KPI strip narrows them, so the same scope produces
-    // the same two numbers on both screens: the funnel over contributors, and
-    // Achieved over contributors plus any flagged achieved-only manager. Using
-    // the raw owner ids here would count a manager's open deals in one view and
-    // not the other — the drift this shared rule exists to prevent.
-    const contributors = await fetchContributors({ companyId: company.id, ownerIds: ids });
-    const contributorIds = contributors.map((c) => c.id);
-    if (!contributorIds.length) { setFunnelValue(0); setAchievedThisMonth(0); return; }
+    // The same scope as the target above, so In Funnel, Remaining and Monthly
+    // Target always describe the same people — including a single explicit pick
+    // that the contributor narrowing would otherwise drop.
+    const scopeIds = await resolveScopeIds(ids);
+    if (!scopeIds.length) { setFunnelValue(0); setAchievedThisMonth(0); return; }
 
     const { data: openDeals } = await supabase
       .from('deals')
       .select('owner_id, amount')
       .eq('company_id', company.id)
-      .in('owner_id', contributorIds)
+      .in('owner_id', scopeIds)
       .not('stage', 'in', '("won","lost")');
     setFunnelValue((openDeals || []).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0));
 
-    const achievedOnly = await fetchAchievedOnlyUsers({ companyId: company.id, ownerIds: ids });
+    // resolveScopeIds already folded in any flagged achieved-only manager, so
+    // there is no second users lookup here any more.
     const { total } = await fetchAchieved({
       companyId: company.id,
-      contributorIds: [...contributorIds, ...achievedOnly.map((u) => u.id)],
+      contributorIds: scopeIds,
       start: period.start,
       end: period.end,
     });
     setAchievedThisMonth(total);
-  }, [company?.id, period.start, period.end]);
+  }, [company?.id, resolveScopeIds, period.start, period.end]);
 
   // ── Fetch: opportunities ──────────────────────────────────────────────────
   const fetchOpportunities = useCallback(async () => {
@@ -475,10 +496,12 @@ export default function OpportunitiesModule({
             from xl — five in a row on a small screen is unreadable. */}
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 mb-4">
           <div className="bg-muted rounded-xl p-4 text-center">
-            <p className="text-xl font-bold text-foreground tabular-nums">
-              {formatCurrency(monthlyTarget)}
+            <p className={`text-xl font-bold tabular-nums ${hasTargetRows ? 'text-foreground' : 'text-muted-foreground'}`}>
+              {hasTargetRows ? formatCurrency(monthlyTarget) : '—'}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">Monthly Target</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {hasTargetRows ? 'Monthly Target' : 'No target assigned'}
+            </p>
           </div>
           <div className="bg-muted rounded-xl p-4 text-center">
             <p className={`text-xl font-bold tabular-nums ${
@@ -488,14 +511,17 @@ export default function OpportunitiesModule({
             </p>
             <p className="text-xs text-muted-foreground mt-1">Total Planned</p>
           </div>
+          {/* Without a target there is nothing to be "fully planned" against —
+              that claim used to appear for a picked manager whose scope resolved
+              to nobody, and for any salesman with no target row. */}
           <div className="bg-muted rounded-xl p-4 text-center">
             <p className={`text-xl font-bold tabular-nums ${
-              isUnderPlanned ? 'text-red-600' : 'text-green-600'
+              !hasTargetRows ? 'text-muted-foreground' : isUnderPlanned ? 'text-red-600' : 'text-green-600'
             }`}>
-              {formatCurrency(unplanned)}
+              {hasTargetRows ? formatCurrency(unplanned) : '—'}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {isUnderPlanned ? 'Still Unplanned' : 'Fully Planned ✓'}
+              {!hasTargetRows ? 'Nothing to plan against' : isUnderPlanned ? 'Still Unplanned' : 'Fully Planned ✓'}
             </p>
           </div>
           <div className="bg-muted rounded-xl p-4 text-center">
