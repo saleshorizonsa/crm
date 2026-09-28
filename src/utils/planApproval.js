@@ -20,11 +20,31 @@ export function currentPlanMonth(d = new Date()) {
 const DIRECTOR_ROLES = ['director', 'admin', 'head'];
 const TEAM_ROLES = ['manager', 'supervisor'];
 
-// The company-wide fallback reviewer, used for anyone whose reports_to is
-// null. Ahmad Sulaiman Moamina — the only salesman who has ever submitted a
-// plan — has no reports_to, so without this his plan would notify nobody and
-// appear in nobody's queue.
+// The company-wide fallback reviewer, used for anyone with no supervisor_id at
+// all. Without it their plan would notify nobody and appear in nobody's queue.
 const LEAD_ROLES = ['manager', 'supervisor', 'director', 'head', 'admin'];
+
+// Is this supervisor an active user ANYWHERE, not just inside one company?
+//
+// Supervisors legitimately sit in another company: Nader is a group director
+// over JASCO PVC, IMDADAT and JASCO Steels, so IMDADAT's manager has a
+// supervisor_id pointing outside his own company — correct data, confirmed with
+// the business owner. A company-scoped active check reads that as "has no
+// manager" and hands the plan to the company fallback; in a company whose only
+// lead IS that manager, the fallback is HIMSELF, so he would approve his own
+// plan. resolveApprover() never had this problem because it looks the approver
+// up by id with no company filter. This keeps the map and the scope agreeing
+// with it, and with the SQL trigger, which also reads the column directly.
+async function activeApproverIds(ids) {
+  const list = [...new Set((ids || []).filter(Boolean))];
+  if (!list.length) return new Set();
+  const { data } = await supabase
+    .from('users')
+    .select('id')
+    .in('id', list)
+    .eq('is_active', true);
+  return new Set((data || []).map((u) => u.id));
+}
 
 // Manager first, then supervisor, then director/head/admin. A company with no
 // manager or supervisor legitimately resolves to its director — in that case
@@ -61,18 +81,23 @@ export async function resolveApproverMap(companyId, ownerIds) {
   if (!companyId || !ownerIds?.length) return map;
   const { data: users } = await supabase
     .from('users')
-    .select('id, role, reports_to')
+    .select('id, role, supervisor_id')
     .eq('company_id', companyId)
     .eq('is_active', true);
   const fallback = pickFallback(users);
-  // Only active users are fetched, so this set is the test for "is the manager
-  // this person reports to still active?". A reports_to pointing at someone
+  // Only active users are fetched, so this set is the test for "is this
+  // person's supervisor still active?". A supervisor_id pointing at someone
   // deactivated resolves to the company fallback rather than to a person who
   // can no longer act — otherwise their whole team's plans become unapprovable.
   const activeIds = new Set((users || []).map((u) => u.id));
+  // ...and a supervisor in ANOTHER company is still a valid approver.
+  const elsewhere = await activeApproverIds(
+    (users || []).map((u) => u.supervisor_id).filter((id) => id && !activeIds.has(id)),
+  );
+  const isUsableApprover = (id) => !!id && (activeIds.has(id) || elsewhere.has(id));
   for (const id of ownerIds) {
     const u = (users || []).find((x) => x.id === id);
-    map[id] = u?.reports_to && activeIds.has(u.reports_to) ? u.reports_to : fallback;
+    map[id] = isUsableApprover(u?.supervisor_id) ? u.supervisor_id : fallback;
   }
   return map;
 }
@@ -100,18 +125,18 @@ export async function resolveApprover(companyId, ownerId) {
   if (!companyId || !ownerId) return null;
   const { data: me } = await supabase
     .from('users')
-    .select('reports_to')
+    .select('supervisor_id')
     .eq('id', ownerId)
     .maybeSingle();
   // The owner's own status is irrelevant — a deactivated person's already-filed
   // plan still needs a reviewer. What matters is that the REVIEWER is active:
   // returning a deactivated manager would leave the plan permanently stuck,
   // since assertCanDecide() authorises only the resolved approver.
-  if (me?.reports_to) {
+  if (me?.supervisor_id) {
     const { data: approver } = await supabase
       .from('users')
       .select('id')
-      .eq('id', me.reports_to)
+      .eq('id', me.supervisor_id)
       .eq('is_active', true)
       .maybeSingle();
     if (approver?.id) return approver.id;
@@ -143,21 +168,33 @@ export async function resolveApproverScope({ companyId, userId, role }) {
     // Everyone resolveApprover() hands to the fallback must appear here, or a
     // plan gets routed to an approver whose queue never shows it. That is two
     // groups, not one:
-    //   a) reports_to IS NULL      — never had a manager
-    //   b) reports_to points at a DEACTIVATED user — orphaned by a deactivation.
+    //   a) supervisor_id IS NULL   — never had a manager
+    //   b) supervisor_id points at a DEACTIVATED user — orphaned by a deactivation.
     // Group (b) matters because fetchTeamHierarchy() walks active users only, so
     // an orphan is unreachable from any manager's downline and would otherwise
     // fall out of every queue in the company.
+    //
+    // A supervisor in ANOTHER company is NOT an orphan: this query is company
+    // scoped, so a cross-company supervisor (IMDADAT's manager -> Nader) is
+    // absent from activeIds and would otherwise be swept in here, putting that
+    // plan in two queues at once — the fallback's and the real approver's.
     const { data: companyUsers } = await supabase
       .from('users')
-      .select('id, reports_to, is_active')
+      .select('id, supervisor_id, is_active')
       .eq('company_id', companyId);
     const activeIds = new Set(
       (companyUsers || []).filter((u) => u.is_active).map((u) => u.id),
     );
+    const elsewhere = await activeApproverIds(
+      (companyUsers || [])
+        .filter((u) => u.is_active)
+        .map((u) => u.supervisor_id)
+        .filter((id) => id && !activeIds.has(id)),
+    );
     (companyUsers || [])
       .filter((u) => u.id !== userId && u.is_active)
-      .filter((u) => !u.reports_to || !activeIds.has(u.reports_to))
+      .filter((u) => !u.supervisor_id
+        || !(activeIds.has(u.supervisor_id) || elsewhere.has(u.supervisor_id)))
       .forEach((u) => ids.add(u.id));
   }
   return [...ids];
