@@ -22,7 +22,11 @@ export async function checkPlanDeadlines(companyId, _actorId, _role) {
   try {
     const { data: contributors } = await supabase
       .from('users')
-      .select('id, full_name, role, reports_to')
+      // supervisor_id, not reports_to: it is the only hierarchy column the app
+      // writes, so reports_to routes a missed-plan alert to whoever was the
+      // manager at backfill time — or, when it is null, to nobody at all.
+      // See utils/teamHierarchy.js for the full reasoning.
+      .select('id, full_name, role, supervisor_id')
       .eq('company_id', companyId)
       .eq('is_active', true)
       .in('role', ['salesman', 'supervisor']);
@@ -61,9 +65,9 @@ export async function checkPlanDeadlines(companyId, _actorId, _role) {
 
       // Notify the direct manager (if any) and the salesman. Best-effort.
       const notes = [];
-      if (person.reports_to) {
+      if (person.supervisor_id) {
         notes.push({
-          user_id: person.reports_to,
+          user_id: person.supervisor_id,
           company_id: companyId,
           type: 'plan_deadline_missed',
           title: '🚩 Plan Not Submitted',

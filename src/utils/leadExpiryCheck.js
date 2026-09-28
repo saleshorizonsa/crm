@@ -160,14 +160,16 @@ async function checkSecondBounce(companyId, ownerId, opportunityId, now) {
   const { error: markErr } = await markEscalated().eq('backlog_cleanup', false);
   if (markErr?.code === UNDEFINED_COLUMN) await markEscalated();
 
+  // supervisor_id, not reports_to — the escalation has to reach the person who
+  // actually supervises this salesman today. See utils/teamHierarchy.js.
   const { data: salesman } = await supabase
     .from('users')
-    .select('full_name, reports_to')
+    .select('full_name, supervisor_id')
     .eq('id', ownerId)
     .single();
 
   await notify({
-    userId: salesman?.reports_to,
+    userId: salesman?.supervisor_id,
     companyId,
     type: 'bounce_back_escalation',
     title: '🚨 Escalation: 2nd Bounce-Back',

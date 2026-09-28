@@ -1180,19 +1180,21 @@ const DealModal = ({
 
   const notifyManager = async (dealObj, oldAmount, newAmount, reason) => {
     try {
+      // supervisor_id, not reports_to: the alert goes to the owner's current
+      // supervisor. See utils/teamHierarchy.js.
       const { data: owner } = await supabase
         .from('users')
-        .select('id, full_name, reports_to')
+        .select('id, full_name, supervisor_id')
         .eq('id', dealObj.owner_id)
         .single();
-      if (!owner?.reports_to) return;
+      if (!owner?.supervisor_id) return;
       const diff = newAmount - oldAmount;
       const sign = diff > 0 ? '+' : '';
       const desc = `Amount: ${formatCurrency(oldAmount, preferredCurrency)} → ${formatCurrency(
         newAmount, preferredCurrency,
       )} (${sign}${formatCurrency(diff, preferredCurrency)})`;
       await supabase.from('notifications').insert({
-        user_id:    owner.reports_to,
+        user_id:    owner.supervisor_id,
         company_id: company?.id,
         type:       'deal_changed',
         title:      '✏️ Deal Modified',
