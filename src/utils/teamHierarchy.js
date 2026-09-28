@@ -10,8 +10,18 @@ const TEAM_LEAD_ROLES = ['manager', 'supervisor'];
 //     company.
 //   • manager / supervisor    → their FULL downline: direct reports plus every
 //     salesman/supervisor beneath those reports, walked recursively through
-//     `reports_to` (so a manager sees his supervisors AND the salesmen under
+//     `supervisor_id` (so a manager sees his supervisors AND the salesmen under
 //     them, not just the direct reports).
+//
+// HIERARCHY COLUMN: `supervisor_id`, not `reports_to`. users carries both, and
+// only supervisor_id is maintained — it is the column every write path sets
+// (updateUserHierarchy, InviteUserModal, UserDetailModal, accept-invitation, the
+// create-user edge function) and the one every RLS/permission function resolves
+// the tree through (get_user_subordinates, can_manage_user_contacts,
+// can_assign_target_to_user). NOTHING writes reports_to: it is a one-time
+// partial backfill, so every manager change made since has left it stale.
+// Reading it here meant Planning, the Coverage Console and Insights rolled up a
+// different team from the dashboards, which already used supervisor_id.
 //   • anyone else (salesman)  → empty (no selector).
 //
 // Returns objects shaped { id, full_name, role }, sorted by name.
@@ -31,21 +41,21 @@ export async function fetchTeamHierarchy({ companyId, userId, role }) {
 
   if (!TEAM_LEAD_ROLES.includes(role)) return [];
 
-  // Pull every active user in the company once, then walk the reports_to tree
+  // Pull every active user in the company once, then walk the supervisor_id tree
   // downward from the current user. Cheaper and simpler than N recursive queries.
   const { data: allUsers } = await supabase
     .from('users')
-    .select('id, full_name, role, reports_to')
+    .select('id, full_name, role, supervisor_id')
     .eq('company_id', companyId)
     .eq('is_active', true);
 
   if (!allUsers?.length) return [];
 
-  const seen = new Set(); // guards against a cyclic reports_to chain
+  const seen = new Set(); // guards against a cyclic supervisor_id chain
   const team = [];
   const walk = (managerId) => {
     for (const u of allUsers) {
-      if (u.reports_to === managerId && !seen.has(u.id)) {
+      if (u.supervisor_id === managerId && !seen.has(u.id)) {
         seen.add(u.id);
         team.push({ id: u.id, full_name: u.full_name, role: u.role });
         walk(u.id);

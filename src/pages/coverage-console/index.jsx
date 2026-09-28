@@ -130,7 +130,7 @@ export default function CoverageConsole() {
         // All active users
         supabase
           .from("users")
-          .select("id, full_name, role, reports_to, is_active, is_contributor")
+          .select("id, full_name, role, supervisor_id, is_active, is_contributor")
           .eq("company_id", company.id)
           .eq("is_active", true),
 
@@ -257,15 +257,21 @@ export default function CoverageConsole() {
   }, [company?.id, fetchAll]);
 
   // ── HIERARCHY ──────────────────────────────────────────────────────────────
-  // reports_to is a single edge, so a manager's real team is the whole subtree
-  // beneath them (manager -> supervisors -> salesmen), not just direct reports.
-
+  // supervisor_id is a single edge, so a manager's real team is the whole
+  // subtree beneath them (manager -> supervisors -> salesmen), not just direct
+  // reports.
+  //
+  // This walked reports_to until 2026-09-28. Both columns exist on users, but
+  // only supervisor_id is written — by every hierarchy write path and by every
+  // RLS function — while reports_to is a one-time partial backfill nothing
+  // maintains. Reading it here gave this console a different team from the
+  // dashboards for the same manager. See utils/teamHierarchy.js.
   const childrenMap = useMemo(() => {
     const map = new Map();
     (raw?.users || []).forEach((u) => {
-      if (!u.reports_to) return;
-      if (!map.has(u.reports_to)) map.set(u.reports_to, []);
-      map.get(u.reports_to).push(u.id);
+      if (!u.supervisor_id) return;
+      if (!map.has(u.supervisor_id)) map.set(u.supervisor_id, []);
+      map.get(u.supervisor_id).push(u.id);
     });
     return map;
   }, [raw?.users]);
@@ -478,7 +484,7 @@ export default function CoverageConsole() {
     const { flags, escalations, users, deals, now } = data;
     const exs = [];
     const teamOf = (ownerId) =>
-      users.find((u) => u.id === ownerId)?.reports_to || null;
+      users.find((u) => u.id === ownerId)?.supervisor_id || null;
 
     // Won, not yet invoiced, stuck 7+ days — visibility only, never touches
     // Achieved. See wonNotInvoicedExceptions in utils/planningCalculations.js.

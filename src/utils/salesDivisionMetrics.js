@@ -33,7 +33,7 @@ export const UNASSIGNED = 'unassigned';
 
 /**
  * The user ids this viewer may see. Director = whole company; manager = his own
- * reports_to subtree including himself — the same rule as the Coverage Console.
+ * supervisor_id subtree including himself — the same rule as the Coverage Console.
  * `users` must be the company's ACTIVE users.
  */
 export function scopeUserIds({ users, viewerId, role }) {
@@ -41,15 +41,18 @@ export function scopeUserIds({ users, viewerId, role }) {
   if (role === 'director') return list.map((u) => u.id);
   if (role !== 'manager' || !viewerId) return [];
 
+  // supervisor_id, not reports_to: it is the only hierarchy column anything
+  // writes, and the one the dashboards and every RLS function already use.
+  // reports_to is a stale one-time backfill — see utils/teamHierarchy.js.
   const childrenOf = new Map();
   list.forEach((u) => {
-    if (!u.reports_to) return;
-    if (!childrenOf.has(u.reports_to)) childrenOf.set(u.reports_to, []);
-    childrenOf.get(u.reports_to).push(u.id);
+    if (!u.supervisor_id) return;
+    if (!childrenOf.has(u.supervisor_id)) childrenOf.set(u.supervisor_id, []);
+    childrenOf.get(u.supervisor_id).push(u.id);
   });
   const out = [viewerId];
   const queue = [viewerId];
-  const seen = new Set(queue); // guards against a cyclic reports_to chain
+  const seen = new Set(queue); // guards against a cyclic supervisor_id chain
   while (queue.length) {
     for (const child of childrenOf.get(queue.shift()) || []) {
       if (seen.has(child)) continue;
@@ -129,7 +132,7 @@ export function divisionView({ group, users }) {
   const supIds = new Set(supervisors.map((s) => s.id));
   const cards = supervisors.map((s) => ({
     user: s,
-    teamIds: [s.id, ...group.userIds.filter((id) => !supIds.has(id) && (users || []).find((u) => u.id === id)?.reports_to === s.id)],
+    teamIds: [s.id, ...group.userIds.filter((id) => !supIds.has(id) && (users || []).find((u) => u.id === id)?.supervisor_id === s.id)],
   }));
   const covered = new Set(cards.flatMap((c) => c.teamIds));
   const unattached = members.filter((u) => !covered.has(u.id));
