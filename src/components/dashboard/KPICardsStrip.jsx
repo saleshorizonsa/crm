@@ -32,6 +32,18 @@ function cardDefs(totals, opts = {}) {
   const targetMet = (t.deficit || 0) <= 0;
   const pct = (num, den) => (den > 0 ? ((num / den) * 100).toFixed(1) : '0');
 
+  // A manager measured ANNUALLY holds no monthly target row, so he cannot be
+  // inside Target — but his invoiced revenue is real. Name him on the Target
+  // card and report his revenue under Achieved, instead of letting it silently
+  // lift a percentage measured against a target that excludes him.
+  const annualNames = (t.annualOnlyAchievers || []).map((u) => u.full_name).join(', ');
+  const excludesNote = (tt) => (annualNames
+    ? `excludes ${annualNames} — measured annually`
+    : (tt ? '' : ''));
+  const annualNote = (tt, base) => ((tt.achievedAnnualOnly || 0) > 0
+    ? `${base} · +${fmtSAR(tt.achievedAnnualOnly)} by ${annualNames} (annual)`
+    : base);
+
   // Win Rate + Planned Gap are always monthly / 3-month, for every role.
   const winRateCard = {
     key: 'winRate', label: 'Win Rate', strip: 'bg-purple-500',
@@ -57,12 +69,12 @@ function cardDefs(totals, opts = {}) {
       {
         key: 'target', label: isAnnual ? 'Annual Target' : 'Target', strip: 'bg-blue-600',
         value: `${fmtSAR(t.target)} SAR`, valueClass: 'text-foreground',
-        sub: isAnnual ? `${year}` : period.label,
+        sub: excludesNote(t) || (isAnnual ? `${year}` : period.label),
       },
       {
         key: 'achieved', label: 'Achieved (invoiced)', strip: 'bg-green-500',
-        value: `${fmtSAR(t.achieved)} SAR`, valueClass: 'text-green-600',
-        sub: `${achievedWindow} · ${(t.attainmentPct || 0).toFixed(1)}% of target`,
+        value: `${fmtSAR(t.achievedCounted ?? t.achieved)} SAR`, valueClass: 'text-green-600',
+        sub: annualNote(t, `${achievedWindow} · ${(t.attainmentPct || 0).toFixed(1)}% of target`),
       },
       {
         key: 'deficit', label: isAnnual ? 'Annual gap to target' : 'Gap to target', strip: met ? 'bg-green-500' : 'bg-red-500',
@@ -81,12 +93,12 @@ function cardDefs(totals, opts = {}) {
     {
       key: 'target', label: 'Target', strip: 'bg-blue-600',
       value: `${fmtSAR(t.target)} SAR`, valueClass: 'text-foreground',
-      sub: MONTH_LABEL(),
+      sub: excludesNote(t) || MONTH_LABEL(),
     },
     {
       key: 'achieved', label: 'Achieved (invoiced)', strip: 'bg-green-500',
-      value: `${fmtSAR(t.achieved)} SAR`, valueClass: 'text-green-600',
-      sub: `${(t.attainmentPct || 0).toFixed(1)}% of target`,
+      value: `${fmtSAR(t.achievedCounted ?? t.achieved)} SAR`, valueClass: 'text-green-600',
+      sub: annualNote(t, `${(t.attainmentPct || 0).toFixed(1)}% of target`),
     },
     {
       key: 'deficit', label: 'Gap to target', strip: targetMet ? 'bg-green-500' : 'bg-red-500',

@@ -9,6 +9,7 @@ import ExceptionFeed from "./components/ExceptionFeed";
 import {
   CONTRIBUTOR_ROLES,
   isAchievedOnly,
+  annualOnlyAchieversFrom,
   targetPerPerson,
   winRateFromDeals,
   sumPlannedByOwner,
@@ -139,11 +140,14 @@ export default function CoverageConsole() {
         supabase
           .from("sales_targets")
           .select(
-            "assigned_to, target_amount, period_type, target_type, period_start, product_group, client_targets(target_amount)"
+            "assigned_to, target_amount, period_type, target_type, period_start, period_end, product_group, client_targets(target_amount)"
           )
           .eq("company_id", company.id)
           .eq("status", "active")
-          .eq("period_type", "monthly")
+          // Yearly rows are fetched too — NOT to be summed (calcMetrics filters
+          // to monthly before targetPerPerson), but so a manager measured
+          // annually can be identified and labelled rather than silently
+          // inflating Achieved against a target that excludes him.
           .lte("period_start", monthEnd)
           .gte("period_end", monthStart),
 
@@ -346,8 +350,14 @@ export default function CoverageConsole() {
       ...contributorIds,
       ...userIds.filter((id) => isAchievedOnly((users || []).find((x) => x.id === id))),
     ];
+    // MONTHLY rows only. The query now also returns yearly rows (to identify
+    // annually-measured managers below); summing them here would put a whole
+    // year's allocation into a month.
+    const monthlyTargetRows = (targets || []).filter(
+      (t) => t.period_type !== "yearly"
+    );
     const targetPer = targetPerPerson(
-      (targets || []).filter((t) => achieverIdsForTarget.includes(t.assigned_to))
+      monthlyTargetRows.filter((t) => achieverIdsForTarget.includes(t.assigned_to))
     );
     const target = Object.values(targetPer).reduce((sum, v) => sum + v, 0);
 
@@ -384,6 +394,24 @@ export default function CoverageConsole() {
       (sum, d) => sum + (d.final_amount || d.amount || 0),
       0
     );
+
+    // A flagged manager measured ANNUALLY holds no monthly target row, so he
+    // adds to Achieved and nothing to Target. His revenue stays in `invoiced`
+    // and is shown on its own line; it no longer drives the gap to target, the
+    // required pipeline or the attainment measured against a target that
+    // excludes him. Identified by shape, never by name.
+    const annualOnlyAchievers = annualOnlyAchieversFrom({
+      users,
+      targets,
+      scopeIds: achieverIds,
+      start: monthStart,
+      end: monthEnd,
+    });
+    const annualOnlyIds = new Set(annualOnlyAchievers.map((u) => u.id));
+    const invoicedAnnualOnly = invoicedDeals
+      .filter((d) => annualOnlyIds.has(d.owner_id))
+      .reduce((sum, d) => sum + (d.final_amount || d.amount || 0), 0);
+    const invoicedCounted = invoiced - invoicedAnnualOnly;
 
     // ── FUNNEL ──
     const openDeals = (deals || []).filter(
@@ -435,7 +463,7 @@ export default function CoverageConsole() {
     // 1,499,724.53 against a 1,481,075.00 target - the month was made - and this
     // still demanded 952,885.34 of fresh pipeline, while Planning correctly read
     // 0.00. Same basis as planningPageSummary.js now.
-    const remainingTarget = Math.max(0, target - invoiced);
+    const remainingTarget = Math.max(0, target - invoicedCounted);
     const requiredPlan = computeRequiredRaw({ target: remainingTarget, winRatePct });
 
     // ── CARRY-IN ── next month's committed orders. Shown for visibility only:
@@ -458,6 +486,9 @@ export default function CoverageConsole() {
     return {
       target,
       invoiced,
+      invoicedCounted,
+      invoicedAnnualOnly,
+      annualOnlyAchievers,
       remainingTarget,
       funnel,
       weightedFunnel,
@@ -474,8 +505,8 @@ export default function CoverageConsole() {
       invoicedDeals,
       contributorIds,
       coverageOk: coverage >= target,
-      pacingOk: invoiced / Math.max(target, 1) >= elapsed - 0.15,
-      pace: invoiced / Math.max(target, 1),
+      pacingOk: invoicedCounted / Math.max(target, 1) >= elapsed - 0.15,
+      pace: invoicedCounted / Math.max(target, 1),
       elapsed,
       totalDays,
       dayOfMonth: now.getDate(),
@@ -1078,16 +1109,35 @@ export default function CoverageConsole() {
             {nav.level !== "opportunity" && metrics && (
               <div className="divide-y divide-gray-50">
                 {[
-                  ["Target", SAR(metrics.target) + " SAR", ""],
+                  [
+                    "Target",
+                    SAR(metrics.target) + " SAR",
+                    metrics.annualOnlyAchievers?.length
+                      ? `excludes ${metrics.annualOnlyAchievers
+                        .map((u) => u.full_name)
+                        .join(", ")} — measured annually`
+                      : "",
+                  ],
                   [
                     "Achieved",
-                    SAR(metrics.invoiced) + " SAR",
+                    SAR(metrics.invoicedCounted) + " SAR",
                     (metrics.pace * 100).toFixed(1) + "% of target",
                     "pos",
                   ],
+                  // Real revenue, shown rather than hidden — it just cannot be
+                  // measured against a target that excludes who booked it.
+                  ...(metrics.invoicedAnnualOnly > 0
+                    ? [[
+                      "… also invoiced",
+                      SAR(metrics.invoicedAnnualOnly) + " SAR",
+                      `${metrics.annualOnlyAchievers
+                        .map((u) => u.full_name)
+                        .join(", ")} · annual target, not counted above`,
+                    ]]
+                    : []),
                   [
                     "Gap to target",
-                    SAR(Math.max(0, metrics.target - metrics.invoiced)) + " SAR",
+                    SAR(metrics.remainingTarget) + " SAR",
                     "",
                     "neg",
                   ],

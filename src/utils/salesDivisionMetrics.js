@@ -1,6 +1,7 @@
 import {
   CONTRIBUTOR_ROLES,
   isAchievedOnly,
+  annualOnlyAchieversFrom,
   targetPerPerson,
   winRateFromDeals,
   sumPlannedByOwner,
@@ -179,9 +180,25 @@ export function calcDivisionMetrics(userIds, data) {
     ...(users || []).filter((u) => scope.has(u.id) && isAchievedOnly(u)).map((u) => u.id),
   ]);
 
+  // MONTHLY rows only. The page's query now also returns yearly rows (to spot
+  // annually-measured managers below); summing those would put a whole year's
+  // allocation into a month.
+  // Excludes explicit YEARLY rows rather than requiring 'monthly', so a caller
+  // whose query omits period_type still gets its target counted instead of
+  // silently receiving 0.
+  const monthlyTargetRows = (targets || []).filter((t) => t.period_type !== 'yearly');
   const target = Object.values(
-    targetPerPerson((targets || []).filter((t) => isAchiever.has(t.assigned_to))),
+    targetPerPerson(monthlyTargetRows.filter((t) => isAchiever.has(t.assigned_to))),
   ).reduce((sum, v) => sum + v, 0);
+
+  // A flagged manager measured ANNUALLY adds to Achieved and nothing to Target.
+  // His revenue stays in `achieved` and gets its own line; it no longer drives
+  // the deficit, the required pipeline or the pace measured against a target
+  // that excludes him. By shape, never by name.
+  const annualOnlyAchievers = annualOnlyAchieversFrom({
+    users, targets, scopeIds: [...isAchiever], start: monthStart, end: monthEnd,
+  });
+  const annualOnlyIds = new Set(annualOnlyAchievers.map((u) => u.id));
 
   // A group with no deals in the window borrows the company contributors' rate,
   // as the Coverage Console does, rather than reading 0%.
@@ -205,7 +222,18 @@ export function calcDivisionMetrics(userIds, data) {
     )
     .reduce((sum, d) => sum + (d.final_amount || d.amount || 0), 0);
 
-  const deficit = Math.max(0, target - achieved);
+  const achievedAnnualOnly = (deals || [])
+    .filter(
+      (d) => annualOnlyIds.has(d.owner_id)
+        && d.stage === 'won'
+        && d.is_invoiced === true
+        && d.invoice_date >= monthStart
+        && d.invoice_date <= monthEnd,
+    )
+    .reduce((sum, d) => sum + (d.final_amount || d.amount || 0), 0);
+  const achievedCounted = achieved - achievedAnnualOnly;
+
+  const deficit = Math.max(0, target - achievedCounted);
 
   const openDeals = (deals || []).filter(
     (d) => isContributor.has(d.owner_id) && !['won', 'lost'].includes(d.stage),
@@ -245,7 +273,7 @@ export function calcDivisionMetrics(userIds, data) {
   const plannedGap = Math.max(0, requiredRaw - monthCoverage);
 
   const { weightedFunnel, weightedPlanning, coverage } = computeCoverage({
-    invoiced: achieved,
+    invoiced: achievedCounted,
     openDeals,
     planned,
     winRatePct,
@@ -256,7 +284,7 @@ export function calcDivisionMetrics(userIds, data) {
   const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const dayOfMonth = now.getDate();
   const elapsed = dayOfMonth / totalDays;
-  const pace = achieved / Math.max(target, 1);
+  const pace = achievedCounted / Math.max(target, 1);
 
   return {
     target,
@@ -270,6 +298,9 @@ export function calcDivisionMetrics(userIds, data) {
     pacingOk: pace >= elapsed - 0.15,
     winRatePct,
     winRateBorrowed,
+    achievedCounted,
+    achievedAnnualOnly,
+    annualOnlyAchievers,
     planned,
     monthFunnel,
     monthCoverage,

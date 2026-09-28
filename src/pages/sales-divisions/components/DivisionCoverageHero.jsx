@@ -109,8 +109,23 @@ export function DivisionCoverageHero({ metrics, scope, title, sub }) {
 
 export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
   const rows = [
-    ["Target", SAR(metrics.target) + " SAR", ""],
-    ["Achieved", SAR(metrics.achieved) + " SAR", (metrics.pace * 100).toFixed(1) + "% of target", "pos"],
+    [
+      "Target",
+      SAR(metrics.target) + " SAR",
+      metrics.annualOnlyAchievers?.length
+        ? `excludes ${metrics.annualOnlyAchievers.map((u) => u.full_name).join(", ")} — measured annually`
+        : "",
+    ],
+    ["Achieved", SAR(metrics.achievedCounted) + " SAR", (metrics.pace * 100).toFixed(1) + "% of target", "pos"],
+    // Real revenue, shown rather than hidden — it simply cannot be measured
+    // against a target that excludes the person who booked it.
+    ...(metrics.achievedAnnualOnly > 0
+      ? [[
+        "… also invoiced",
+        SAR(metrics.achievedAnnualOnly) + " SAR",
+        `${metrics.annualOnlyAchievers.map((u) => u.full_name).join(", ")} · annual target, not counted above`,
+      ]]
+      : []),
     ["Gap to target", SAR(metrics.deficit) + " SAR", "", "neg"],
     [
       "Win rate",

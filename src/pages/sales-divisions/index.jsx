@@ -222,11 +222,10 @@ export default function SalesDivisions() {
           supabase
             .from("sales_targets")
             .select(
-              "assigned_to, target_amount, period_type, target_type, period_start, product_group, client_targets(target_amount)"
+              "assigned_to, target_amount, period_type, target_type, period_start, period_end, product_group, client_targets(target_amount)"
             )
             .eq("company_id", company.id)
             .eq("status", "active")
-            .eq("period_type", "monthly")
             .lte("period_start", monthEnd)
             .gte("period_end", monthStart),
           supabase
