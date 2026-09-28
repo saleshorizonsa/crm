@@ -7,7 +7,7 @@ import CustomerMaster from "./components/CustomerMaster";
 import OpportunitiesModule from "./components/OpportunitiesModule";
 import FutureOrdersModule from "./components/FutureOrdersModule";
 import HistoricalDataModule from "./components/HistoricalDataModule";
-import { computePlanningSummary } from "utils/planningCalculations";
+import { computePlanningPageSummary, fetchProductGroups } from "utils/planningPageSummary";
 import { fetchTeamHierarchy } from "utils/teamHierarchy";
 import { useDateRange } from "contexts/DateRangeContext";
 import { periodLabelFromRange, isAnnualRange } from "utils/dashboardDateUtils";
@@ -94,15 +94,31 @@ const PlanningPage = () => {
   // ── Planning summary bar (visible on every tab) ─────────────────────────────
   const [summaryData, setSummaryData] = useState({
     target: 0,
+    achieved: 0,
+    remainingTarget: 0,
     winRate3m: 0,
     winRateIsDefault: false,
     requiredPlan: 0,
-    requiredPlanRaw: 0,
-    futureCarryover: 0,
-    totalPlanned: 0,
+    plannedOpen: 0,
+    openFunnel: 0,
+    availableCoverage: 0,
+    coveragePct: null,
     plannedGap: 0,
+    hasTargetRows: false,
+    untaggedPlanned: 0,
+    untaggedFunnel: 0,
   });
   const [summaryLoading, setSummaryLoading] = useState(true);
+
+  // ── Filters, owned here because the cards above the tabs follow them ────────
+  // The salesman selector and the product-group selector are rendered inside the
+  // Current Sales Plan tab (where the team expects them), but the four summary
+  // cards used to ignore the salesman entirely — filterOwner was not even in
+  // fetchPlanningSummary's dependency list, so drilling into one person changed
+  // the list underneath and left the consolidated numbers above it untouched.
+  const [filterOwner, setFilterOwner] = useState("all");
+  const [filterProductGroup, setFilterProductGroup] = useState(null);
+  const [productGroups, setProductGroups] = useState([]);
 
   const companyId = adminCompany?.id;
   const isDirectorRole = DIRECTOR_ROLES.includes(role);
@@ -159,7 +175,9 @@ const PlanningPage = () => {
   const today = new Date();
   const deadlineDay = new Date(today.getFullYear(), today.getMonth(), 25);
   const isLate = today > deadlineDay;
-  const planComplete = summaryData.totalPlanned >= summaryData.requiredPlan;
+  // Submission completeness stays a question about the PLAN, not about coverage:
+  // a big open funnel must not let a month be submitted with nothing planned.
+  const planComplete = summaryData.plannedOpen >= summaryData.requiredPlan;
   const canSubmit = planComplete && !planSubmission?.is_submitted;
   const showSubmitBar = (isSalesman || isSupervisor) && !!companyId;
 
@@ -176,7 +194,7 @@ const PlanningPage = () => {
         owner_id: user?.id,
         plan_month: planMonth,
         submitted_at: now.toISOString(),
-        total_planned: summaryData.totalPlanned,
+        total_planned: summaryData.plannedOpen,
         required_plan: summaryData.requiredPlan,
         is_submitted: true,
         is_late: isLate,
@@ -210,7 +228,7 @@ const PlanningPage = () => {
         ownerId: user?.id,
         ownerName: userProfile?.full_name,
         planMonth,
-        totalPlanned: summaryData.totalPlanned,
+        totalPlanned: summaryData.plannedOpen,
         submissionId: saved?.id,
       });
       await fetchPlanSubmission();
@@ -221,13 +239,17 @@ const PlanningPage = () => {
     }
   };
 
+  const emptySummary = {
+    target: 0, achieved: 0, remainingTarget: 0,
+    winRate3m: 0, winRateIsDefault: false, requiredPlan: 0,
+    plannedOpen: 0, openFunnel: 0, availableCoverage: 0,
+    coveragePct: null, plannedGap: 0, hasTargetRows: false,
+    untaggedPlanned: 0, untaggedFunnel: 0,
+  };
+
   const fetchPlanningSummary = useCallback(async () => {
     if (!companyId) {
-      setSummaryData({
-        target: 0, winRate3m: 0, winRateIsDefault: false,
-        requiredPlan: 0, requiredPlanRaw: 0, futureCarryover: 0,
-        totalPlanned: 0, plannedGap: 0,
-      });
+      setSummaryData(emptySummary);
       setSummaryLoading(false);
       return;
     }
@@ -246,43 +268,71 @@ const PlanningPage = () => {
       const isTeamLead = TEAM_ROLES.includes(role);
 
       let ownerIds = null;
-      if (!isDirector) {
+      if (filterOwner !== "all") {
+        // Drilled into one person: these cards describe that person.
+        ownerIds = [filterOwner];
+      } else if (!isDirector) {
         const scope = isTeamLead
           ? [user?.id, ...(await fetchTeamHierarchy({ companyId, userId: user?.id, role })).map((m) => m.id)].filter(Boolean)
           : [user?.id].filter(Boolean);
         ownerIds = scope.length ? scope : ["00000000-0000-0000-0000-000000000000"];
       }
 
-      const sum = await computePlanningSummary({
+      // Planning-page-only chain (utils/planningPageSummary.js). The shared
+      // computePlanningSummary() is deliberately untouched and still serves the
+      // Coverage Console, the dashboards and the KPI strip with the older
+      // definition (raw Target ÷ win rate, netted against Future Orders carry-in).
+      const sum = await computePlanningPageSummary({
         companyId,
         ownerIds,
-        range: { start: rangeStart, end: rangeEnd, isAnnual: isAnnualView },
-        // Planning walks the 3-step win-rate fallback chain (the KPI strip
-        // deliberately shows 0% instead) and measures Planned over the period
-        // the user selected, so a quarter's Required Plan is compared with a
-        // quarter of planned value. Both policies are explicit, not implied.
-        withFallback: true,
-        plannedFollowsRange: true,
+        start: rangeStart,
+        end: rangeEnd,
+        productGroup: filterProductGroup,
       });
 
       setSummaryData({
         target: sum.target,
+        achieved: sum.achieved,
+        remainingTarget: sum.remainingTarget,
         winRate3m: sum.winRatePct,
         winRateIsDefault: sum.winRateIsDefault,
-        requiredPlan: sum.required,
-        requiredPlanRaw: sum.requiredRaw,
-        futureCarryover: sum.carryIn,
-        totalPlanned: sum.planned,
+        requiredPlan: sum.requiredPlan,
+        plannedOpen: sum.plannedOpen,
+        openFunnel: sum.openFunnel,
+        availableCoverage: sum.availableCoverage,
+        coveragePct: sum.coveragePct,
         plannedGap: sum.plannedGap,
+        hasTargetRows: sum.hasTargetRows,
+        untaggedPlanned: sum.untaggedPlanned,
+        untaggedFunnel: sum.untaggedFunnel,
       });
     } catch (err) {
       console.error("Planning summary:", err);
     } finally {
       setSummaryLoading(false);
     }
-  }, [companyId, role, user?.id, rangeStart, rangeEnd, isAnnualView]);
+  }, [companyId, role, user?.id, rangeStart, rangeEnd, filterOwner, filterProductGroup]);
 
   useEffect(() => { fetchPlanningSummary(); }, [fetchPlanningSummary]);
+
+  // Product-group options, scoped the same way the cards are.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!companyId) { setProductGroups([]); return; }
+      const isDirector = DIRECTOR_ROLES.includes(role);
+      const isTeamLead = TEAM_ROLES.includes(role);
+      let ownerIds = null;
+      if (!isDirector) {
+        ownerIds = isTeamLead
+          ? [user?.id, ...(await fetchTeamHierarchy({ companyId, userId: user?.id, role })).map((m) => m.id)].filter(Boolean)
+          : [user?.id].filter(Boolean);
+      }
+      const groups = await fetchProductGroups({ companyId, ownerIds });
+      if (!cancelled) setProductGroups(groups);
+    })();
+    return () => { cancelled = true; };
+  }, [companyId, role, user?.id]);
 
   const tabs = [
     { id: "customer_master", label: "Customer Master", icon: "Users"  },
@@ -426,8 +476,41 @@ const PlanningPage = () => {
           </div>
         )}
 
+        {/* Active filters — the cards below follow them, but the selectors live
+            inside the Current Sales Plan tab, so say so from every tab. */}
+        {(filterOwner !== "all" || filterProductGroup) && (
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            <span className="text-xs text-muted-foreground">Cards filtered by:</span>
+            {filterOwner !== "all" && (
+              <button
+                onClick={() => setFilterOwner("all")}
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+              >
+                <Icon name="User" size={12} />
+                One salesman
+                <Icon name="X" size={12} />
+              </button>
+            )}
+            {filterProductGroup && (
+              <button
+                onClick={() => setFilterProductGroup(null)}
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+              >
+                <Icon name="Package" size={12} />
+                {productGroups.find((g) => g.value === filterProductGroup)?.label || filterProductGroup}
+                <Icon name="X" size={12} />
+              </button>
+            )}
+            {filterProductGroup && (
+              <span className="text-xs text-amber-700">
+                Target is all-products — no target carries a product group yet
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Planning summary bar — shown on every tab */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
           {/* Card 1 — TARGET */}
           <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-1 bg-blue-600" />
@@ -442,7 +525,21 @@ const PlanningPage = () => {
                 <span className="text-sm font-normal text-muted-foreground ml-1">SAR</span>
               </p>
             )}
-            <p className="text-xs text-muted-foreground mt-1">{periodLabel}</p>
+            {/* Remaining Target is the input to Required Plan, so show the
+                subtraction rather than leaving the manager to guess it. */}
+            {!summaryLoading && summaryData.target > 0 && (
+              <div className="mt-2 pt-2 border-t border-border">
+                <p className="text-xs text-green-600">
+                  Achieved: <span className="tabular-nums">{fmtSAR(summaryData.achieved)} SAR</span>
+                </p>
+                <p className="text-xs text-foreground font-medium mt-0.5">
+                  Remaining: <span className="tabular-nums">{fmtSAR(summaryData.remainingTarget)} SAR</span>
+                </p>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              {!summaryLoading && !summaryData.hasTargetRows ? "No target assigned" : periodLabel}
+            </p>
           </div>
 
           {/* Card 2 — WIN RATE */}
@@ -477,26 +574,70 @@ const PlanningPage = () => {
                 <span className="text-sm font-normal text-muted-foreground ml-1">SAR</span>
               </p>
             )}
-            {!summaryLoading && summaryData.futureCarryover > 0 && (
-              <div className="mt-2 pt-2 border-t border-border">
-                <p className="text-xs text-muted-foreground">
-                  Raw required:{" "}
-                  <span className="tabular-nums">{fmtSAR(summaryData.requiredPlanRaw)} SAR</span>
-                </p>
-                <p className="text-xs text-green-600 font-medium flex items-center gap-1 mt-0.5">
-                  <span>↓</span>
-                  Future Orders: −{fmtSAR(summaryData.futureCarryover)} SAR
-                </p>
-              </div>
-            )}
             <p className="text-xs text-muted-foreground mt-1">
-              {!summaryLoading && summaryData.futureCarryover > 0
-                ? "After future orders carryover"
-                : `Target ÷ ${summaryData.winRate3m.toFixed(0)}% win rate`}
+              {!summaryLoading && summaryData.remainingTarget <= 0
+                ? summaryData.hasTargetRows
+                  ? "Target already achieved"
+                  : "Nothing to plan against"
+                : `Remaining Target ÷ ${summaryData.winRate3m.toFixed(0)}% win rate`}
             </p>
           </div>
 
-          {/* Card 4 — PLANNED GAP */}
+          {/* Card 4 — PLANNING COVERAGE (new) */}
+          {/* Available Planning Coverage = untransferred plan + open funnel for
+              the period, both RAW and unweighted. Deliberately not
+              computeCoverage(), which weights the same inputs by win rate and
+              feeds the Coverage Console. */}
+          <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
+            <div
+              className={`absolute top-0 left-0 right-0 h-1 ${
+                !summaryLoading && summaryData.coveragePct !== null && summaryData.coveragePct < 100
+                  ? "bg-orange-500"
+                  : "bg-teal-500"
+              }`}
+            />
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Planning Coverage
+            </p>
+            {summaryLoading ? (
+              <div className="h-7 w-24 bg-muted rounded animate-pulse" />
+            ) : (
+              <p className="text-xl font-bold text-foreground tabular-nums">
+                {fmtSAR(summaryData.availableCoverage)}
+                <span className="text-sm font-normal text-muted-foreground ml-1">SAR</span>
+              </p>
+            )}
+            {!summaryLoading && (
+              <div className="mt-2 pt-2 border-t border-border">
+                <p className="text-xs text-muted-foreground">
+                  Plan: <span className="tabular-nums">{fmtSAR(summaryData.plannedOpen)}</span>
+                  {" + "}
+                  Funnel: <span className="tabular-nums">{fmtSAR(summaryData.openFunnel)}</span>
+                </p>
+              </div>
+            )}
+            <p
+              className={`text-xs mt-1 font-medium ${
+                summaryLoading
+                  ? "text-muted-foreground"
+                  : summaryData.coveragePct === null
+                    ? "text-muted-foreground"
+                    : summaryData.coveragePct >= 100
+                      ? "text-green-600"
+                      : "text-orange-600"
+              }`}
+            >
+              {summaryLoading
+                ? ""
+                : summaryData.coveragePct === null
+                  ? summaryData.hasTargetRows
+                    ? "Fully covered — nothing required"
+                    : "No target to cover"
+                  : `${summaryData.coveragePct.toFixed(0)}% of Required Plan`}
+            </p>
+          </div>
+
+          {/* Card 5 — PLANNED GAP = max(0, Required Plan − Available Coverage) */}
           <div
             className={`rounded-2xl border p-4 relative overflow-hidden ${
               !summaryLoading && summaryData.plannedGap <= 0
@@ -528,7 +669,7 @@ const PlanningPage = () => {
               }`}
             >
               {!summaryLoading && summaryData.plannedGap <= 0
-                ? `Planned: ${fmtSAR(summaryData.totalPlanned)} SAR`
+                ? `Covered: ${fmtSAR(summaryData.availableCoverage)} SAR`
                 : `${periodLabel} planning gap`}
             </p>
           </div>
@@ -566,6 +707,13 @@ const PlanningPage = () => {
             <OpportunitiesModule
               adminCompany={adminCompany}
               onOpportunityChange={fetchPlanningSummary}
+              periodStart={rangeStart}
+              periodEnd={rangeEnd}
+              filterOwner={filterOwner}
+              onFilterOwnerChange={setFilterOwner}
+              filterProductGroup={filterProductGroup}
+              onFilterProductGroupChange={setFilterProductGroup}
+              productGroups={productGroups}
             />
           )}
 

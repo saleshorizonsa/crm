@@ -15,6 +15,7 @@ import {
   targetPerPerson,
   monthBounds,
 } from 'utils/planningCalculations';
+import { matchesGroup } from 'utils/planningPageSummary';
 
 const DIRECTOR_ROLES = ['director', 'head', 'admin'];
 const TEAM_ROLES     = ['manager', 'supervisor'];
@@ -47,7 +48,22 @@ const emptyForm = (month) => ({
   notes:          '',
 });
 
-export default function OpportunitiesModule({ adminCompany, onOpportunityChange }) {
+export default function OpportunitiesModule({
+  adminCompany,
+  onOpportunityChange,
+  // The period the page is showing. The plan is a monthly artifact, so the list
+  // and every number on this tab are bounded by it instead of always reading the
+  // real-world current month.
+  periodStart,
+  periodEnd,
+  // Both filters are owned by the page, because the summary cards above this tab
+  // follow them too. Controlled here, stored there.
+  filterOwner = 'all',
+  onFilterOwnerChange,
+  filterProductGroup = null,
+  onFilterProductGroupChange,
+  productGroups = [],
+}) {
   const { user, company: authCompany, userProfile } = useAuth();
   const { formatCurrency } = useCurrency();
 
@@ -56,11 +72,22 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
   const isDirector = DIRECTOR_ROLES.includes(role);
   const isTeamLead = TEAM_ROLES.includes(role);
 
-  // First day of the current month, as yyyy-MM-dd
-  const currentMonth = useMemo(() => {
-    const n = new Date();
-    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-01`;
-  }, []);
+  const setFilterOwner = onFilterOwnerChange || (() => {});
+
+  // Month bounds for every query on this tab: the selected period when the page
+  // supplies one, else the current month (the previous behaviour).
+  const period = useMemo(() => {
+    if (periodStart && periodEnd) return { start: periodStart, end: periodEnd };
+    const mb = monthBounds();
+    return { start: mb.startDate, end: mb.endDate };
+  }, [periodStart, periodEnd]);
+
+  // A new opportunity defaults to the month being viewed, not to today's month,
+  // so adding a row while looking at October does not silently file it in September.
+  const currentMonth = useMemo(
+    () => `${String(period.start).slice(0, 7)}-01`,
+    [period.start],
+  );
 
   const [opportunities, setOpportunities] = useState([]);
   const [loading, setLoading]             = useState(true);
@@ -77,7 +104,6 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
   const [recordOwners, setRecordOwners]   = useState([]);
   const [saving, setSaving]               = useState(false);
 
-  const [filterOwner, setFilterOwner]   = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
 
   const [showModal, setShowModal]   = useState(false);
@@ -122,17 +148,16 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
     const contributorIds = contributors.map((c) => c.id);
     if (!contributorIds.length) { setMonthlyTarget(0); return; }
 
-    const { startDate, endDate } = monthBounds();
     const rows = await fetchMonthlyTargets({
       companyId: company.id,
       contributorIds,
-      start: startDate,
-      end: endDate,
+      start: period.start,
+      end: period.end,
     });
     setMonthlyTarget(
       Object.values(targetPerPerson(rows)).reduce((sum, v) => sum + v, 0),
     );
-  }, [company?.id]);
+  }, [company?.id, period.start, period.end]);
 
   // ── Fetch: In Funnel + this month's Achieved ──────────────────────────────
   // In Funnel is the raw open-deal value for the scope — the same query and the
@@ -160,15 +185,14 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
     setFunnelValue((openDeals || []).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0));
 
     const achievedOnly = await fetchAchievedOnlyUsers({ companyId: company.id, ownerIds: ids });
-    const { startDate, endDate } = monthBounds();
     const { total } = await fetchAchieved({
       companyId: company.id,
       contributorIds: [...contributorIds, ...achievedOnly.map((u) => u.id)],
-      start: startDate,
-      end: endDate,
+      start: period.start,
+      end: period.end,
     });
     setAchievedThisMonth(total);
-  }, [company?.id]);
+  }, [company?.id, period.start, period.end]);
 
   // ── Fetch: opportunities ──────────────────────────────────────────────────
   const fetchOpportunities = useCallback(async () => {
@@ -187,6 +211,16 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
           deal:deals!deal_id(id, title, stage, amount)
         `)
         .eq('company_id', company.id)
+        // The Current Sales Plan is the plan for ONE month. Without this the tab
+        // listed every month at once, so July, August and September rows sat in
+        // one list and the totals underneath described no particular month.
+        //
+        // Rows whose expected_month is in a future month are not orphaned by
+        // this: they appear when that month is selected. The Future Orders tab
+        // remains the route for parking a deal in a later month (it creates the
+        // opportunity when the month arrives, carrying expected_month across).
+        .gte('expected_month', period.start)
+        .lte('expected_month', period.end)
         .order('created_at', { ascending: false });
 
       if (!isDirector && !isTeamLead) {
@@ -203,7 +237,15 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
 
       const { data, error } = await query;
       if (error) throw error;
-      setOpportunities(data || []);
+      // Product group is matched here rather than in the query because the
+      // values are free text: "PVC PIPE AND FITTING", "pvc pipe and fitting" and
+      // "PVC pipe and Fitting" are one group, and only a normalised comparison
+      // treats them as one. Rows with no group at all are left out while a group
+      // is selected — they belong to no group, not to every group.
+      const rows = filterProductGroup
+        ? (data || []).filter((o) => o.material_group && matchesGroup(o.material_group, filterProductGroup))
+        : (data || []);
+      setOpportunities(rows);
       if (filterOwner === 'all') setRecordOwners((prev) => addRecordOwners(prev, data));
     } catch (err) {
       console.error('fetchOpportunities:', err);
@@ -212,7 +254,8 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
     } finally {
       setLoading(false);
     }
-  }, [company?.id, isDirector, isTeamLead, user?.id, filterOwner, filterStatus, teamMembers]);
+  }, [company?.id, isDirector, isTeamLead, user?.id, filterOwner, filterStatus, teamMembers,
+      period.start, period.end, filterProductGroup]);
 
   // ── Fetch: contacts + team ────────────────────────────────────────────────
   // Contacts are scoped by OWNER, not company: contacts.company_id is null in
@@ -529,14 +572,55 @@ export default function OpportunitiesModule({ adminCompany, onOpportunityChange 
           ))}
         </div>
 
-        {(isDirector || isTeamLead) && selectorMembers.length > 0 && (
-          <SalesmanSelector
-            value={filterOwner === 'all' ? null : filterOwner}
-            onChange={(id) => setFilterOwner(id || 'all')}
-            teamMembers={selectorMembers}
-          />
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Product Group — free-text values collapsed to one entry per group
+              (case and spacing ignored). Sits beside the salesman selector
+              because the summary cards above follow both together. */}
+          {productGroups.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <Icon name="Package" size={14} className="text-muted-foreground" />
+              <select
+                value={filterProductGroup || ''}
+                onChange={(e) => onFilterProductGroupChange?.(e.target.value || null)}
+                className="text-xs px-2.5 py-2 rounded-lg border border-border bg-background text-foreground max-w-[190px]"
+                title="Filter the plan and the coverage cards by product group"
+              >
+                <option value="">All product groups</option>
+                {productGroups.map((g) => (
+                  <option key={g.value} value={g.value}>
+                    {g.label}
+                    {g.variants.length > 1 ? ` (${g.variants.length} spellings)` : ''}
+                    {` — ${g.count}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {(isDirector || isTeamLead) && selectorMembers.length > 0 && (
+            <SalesmanSelector
+              value={filterOwner === 'all' ? null : filterOwner}
+              onChange={(id) => setFilterOwner(id || 'all')}
+              teamMembers={selectorMembers}
+            />
+          )}
+        </div>
       </div>
+
+      {/* Filtering by product group hides rows that carry no group at all, which
+          is most of them today. Say so rather than letting the list look empty. */}
+      {filterProductGroup && (
+        <div className="flex items-start gap-2 p-3 mb-4 rounded-xl bg-amber-50 border border-amber-200">
+          <Icon name="Info" size={15} className="text-amber-600 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-800">
+            Showing only opportunities tagged{' '}
+            <span className="font-semibold">
+              {productGroups.find((g) => g.value === filterProductGroup)?.label || filterProductGroup}
+            </span>
+            . Rows with no product group are not shown, and the coverage cards above leave them out too.
+          </p>
+        </div>
+      )}
 
       {/* ── Error ── */}
       {loadError && (
