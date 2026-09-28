@@ -6,7 +6,6 @@ import {
   computeAnnualTarget,
   computeRequiredRaw,
   computeCarryIn,
-  computePlannedGap,
   fetchAchieved,
   fetchContributors,
   fetchAchievedOnlyUsers,
@@ -261,11 +260,22 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   // 6. Funnel value — open (not won/lost) deal amounts, for the coverage check.
   const { data: openDeals } = await supabase
     .from('deals')
-    .select('owner_id, amount')
+    .select('owner_id, amount, expected_close_date')
     .eq('company_id', companyId)
     .in('owner_id', scopeIds)
     .not('stage', 'in', '("won","lost")');
   const funnelValue = (openDeals || []).reduce((s, d) => s + (parseFloat(d.amount) || 0), 0);
+  // The slice of that funnel dated INTO the window, which is what nets off the
+  // pipeline requirement — same rule as planningPageSummary.js, the Coverage
+  // Console and Insights. `funnelValue` above stays every open deal, for the
+  // coverage check.
+  const monthFunnelPer = {};
+  (openDeals || []).forEach((d) => {
+    const due = d.expected_close_date;
+    if (!due || due < winStart || due > winEnd) return;
+    monthFunnelPer[d.owner_id] = (monthFunnelPer[d.owner_id] || 0) + (parseFloat(d.amount) || 0);
+  });
+  const monthFunnelTotal = Object.values(monthFunnelPer).reduce((s, v) => s + v, 0);
 
   // 7. Future-order carryover — pending future orders for NEXT month count toward
   //    the required plan (customers already committed), reducing the new pipeline
@@ -285,10 +295,12 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
       // Dividing the raw target kept demanding pipeline from a salesman who had
       // already made his month.
       const requiredRaw = computeRequiredRaw({ target: deficit, winRatePct: winRate3m });
+      // Carry-in is NEXT month's commitment and is no longer netted off THIS
+      // month's requirement — the rule the Coverage Console and Insights moved
+      // to, with Planning as the standard. It is still reported.
       const futureCarryover = carryPer[u.id] || 0;
-      const { required, plannedGap } = computePlannedGap({
-        requiredRaw, carryIn: futureCarryover, planned,
-      });
+      const required = requiredRaw;
+      const plannedGap = Math.max(0, requiredRaw - (planned + (monthFunnelPer[u.id] || 0)));
       return {
         id: u.id, full_name: u.full_name, role: u.role,
         target, achieved, deficit,
@@ -342,10 +354,12 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   // this left the strip's headline card demanding pipeline (952,885.34 for
   // JASCO PVC in September 2026) while every row beneath it read 0.00.
   const requiredRaw = computeRequiredRaw({ target: deficit, winRatePct: winRate3m });
+  // No carry-in netting here either: required, less what THIS month already
+  // covers (open plan + funnel dated into the window). Carry-in is still
+  // reported as futureCarryover.
   const futureCarryover = carryInTotal;
-  const { required, plannedGap } = computePlannedGap({
-    requiredRaw, carryIn: futureCarryover, planned,
-  });
+  const required = requiredRaw;
+  const plannedGap = Math.max(0, requiredRaw - (planned + monthFunnelTotal));
   // Like-for-like: the people this month's target actually covers.
   const attainmentPct = target > 0 ? (achievedCounted / target) * 100 : 0;
 
@@ -367,7 +381,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   const totals = {
     target, achieved, achievedCounted, achievedAnnualOnly, annualOnlyAchievers,
     deficit, winRate3m, winRateIsDefault,
-    planned, required, requiredRaw, futureCarryover, plannedGap,
+    planned, monthFunnel: monthFunnelTotal, required, requiredRaw, futureCarryover, plannedGap,
     attainmentPct, funnelValue,
     coverageValue, coverageHealthy, coveragePct,
     pacingPct, pacingHealthy, daysElapsed, totalDaysInMonth, isHealthy,
