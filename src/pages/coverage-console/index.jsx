@@ -122,7 +122,7 @@ export default function CoverageConsole() {
         supabase
           .from("deals")
           .select(
-            "id, title, stage, amount, final_amount, is_invoiced, invoice_date, owner_id, forecast_amount, forecast_probability, contact_id, stage_changed_at, created_at, invoice_number, lost_reason, contacts!contact_id(first_name, last_name, company_name)"
+            "id, title, stage, amount, final_amount, is_invoiced, invoice_date, expected_close_date, owner_id, forecast_amount, forecast_probability, contact_id, stage_changed_at, created_at, invoice_number, lost_reason, contacts!contact_id(first_name, last_name, company_name)"
           )
           .eq("company_id", company.id)
           .not("stage", "eq", "lost"),
@@ -398,12 +398,29 @@ export default function CoverageConsole() {
     );
 
     // ── PLANNING ──
+    // Over contributors PLUS any flagged achieved-only manager, the scope Target
+    // and Achieved already share here. Contributors-only was missed by the
+    // contributor-parity pass and left a flagged manager's own plan out of the
+    // one number measured against his own target.
     const planningSum = sumPlannedByOwner({
       rows: opps,
-      ownerIds: contributorIds,
+      ownerIds: achieverIds,
     });
     const planning = planningSum.total;
     const weightedPlanning = planning * winRate;
+
+    // Open funnel for THIS MONTH only, raw and unweighted, over the same scope.
+    // Distinct from `funnel` above, which is every open deal regardless of date
+    // and feeds the coverage rail. This one nets off the pipeline requirement,
+    // exactly as planningPageSummary.js does, so the two screens can agree.
+    const monthFunnelDeals = (deals || []).filter(
+      (d) =>
+        achieverIds.includes(d.owner_id) &&
+        !["won", "lost"].includes(d.stage) &&
+        d.expected_close_date >= monthStart &&
+        d.expected_close_date <= monthEnd
+    );
+    const monthFunnel = monthFunnelDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
 
     // ── COVERAGE ──
     const coverage = invoiced + weightedFunnel + weightedPlanning;
@@ -421,18 +438,22 @@ export default function CoverageConsole() {
     const remainingTarget = Math.max(0, target - invoiced);
     const requiredPlan = computeRequiredRaw({ target: remainingTarget, winRatePct });
 
-    // ── CARRY-IN ── next month's committed orders, contributors only.
+    // ── CARRY-IN ── next month's committed orders. Shown for visibility only:
+    // it is NO LONGER subtracted from the pipeline requirement. Netting a
+    // NEXT-month commitment off THIS month's requirement understated what still
+    // had to be built, and it was the last thing making this screen disagree
+    // with Planning. Planning never did it; Planning is the standard.
     const future = sumPlannedByOwner({
       rows: futureOrders,
-      ownerIds: contributorIds,
+      ownerIds: achieverIds,
     }).total;
 
-    // ── PLANNED GAP ──
-    const { required: adjustedRequired, plannedGap } = computePlannedGap({
-      requiredRaw: requiredPlan,
-      carryIn: future,
-      planned: planning,
-    });
+    // ── NEW PIPELINE NEEDED ── required, less what this month already covers:
+    // the open plan plus the open funnel dated into this month, both raw. Same
+    // shape as planningPageSummary.js, so the two screens produce the same
+    // number rather than two defensible ones.
+    const monthCoverage = planning + monthFunnel;
+    const plannedGap = Math.max(0, requiredPlan - monthCoverage);
 
     return {
       target,
@@ -445,7 +466,8 @@ export default function CoverageConsole() {
       coverage,
       winRate,
       requiredPlan,
-      adjustedRequired,
+      monthFunnel,
+      monthCoverage,
       future,
       plannedGap,
       openDeals,
@@ -1079,27 +1101,25 @@ export default function CoverageConsole() {
                     SAR(metrics.requiredPlan) + " SAR",
                     "gap to target ÷ win rate",
                   ],
+                  ["Planned pipeline", SAR(metrics.planning) + " SAR", "open plan, this month"],
                   [
-                    "Future carry-in",
-                    SAR(metrics.future) + " SAR",
-                    "reduces req. plan",
+                    "Open funnel (this month)",
+                    SAR(metrics.monthFunnel) + " SAR",
+                    "open deals closing this month",
                   ],
-                  // Without this row the ledger did not close on screen: the gap
-                  // below is computed from the carry-in-netted figure while
-                  // "Required pipeline" above shows the raw one, so subtracting
-                  // the displayed numbers gave the wrong answer by exactly the
-                  // carry-in.
-                  [
-                    "Required after carry-in",
-                    SAR(metrics.adjustedRequired) + " SAR",
-                    "required − carry-in",
-                  ],
-                  ["Planned pipeline", SAR(metrics.planning) + " SAR", ""],
                   [
                     "New pipeline needed",
                     SAR(metrics.plannedGap) + " SAR",
-                    "after carry-in − planned",
+                    "required − plan − funnel",
                     "neg",
+                  ],
+                  // Kept for visibility, no longer netted off the requirement:
+                  // it is NEXT month's commitment, and subtracting it understated
+                  // what still had to be built this month.
+                  [
+                    "Future carry-in",
+                    SAR(metrics.future) + " SAR",
+                    "next month · not netted",
                   ],
                   [
                     "Open exceptions",

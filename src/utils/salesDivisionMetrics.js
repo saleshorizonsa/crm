@@ -5,7 +5,6 @@ import {
   winRateFromDeals,
   sumPlannedByOwner,
   computeRequiredRaw,
-  computePlannedGap,
   computeCoverage,
   wonNotInvoicedExceptions,
 } from 'utils/planningCalculations';
@@ -213,15 +212,37 @@ export function calcDivisionMetrics(userIds, data) {
   );
   const pipeline = openDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
 
-  const planned = sumPlannedByOwner({ rows: opps, ownerIds: contributorIds }).total;
-  const carryIn = sumPlannedByOwner({ rows: futureOrders, ownerIds: contributorIds }).total;
+  // Plan and funnel are measured over the SAME people as Target and Achieved —
+  // contributors plus any flagged manager — so a flagged manager's own plan and
+  // deals net off the requirement his own target created.
+  const achieverIds = [...isAchiever];
+  const planned = sumPlannedByOwner({ rows: opps, ownerIds: achieverIds }).total;
+  // Open funnel dated into THIS month, raw. Distinct from `pipeline` above,
+  // which is every open deal regardless of date and feeds the coverage rail.
+  const monthFunnel = (deals || [])
+    .filter(
+      (d) => isAchiever.has(d.owner_id)
+        && !['won', 'lost'].includes(d.stage)
+        && d.expected_close_date >= monthStart
+        && d.expected_close_date <= monthEnd,
+    )
+    .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+  // Shown for visibility only — NOT netted off the requirement any more. It is
+  // NEXT month's commitment, and subtracting it understated what still had to be
+  // built this month. Planning never did it; Planning is the standard.
+  const carryIn = sumPlannedByOwner({ rows: futureOrders, ownerIds: achieverIds }).total;
   // Required pipeline is measured over what is STILL MISSING (deficit), not over
   // the untouched target: once a month's target is achieved, "new pipeline
   // needed" must read zero rather than keep demanding pipeline against a number
   // that revenue can never reduce. Same basis as planningPageSummary.js and the
   // Coverage Console.
   const requiredRaw = computeRequiredRaw({ target: deficit, winRatePct });
-  const { required, plannedGap } = computePlannedGap({ requiredRaw, carryIn, planned });
+  // required − (plan + funnel), no carry-in: the same shape as
+  // planningPageSummary.js, so Insights, the Coverage Console and Planning
+  // produce one number instead of three defensible ones.
+  const monthCoverage = planned + monthFunnel;
+  const required = requiredRaw;
+  const plannedGap = Math.max(0, requiredRaw - monthCoverage);
 
   const { weightedFunnel, weightedPlanning, coverage } = computeCoverage({
     invoiced: achieved,
@@ -250,6 +271,8 @@ export function calcDivisionMetrics(userIds, data) {
     winRatePct,
     winRateBorrowed,
     planned,
+    monthFunnel,
+    monthCoverage,
     carryIn,
     requiredRaw,
     required,
