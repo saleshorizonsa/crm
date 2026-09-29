@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation } from "react-router-dom";
+import { PLANNING_TAB_IDS, tabIdFromHash } from "constants/pageTabs";
 import { useAuth } from "contexts/AuthContext";
 import { supabase } from "lib/supabase";
 import Header from "components/ui/Header";
@@ -78,6 +80,7 @@ class TabErrorBoundary extends React.Component {
 
 const PlanningPage = () => {
   const { user, company, userProfile } = useAuth();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState("customer_master");
   const [adminCompany, setAdminCompany] = useState(null);
 
@@ -424,10 +427,18 @@ const PlanningPage = () => {
       : []),
   ];
 
-  // Deep link from the dashboard banner: /planning#approvals.
+  // Deep links: /planning#<tab id>, for the dashboard banner (#approvals) and
+  // the header's Planning flyout. Keyed on the router's hash rather than read
+  // once from window, so picking another tab while already on this page
+  // switches in place instead of reloading. A hash naming a tab this role
+  // cannot see is ignored, leaving whatever was selected.
   useEffect(() => {
-    if (canApprove && window.location.hash === "#approvals") setActiveTab("approvals");
-  }, [canApprove]);
+    const wanted = tabIdFromHash(location.hash, PLANNING_TAB_IDS);
+    if (!wanted) return;
+    if (wanted === "approvals" && !canApprove) return;
+    if (wanted === "historical_data" && !canUploadHistory) return;
+    setActiveTab(wanted);
+  }, [location.hash, canApprove, canUploadHistory]);
 
   if (!userProfile) {
     return (
