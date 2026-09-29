@@ -6,7 +6,9 @@ import { notificationService } from "services/supabaseService";
 import CompanySwitcher from "../CompanySwitcher";
 import { capitalize } from "utils/helper";
 import { useLanguage } from "../../i18n";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { fetchPendingApprovalCount, resolveApproverScope } from "utils/planApproval";
+import { buildNavGroups, canApproveFor, navTabIdDrift } from "./navGroups";
 
 const Header = ({
   isCollapsed = false,
@@ -16,17 +18,38 @@ const Header = ({
   const { user, userProfile, company, signOut } = useAuth();
   const { t, language, setLanguage, isRTL } = useLanguage();
   const navigate = useNavigate();
+  // Router-aware rather than read off window at render time: a tab deep link
+  // navigates in-place (no reload), so the highlight has to follow the route
+  // instead of whatever the path happened to be when this last rendered.
+  const location = useLocation();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   // Two separate UIs, two separate flags. They shared one boolean until a
   // mobile-navigation bug traced back to exactly that: the click-outside guard
   // was checking the desktop dropdown's ref while the mobile drawer was open.
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);      // mobile drawer
-  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);  // desktop "More"
+  // One open group at a time — opening a second closes the first, which is how
+  // the single "More" dropdown behaved and what users expect of a menu bar.
+  const [openGroup, setOpenGroup] = useState(null);             // desktop group key
+  const [openFlyout, setOpenFlyout] = useState(null);           // nested tab flyout
+  const [openMobileGroup, setOpenMobileGroup] = useState(null); // drawer section
+  const [openMobileFlyout, setOpenMobileFlyout] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
 
   const userMenuRef = useRef(null);
-  const moreMenuRef = useRef(null);   // desktop "More" dropdown
   const drawerRef = useRef(null);     // mobile drawer panel
+  // One ref per desktop group, so click-outside can tell "outside the menu"
+  // from "on one of its own items" per group, as the old single More ref did.
+  const salesMenuRef = useRef(null);
+  const performanceMenuRef = useRef(null);
+  const planningMenuRef = useRef(null);
+  const adminMenuRef = useRef(null);
+  const groupRefs = {
+    sales: salesMenuRef,
+    performance: performanceMenuRef,
+    planning: planningMenuRef,
+    admin: adminMenuRef,
+  };
 
   // Load unread notification count and refresh immediately when notifications are read
   useEffect(() => {
@@ -50,60 +73,40 @@ const Header = ({
     }
   };
 
-  const navigationItems = [
-    // Menu visibility only — both routes stay reachable by URL for every role.
-    // Directors work from Insights instead of the Dashboard.
-    ...(userProfile?.role !== "director"
-      ? [{
-          label: t("nav.dashboard"),
-          path: "/company-dashboard",
-          icon: "LayoutDashboard",
-        }]
-      : []),
-    // The Console is a supervisor's tool; admin/head/viewer keep it unchanged.
-    ...(!["director", "manager", "salesman"].includes(userProfile?.role)
-      ? [{
-          label: t("nav.console"),
-          path: "/coverage-console",
-          icon: "LayoutGrid",
-        }]
-      : []),
-    // Directors and managers only — the route enforces the same list.
-    ...(["director", "manager"].includes(userProfile?.role)
-      ? [{ label: "Insights", path: "/insights", icon: "Layers" }]
-      : []),
-    { label: t("nav.pipeline"), path: "/sales-pipeline", icon: "TrendingUp" },
-    { label: t("nav.leads"),    path: "/lead-management", icon: "UserPlus"   },
-    { label: t("nav.calendar"), path: "/calendar",        icon: "CalendarDays"},
-    { label: t("nav.forecast"), path: "/forecast",        icon: "LineChart"   },
-    { label: t("nav.reports"),  path: "/reports",  icon: "FileBarChart" },
-    { label: t("nav.clients"), path: "/contact-management", icon: "Users" },
-    { label: t("nav.planning"), path: "/planning", icon: "ClipboardList" },
-  ];
+  const role = userProfile?.role;
 
-  // Add user management for admins and managers only
-  const adminItems = [];
+  // Structure and role gating live in ./navGroups so they can be exercised
+  // directly per role; this component only renders what they return.
+  const groups = buildNavGroups({ role, t });
 
-  const secondaryItems = [
-    ...adminItems,
-    // A standalone page rather than an Admin Dashboard tab: /admin-dashboard is
-    // admin-only, and the people who reassign records are Sales Managers.
-    ...(["manager", "director", "head", "admin"].includes(userProfile?.role)
-      ? [{ label: "Reassign Records", path: "/reassign-records", icon: "ArrowLeftRight" }]
-      : []),
-    { label: t("nav.tasks"), path: "/task-management", icon: "ListTodo" },
-    { label: t("nav.settings"), path: "/settings", icon: "Settings" },
-    { label: t("dashboard.help"), path: "/help", icon: "Info" },
-    ...(userProfile?.role === "admin"
-      ? [
-          {
-            label: t("nav.adminDashboard"),
-            path: "/admin-dashboard",
-            icon: "Shield",
-          },
-        ]
-      : []),
-  ];
+  if (import.meta.env?.DEV) {
+    const drift = navTabIdDrift(role, t);
+    if (drift.length) console.error("Header tab flyout ids not present on the page:", drift);
+  }
+
+  // The Planning page shows this count in its own tab label; the shortcut to
+  // that tab would be misleading without it, so the same two helpers the page
+  // uses produce the same figure here.
+  useEffect(() => {
+    let cancelled = false;
+    if (!company?.id || !user?.id || !canApproveFor(role)) {
+      setPendingApprovals(0);
+      return undefined;
+    }
+    (async () => {
+      try {
+        const ownerIds = await resolveApproverScope({
+          companyId: company.id, userId: user.id, role,
+        });
+        const n = await fetchPendingApprovalCount({ companyId: company.id, ownerIds });
+        if (!cancelled) setPendingApprovals(n || 0);
+      } catch (error) {
+        // A missing badge is not worth breaking the navigation over.
+        console.error("Error loading pending approval count:", error);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [company?.id, user?.id, role]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -113,11 +116,12 @@ const Header = ({
       ) {
         setIsUserMenuOpen(false);
       }
-      if (
-        moreMenuRef?.current &&
-        !moreMenuRef?.current?.contains(event?.target)
-      ) {
-        setIsMoreMenuOpen(false);
+      // Same guard as the old single "More" ref, once per group: a click inside
+      // the open group's own menu must not close it before onClick can fire.
+      const openRef = openGroup ? groupRefs[openGroup]?.current : null;
+      if (openRef && !openRef.contains(event?.target)) {
+        setOpenGroup(null);
+        setOpenFlyout(null);
       }
       // The drawer must not close on mousedown over its OWN buttons: mousedown
       // fires before click, so unmounting here would remove the button before
@@ -135,11 +139,28 @@ const Header = ({
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [openGroup]);
+
+  const closeMenus = () => {
+    setOpenGroup(null);
+    setOpenFlyout(null);
+    setIsDrawerOpen(false);
+    setOpenMobileGroup(null);
+    setOpenMobileFlyout(null);
+  };
 
   const handleNavigation = (path) => {
     window.location.href = path;
-    setIsDrawerOpen(false);
+    closeMenus();
+  };
+
+  // Tab deep links navigate through the router rather than reloading: landing
+  // on /planning#future_orders from elsewhere mounts the page with that tab
+  // selected, and choosing another tab while already there only changes the
+  // hash, which each page watches. Plain nav items keep their full reload.
+  const handleTabNavigation = (basePath, tabId) => {
+    navigate(`${basePath}#${tabId}`);
+    closeMenus();
   };
 
   const handleAccountSettings = () => {
@@ -155,9 +176,18 @@ const Header = ({
     }
   };
 
-  const currentPath = window.location?.pathname;
-  // Highlight "More" when the current page lives inside its dropdown (e.g. Tasks)
-  const moreIsActive = secondaryItems?.some((item) => currentPath === item?.path);
+  const currentPath = location?.pathname || window.location?.pathname;
+  const currentHash = location?.hash || "";
+  // A group is highlighted when the page you are on lives inside it — including
+  // when you are on one of Planning's or Reports' tabs, which are still that
+  // page. Generalises the old single moreIsActive flag to every group.
+  const groupIsActive = (group) => group.items.some((item) => currentPath === item.path);
+  const tabIsActive = (basePath, tabId) => currentPath === basePath
+    && currentHash.replace(/^#/, "") === tabId;
+
+  const labelFor = (item) => (item.badge === "approvals" && pendingApprovals > 0
+    ? `${item.label} (${pendingApprovals})`
+    : item.label);
 
   return (
     <>
@@ -196,50 +226,91 @@ const Header = ({
             </div>
           </div>
 
-          {/* Desktop Navigation */}
+          {/* Desktop Navigation — four function groups */}
           <nav className={`hidden lg:flex items-center space-x-1 ${isRTL ? "mr-8" : "ml-8"}`}>
-            {navigationItems?.map((item) => (
-              <Button
-                key={item?.path}
-                variant={currentPath === item?.path ? "default" : "ghost"}
-                size="sm"
-                onClick={() => handleNavigation(item?.path)}
-                className="transition-enterprise"
-              >
-                <Icon name={item?.icon} size={16} className={isRTL ? "ml-2" : "mr-2"} />
-                {item?.label}
-              </Button>
-            ))}
+            {groups.map((group) => (
+              <div className="relative" key={group.key} ref={groupRefs[group.key]}>
+                <Button
+                  variant={groupIsActive(group) ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => {
+                    setOpenGroup((v) => (v === group.key ? null : group.key));
+                    setOpenFlyout(null);
+                  }}
+                  className="transition-enterprise"
+                >
+                  <Icon name={group.icon} size={16} className={isRTL ? "ml-2" : "mr-2"} />
+                  {group.label}
+                  <Icon name="ChevronDown" size={14} className={isRTL ? "mr-1" : "ml-1"} />
+                </Button>
 
-            {/* More Menu */}
-            <div className="relative" ref={moreMenuRef}>
-              <Button
-                variant={moreIsActive ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setIsMoreMenuOpen((v) => !v)}
-                className="transition-enterprise"
-              >
-                <Icon name="CircleEllipsis" size={16} className={isRTL ? "ml-2" : "mr-2"} />
-                {t("common.more") || "More"}
-              </Button>
+                {openGroup === group.key && (
+                  <div className={`absolute top-full mt-1 w-56 bg-popover border border-border rounded-md shadow-enterprise-md animate-slide-down z-200 ${isRTL ? "right-0" : "left-0"}`}>
+                    <div className="py-1">
+                      {group.items.map((item) => (
+                        <div
+                          key={item.path}
+                          className="relative"
+                          onMouseEnter={() => item.tabs && setOpenFlyout(item.path)}
+                          onMouseLeave={() => item.tabs && setOpenFlyout(null)}
+                        >
+                          <button
+                            onClick={() => (item.tabs
+                              ? setOpenFlyout((v) => (v === item.path ? null : item.path))
+                              : handleNavigation(item.path))}
+                            className={`flex items-center w-full px-3 py-2 text-sm transition-enterprise hover:bg-muted ${
+                              currentPath === item.path
+                                ? "text-primary font-medium"
+                                : "text-popover-foreground"
+                            }`}
+                          >
+                            <Icon name={item.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
+                            <span className="flex-1 text-left">{item.label}</span>
+                            {item.tabs && (
+                              <Icon
+                                name={isRTL ? "ChevronLeft" : "ChevronRight"}
+                                size={14}
+                                className="text-muted-foreground"
+                              />
+                            )}
+                          </button>
 
-              {isMoreMenuOpen && (
-                <div className={`absolute top-full mt-1 w-48 bg-popover border border-border rounded-md shadow-enterprise-md animate-slide-down z-200 ${isRTL ? "right-0" : "left-0"}`}>
-                  <div className="py-1">
-                    {secondaryItems?.map((item) => (
-                      <button
-                        key={item?.path}
-                        onClick={() => handleNavigation(item?.path)}
-                        className="flex items-center w-full px-3 py-2 text-sm text-popover-foreground hover:bg-muted transition-enterprise"
-                      >
-                        <Icon name={item?.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
-                        {item?.label}
-                      </button>
-                    ))}
+                          {/* Nested flyout: the page's own tabs. The page itself
+                              stays one click away via its header row below. */}
+                          {item.tabs && openFlyout === item.path && (
+                            <div className={`absolute top-0 w-60 bg-popover border border-border rounded-md shadow-enterprise-md z-300 ${isRTL ? "right-full mr-1" : "left-full ml-1"}`}>
+                              <div className="py-1">
+                                <button
+                                  onClick={() => handleNavigation(item.path)}
+                                  className="flex items-center w-full px-3 py-2 text-xs text-muted-foreground hover:bg-muted transition-enterprise border-b border-border"
+                                >
+                                  <Icon name={item.icon} size={14} className={isRTL ? "ml-3" : "mr-3"} />
+                                  {`${t("nav.openPage")} ${item.label}`}
+                                </button>
+                                {item.tabs.map((tab) => (
+                                  <button
+                                    key={tab.id}
+                                    onClick={() => handleTabNavigation(item.path, tab.id)}
+                                    className={`flex items-center w-full px-3 py-2 text-sm transition-enterprise hover:bg-muted ${
+                                      tabIsActive(item.path, tab.id)
+                                        ? "bg-muted text-primary font-medium"
+                                        : "text-popover-foreground"
+                                    }`}
+                                  >
+                                    <Icon name={tab.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
+                                    {labelFor(tab)}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            ))}
           </nav>
 
           <div className="flex-1" />
@@ -311,10 +382,6 @@ const Header = ({
                   </p>
                 </div>
                 <div className="py-1">
-                  {/* <button className="flex items-center w-full px-3 py-2 text-sm text-popover-foreground hover:bg-muted transition-enterprise">
-                    <Icon name="User" size={16} className="mr-3" />
-                    Profile
-                  </button> */}
                   <button
                     onClick={handleAccountSettings}
                     className="flex items-center w-full px-3 py-2 text-sm text-popover-foreground hover:bg-muted transition-enterprise"
@@ -336,7 +403,8 @@ const Header = ({
           </div>
         </div>
       </header>
-      {/* Mobile Navigation Overlay */}
+
+      {/* Mobile Navigation Overlay — the same four groups, as collapsibles */}
       {isDrawerOpen && (
         <div className="fixed inset-0 z-300 lg:hidden">
           <div
@@ -345,36 +413,79 @@ const Header = ({
           />
           <div
             ref={drawerRef}
-            className="fixed top-16 left-0 right-0 bg-background border-b border-border shadow-enterprise-lg animate-slide-down"
+            className="fixed top-16 left-0 right-0 max-h-[calc(100vh-4rem)] overflow-y-auto bg-background border-b border-border shadow-enterprise-lg animate-slide-down"
           >
-            <nav className={`px-4 py-4 space-y-2 ${isRTL ? "text-right" : "text-left"}`}>
-              {navigationItems?.map((item) => (
-                <button
-                  key={item?.path}
-                  onClick={() => handleNavigation(item?.path)}
-                  className={`flex items-center w-full px-3 py-2 text-sm rounded-md transition-enterprise ${isRTL ? "flex-row-reverse" : ""} ${
-                    currentPath === item?.path
-                      ? "bg-primary text-primary-foreground"
-                      : "text-foreground hover:bg-muted"
-                  }`}
-                >
-                  <Icon name={item?.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
-                  {item?.label}
-                </button>
-              ))}
+            <nav className={`px-4 py-4 space-y-1 ${isRTL ? "text-right" : "text-left"}`}>
+              {groups.map((group) => {
+                const expanded = openMobileGroup === group.key;
+                return (
+                  <div key={group.key} className="border-b border-border last:border-b-0 pb-1">
+                    <button
+                      onClick={() => setOpenMobileGroup((v) => (v === group.key ? null : group.key))}
+                      className={`flex items-center w-full px-3 py-2 text-sm font-medium rounded-md transition-enterprise ${isRTL ? "flex-row-reverse" : ""} ${
+                        groupIsActive(group) ? "text-primary" : "text-foreground"
+                      }`}
+                    >
+                      <Icon name={group.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
+                      <span className="flex-1 text-left">{group.label}</span>
+                      <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={16} />
+                    </button>
 
-              <div className="border-t border-border my-2 pt-2">
-                {secondaryItems?.map((item) => (
-                  <button
-                    key={item?.path}
-                    onClick={() => handleNavigation(item?.path)}
-                    className={`flex items-center w-full px-3 py-2 text-sm text-muted-foreground hover:bg-muted rounded-md transition-enterprise ${isRTL ? "flex-row-reverse" : ""}`}
-                  >
-                    <Icon name={item?.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
-                    {item?.label}
-                  </button>
-                ))}
-              </div>
+                    {expanded && (
+                      <div className={isRTL ? "pr-4" : "pl-4"}>
+                        {group.items.map((item) => {
+                          const tabsOpen = openMobileFlyout === item.path;
+                          return (
+                            <div key={item.path}>
+                              <div className={`flex items-center ${isRTL ? "flex-row-reverse" : ""}`}>
+                                <button
+                                  onClick={() => handleNavigation(item.path)}
+                                  className={`flex items-center flex-1 px-3 py-2 text-sm rounded-md transition-enterprise ${isRTL ? "flex-row-reverse" : ""} ${
+                                    currentPath === item.path
+                                      ? "bg-primary text-primary-foreground"
+                                      : "text-foreground hover:bg-muted"
+                                  }`}
+                                >
+                                  <Icon name={item.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
+                                  {item.label}
+                                </button>
+                                {item.tabs && (
+                                  <button
+                                    aria-label={`${item.label} tabs`}
+                                    onClick={() => setOpenMobileFlyout((v) => (v === item.path ? null : item.path))}
+                                    className="px-2 py-2 text-muted-foreground hover:bg-muted rounded-md"
+                                  >
+                                    <Icon name={tabsOpen ? "ChevronDown" : "ChevronRight"} size={16} />
+                                  </button>
+                                )}
+                              </div>
+
+                              {item.tabs && tabsOpen && (
+                                <div className={isRTL ? "pr-4" : "pl-4"}>
+                                  {item.tabs.map((tab) => (
+                                    <button
+                                      key={tab.id}
+                                      onClick={() => handleTabNavigation(item.path, tab.id)}
+                                      className={`flex items-center w-full px-3 py-2 text-sm rounded-md transition-enterprise ${isRTL ? "flex-row-reverse" : ""} ${
+                                        tabIsActive(item.path, tab.id)
+                                          ? "bg-muted text-primary font-medium"
+                                          : "text-muted-foreground hover:bg-muted"
+                                      }`}
+                                    >
+                                      <Icon name={tab.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
+                                      {labelFor(tab)}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </nav>
           </div>
         </div>
