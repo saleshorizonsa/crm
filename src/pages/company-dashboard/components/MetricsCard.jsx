@@ -15,6 +15,10 @@ const MetricsCard = ({
   iconBgColor,
   subtitle,
   onClick,
+  // Lets a caller show an arrow that disagrees with the colour. Needed where
+  // the number going UP is BAD (returns): an up arrow in red. Omitted by every
+  // other caller, which keeps the original coupling.
+  changeIcon,
 }) => {
   const { t } = useLanguage();
 
@@ -41,6 +45,7 @@ const MetricsCard = ({
   };
 
   const getChangeIcon = () => {
+    if (changeIcon) return changeIcon;
     if (changeType === "positive") return "TrendingUp";
     if (changeType === "negative") return "TrendingDown";
     if (trend === "up" || (typeof trend === "number" && trend > 0))

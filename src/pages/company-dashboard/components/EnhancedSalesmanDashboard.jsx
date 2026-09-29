@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import MetricsCard from "./MetricsCard";
+import ReturnsCard from "./ReturnsCard";
 import SalesChart from "./SalesChart";
 import ActivityFeed from "./ActivityFeed";
 import QuickActions from "./QuickActions";
@@ -1401,6 +1402,13 @@ const EnhancedSalesmanDashboard = ({
                 </div>
               </div>
             )}
+
+            {/* Returns this month — the salesman's own deals only. Uses the
+                shared MetricsCard like the other three dashboards rather than a
+                fifth bespoke tile, so the figure and its scoping cannot drift. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <ReturnsCard />
+            </div>
 
             {/* Today's Activity */}
               <div

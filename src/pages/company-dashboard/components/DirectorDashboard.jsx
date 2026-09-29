@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import MetricsCard from "./MetricsCard";
+import ReturnsCard from "./ReturnsCard";
 import SalesChart from "./SalesChart";
 import ActivityFeed from "./ActivityFeed";
 import QuickActions from "./QuickActions";
@@ -2145,6 +2146,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {selectedCompany ? (
           <>
+            <ReturnsCard companyId={selectedCompany?.id} />
             <MetricsCard
               title="Total Revenue"
               value={formatCurrency(metrics?.totalRevenue || 0)}

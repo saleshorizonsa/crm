@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import MetricsCard from "./MetricsCard";
+import ReturnsCard from "./ReturnsCard";
 import SalesChart from "./SalesChart";
 import ActivityFeed from "./ActivityFeed";
 import TeamPerformance from "./TeamPerformance";
@@ -2102,6 +2103,7 @@ const EnhancedSupervisorDashboard = ({
           {/* Metrics Cards - First Row (old Revenue/Active-Pipeline cards removed
               — superseded by the KPI strip at the top) */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <ReturnsCard />
             <MetricsCard
               title={t("dashboard.totalContacts")}
               value={`${metrics?.totalContacts || 0}`}

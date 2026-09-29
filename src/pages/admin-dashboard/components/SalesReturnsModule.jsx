@@ -31,9 +31,15 @@ const dealLabel = (deal) => {
 };
 
 export default function SalesReturnsModule({ adminCompany }) {
-  const { user, company: authCompany } = useAuth();
+  const { user, userProfile, company: authCompany } = useAuth();
   const company = adminCompany || authCompany;
   const fileInputRef = useRef(null);
+  // ADMIN ONLY. /admin-dashboard is already wrapped in ProtectedRoute
+  // requiredRole="admin", so this is belt-and-braces rather than the only gate —
+  // and it matches the deal_returns RLS insert policy, which is also admin-only.
+  // A role that reaches this component anyway writes nothing: the database
+  // refuses it.
+  const isAdmin = userProfile?.role === "admin";
 
   const [step, setStep] = useState('upload');   // upload|preview|importing|done
   const [fileName, setFileName] = useState('');
@@ -158,6 +164,18 @@ export default function SalesReturnsModule({ adminCompany }) {
   const matchedTotal = (parsed?.matched || []).reduce((s, r) => s + r.return_amount, 0);
   const unmatchedTotal = (parsed?.unmatched || []).reduce((s, r) => s + r.return_amount, 0);
   const ambiguousTotal = (parsed?.ambiguous || []).reduce((s, r) => s + r.return_amount, 0);
+
+  if (!isAdmin) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-900">
+        <p className="font-semibold">Admin only</p>
+        <p className="mt-1">
+          Importing sales returns is restricted to Admin accounts, because a return
+          changes the Achieved figure every dashboard reports.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

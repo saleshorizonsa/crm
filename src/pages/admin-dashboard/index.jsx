@@ -14,6 +14,7 @@ import MaterialGroupSettings from "./components/MaterialGroupSettings";
 import CompanyLogoManager from "./components/CompanyLogoManager";
 import AdminCompanySelector from "./components/AdminCompanySelector";
 import CustomerMaster from "./components/CustomerMaster";
+import SalesReturnsModule from "./components/SalesReturnsModule";
 import { useLanguage } from "../../i18n";
 
 const AdminDashboard = () => {
@@ -48,6 +49,10 @@ const AdminDashboard = () => {
     { id: "targets",          label: t("admin.salesTargets"),   icon: "Target"      },
     { id: "lost-reasons",     label: t("admin.lostReasons"),    icon: "XCircle"     },
     { id: "material-groups",  label: "Material Groups",         icon: "Layers"      },
+    // ERP sales-returns import. Admin only, which this whole route already is
+    // (Routes.jsx wraps it in ProtectedRoute requiredRole="admin") — moving it
+    // here IS the narrowing, and the RLS write policy matches.
+    { id: "sales_returns",    label: "Sales Returns",           icon: "Undo2"       },
     { id: "settings",         label: t("admin.settings"),       icon: "Settings"    },
   ];
 
@@ -164,6 +169,9 @@ const AdminDashboard = () => {
                 : <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">Select a company above to manage material groups</div>
               }
             </>
+          )}
+          {activeTab === "sales_returns"   && (
+            <SalesReturnsModule adminCompany={adminCompany} />
           )}
           {activeTab === "settings"         && <UomSettings />}
         </div>
