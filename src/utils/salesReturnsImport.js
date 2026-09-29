@@ -130,6 +130,16 @@ export function buildReturnRows({ rows, headerMap, deals, XLSX = null }) {
     if (isBlank) return;
 
     const invoiceNo = text(row, headerMap, 'Invoice No');
+
+    // A row with NO credit note, NO invoice and NO item code is not a credit
+    // note line — it is the subtotal or footer the ERP puts at the bottom of
+    // the sheet, carrying only a leftover amount. Importing one adds a return
+    // that can never be matched, reconciled or explained. A real export did
+    // exactly this: blank keys, no customer, and 2,500 in the value column.
+    // Skipped here, before dedup and before anything reaches the database.
+    const creditNoteNo = text(row, headerMap, 'Credit Note No');
+    const itemCode = text(row, headerMap, 'Item Code');
+    if (!creditNoteNo && !invoiceNo && !itemCode) return;
     const returnDate = toISODate(cell(row, headerMap, 'Date'), XLSX);
     const amount = toAmount(cell(row, headerMap, 'Net value'));
 

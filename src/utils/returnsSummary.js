@@ -44,14 +44,29 @@ export async function resolveReturnsScope({ companyId, userId, role }) {
   return [userId].filter(Boolean);
 }
 
+/**
+ * TWO different questions, deliberately two different queries.
+ *
+ * COMPANY-WIDE (ownerIds === null): every return booked to the company in the
+ * period, matched or not. No join to deals — a return's date and company are
+ * enough, and requiring a matched deal is exactly what used to hide most of
+ * them. Today 79% of invoiced deals carry only a placeholder invoice_number,
+ * so most real credit notes match nothing and would otherwise vanish.
+ *
+ * PER-PERSON / TEAM (ownerIds is an array): only returns with a resolved deal,
+ * through the inner join, because a return can only be charged to someone via
+ * the owner of the deal it credits. An unmatched return has no owner and must
+ * never land on an individual's card or reduce their Achieved.
+ */
 async function sumReturns({ companyId, ownerIds, start, end }) {
+  const companyWide = !Array.isArray(ownerIds);
   let q = supabase
     .from('deal_returns')
-    .select('return_amount, deals!inner(owner_id)')
+    .select(companyWide ? 'return_amount' : 'return_amount, deals!inner(owner_id)')
     .eq('company_id', companyId)
     .gte('return_date', start)
     .lte('return_date', end);
-  if (Array.isArray(ownerIds)) {
+  if (!companyWide) {
     if (!ownerIds.length) return { total: 0, count: 0 };
     q = q.in('deals.owner_id', ownerIds);
   }

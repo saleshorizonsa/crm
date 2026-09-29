@@ -150,6 +150,7 @@ export default function CoverageConsole() {
         { data: contactReports },
         { data: escalations },
         { data: returnRows },
+        { data: unmatchedReturnRows },
       ] = await Promise.all([
         // All deals — not lost
         supabase
@@ -270,6 +271,15 @@ export default function CoverageConsole() {
           .eq("company_id", company.id)
           .gte("return_date", monthStart)
           .lte("return_date", monthEnd),
+
+        // Unmatched credit notes: no deal, so no owner. Company figure only.
+        supabase
+          .from("deal_returns")
+          .select("id, deal_id, return_date, return_amount")
+          .eq("company_id", company.id)
+          .is("deal_id", null)
+          .gte("return_date", monthStart)
+          .lte("return_date", monthEnd),
       ]);
 
       setRaw({
@@ -283,11 +293,14 @@ export default function CoverageConsole() {
         bounces: bounces || [],
         contactReports: contactReports || [],
         escalations: escalations || [],
-        returns: (returnRows || []).map((r) => ({
-          ...r,
-          owner_id: r.deals?.owner_id ?? null,
-          division_id: r.deals?.division_id ?? null,
-        })),
+        returns: [
+          ...(returnRows || []).map((r) => ({
+            ...r,
+            owner_id: r.deals?.owner_id ?? null,
+            division_id: r.deals?.division_id ?? null,
+          })),
+          ...(unmatchedReturnRows || []).map((r) => ({ ...r, owner_id: null, division_id: null })),
+        ],
         monthStart,
         monthEnd,
         now,
@@ -445,6 +458,9 @@ export default function CoverageConsole() {
       start: monthStart,
       end: monthEnd,
       returns,
+      // Company level only — a team or a person never absorbs an unmatched
+      // credit note, because there is no deal to attribute it to.
+      includeUnattributed: data.includeUnattributedReturns === true,
     });
     const invoicedDeals = achievedSplit.deals;
     const invoiced = achievedSplit.total;
@@ -701,7 +717,11 @@ export default function CoverageConsole() {
     return scopedIds;
   })();
 
-  const metrics = calcMetrics(levelIds, raw);
+  // Only the COMPANY level nets unmatched credit notes; a team card or a
+  // salesman card below never does.
+  const metrics = calcMetrics(levelIds, {
+    ...raw, includeUnattributedReturns: nav.level === "company",
+  });
   const exceptions = buildExceptions(levelIds, raw);
 
   const currentDeal = nav.opp ? raw.deals.find((d) => d.id === nav.opp) : null;

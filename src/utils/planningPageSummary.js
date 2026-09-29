@@ -228,8 +228,13 @@ export async function computePlanningPageSummary({
   const target = Object.values(targetPerPerson(targetRows)).reduce((s, v) => s + v, 0);
 
   // ── Achieved: the one strict definition — won AND invoiced, by invoice_date.
+  // ownerIds === null means the caller asked for the WHOLE company, and only
+  // then do unmatched returns count: they reduce the company figure and can be
+  // charged to nobody. Any narrower scope keeps matched-only, so one person's
+  // Achieved never absorbs a credit note that is not theirs.
   const { total: achieved } = await fetchAchieved({
     companyId, contributorIds: scopeIds, start, end,
+    includeUnmatched: ownerIds === null,
   });
 
   // Every contributor-flagged person in scope counts here in full, including a

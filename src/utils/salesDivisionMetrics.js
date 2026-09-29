@@ -241,6 +241,10 @@ export function calcDivisionMetrics(userIds, data) {
     start: monthStart,
     end: monthEnd,
     returns,
+    // Only the company-level view nets unmatched returns; a division or a
+    // person must never absorb one (data.includeUnattributedReturns is set
+    // only by the page's company-level call).
+    includeUnattributed: data.includeUnattributedReturns === true,
   });
   const achieved = achievedSplit.total;
   const achievedGross = achievedSplit.grossTotal;

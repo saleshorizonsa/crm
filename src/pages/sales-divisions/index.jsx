@@ -222,7 +222,7 @@ export default function SalesDivisions() {
       // and it is hidden outside the current month anyway.
       const nextMonth = nextMonthBounds(now);
 
-      const [usersRes, divisionsRes, dealsRes, targetsRes, deals3mRes, oppsRes, futureRes, flagsRes, escalationsRes, returnsRes] =
+      const [usersRes, divisionsRes, dealsRes, targetsRes, deals3mRes, oppsRes, futureRes, flagsRes, escalationsRes, returnsRes, unmatchedRes] =
         await Promise.all([
           supabase
             .from("users")
@@ -291,6 +291,15 @@ export default function SalesDivisions() {
             .eq("company_id", company.id)
             .gte("return_date", monthStart)
             .lte("return_date", monthEnd),
+          // Unmatched credit notes: no deal, so no owner and no division. They
+          // reduce the COMPANY figure only (see includeUnattributedReturns).
+          supabase
+            .from("deal_returns")
+            .select("id, deal_id, return_date, return_amount")
+            .eq("company_id", company.id)
+            .is("deal_id", null)
+            .gte("return_date", monthStart)
+            .lte("return_date", monthEnd),
         ]);
 
       const failed = [usersRes, dealsRes, targetsRes, deals3mRes, oppsRes, futureRes].find((r) => r.error);
@@ -318,11 +327,16 @@ export default function SalesDivisions() {
         futureOrders: futureRes.data || [],
         returns: returnsRes.error
           ? []
-          : (returnsRes.data || []).map((r) => ({
-            ...r,
-            owner_id: r.deals?.owner_id ?? null,
-            division_id: r.deals?.division_id ?? null,
-          })),
+          : [
+            ...(returnsRes.data || []).map((r) => ({
+              ...r,
+              owner_id: r.deals?.owner_id ?? null,
+              division_id: r.deals?.division_id ?? null,
+            })),
+            ...(unmatchedRes?.error ? [] : (unmatchedRes?.data || []).map((r) => ({
+              ...r, owner_id: null, division_id: null,
+            }))),
+          ],
         flags: flagsRes.error ? [] : flagsRes.data || [],
         escalations: escalationsRes.error ? [] : escalationsRes.data || [],
         monthStart,
@@ -396,7 +410,10 @@ export default function SalesDivisions() {
   const userName = (id) => userById.get(id)?.full_name || "Unknown";
   // divisionId scopes the DEALS to this division; omitted at company level so
   // the top-level view still counts everything exactly as before.
-  const metricsFor = (ids, divisionId = null) => calcDivisionMetrics(ids, { ...raw, divisionId });
+  // includeUnattributedReturns only at COMPANY level: no division and no
+  // person may absorb a return that matched no deal.
+  const metricsFor = (ids, divisionId = null, companyLevel = false) =>
+    calcDivisionMetrics(ids, { ...raw, divisionId, includeUnattributedReturns: companyLevel });
 
   const currentGroup = nav.division ? groups.find((g) => g.id === nav.division) : null;
   const view = currentGroup ? divisionView({ group: currentGroup, users: raw.users }) : null;
@@ -424,7 +441,7 @@ export default function SalesDivisions() {
   // the deals are scoped to it. At company level nothing is scoped and the
   // totals are the same ones the page showed before multi-division.
   const navDivisionId = nav.level === "company" ? null : nav.division || null;
-  const metrics = metricsFor(levelIds, navDivisionId);
+  const metrics = metricsFor(levelIds, navDivisionId, nav.level === "company");
   const showExceptions = ["company", "division", "team"].includes(nav.level);
   const exceptions = showExceptions ? buildExceptions(levelIds, raw) : [];
 

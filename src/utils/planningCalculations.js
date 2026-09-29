@@ -431,17 +431,28 @@ export function isReturnInPeriod(row, { start = null, end = null } = {}) {
  */
 export function computeReturns({ returns, contributorIds, start = null, end = null }) {
   const scope = new Set(contributorIds || []);
-  const counted = (returns || []).filter(
-    (r) => r && scope.has(r.owner_id) && isReturnInPeriod(r, { start, end }),
-  );
+  const inPeriod = (returns || []).filter((r) => r && isReturnInPeriod(r, { start, end }));
+
+  const counted = inPeriod.filter((r) => scope.has(r.owner_id));
   const perPerson = {};
   counted.forEach((r) => {
     perPerson[r.owner_id] = (perPerson[r.owner_id] || 0) + returnAmount(r);
   });
+
+  // UNATTRIBUTED: a return whose invoice matched no deal has no owner, so it
+  // can never be charged to a person. It is still real money that came back,
+  // so it reduces the COMPANY total and nothing else. Callers that are not
+  // company-wide never receive these rows in the first place (see fetchReturns).
+  const unattributed = inPeriod
+    .filter((r) => !r.owner_id)
+    .reduce((s, r) => s + returnAmount(r), 0);
+
   return {
     total: Object.values(perPerson).reduce((s, v) => s + v, 0),
     perPerson,
     count: counted.length,
+    unattributed,
+    unattributedCount: inPeriod.filter((r) => !r.owner_id).length,
   };
 }
 
@@ -450,37 +461,76 @@ export function computeReturns({ returns, contributorIds, start = null, end = nu
  * owner_id of the deal it was matched to. Unmatched returns (deal_id null) are
  * excluded by the inner join — they have no owner to charge.
  */
-export async function fetchReturns({ companyId, ownerIds = null, start = null, end = null }) {
+export async function fetchReturns({
+  companyId, ownerIds = null, start = null, end = null, includeUnmatched = false,
+}) {
   if (!companyId) return [];
-  let q = supabase
-    .from('deal_returns')
-    .select('id, deal_id, return_date, return_amount, deals!inner(owner_id, division_id)')
-    .eq('company_id', companyId);
-  if (start) q = q.gte('return_date', start);
-  if (end) q = q.lte('return_date', end);
-  if (Array.isArray(ownerIds)) {
-    if (!ownerIds.length) return [];
-    q = q.in('deals.owner_id', ownerIds);
-  }
-  const { data, error } = await q;
-  if (error) {
-    // A reporting screen must not go blank because returns could not be read;
-    // it degrades to gross Achieved, which is what it showed before returns
-    // existed. Logged so the degradation is visible rather than silent.
-    console.error('fetchReturns:', error);
-    return [];
-  }
-  return (data || []).map((r) => ({
-    id: r.id,
-    deal_id: r.deal_id,
-    return_date: r.return_date,
-    return_amount: r.return_amount,
-    owner_id: r.deals?.owner_id ?? null,
-    // The DEAL's division, so a return can be scoped the same way its deal is.
-    // Without it a credit note is subtracted once per division its owner
-    // belongs to, which for a multi-division person double-counts it.
-    division_id: r.deals?.division_id ?? null,
-  }));
+  const matched = async () => {
+    let q = supabase
+      .from('deal_returns')
+      .select('id, deal_id, return_date, return_amount, deals!inner(owner_id, division_id)')
+      .eq('company_id', companyId);
+    if (start) q = q.gte('return_date', start);
+    if (end) q = q.lte('return_date', end);
+    if (Array.isArray(ownerIds)) {
+      if (!ownerIds.length) return [];
+      q = q.in('deals.owner_id', ownerIds);
+    }
+    const { data, error } = await q;
+    if (error) {
+      // A reporting screen must not go blank because returns could not be read;
+      // it degrades to gross Achieved, which is what it showed before returns
+      // existed. Logged so the degradation is visible rather than silent.
+      console.error('fetchReturns:', error);
+      return [];
+    }
+    return (data || []).map((r) => ({
+      id: r.id,
+      deal_id: r.deal_id,
+      return_date: r.return_date,
+      return_amount: r.return_amount,
+      owner_id: r.deals?.owner_id ?? null,
+      // The DEAL's division, so a return can be scoped the same way its deal is.
+      // Without it a credit note is subtracted once per division its owner
+      // belongs to, which for a multi-division person double-counts it.
+      division_id: r.deals?.division_id ?? null,
+    }));
+  };
+
+  // UNMATCHED rows are fetched ONLY for a company-wide caller, and only when it
+  // asks. They carry no owner and no division, so they can never be charged to
+  // a person or a division — computeReturns keeps them out of perPerson and
+  // computeAchieved subtracts them from the company total alone.
+  //
+  // They are fetched at all because most real credit notes are unmatched today:
+  // 79% of invoiced deals carry a placeholder invoice_number rather than the
+  // ERP's, so requiring a matched deal hid most of the money that came back.
+  const unmatched = async () => {
+    let q = supabase
+      .from('deal_returns')
+      .select('id, deal_id, return_date, return_amount')
+      .eq('company_id', companyId)
+      .is('deal_id', null);
+    if (start) q = q.gte('return_date', start);
+    if (end) q = q.lte('return_date', end);
+    const { data, error } = await q;
+    if (error) { console.error('fetchReturns (unmatched):', error); return []; }
+    return (data || []).map((r) => ({
+      id: r.id,
+      deal_id: null,
+      return_date: r.return_date,
+      return_amount: r.return_amount,
+      owner_id: null,
+      division_id: null,
+    }));
+  };
+
+  // includeUnmatched is the ONLY switch: the matched half keeps whatever owner
+  // filter the caller gave it, so per-person behaviour is untouched, and the
+  // unmatched half is added only when a company-wide caller asks for it.
+  if (!includeUnmatched) return matched();
+  const [m, u] = await Promise.all([matched(), unmatched()]);
+  return [...m, ...u];
 }
 
 /** Ids of the ACTIVE contributors in a list of user rows (needs role + is_active). */
@@ -565,6 +615,10 @@ export async function fetchAchievedOnlyUsers({ companyId, ownerIds = null }) {
  */
 export function computeAchieved({
   deals, contributorIds, start = null, end = null, amountOf = achievedAmount, returns = [],
+  // COMPANY-SCOPED callers only. An unmatched return belongs to no person and
+  // no division, so it may reduce a company total and nothing narrower. Default
+  // false so a per-person or per-division caller can never pick one up.
+  includeUnattributed = false,
 }) {
   const scope = new Set(contributorIds || []);
   const counted = (deals || []).filter((d) => scope.has(d.owner_id) && isAchievedDeal(d, { start, end }));
@@ -585,7 +639,12 @@ export function computeAchieved({
   Object.entries(ret.perPerson).forEach(([ownerId, amt]) => {
     perPerson[ownerId] = (perPerson[ownerId] || 0) - amt;
   });
-  const total = Object.values(perPerson).reduce((sum, v) => sum + v, 0);
+  // Unattributed returns reduce the COMPANY total and never a person's figure,
+  // so they are taken off the sum rather than off perPerson. They only reach
+  // here when a company-wide caller asked for them (fetchReturns), so an
+  // individual's Achieved cannot pick them up.
+  const unattributed = includeUnattributed ? (ret.unattributed || 0) : 0;
+  const total = Object.values(perPerson).reduce((sum, v) => sum + v, 0) - unattributed;
 
   return {
     total,                              // net of returns — what every consumer wants
@@ -593,17 +652,26 @@ export function computeAchieved({
     count: counted.length,
     deals: counted,
     grossTotal,                         // before returns, for "invoiced X, returned Y" displays
-    returnsTotal: ret.total,
+    // ret.total is the ATTRIBUTED part; the unattributed part is company-only.
+    returnsTotal: ret.total + unattributed,
+    returnsAttributed: ret.total,
+    returnsUnattributed: unattributed,
     returnsPerPerson: ret.perPerson,
-    returnsCount: ret.count,
+    returnsCount: ret.count + (ret.unattributedCount || 0),
   };
 }
 
 /** Achieved straight from the database, same rule as computeAchieved. */
-export async function fetchAchieved({ companyId, contributorIds, start = null, end = null }) {
+export async function fetchAchieved({
+  companyId, contributorIds, start = null, end = null,
+  // COMPANY-WIDE callers only. An unmatched return belongs to no person, so it
+  // must never reach an individual's Achieved — see fetchReturns.
+  includeUnmatched = false,
+}) {
   const empty = {
     total: 0, perPerson: {}, count: 0, deals: [],
-    grossTotal: 0, returnsTotal: 0, returnsPerPerson: {}, returnsCount: 0,
+    grossTotal: 0, returnsTotal: 0, returnsAttributed: 0, returnsUnattributed: 0,
+    returnsPerPerson: {}, returnsCount: 0,
   };
   if (!companyId || !contributorIds?.length) return empty;
   let q = supabase
@@ -620,8 +688,13 @@ export async function fetchAchieved({ companyId, contributorIds, start = null, e
   // Returns are fetched over the same window but INDEPENDENTLY of the deals
   // above: a return dated this month usually belongs to an invoice from an
   // earlier month, which is not in `data` at all.
-  const returns = await fetchReturns({ companyId, ownerIds: contributorIds, start, end });
-  return computeAchieved({ deals: data, contributorIds, start, end, returns });
+  const returns = await fetchReturns({
+    companyId, ownerIds: contributorIds, start, end, includeUnmatched,
+  });
+  return computeAchieved({
+    deals: data, contributorIds, start, end, returns,
+    includeUnattributed: includeUnmatched,
+  });
 }
 
 // ── WON, NOT YET INVOICED (visibility only) ────────────────────────────────

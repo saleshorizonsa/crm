@@ -2,6 +2,7 @@
 import { useNavigate } from "react-router-dom";
 import MetricsCard from "./MetricsCard";
 import ReturnsCard from "./ReturnsCard";
+import ReturnsReconciliation from "./ReturnsReconciliation";
 import SalesChart from "./SalesChart";
 import ActivityFeed from "./ActivityFeed";
 import QuickActions from "./QuickActions";
@@ -2213,6 +2214,10 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
           </>
         )}
       </div>
+
+      {/* Returns reconciliation — read-only, directly under the Returns figure
+          it explains. Collapsed by default so it costs nothing until opened. */}
+      {selectedCompany && <ReturnsReconciliation companyId={selectedCompany?.id} />}
 
       {/* Pipeline Origin KPI Cards */}
       {originMetrics && (
