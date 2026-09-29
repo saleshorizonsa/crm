@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import MetricsCard from "./MetricsCard";
-import ReturnsCard from "./ReturnsCard";
+import useReturnsSummary, { returnsSubline } from "../../../hooks/useReturnsSummary";
 import SalesChart from "./SalesChart";
 import ActivityFeed from "./ActivityFeed";
 import QuickActions from "./QuickActions";
@@ -70,6 +70,13 @@ const EnhancedSalesmanDashboard = ({
   // When viewing as another user (manager "view as"), use their identity for all queries
   const effectiveUser = viewAsUser || { id: user?.id };
   const effectiveUserProfile = viewAsUser || userProfile;
+
+  // Returns follow the person being VIEWED: a director viewing a salesman sees
+  // that salesman's returns, matching every other figure on this dashboard.
+  const { summary: returnsSummary, loading: returnsLoading } = useReturnsSummary({
+    userId: effectiveUser?.id,
+    role: effectiveUserProfile?.role,
+  });
 
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -1287,7 +1294,7 @@ const EnhancedSalesmanDashboard = ({
               )}
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-6">
               {/* Total Revenue — clickable deep-link when a director is viewing an employee */}
               <div
                 onClick={isViewingEmployee ? handleRevenueCardClick : undefined}
@@ -1369,6 +1376,23 @@ const EnhancedSalesmanDashboard = ({
                 </div>
                 <div className="text-sm text-white mt-1">{t("dashboard.remaining")}</div>
               </div>
+
+              {/* Returns this month - this salesman's own deals only. Orange,
+                  so it reads as a warning without being taken for the solid-red
+                  Remaining tile beside it. */}
+              <div className="text-center p-4 bg-orange-50 rounded-lg min-w-0 overflow-hidden">
+                <div className="text-xl font-bold tabular-nums truncate leading-tight text-orange-700">
+                  {returnsLoading || !returnsSummary
+                    ? "—"
+                    : formatCurrency(returnsSummary.total)}
+                </div>
+                <div className="text-sm text-orange-600 mt-1">Returns</div>
+                {!returnsLoading && returnsSummary && (
+                  <div className="text-[10px] text-orange-600/80 mt-0.5 truncate">
+                    {returnsSubline(returnsSummary)}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Pipeline Origin KPI Cards */}
@@ -1402,13 +1426,6 @@ const EnhancedSalesmanDashboard = ({
                 </div>
               </div>
             )}
-
-            {/* Returns this month — the salesman's own deals only. Uses the
-                shared MetricsCard like the other three dashboards rather than a
-                fifth bespoke tile, so the figure and its scoping cannot drift. */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <ReturnsCard />
-            </div>
 
             {/* Today's Activity */}
               <div

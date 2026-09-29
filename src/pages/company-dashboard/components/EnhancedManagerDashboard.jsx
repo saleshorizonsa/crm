@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import MetricsCard from "./MetricsCard";
-import ReturnsCard from "./ReturnsCard";
+import useReturnsSummary, { returnsSubline } from "../../../hooks/useReturnsSummary";
 import SalesChart from "./SalesChart";
 import ActivityFeed from "./ActivityFeed";
 import TeamPerformance from "./TeamPerformance";
@@ -85,6 +85,13 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   // If viewing as another user (director view), use that user's data
   const effectiveUser = viewAsUser || { id: user?.id };
   const effectiveUserProfile = viewAsUser || userProfile;
+
+  // Returns follow the person being VIEWED, like every other figure on this
+  // dashboard — a manager viewing a salesman sees that salesman’s returns.
+  const { summary: returnsSummary, loading: returnsLoading } = useReturnsSummary({
+    userId: effectiveUser?.id,
+    role: effectiveUserProfile?.role,
+  });
 
   // Helper to convert deal amount to user's preferred currency
   const getConvertedAmount = (deal) => {
@@ -1679,7 +1686,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   </div>
 
                   {/* Summary Stats */}
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
                     <div className="p-3 bg-blue-50 rounded-lg">
                       <p className="text-xs text-blue-600 font-medium">
                         {t("dashboard.totalTarget")}
@@ -1738,6 +1745,24 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           ),
                         )}
                       </p>
+                    </div>
+                    {/* Returns this month. Orange rather than red: it is a
+                        warning, but must not read as part of the solid-red
+                        "Remaining Revenue" tile beside it. */}
+                    <div className="p-3 bg-orange-50 rounded-lg">
+                      <p className="text-xs text-orange-600 font-medium">
+                        Returns
+                      </p>
+                      <p className="text-xl font-bold text-orange-700">
+                        {returnsLoading || !returnsSummary
+                          ? "—"
+                          : formatCurrency(returnsSummary.total)}
+                      </p>
+                      {!returnsLoading && returnsSummary && (
+                        <p className="text-[10px] text-orange-600/80 mt-0.5 truncate">
+                          {returnsSubline(returnsSummary)}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -2011,7 +2036,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               {/* Metrics Cards - First Row (old Revenue/Active-Pipeline cards
                   removed — superseded by the KPI strip at the top) */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <ReturnsCard />
                 <MetricsCard
                   title={t("dashboard.totalContacts")}
                   value={`${metrics?.totalContacts || 0}`}

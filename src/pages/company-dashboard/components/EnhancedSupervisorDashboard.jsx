@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import MetricsCard from "./MetricsCard";
-import ReturnsCard from "./ReturnsCard";
+import useReturnsSummary, { returnsSubline } from "../../../hooks/useReturnsSummary";
 import SalesChart from "./SalesChart";
 import ActivityFeed from "./ActivityFeed";
 import TeamPerformance from "./TeamPerformance";
@@ -77,6 +77,12 @@ const EnhancedSupervisorDashboard = ({
   // If viewing as another user (director view), use that user's data
   const effectiveUser = viewAsUser || { id: user?.id };
   const effectiveUserProfile = viewAsUser || userProfile;
+
+  // Returns follow the person being VIEWED, like every other figure here.
+  const { summary: returnsSummary, loading: returnsLoading } = useReturnsSummary({
+    userId: effectiveUser?.id,
+    role: effectiveUserProfile?.role,
+  });
 
   // Helper to convert deal amount to user's preferred currency
   const getConvertedAmount = (deal) => {
@@ -1652,7 +1658,7 @@ const EnhancedSupervisorDashboard = ({
               </div>
 
               {/* Summary Stats - Fixed calculations */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                 <div className="bg-blue-50 rounded-lg p-4 text-center min-w-0 overflow-hidden">
                   <div className="text-lg font-bold tabular-nums text-blue-700">
                     {formatCurrency(
@@ -1698,6 +1704,21 @@ const EnhancedSupervisorDashboard = ({
                     )}
                   </div>
                   <div className="text-sm text-white">{t("dashboard.remainingRevenue")}</div>
+                </div>
+                {/* Returns this month. Orange reads as a warning without being
+                    mistaken for the solid-red Remaining Revenue tile. */}
+                <div className="bg-orange-50 rounded-lg p-4 text-center min-w-0 overflow-hidden">
+                  <div className="text-lg font-bold tabular-nums text-orange-700">
+                    {returnsLoading || !returnsSummary
+                      ? "—"
+                      : formatCurrency(returnsSummary.total)}
+                  </div>
+                  <div className="text-sm text-orange-600">Returns</div>
+                  {!returnsLoading && returnsSummary && (
+                    <div className="text-[10px] text-orange-600/80 mt-0.5 truncate">
+                      {returnsSubline(returnsSummary)}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2103,7 +2124,6 @@ const EnhancedSupervisorDashboard = ({
           {/* Metrics Cards - First Row (old Revenue/Active-Pipeline cards removed
               — superseded by the KPI strip at the top) */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <ReturnsCard />
             <MetricsCard
               title={t("dashboard.totalContacts")}
               value={`${metrics?.totalContacts || 0}`}

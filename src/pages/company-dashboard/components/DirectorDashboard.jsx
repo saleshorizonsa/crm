@@ -2143,10 +2143,9 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       </div>
 
       {/* Metrics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
         {selectedCompany ? (
           <>
-            <ReturnsCard companyId={selectedCompany?.id} />
             <MetricsCard
               title="Total Revenue"
               value={formatCurrency(metrics?.totalRevenue || 0)}
@@ -2175,6 +2174,11 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               trend={undefined}
               icon="📋"
             />
+            {/* Returns closes the row rather than leading it: the primary
+                figures come first, and this is the caveat on them. This
+                dashboard's summary row IS MetricsCard, so it keeps that style
+                rather than the coloured tiles the other three use. */}
+            <ReturnsCard companyId={selectedCompany?.id} />
           </>
         ) : (
           <>
