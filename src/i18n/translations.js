@@ -168,13 +168,6 @@ export const translations = {
     nav: {
       dashboard: "Dashboard",
       console: "Console",
-      // Top-nav group headers.
-      sales: "Sales",
-      performance: "Performance",
-      // "Open Planning" / "Open Reports" at the head of a tab flyout. Its own
-      // key rather than common.open, which is the ADJECTIVE ("an open deal")
-      // in Arabic and is defined twice in that block.
-      openPage: "Open",
       contacts: "Contacts",
       clients: "Clients",
       deals: "Deals",
@@ -2870,10 +2863,6 @@ export const translations = {
     nav: {
       dashboard: "لوحة التحكم",
       console: "الوحدة",
-      // Top-nav group headers.
-      sales: "المبيعات",
-      performance: "الأداء",
-      openPage: "فتح",
       contacts: "جهات الاتصال",
       clients: "العملاء",
       deals: "الصفقات",

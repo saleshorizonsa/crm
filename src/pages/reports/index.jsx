@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
-import { REPORTS_TAB_IDS, tabIdFromHash } from "constants/pageTabs";
 import { useAuth } from "../../contexts/AuthContext";
 import { useCurrency } from "../../contexts/CurrencyContext";
 import { reportService, computeDateRange } from "../../services/reportService";
@@ -207,20 +206,6 @@ const ReportsPage = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
-
-  // Deep links from the header's Reports flyout: /reports#<tab id>. Kept as a
-  // SEPARATE effect from the ?tab= handling above rather than folded into it,
-  // because that mechanism exists for a reason (BUG-14: location.state was
-  // being lost across refresh and back/forward) and still owns dashboard card
-  // clicks. ?tab= therefore wins when both are present; the hash is an
-  // additional entry point, not a replacement. Keying on location.hash means
-  // choosing another tab while already here switches in place, no reload.
-  useEffect(() => {
-    if (searchParams.get("tab")) return;
-    const wanted = tabIdFromHash(location.hash, REPORTS_TAB_IDS);
-    if (wanted) setActiveTab(wanted);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.hash]);
 
   // Apply the navigation-selected salesman once deals are available. One-shot:
   // fetchDeals() clears filters on load, so we (re)apply here right after, then
