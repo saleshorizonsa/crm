@@ -7,6 +7,7 @@ import CustomerMaster from "./components/CustomerMaster";
 import OpportunitiesModule from "./components/OpportunitiesModule";
 import FutureOrdersModule from "./components/FutureOrdersModule";
 import HistoricalDataModule from "./components/HistoricalDataModule";
+import SalesReturnsModule from "./components/SalesReturnsModule";
 import { computePlanningPageSummary, fetchProductGroups } from "utils/planningPageSummary";
 import { fetchTeamHierarchy } from "utils/teamHierarchy";
 import { useDateRange } from "contexts/DateRangeContext";
@@ -422,6 +423,11 @@ const PlanningPage = () => {
     ...(canUploadHistory
       ? [{ id: "historical_data", label: "Historical Data", icon: "Upload" }]
       : []),
+    // Same gate as Historical Data: both are ERP imports that rewrite what
+    // Achieved reports, so they belong to the same people.
+    ...(canUploadHistory
+      ? [{ id: "sales_returns", label: "Sales Returns", icon: "Undo2" }]
+      : []),
   ];
 
   // Deep link from the dashboard banner: /planning#approvals.
@@ -449,6 +455,8 @@ const PlanningPage = () => {
               ? "Current Sales Plan — Plan how you'll hit your monthly target, then convert to deals"
               : activeTab === "future_orders"
               ? "Future Orders — Deals moved from the Funnel to a future month; they auto-move to Current Sales Plan when the month arrives"
+              : activeTab === "sales_returns"
+                ? "Sales Returns — Import ERP credit notes; each return reduces Achieved in the month it happened"
               : activeTab === "historical_data"
               ? "Historical Data — Import past SAP/ERP sales to power forecasting and year-over-year comparisons"
               : "Customer Master — Import, assign and manage your customer accounts"}
@@ -836,6 +844,10 @@ const PlanningPage = () => {
 
           {activeTab === "historical_data" && canUploadHistory && (
             <HistoricalDataModule adminCompany={adminCompany} />
+          )}
+
+          {activeTab === "sales_returns" && canUploadHistory && (
+            <SalesReturnsModule adminCompany={adminCompany} />
           )}
         </TabErrorBoundary>
       </main>

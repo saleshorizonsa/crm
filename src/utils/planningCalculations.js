@@ -399,6 +399,86 @@ export function isAchievedDeal(deal, { start = null, end = null } = {}) {
   return (!start || day >= start) && (!end || day <= end);
 }
 
+// ── SALES RETURNS ───────────────────────────────────────────────────────────
+/**
+ * A return (ERP credit note) reduces Achieved. Three rules, all deliberate:
+ *
+ *   1. SIGN — deal_returns.return_amount is stored POSITIVE and subtracted
+ *      here. The original invoice is never rewritten; deals.amount and
+ *      deals.final_amount keep the figures they were invoiced at.
+ *   2. PERIOD — a return reduces the month it HAPPENED in (return_date), not
+ *      the month of the invoice it cancels. A January invoice returned in
+ *      March reduces March. Past months therefore stay stable once reported.
+ *      This is why returns are fetched over the window INDEPENDENTLY of the
+ *      deals: the invoice being credited is usually not in that window at all.
+ *   3. OWNER — a return belongs to the owner of the deal it was matched to.
+ *      An unmatched return (deal_id null) has no owner and cannot reduce
+ *      anyone's Achieved; it is kept for audit and surfaced in the importer.
+ */
+export const returnAmount = (row) => Math.abs(parseFloat(row?.return_amount) || 0);
+
+/** True when this one return falls inside [start, end] by return_date. */
+export function isReturnInPeriod(row, { start = null, end = null } = {}) {
+  if (!row || !row.return_date) return false;
+  const day = String(row.return_date).slice(0, 10);
+  return (!start || day >= start) && (!end || day <= end);
+}
+
+/**
+ * Total returns and per-person split, over the same scope and window Achieved
+ * uses. Rows need { owner_id, return_date, return_amount }; owner_id comes from
+ * the matched deal (see fetchReturns).
+ */
+export function computeReturns({ returns, contributorIds, start = null, end = null }) {
+  const scope = new Set(contributorIds || []);
+  const counted = (returns || []).filter(
+    (r) => r && scope.has(r.owner_id) && isReturnInPeriod(r, { start, end }),
+  );
+  const perPerson = {};
+  counted.forEach((r) => {
+    perPerson[r.owner_id] = (perPerson[r.owner_id] || 0) + returnAmount(r);
+  });
+  return {
+    total: Object.values(perPerson).reduce((s, v) => s + v, 0),
+    perPerson,
+    count: counted.length,
+  };
+}
+
+/**
+ * Returns straight from the database, flattened so each row carries the
+ * owner_id of the deal it was matched to. Unmatched returns (deal_id null) are
+ * excluded by the inner join — they have no owner to charge.
+ */
+export async function fetchReturns({ companyId, ownerIds = null, start = null, end = null }) {
+  if (!companyId) return [];
+  let q = supabase
+    .from('deal_returns')
+    .select('id, deal_id, return_date, return_amount, deals!inner(owner_id)')
+    .eq('company_id', companyId);
+  if (start) q = q.gte('return_date', start);
+  if (end) q = q.lte('return_date', end);
+  if (Array.isArray(ownerIds)) {
+    if (!ownerIds.length) return [];
+    q = q.in('deals.owner_id', ownerIds);
+  }
+  const { data, error } = await q;
+  if (error) {
+    // A reporting screen must not go blank because returns could not be read;
+    // it degrades to gross Achieved, which is what it showed before returns
+    // existed. Logged so the degradation is visible rather than silent.
+    console.error('fetchReturns:', error);
+    return [];
+  }
+  return (data || []).map((r) => ({
+    id: r.id,
+    deal_id: r.deal_id,
+    return_date: r.return_date,
+    return_amount: r.return_amount,
+    owner_id: r.deals?.owner_id ?? null,
+  }));
+}
+
 /** Ids of the ACTIVE contributors in a list of user rows (needs role + is_active). */
 export function contributorIdsFrom(users) {
   return (users || [])
@@ -479,20 +559,48 @@ export async function fetchAchievedOnlyUsers({ companyId, ownerIds = null }) {
  *                                     converter around achievedAmount — the RULE stays the same.
  * @returns {{ total:number, perPerson:Record<string,number>, count:number, deals:object[] }}
  */
-export function computeAchieved({ deals, contributorIds, start = null, end = null, amountOf = achievedAmount }) {
+export function computeAchieved({
+  deals, contributorIds, start = null, end = null, amountOf = achievedAmount, returns = [],
+}) {
   const scope = new Set(contributorIds || []);
   const counted = (deals || []).filter((d) => scope.has(d.owner_id) && isAchievedDeal(d, { start, end }));
   const perPerson = {};
   counted.forEach((d) => {
     perPerson[d.owner_id] = (perPerson[d.owner_id] || 0) + amountOf(d);
   });
+  const grossTotal = Object.values(perPerson).reduce((sum, v) => sum + v, 0);
+
+  // Subtracted from the SAME person and the SAME window, and deliberately NOT
+  // floored at zero. A month whose returns exceed its invoices really does have
+  // negative net revenue, and that is what the ERP will say; clamping it to
+  // zero would silently swallow the difference — which is the reconciliation
+  // gap this exists to close. Downstream, a negative Achieved simply widens the
+  // gap to target (target − achieved), which is the correct consequence: goods
+  // that came back still have to be sold again.
+  const ret = computeReturns({ returns, contributorIds, start, end });
+  Object.entries(ret.perPerson).forEach(([ownerId, amt]) => {
+    perPerson[ownerId] = (perPerson[ownerId] || 0) - amt;
+  });
   const total = Object.values(perPerson).reduce((sum, v) => sum + v, 0);
-  return { total, perPerson, count: counted.length, deals: counted };
+
+  return {
+    total,                              // net of returns — what every consumer wants
+    perPerson,
+    count: counted.length,
+    deals: counted,
+    grossTotal,                         // before returns, for "invoiced X, returned Y" displays
+    returnsTotal: ret.total,
+    returnsPerPerson: ret.perPerson,
+    returnsCount: ret.count,
+  };
 }
 
 /** Achieved straight from the database, same rule as computeAchieved. */
 export async function fetchAchieved({ companyId, contributorIds, start = null, end = null }) {
-  const empty = { total: 0, perPerson: {}, count: 0, deals: [] };
+  const empty = {
+    total: 0, perPerson: {}, count: 0, deals: [],
+    grossTotal: 0, returnsTotal: 0, returnsPerPerson: {}, returnsCount: 0,
+  };
   if (!companyId || !contributorIds?.length) return empty;
   let q = supabase
     .from('deals')
@@ -505,7 +613,11 @@ export async function fetchAchieved({ companyId, contributorIds, start = null, e
   if (end) q = q.lte('invoice_date', end);
   const { data, error } = await q;
   if (error) { console.error('fetchAchieved:', error); return empty; }
-  return computeAchieved({ deals: data, contributorIds, start, end });
+  // Returns are fetched over the same window but INDEPENDENTLY of the deals
+  // above: a return dated this month usually belongs to an invoice from an
+  // earlier month, which is not in `data` at all.
+  const returns = await fetchReturns({ companyId, ownerIds: contributorIds, start, end });
+  return computeAchieved({ deals: data, contributorIds, start, end, returns });
 }
 
 // ── WON, NOT YET INVOICED (visibility only) ────────────────────────────────

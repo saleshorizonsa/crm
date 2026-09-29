@@ -23,6 +23,14 @@ import { supabase } from 'lib/supabase';
 // much revenue has no product detail recorded.
 export const UNASSIGNED_GROUP = 'Unassigned';
 
+// NOT net of sales returns, deliberately. A return carries the ERP's own
+// `materials_group` string, while achievement here is grouped by
+// products.material_group reached through deal_products — two different
+// vocabularies (see the product-dimension findings: zero of the ERP's SKU
+// codes match what is typed into opportunities). Subtracting a return from a
+// group named by the other taxonomy would move revenue between groups rather
+// than out of them. Needs a product-vocabulary decision first; company-level
+// Achieved is already net, so only this breakdown is gross.
 async function invoicedDeals({ companyId, ownerIds, start, end }) {
   let q = supabase
     .from('deals')

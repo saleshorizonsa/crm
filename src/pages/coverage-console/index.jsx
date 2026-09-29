@@ -16,6 +16,7 @@ import {
 import {
   CONTRIBUTOR_ROLES,
   isAchievedOnly,
+  computeAchieved,
   targetPerPerson,
   winRateFromDeals,
   sumPlannedByOwner,
@@ -148,6 +149,7 @@ export default function CoverageConsole() {
         { data: bounces },
         { data: contactReports },
         { data: escalations },
+        { data: returnRows },
       ] = await Promise.all([
         // All deals — not lost
         supabase
@@ -259,6 +261,15 @@ export default function CoverageConsole() {
           )
           .eq("company_id", company.id)
           .eq("resolved", false),
+
+        // Sales returns in the selected window, joined to their deal for the
+        // owner. Subtracted from Achieved by the shared rule.
+        supabase
+          .from("deal_returns")
+          .select("id, deal_id, return_date, return_amount, deals!inner(owner_id)")
+          .eq("company_id", company.id)
+          .gte("return_date", monthStart)
+          .lte("return_date", monthEnd),
       ]);
 
       setRaw({
@@ -272,6 +283,7 @@ export default function CoverageConsole() {
         bounces: bounces || [],
         contactReports: contactReports || [],
         escalations: escalations || [],
+        returns: (returnRows || []).map((r) => ({ ...r, owner_id: r.deals?.owner_id ?? null })),
         monthStart,
         monthEnd,
         now,
@@ -349,6 +361,9 @@ export default function CoverageConsole() {
       monthEnd,
       now,
     } = data;
+    // Sales returns in the window; [] keeps a caller that omits them (the
+    // verification harness) on the pre-returns behaviour.
+    const returns = data.returns || [];
     // Period-shape flags. Default true/false keeps calcMetrics usable from a
     // caller that does not supply them (the verification harness does not).
     const isCurrentMonth = data.isCurrentMonth !== false;
@@ -417,18 +432,20 @@ export default function CoverageConsole() {
       ...contributorIds,
       ...userIds.filter((id) => isAchievedOnly((users || []).find((x) => x.id === id))),
     ];
-    const invoicedDeals = (deals || []).filter(
-      (d) =>
-        achieverIds.includes(d.owner_id) &&
-        d.stage === "won" &&
-        d.is_invoiced === true &&
-        d.invoice_date >= monthStart &&
-        d.invoice_date <= monthEnd
-    );
-    const invoiced = invoicedDeals.reduce(
-      (sum, d) => sum + (d.final_amount || d.amount || 0),
-      0
-    );
+    // The shared rule rather than a local copy, so Achieved here nets off sales
+    // returns like everywhere else. invoicedDeals stays the GROSS list, because
+    // the drill-downs below list actual invoices; only the total is net.
+    const achievedSplit = computeAchieved({
+      deals,
+      contributorIds: achieverIds,
+      start: monthStart,
+      end: monthEnd,
+      returns,
+    });
+    const invoicedDeals = achievedSplit.deals;
+    const invoiced = achievedSplit.total;
+    const invoicedGross = achievedSplit.grossTotal;
+    const returnsTotal = achievedSplit.returnsTotal;
 
     // ── FUNNEL ──
     const openDeals = (deals || []).filter(
@@ -503,6 +520,8 @@ export default function CoverageConsole() {
     return {
       target,
       invoiced,
+      invoicedGross,
+      returnsTotal,
       remainingTarget,
       funnel,
       weightedFunnel,

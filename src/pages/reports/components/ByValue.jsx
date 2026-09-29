@@ -39,6 +39,10 @@ const ByValue = ({ deals, formatCurrency, winRate3m = null, openPipeline = null 
     deals.forEach((d) => {
       // Won revenue counts only INVOICED deals at their final (negotiated) value,
       // matching the Director dashboard's achievement figure.
+      // GROSS of sales returns: this component only sees the deal rows it is
+      // handed, and a return usually credits an invoice from outside the
+      // reported window. Netting it here needs the Reports page to load
+      // deal_returns for the period and pass them down.
       if (d.stage === "won")       { if (d.is_invoiced) won += parseFloat(d.final_amount ?? d.amount) || 0; wonCount++; }
       else if (d.stage === "lost") { lost += d.amount || 0; lostCount++; }
       else                         { pipeline += d.amount || 0; }

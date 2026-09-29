@@ -221,7 +221,7 @@ export default function SalesDivisions() {
       // and it is hidden outside the current month anyway.
       const nextMonth = nextMonthBounds(now);
 
-      const [usersRes, divisionsRes, dealsRes, targetsRes, deals3mRes, oppsRes, futureRes, flagsRes, escalationsRes] =
+      const [usersRes, divisionsRes, dealsRes, targetsRes, deals3mRes, oppsRes, futureRes, flagsRes, escalationsRes, returnsRes] =
         await Promise.all([
           supabase
             .from("users")
@@ -282,6 +282,14 @@ export default function SalesDivisions() {
             .select("id, trigger_type, triggered_for, triggered_by, deal_id, details, resolved, created_at")
             .eq("company_id", company.id)
             .eq("resolved", false),
+          // Sales returns in the window, joined to their deal for the owner.
+          // Subtracted from Achieved by the shared rule (planningCalculations).
+          supabase
+            .from("deal_returns")
+            .select("id, deal_id, return_date, return_amount, deals!inner(owner_id)")
+            .eq("company_id", company.id)
+            .gte("return_date", monthStart)
+            .lte("return_date", monthEnd),
         ]);
 
       const failed = [usersRes, dealsRes, targetsRes, deals3mRes, oppsRes, futureRes].find((r) => r.error);
@@ -293,6 +301,8 @@ export default function SalesDivisions() {
       if (flagsRes.error) console.warn("Sales Divisions: salesman_flags not loaded:", flagsRes.error.message);
       if (escalationsRes.error) console.warn("Sales Divisions: escalation_logs not loaded:", escalationsRes.error.message);
 
+      if (returnsRes.error) console.warn("Sales Divisions: deal_returns not loaded:", returnsRes.error.message);
+
       setRaw({
         users: usersRes.data || [],
         divisions: divisionsRes.error ? [] : divisionsRes.data || [],
@@ -301,6 +311,9 @@ export default function SalesDivisions() {
         deals3m: deals3mRes.data || [],
         opps: oppsRes.data || [],
         futureOrders: futureRes.data || [],
+        returns: returnsRes.error
+          ? []
+          : (returnsRes.data || []).map((r) => ({ ...r, owner_id: r.deals?.owner_id ?? null })),
         flags: flagsRes.error ? [] : flagsRes.data || [],
         escalations: escalationsRes.error ? [] : escalationsRes.data || [],
         monthStart,

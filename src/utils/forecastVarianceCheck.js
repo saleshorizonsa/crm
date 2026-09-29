@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { fetchReturns, computeReturns } from './planningCalculations';
 
 // Forecast vs Actual (±10%) variance check.
 //
@@ -102,6 +103,19 @@ export async function checkForecastVariance(companyId) {
     const actualPer = {};
     (aDeals || []).forEach((d) => {
       actualPer[d.owner_id] = (actualPer[d.owner_id] || 0) + (parseFloat(d.final_amount ?? d.amount) || 0);
+    });
+    // Net off sales returns dated in this month, so "actual" here means the
+    // same thing it means on every other screen. Not floored at zero, for the
+    // same reason computeAchieved is not: a month that returned more than it
+    // invoiced really did go backwards, and the variance should say so.
+    const monthReturns = await fetchReturns({
+      companyId, ownerIds: ids, start: monthStart, end: monthEnd,
+    });
+    const returnsPer = computeReturns({
+      returns: monthReturns, contributorIds: ids, start: monthStart, end: monthEnd,
+    }).perPerson;
+    Object.entries(returnsPer).forEach(([ownerId, amt]) => {
+      actualPer[ownerId] = (actualPer[ownerId] || 0) - amt;
     });
 
     const rows = [];

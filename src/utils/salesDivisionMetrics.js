@@ -6,6 +6,7 @@ import {
   sumPlannedByOwner,
   computeRequiredRaw,
   computeCoverage,
+  computeAchieved,
   wonNotInvoicedExceptions,
 } from 'utils/planningCalculations';
 
@@ -163,6 +164,9 @@ export function teamRows({ users, teamIds, supervisorId }) {
  */
 export function calcDivisionMetrics(userIds, data) {
   const { users, deals, targets, deals3m, opps, futureOrders, monthStart, monthEnd } = data;
+  // Sales returns over the window. Defaulted to [] so a caller that does not
+  // supply them (or a company with none) behaves exactly as before.
+  const returns = data.returns || [];
   const now = data.now || new Date();
   // Period-shape flags, defaulted so a caller that omits them (the verification
   // harness) behaves exactly as before. Pacing only means something for the
@@ -204,16 +208,20 @@ export function calcDivisionMetrics(userIds, data) {
     ? winRateFromDeals({ deals: deals3m, ownerIds: companyContributorIds }).winRatePct
     : mine.winRatePct;
 
-  const achieved = (deals || [])
-    .filter(
-      (d) =>
-        isAchiever.has(d.owner_id) &&
-        d.stage === 'won' &&
-        d.is_invoiced === true &&
-        d.invoice_date >= monthStart &&
-        d.invoice_date <= monthEnd,
-    )
-    .reduce((sum, d) => sum + (d.final_amount || d.amount || 0), 0);
+  // The shared rule (utils/planningCalculations.js) rather than a local copy of
+  // it, so Achieved here nets off sales returns exactly as every other screen
+  // does. `returns` rows are dated by return_date, so a return of an older
+  // invoice still lands in the month it happened.
+  const achievedSplit = computeAchieved({
+    deals,
+    contributorIds: [...isAchiever],
+    start: monthStart,
+    end: monthEnd,
+    returns,
+  });
+  const achieved = achievedSplit.total;
+  const achievedGross = achievedSplit.grossTotal;
+  const returnsTotal = achievedSplit.returnsTotal;
 
   // Everyone in `isAchiever` counts in full, including a contributor-flagged
   // manager whose only target row is yearly: his yearly allocation never enters
@@ -275,6 +283,8 @@ export function calcDivisionMetrics(userIds, data) {
   return {
     target,
     achieved,
+    achievedGross,
+    returnsTotal,
     deficit,
     // Pacing divides by the share of the MONTH elapsed, so outside the current
     // month it is null and the UI hides the verdict instead of guessing one.

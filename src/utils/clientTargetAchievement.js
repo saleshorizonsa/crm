@@ -44,6 +44,32 @@ export async function achievedByClient({ companyId, ownerIds = null, start, end 
     const v = parseFloat(d.final_amount ?? d.amount) || 0;
     per[d.contact_id] = (per[d.contact_id] || 0) + v;
   });
+
+  // Net off returns dated in this window, charged to the CLIENT of the deal
+  // the credit note was matched to — not to the ERP customer_id on the return
+  // row, which is a different identifier space from contacts.id. A return whose
+  // invoice never matched has no deal and so no client, and is excluded by the
+  // inner join; it still reduces company Achieved, just not any one client's.
+  let rq = supabase
+    .from('deal_returns')
+    .select('return_amount, deals!inner(contact_id, owner_id)')
+    .eq('company_id', companyId)
+    .gte('return_date', start)
+    .lte('return_date', end)
+    .not('deals.contact_id', 'is', null);
+  if (Array.isArray(ownerIds)) rq = rq.in('deals.owner_id', ownerIds);
+  const { data: retRows, error: retErr } = await rq;
+  if (retErr) {
+    // Degrade to gross rather than returning nothing — the pre-returns answer.
+    console.error('clientTargetAchievement returns:', retErr);
+    return per;
+  }
+  (retRows || []).forEach((r) => {
+    const cid = r.deals?.contact_id;
+    if (!cid) return;
+    const v = Math.abs(parseFloat(r.return_amount) || 0);
+    per[cid] = (per[cid] || 0) - v;
+  });
   return per;
 }
 
