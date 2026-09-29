@@ -287,7 +287,7 @@ export default function SalesDivisions() {
           // Subtracted from Achieved by the shared rule (planningCalculations).
           supabase
             .from("deal_returns")
-            .select("id, deal_id, return_date, return_amount, deals!inner(owner_id)")
+            .select("id, deal_id, return_date, return_amount, deals!inner(owner_id, division_id)")
             .eq("company_id", company.id)
             .gte("return_date", monthStart)
             .lte("return_date", monthEnd),
@@ -318,7 +318,11 @@ export default function SalesDivisions() {
         futureOrders: futureRes.data || [],
         returns: returnsRes.error
           ? []
-          : (returnsRes.data || []).map((r) => ({ ...r, owner_id: r.deals?.owner_id ?? null })),
+          : (returnsRes.data || []).map((r) => ({
+            ...r,
+            owner_id: r.deals?.owner_id ?? null,
+            division_id: r.deals?.division_id ?? null,
+          })),
         flags: flagsRes.error ? [] : flagsRes.data || [],
         escalations: escalationsRes.error ? [] : escalationsRes.data || [],
         monthStart,

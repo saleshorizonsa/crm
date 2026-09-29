@@ -454,7 +454,7 @@ export async function fetchReturns({ companyId, ownerIds = null, start = null, e
   if (!companyId) return [];
   let q = supabase
     .from('deal_returns')
-    .select('id, deal_id, return_date, return_amount, deals!inner(owner_id)')
+    .select('id, deal_id, return_date, return_amount, deals!inner(owner_id, division_id)')
     .eq('company_id', companyId);
   if (start) q = q.gte('return_date', start);
   if (end) q = q.lte('return_date', end);
@@ -476,6 +476,10 @@ export async function fetchReturns({ companyId, ownerIds = null, start = null, e
     return_date: r.return_date,
     return_amount: r.return_amount,
     owner_id: r.deals?.owner_id ?? null,
+    // The DEAL's division, so a return can be scoped the same way its deal is.
+    // Without it a credit note is subtracted once per division its owner
+    // belongs to, which for a multi-division person double-counts it.
+    division_id: r.deals?.division_id ?? null,
   }));
 }
 

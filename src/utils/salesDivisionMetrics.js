@@ -176,9 +176,6 @@ export function teamRows({ users, teamIds, supervisorId }) {
  */
 export function calcDivisionMetrics(userIds, data) {
   const { users, targets, deals3m, opps, futureOrders, monthStart, monthEnd } = data;
-  // Sales returns over the window. Defaulted to [] so a caller that does not
-  // supply them (or a company with none) behaves exactly as before.
-  const returns = data.returns || [];
   // A deal counts toward the division on the DEAL, not toward every division
   // its owner belongs to — otherwise a person in two divisions would have the
   // same revenue counted twice and the divisions would out-total the company.
@@ -186,6 +183,12 @@ export function calcDivisionMetrics(userIds, data) {
   // exactly what every caller did before multi-division.
   const inThisDivision = dealInDivision(data.divisionId);
   const deals = (data.deals || []).filter(inThisDivision);
+  // Sales returns over the window, scoped by the SAME predicate: a return
+  // belongs to its DEAL's division, not to every division its owner is a
+  // member of. Without this a credit note is subtracted once per division the
+  // owner belongs to. Defaulted to [] so a caller that supplies none behaves
+  // exactly as before.
+  const returns = (data.returns || []).filter(inThisDivision);
   const now = data.now || new Date();
   // Period-shape flags, defaulted so a caller that omits them (the verification
   // harness) behaves exactly as before. Pacing only means something for the

@@ -266,7 +266,7 @@ export default function CoverageConsole() {
         // owner. Subtracted from Achieved by the shared rule.
         supabase
           .from("deal_returns")
-          .select("id, deal_id, return_date, return_amount, deals!inner(owner_id)")
+          .select("id, deal_id, return_date, return_amount, deals!inner(owner_id, division_id)")
           .eq("company_id", company.id)
           .gte("return_date", monthStart)
           .lte("return_date", monthEnd),
@@ -283,7 +283,11 @@ export default function CoverageConsole() {
         bounces: bounces || [],
         contactReports: contactReports || [],
         escalations: escalations || [],
-        returns: (returnRows || []).map((r) => ({ ...r, owner_id: r.deals?.owner_id ?? null })),
+        returns: (returnRows || []).map((r) => ({
+          ...r,
+          owner_id: r.deals?.owner_id ?? null,
+          division_id: r.deals?.division_id ?? null,
+        })),
         monthStart,
         monthEnd,
         now,
