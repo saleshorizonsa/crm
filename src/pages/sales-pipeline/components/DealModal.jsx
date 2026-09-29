@@ -14,6 +14,7 @@ import ActivityTimeline from "../../../components/ActivityTimeline";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
+import { fetchAdditionalDivisions } from "utils/divisionMembership";
 import {
   currencyService,
   productService,
@@ -376,7 +377,45 @@ const DealModal = ({
     lost_reason: deal?.lost_reason || "",
     lost_reason_code: deal?.lost_reason_code || "",
     lost_reason_notes: deal?.lost_reason_notes || "",
+    // Which division this deal counts toward. Defaulted below to the OWNER’s
+    // primary division, which is what was previously inferred from the owner.
+    division_id: deal?.division_id || null,
   });
+
+  // The divisions the deal’s OWNER belongs to — not the whole company list.
+  // On a new deal the owner is the creator; on an edit it is the stored owner,
+  // which is never reassigned by editing (see the ownership note in the save).
+  const [ownerDivisions, setOwnerDivisions] = useState([]);
+
+  useEffect(() => {
+    const ownerId = deal?.owner_id || user?.id;
+    const cid = deal?.company_id || userProfile?.company_id;
+    if (!ownerId || !cid) { setOwnerDivisions([]); return undefined; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [{ data: ownerRow }, extraByUser, { data: divisionRows }] = await Promise.all([
+          supabase.from("users").select("sales_division_id").eq("id", ownerId).maybeSingle(),
+          fetchAdditionalDivisions({ companyId: cid, userIds: [ownerId] }),
+          supabase.from("sales_divisions").select("id, name, sort_order")
+            .eq("company_id", cid).order("sort_order", { ascending: true }),
+        ]);
+        if (cancelled) return;
+        const primary = ownerRow?.sales_division_id || null;
+        const ids = new Set([primary, ...(extraByUser[ownerId] || [])].filter(Boolean));
+        const mine = (divisionRows || []).filter((d) => ids.has(d.id));
+        setOwnerDivisions(mine);
+        // Default a NEW deal to the owner’s primary division, so the stored
+        // value matches what the old owner-inference would have produced.
+        setFormData((prev) => (prev.division_id ? prev : { ...prev, division_id: primary }));
+      } catch (err) {
+        console.error("DealModal owner divisions:", err);
+        if (!cancelled) setOwnerDivisions([]);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deal?.id, deal?.owner_id, user?.id, userProfile?.company_id]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -1382,6 +1421,7 @@ const DealModal = ({
       // Expected close date is optional — send null (not "") so a blank value
       // doesn't fail the insert on the date column.
       expected_close_date: formData.expected_close_date || null,
+      division_id: formData.division_id || null,
     };
 
     // Always recalculate amount from the actual product line items to prevent drift
@@ -1999,6 +2039,18 @@ const DealModal = ({
                     setErrors((prev) => ({ ...prev, lost_reason: "" }));
                 }}
               />
+
+              {/* Only shown when the owner is in more than one division. With
+                  a single division there is nothing to choose, so it stays
+                  hidden and pre-filled exactly as before. */}
+              {ownerDivisions.length > 1 && (
+                <Select
+                  label="Division"
+                  options={ownerDivisions.map((d) => ({ value: d.id, label: d.name }))}
+                  value={formData?.division_id || ""}
+                  onChange={(value) => handleInputChange("division_id", value || null)}
+                />
+              )}
 
               <Select
                 label={t("tasks.priority")}

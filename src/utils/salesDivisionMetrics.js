@@ -1,3 +1,4 @@
+import { dealInDivision } from 'utils/divisionMembership';
 import {
   CONTRIBUTOR_ROLES,
   isAchievedOnly,
@@ -70,21 +71,32 @@ export function scopeUserIds({ users, viewerId, role }) {
  * sales_division_id points at a division this company doesn't have counts as
  * Unassigned rather than disappearing.
  */
-export function groupByDivision({ users, divisions, scopeIds }) {
+export function groupByDivision({ users, divisions, scopeIds, additionalByUser = {} }) {
   const scope = new Set(scopeIds || []);
   const inScope = (users || []).filter((u) => scope.has(u.id));
   const known = new Set((divisions || []).map((d) => d.id));
+
+  // Membership, not a single column: a person appears under EVERY division
+  // they belong to, primary plus any additional. With no additional rows this
+  // reduces to the old `u.sales_division_id === d.id` exactly.
+  // Their revenue is NOT duplicated — deals are attributed by
+  // deals.division_id, which belongs to one division (see calcDivisionMetrics).
+  const memberDivisions = (u) => {
+    const extra = (additionalByUser[u.id] || []).filter((id) => known.has(id));
+    return [...new Set([u.sales_division_id, ...extra].filter((id) => id && known.has(id)))];
+  };
+
   const groups = (divisions || []).map((d) => ({
     id: d.id,
     name: d.name,
-    userIds: inScope.filter((u) => u.sales_division_id === d.id).map((u) => u.id),
+    userIds: inScope.filter((u) => memberDivisions(u).includes(d.id)).map((u) => u.id),
   }));
   groups.push({
     id: UNASSIGNED,
     name: 'Unassigned',
-    userIds: inScope
-      .filter((u) => !u.sales_division_id || !known.has(u.sales_division_id))
-      .map((u) => u.id),
+    // Unassigned now means "in no KNOWN division by either route" — a user
+    // whose only division came from the join table is no longer stranded here.
+    userIds: inScope.filter((u) => memberDivisions(u).length === 0).map((u) => u.id),
   });
   return groups;
 }
@@ -162,7 +174,14 @@ export function teamRows({ users, teamIds, supervisorId }) {
  *   monthStart / monthEnd  yyyy-MM-dd
  */
 export function calcDivisionMetrics(userIds, data) {
-  const { users, deals, targets, deals3m, opps, futureOrders, monthStart, monthEnd } = data;
+  const { users, targets, deals3m, opps, futureOrders, monthStart, monthEnd } = data;
+  // A deal counts toward the division on the DEAL, not toward every division
+  // its owner belongs to — otherwise a person in two divisions would have the
+  // same revenue counted twice and the divisions would out-total the company.
+  // data.divisionId absent = no filter, which is the company-level view and
+  // exactly what every caller did before multi-division.
+  const inThisDivision = dealInDivision(data.divisionId);
+  const deals = (data.deals || []).filter(inThisDivision);
   const now = data.now || new Date();
   // Period-shape flags, defaulted so a caller that omits them (the verification
   // harness) behaves exactly as before. Pacing only means something for the
@@ -195,13 +214,14 @@ export function calcDivisionMetrics(userIds, data) {
 
   // A group with no deals in the window borrows the company contributors' rate,
   // as the Coverage Console does, rather than reading 0%.
-  const mine = winRateFromDeals({ deals: deals3m, ownerIds: contributorIds });
+  const divisionDeals3m = (deals3m || []).filter(inThisDivision);
+  const mine = winRateFromDeals({ deals: divisionDeals3m, ownerIds: contributorIds });
   const companyContributorIds = (users || [])
     .filter((u) => CONTRIBUTOR_ROLES.includes(u.role))
     .map((u) => u.id);
   const winRateBorrowed = mine.total === 0;
   const winRatePct = winRateBorrowed
-    ? winRateFromDeals({ deals: deals3m, ownerIds: companyContributorIds }).winRatePct
+    ? winRateFromDeals({ deals: divisionDeals3m, ownerIds: companyContributorIds }).winRatePct
     : mine.winRatePct;
 
   const achieved = (deals || [])

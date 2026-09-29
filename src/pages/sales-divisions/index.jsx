@@ -21,6 +21,7 @@ import {
   buildExceptions,
   healthOf,
 } from "utils/salesDivisionMetrics";
+import { fetchAdditionalDivisions } from "utils/divisionMembership";
 import { DivisionCoverageHero, DivisionCycleLedger } from "./components/DivisionCoverageHero";
 import DivisionExceptionFeed from "./components/DivisionExceptionFeed";
 
@@ -236,7 +237,7 @@ export default function SalesDivisions() {
           supabase
             .from("deals")
             .select(
-              "id, title, stage, amount, final_amount, is_invoiced, invoice_date, owner_id, forecast_amount, expected_close_date, stage_changed_at, created_at, contacts!contact_id(first_name, last_name, company_name)"
+              "id, title, stage, amount, final_amount, is_invoiced, invoice_date, owner_id, division_id, forecast_amount, expected_close_date, stage_changed_at, created_at, contacts!contact_id(first_name, last_name, company_name)"
             )
             .eq("company_id", company.id)
             .not("stage", "eq", "lost"),
@@ -252,7 +253,7 @@ export default function SalesDivisions() {
             .gte("period_end", monthStart),
           supabase
             .from("deals")
-            .select("id, stage, owner_id")
+            .select("id, stage, owner_id, division_id")
             .eq("company_id", company.id)
             .gte("created_at", new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString())
             .lte("created_at", new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59).toISOString()),
@@ -293,8 +294,13 @@ export default function SalesDivisions() {
       if (flagsRes.error) console.warn("Sales Divisions: salesman_flags not loaded:", flagsRes.error.message);
       if (escalationsRes.error) console.warn("Sales Divisions: escalation_logs not loaded:", escalationsRes.error.message);
 
+      // Additional divisions per user. Failure degrades to primary-only,
+      // which is the pre-multi-division behaviour rather than a blank screen.
+      const additionalByUser = await fetchAdditionalDivisions({ companyId: company.id });
+
       setRaw({
         users: usersRes.data || [],
+        additionalByUser,
         divisions: divisionsRes.error ? [] : divisionsRes.data || [],
         deals: dealsRes.data || [],
         targets: targetsRes.data || [],
@@ -328,7 +334,12 @@ export default function SalesDivisions() {
   );
 
   const groups = useMemo(
-    () => (raw ? groupByDivision({ users: raw.users, divisions: raw.divisions, scopeIds }) : []),
+    () => (raw
+      ? groupByDivision({
+        users: raw.users, divisions: raw.divisions, scopeIds,
+        additionalByUser: raw.additionalByUser || {},
+      })
+      : []),
     [raw, scopeIds]
   );
 
@@ -367,7 +378,9 @@ export default function SalesDivisions() {
   // ── CURRENT LEVEL ──
   const userById = new Map(raw.users.map((u) => [u.id, u]));
   const userName = (id) => userById.get(id)?.full_name || "Unknown";
-  const metricsFor = (ids) => calcDivisionMetrics(ids, raw);
+  // divisionId scopes the DEALS to this division; omitted at company level so
+  // the top-level view still counts everything exactly as before.
+  const metricsFor = (ids, divisionId = null) => calcDivisionMetrics(ids, { ...raw, divisionId });
 
   const currentGroup = nav.division ? groups.find((g) => g.id === nav.division) : null;
   const view = currentGroup ? divisionView({ group: currentGroup, users: raw.users }) : null;
@@ -391,7 +404,11 @@ export default function SalesDivisions() {
       : nav.member
       ? [nav.member]
       : [];
-  const metrics = metricsFor(levelIds);
+  // Below company level every figure belongs to the division being viewed, so
+  // the deals are scoped to it. At company level nothing is scoped and the
+  // totals are the same ones the page showed before multi-division.
+  const navDivisionId = nav.level === "company" ? null : nav.division || null;
+  const metrics = metricsFor(levelIds, navDivisionId);
   const showExceptions = ["company", "division", "team"].includes(nav.level);
   const exceptions = showExceptions ? buildExceptions(levelIds, raw) : [];
 
@@ -467,7 +484,7 @@ export default function SalesDivisions() {
           sub: `${listedMembers({ users: raw.users, userIds: g.userIds }).length} members${
             g.id === UNASSIGNED ? " · no division set" : ""
           }`,
-          m: metricsFor(g.userIds),
+          m: metricsFor(g.userIds, g.id),
           onClick: () => openDivision(g),
         }))
       : [];
@@ -479,7 +496,7 @@ export default function SalesDivisions() {
           name: u.full_name,
           sub: `${u.role}${u.role === "manager" ? " · not counted in figures" : ""}`,
           pinned: u.id === nav.supervisor,
-          m: metricsFor([u.id]),
+          m: metricsFor([u.id], navDivisionId),
           onClick: () => go({ ...nav, level: "member", member: u.id, deal: null }),
         }))
       : [];
@@ -513,8 +530,8 @@ export default function SalesDivisions() {
       return (
         <div className="space-y-4 self-start">
           {view.supervisors.map((card) => {
-            const team = metricsFor(card.teamIds);
-            const own = metricsFor([card.user.id]);
+            const team = metricsFor(card.teamIds, navDivisionId);
+            const own = metricsFor([card.user.id], navDivisionId);
             const others = teamRows({ users: raw.users, teamIds: card.teamIds, supervisorId: card.user.id }).length - 1;
             return (
               <button
@@ -553,7 +570,7 @@ export default function SalesDivisions() {
                   id: u.id,
                   name: u.full_name,
                   sub: u.role,
-                  m: metricsFor([u.id]),
+                  m: metricsFor([u.id], navDivisionId),
                   onClick: () => go({ ...nav, level: "member", supervisor: null, member: u.id, deal: null }),
                 }))}
                 empty=""
