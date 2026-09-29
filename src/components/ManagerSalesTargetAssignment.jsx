@@ -12,6 +12,9 @@ import { ownAllocation, sumTargetAmount } from "utils/selfTarget";
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { supabase } from "../lib/supabase";
 import {
+  fetchAdditionalDivisions, MAX_DIVISIONS_PER_USER,
+} from "utils/divisionMembership";
+import {
   PRODUCT_TARGET_TYPE,
   calculateProductTargetValue,
   toProductTargetRows,
@@ -292,13 +295,55 @@ const ManagerSalesTargetAssignment = ({
     }
   };
 
+  // Tick or untick one ADDITIONAL division. Each tick is written immediately —
+  // a checkbox that needs a separate Save reads as already applied, and this
+  // control exists to set several at once, so batching behind one button would
+  // make three ticks look like one undoable action.
+  const toggleExtraDivision = async (userId, divisionId) => {
+    const divisionCompanyId = companyId || userProfile?.company_id;
+    if (!divisionCompanyId || savingExtraFor) return;
+    const held = extraDivisions[userId] || [];
+    const isOn = held.includes(divisionId);
+    setSavingExtraFor(`${userId}:${divisionId}`);
+    setDivisionError("");
+    try {
+      if (isOn) {
+        const { error } = await supabase
+          .from("user_sales_divisions")
+          .delete()
+          .eq("user_id", userId)
+          .eq("division_id", divisionId);
+        if (error) throw error;
+        setExtraDivisions((p) => ({ ...p, [userId]: held.filter((id) => id !== divisionId) }));
+      } else {
+        const { error } = await supabase
+          .from("user_sales_divisions")
+          .upsert(
+            { user_id: userId, division_id: divisionId, company_id: divisionCompanyId },
+            { onConflict: "user_id,division_id", ignoreDuplicates: true },
+          );
+        if (error) throw error;
+        setExtraDivisions((p) => ({ ...p, [userId]: [...held, divisionId] }));
+      }
+    } catch (err) {
+      console.error("toggleExtraDivision:", err);
+      setDivisionError(err?.message || "Could not save the additional divisions.");
+    } finally {
+      setSavingExtraFor(null);
+    }
+  };
+
   // The manager can target HIMSELF, but only once he is a division member —
   // the same condition as anyone else in this list. Without a division he does
   // not appear at all, so nothing changes for a manager who never uses this.
   // (He was previously absent because loadSubordinates only ever returns his
   // supervisors and salesmen. That was the exclusion, not a filtering bug.)
   const selfAsAssignee = useMemo(() => {
-    if (!userProfile?.id || !divisionByUser[userProfile.id]) return null;
+    // A manager who belongs to a division only through user_sales_divisions
+    // (not as his primary) must still be able to assign himself inside it.
+    const inAnyDivision = !!divisionByUser[userProfile?.id]
+      || (extraDivisions[userProfile?.id] || []).length > 0;
+    if (!userProfile?.id || !inAnyDivision) return null;
     return {
       id: userProfile.id,
       full_name: userProfile.full_name || userProfile.email,
@@ -317,8 +362,11 @@ const ManagerSalesTargetAssignment = ({
     () =>
       !showDivisionFilter || selectedDivision === "all"
         ? assignableTargetPeople
-        : assignableTargetPeople.filter((u) => divisionByUser[u.id] === selectedDivision),
-    [showDivisionFilter, selectedDivision, assignableTargetPeople, divisionByUser]
+        : assignableTargetPeople.filter(
+          (u) => divisionByUser[u.id] === selectedDivision
+            || (extraDivisions[u.id] || []).includes(selectedDivision),
+        ),
+    [showDivisionFilter, selectedDivision, assignableTargetPeople, divisionByUser, extraDivisions]
   );
 
   const divisionIsEmpty =
@@ -785,11 +833,15 @@ const ManagerSalesTargetAssignment = ({
                       const chosen = pendingDivision[member.id] ?? current;
                       const isDirty = chosen !== current;
                       const isSaving = savingDivisionFor === member.id;
+                      const extras = extraDivisions[member.id] || [];
+                      const primaryCount = current === "unassigned" ? 0 : 1;
+                      const atCap = primaryCount + extras.length >= MAX_DIVISIONS_PER_USER;
                       return (
                         <div
                           key={member.id}
-                          className="flex items-center justify-between gap-3 bg-card rounded-lg border border-border px-3 py-2"
+                          className="bg-card rounded-lg border border-border px-3 py-2"
                         >
+                        <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <span className="text-xs font-medium text-card-foreground truncate block">
                               {member.full_name || member.email}
@@ -837,6 +889,69 @@ const ManagerSalesTargetAssignment = ({
                               </button>
                             )}
                           </div>
+                        </div>
+
+                        {/* ADDITIONAL divisions — one dropdown with a checkbox
+                            per division, so 2, 3 or 4 can be ticked in one
+                            place rather than one toggle per division. The
+                            primary above is unchanged and still single-select. */}
+                        {divisions.length > 1 && (
+                          <div className="relative mt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setExtraOpenFor((cur) => (cur === member.id ? null : member.id))}
+                              className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                            >
+                              <Icon name={extraOpenFor === member.id ? "ChevronDown" : "ChevronRight"} size={12} />
+                              {extras.length > 0
+                                ? `Also in ${extras.length} more division${extras.length === 1 ? "" : "s"}`
+                                : "Add more divisions"}
+                            </button>
+
+                            {extraOpenFor === member.id && (
+                              <div className="absolute z-20 mt-1 w-64 bg-popover border border-border rounded-lg shadow-enterprise-md p-1">
+                                <p className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                  Additional divisions ({primaryCount + extras.length} of {MAX_DIVISIONS_PER_USER})
+                                </p>
+                                {divisions.map((d) => {
+                                  const isPrimary = d.id === current;
+                                  const checked = extras.includes(d.id);
+                                  const busy = savingExtraFor === `${member.id}:${d.id}`;
+                                  // The primary is shown ticked and disabled:
+                                  // it IS a division they belong to, and
+                                  // hiding it would look like it was missing.
+                                  const disabled = isPrimary || busy || (!checked && atCap);
+                                  return (
+                                    <label
+                                      key={d.id}
+                                      className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-xs ${
+                                        disabled ? "opacity-60" : "hover:bg-muted cursor-pointer"
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isPrimary || checked}
+                                        disabled={disabled}
+                                        onChange={() => toggleExtraDivision(member.id, d.id)}
+                                        className="w-3.5 h-3.5"
+                                      />
+                                      <span className="flex-1 truncate">{d.name}</span>
+                                      {isPrimary && (
+                                        <span className="text-[10px] text-muted-foreground">primary</span>
+                                      )}
+                                      {busy && <span className="text-[10px] text-muted-foreground">saving…</span>}
+                                    </label>
+                                  );
+                                })}
+                                {atCap && (
+                                  <p className="px-2 py-1 text-[10px] text-amber-700">
+                                    {MAX_DIVISIONS_PER_USER} divisions is the limit — untick one to add another.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         </div>
                       );
                     })}
