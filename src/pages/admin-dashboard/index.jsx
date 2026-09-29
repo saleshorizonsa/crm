@@ -111,8 +111,11 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Tabs */}
-          <div className="flex gap-2 mt-4">
+          {/* Tabs — WRAPPING, not a single line. This row sits inside an
+              overflow-hidden container, so an eleventh tab pushed the last two
+              (Sales Returns and Settings) off the edge where they could not be
+              seen or clicked at all. */}
+          <div className="flex flex-wrap gap-2 mt-4">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -170,8 +173,23 @@ const AdminDashboard = () => {
               }
             </>
           )}
-          {activeTab === "sales_returns"   && (
-            <SalesReturnsModule adminCompany={adminCompany} />
+          {activeTab === "sales_returns" && (
+            <>
+              {/* Every admin account in this database has company_id = null, so
+                  the module can never inherit a company from the signed-in user
+                  — it has to be chosen, exactly as Products, Customer Master and
+                  Targets already do. Without this the tab opened onto an
+                  uploader that silently did nothing, because every handler
+                  bails on a null company id. */}
+              <AdminCompanySelector value={adminCompany} onSelect={setAdminCompany} />
+              {adminCompany
+                ? <SalesReturnsModule adminCompany={adminCompany} />
+                : (
+                  <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
+                    Select a company above to import its sales returns
+                  </div>
+                )}
+            </>
           )}
           {activeTab === "settings"         && <UomSettings />}
         </div>
