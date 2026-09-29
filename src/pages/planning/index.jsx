@@ -176,26 +176,33 @@ const PlanningPage = () => {
   const canApprove = TEAM_ROLES.includes(role) || DIRECTOR_ROLES.includes(role);
 
   // ── Plan submission (deadline: 25th of the month) ───────────────────────────
-  const [planSubmission, setPlanSubmission] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
+  // Keyed BY PLAN MONTH rather than a single row, because in the last 7 days of
+  // a month two plans can be open at once: this month's (due on the 25th, quite
+  // possibly overdue) and next month's, submitted early. Same table, same
+  // workflow, a different plan_month.
+  const [submissions, setSubmissions] = useState({});   // { "yyyy-MM-01": row }
+  const [submitting, setSubmitting] = useState(null);   // the month being submitted
   const [pendingApprovals, setPendingApprovals] = useState(0);
 
-  const planMonthStr = () => {
-    const n = new Date();
-    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-01`;
-  };
+  const now = new Date();
+  const currentMonthKey = monthKeyOf(now);
+  const nextMonthKey = nextMonthKeyOf(now);
+  const earlyOpen = isEarlyWindowOpen(now);
 
   const fetchPlanSubmission = useCallback(async () => {
-    if (!companyId || !user?.id) { setPlanSubmission(null); return; }
+    if (!companyId || !user?.id) { setSubmissions({}); return; }
+    // Both months in one round trip; outside the window the second key simply
+    // matches nothing.
     const { data } = await supabase
       .from("plan_submissions")
       .select("*")
       .eq("company_id", companyId)
       .eq("owner_id", user.id)
-      .eq("plan_month", planMonthStr())
-      .maybeSingle();
-    setPlanSubmission(data || null);
-  }, [companyId, user?.id]);
+      .in("plan_month", [currentMonthKey, nextMonthKey]);
+    const byMonth = {};
+    (data || []).forEach((r) => { byMonth[String(r.plan_month).slice(0, 10)] = r; });
+    setSubmissions(byMonth);
+  }, [companyId, user?.id, currentMonthKey, nextMonthKey]);
 
   useEffect(() => { fetchPlanSubmission(); }, [fetchPlanSubmission]);
 
@@ -207,35 +214,47 @@ const PlanningPage = () => {
 
   useEffect(() => { refreshPendingApprovals(); }, [refreshPendingApprovals]);
 
-  const today = new Date();
-  const deadlineDay = new Date(today.getFullYear(), today.getMonth(), 25);
-  const isLate = today > deadlineDay;
+  // Which month the salesman is currently planning. Only ever "next" while the
+  // early window is open; it falls back on its own when the window closes or
+  // the month rolls over, so no state can strand someone on a month they can no
+  // longer submit.
+  const [planTarget, setPlanTarget] = useState("current");
+  const activeMonthKey = planTarget === "next" && earlyOpen ? nextMonthKey : currentMonthKey;
+  const planSubmission = submissions[activeMonthKey] || null;
+
+  // Everything below is now ABOUT activeMonthKey rather than about "now".
+  const deadlineDay = new Date(`${deadlineFor(activeMonthKey)}T00:00:00`);
+  const isLate = isLateFor(activeMonthKey, now);
   // Submission completeness stays a question about the PLAN, not about coverage:
   // a big open funnel must not let a month be submitted with nothing planned.
-  const planComplete = summaryData.plannedOpen >= summaryData.requiredPlan;
+  const activeSummary = planTarget === "next" && earlyOpen ? nextSummary : summaryData;
+  const planComplete = activeSummary.plannedOpen >= activeSummary.requiredPlan;
   const canSubmit = planComplete && !planSubmission?.is_submitted;
   const showSubmitBar = (isSalesman || isSupervisor) && !!companyId;
 
   const handleSubmitPlan = async () => {
     if (!canSubmit || submitting) return;
-    setSubmitting(true);
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, "0");
+    // The month being submitted is whichever one is on screen — this month, or
+    // next month during the early window. Everything on the row is derived from
+    // that month, not from today's date: an October plan sent on 24 September
+    // carries October's deadline and is not late.
+    const planMonth = activeMonthKey;
+    const summaryForMonth = activeSummary;
+    setSubmitting(planMonth);
+    const stamp = new Date();
     try {
-      const planMonth = `${y}-${m}-01`;
       const base = {
         company_id: companyId,
         owner_id: user?.id,
         plan_month: planMonth,
-        submitted_at: now.toISOString(),
-        total_planned: summaryData.plannedOpen,
-        required_plan: summaryData.requiredPlan,
+        submitted_at: stamp.toISOString(),
+        total_planned: summaryForMonth.plannedOpen,
+        required_plan: summaryForMonth.requiredPlan,
         is_submitted: true,
-        is_late: isLate,
-        deadline_date: `${y}-${m}-25`,
+        is_late: isLateFor(planMonth, stamp),
+        deadline_date: deadlineFor(planMonth),
         flagged: false,
-        updated_at: now.toISOString(),
+        updated_at: stamp.toISOString(),
       };
       // Resubmitting after a rejection puts the plan back in the queue.
       const withApproval = {
@@ -263,17 +282,21 @@ const PlanningPage = () => {
         ownerId: user?.id,
         ownerName: userProfile?.full_name,
         planMonth,
-        totalPlanned: summaryData.plannedOpen,
+        totalPlanned: summaryForMonth.plannedOpen,
         submissionId: saved?.id,
       });
       await fetchPlanSubmission();
     } catch (err) {
       console.error("Submit plan:", err);
     } finally {
-      setSubmitting(false);
+      setSubmitting(null);
     }
   };
 
+  // Next month's own figures, loaded only while the early window is open.
+  // Separate from summaryData because that one follows the shared period
+  // selector (which the dashboards also read) — scoping next month must not
+  // move everyone else's period.
   const emptySummary = {
     target: 0, achieved: 0, remainingTarget: 0,
     attainmentPct: null,
@@ -282,6 +305,9 @@ const PlanningPage = () => {
     coveragePct: null, plannedGap: 0, hasTargetRows: false,
     untaggedPlanned: 0, untaggedFunnel: 0,
   };
+
+  const [nextSummary, setNextSummary] = useState(emptySummary);
+  const [nextSummaryLoading, setNextSummaryLoading] = useState(false);
 
   const fetchPlanningSummary = useCallback(async () => {
     // Every filter or period change starts a new request while the previous one
@@ -387,6 +413,38 @@ const PlanningPage = () => {
   }, [companyId, role, user?.id, rangeStart, rangeEnd, filterOwner, filterProductGroup]);
 
   useEffect(() => { fetchPlanningSummary(); }, [fetchPlanningSummary]);
+
+  // Next month's figures, for the early-submission bar. Same chain as the
+  // current month, just a different window — and only while the window is open,
+  // so outside it this costs nothing and today's flow is untouched.
+  const fetchNextMonthSummary = useCallback(async () => {
+    if (!earlyOpen || !companyId || !user?.id) { setNextSummary(emptySummary); return; }
+    setNextSummaryLoading(true);
+    try {
+      const bounds = monthBoundsOf(nextMonthKey);
+      let ownerIds = null;
+      if (!DIRECTOR_ROLES.includes(role)) {
+        const isTeamLead = TEAM_ROLES.includes(role);
+        const scope = isTeamLead
+          ? [user?.id, ...(await fetchTeamHierarchy({ companyId, userId: user?.id, role })).map((m) => m.id)].filter(Boolean)
+          : [user?.id].filter(Boolean);
+        ownerIds = scope.length ? scope : ["00000000-0000-0000-0000-000000000000"];
+      }
+      const sum = await computePlanningPageSummary({
+        companyId, ownerIds, start: bounds.start, end: bounds.end,
+        productGroup: filterProductGroup,
+      });
+      setNextSummary({ ...emptySummary, ...sum, winRate3m: sum.winRatePct });
+    } catch (err) {
+      console.error("Next-month summary:", err);
+      setNextSummary(emptySummary);
+    } finally {
+      setNextSummaryLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [earlyOpen, companyId, user?.id, role, nextMonthKey, filterProductGroup]);
+
+  useEffect(() => { fetchNextMonthSummary(); }, [fetchNextMonthSummary]);
 
   // Product-group options, scoped the same way the cards are.
   useEffect(() => {
@@ -505,6 +563,35 @@ const PlanningPage = () => {
             </div>
           </div>
         )}
+        {/* During the last 7 days of the month both plans are live. They get a
+            switch rather than one bar replacing the other, so neither hides the
+            other and it is always obvious which month is on screen. */}
+        {showSubmitBar && earlyOpen && (
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <span className="text-xs text-muted-foreground">Planning for</span>
+            {[
+              { key: "current", label: monthNameOf(currentMonthKey), month: currentMonthKey },
+              { key: "next", label: `${monthNameOf(nextMonthKey)} (early)`, month: nextMonthKey },
+            ].map((opt) => {
+              const row = submissions[opt.month];
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => setPlanTarget(opt.key)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                    planTarget === opt.key
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-card text-foreground border-border hover:bg-muted"
+                  }`}
+                >
+                  {opt.label}
+                  {row?.is_locked ? " 🔒" : row?.is_submitted ? " ✅" : ""}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {showSubmitBar && (
           <div className="flex items-center justify-between gap-3 px-5 py-3 bg-card border border-border rounded-xl mb-4 flex-wrap">
             <div className="flex items-center gap-3">
@@ -520,16 +607,16 @@ const PlanningPage = () => {
               <div>
                 <p className="text-sm font-semibold text-foreground">
                   {planSubmission?.is_submitted
-                    ? "✅ Plan Submitted"
+                    ? `✅ ${monthNameOf(activeMonthKey)} Plan Submitted`
                     : isLate
-                      ? "🚨 Plan Overdue"
-                      : "📋 Plan Due by 25th"}
+                      ? `🚨 ${monthNameOf(activeMonthKey)} Plan Overdue`
+                      : `📋 ${monthNameOf(activeMonthKey)} Plan Due by 25th`}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {planSubmission?.is_submitted
                     ? `Submitted ${new Date(planSubmission.submitted_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}${planSubmission.is_late ? " (Late)" : ""}`
                     : !planComplete
-                      ? `Add ${fmtSAR(summaryData.plannedGap)} SAR more to enable submission`
+                      ? `Add ${fmtSAR(activeSummary.plannedGap)} SAR more to enable submission`
                       : `Due ${deadlineDay.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`}
                 </p>
               </div>
@@ -538,7 +625,7 @@ const PlanningPage = () => {
             {!planSubmission?.is_submitted && (
               <button
                 onClick={handleSubmitPlan}
-                disabled={!canSubmit || submitting}
+                disabled={!canSubmit || submitting === activeMonthKey}
                 className={`flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-xl transition-colors ${
                   canSubmit
                     ? isLate
@@ -547,10 +634,16 @@ const PlanningPage = () => {
                     : "bg-muted text-muted-foreground cursor-not-allowed"
                 }`}
               >
-                {submitting && (
+                {submitting === activeMonthKey && (
                   <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 )}
-                {canSubmit ? (isLate ? "Submit Late" : "Submit Plan") : "Plan Incomplete"}
+                {canSubmit
+                  ? isLate
+                    ? "Submit Late"
+                    : planTarget === "next" && earlyOpen
+                      ? `Submit ${monthNameOf(activeMonthKey)} Plan`
+                      : "Submit Plan"
+                  : "Plan Incomplete"}
               </button>
             )}
           </div>
@@ -814,9 +907,18 @@ const PlanningPage = () => {
           {activeTab === "opportunities" && (
             <OpportunitiesModule
               adminCompany={adminCompany}
-              onOpportunityChange={fetchPlanningSummary}
-              periodStart={rangeStart}
-              periodEnd={rangeEnd}
+              onOpportunityChange={() => { fetchPlanningSummary(); fetchNextMonthSummary(); }}
+              // Scoped to next month while that is what is being planned. The
+              // SHARED period selector is deliberately not touched — it is the
+              // dashboards' period too, and moving it would drag every other
+              // screen into next month.
+              periodStart={planTarget === "next" && earlyOpen ? monthBoundsOf(nextMonthKey).start : rangeStart}
+              periodEnd={planTarget === "next" && earlyOpen ? monthBoundsOf(nextMonthKey).end : rangeEnd}
+              // Which month's lock governs editing here. Without this the module
+              // checks the CURRENT month's lock, so an approved September plan
+              // would freeze October's planning and an approved October plan
+              // would not be protected at all.
+              planMonth={activeMonthKey}
               filterOwner={filterOwner}
               onFilterOwnerChange={setFilterOwner}
               filterProductGroup={filterProductGroup}
