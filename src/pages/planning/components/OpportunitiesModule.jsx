@@ -56,6 +56,9 @@ export default function OpportunitiesModule({
   // real-world current month.
   periodStart,
   periodEnd,
+  // The plan month whose lock governs editing here. Defaults to undefined so
+  // blockIfPlanLocked falls back to the current month, exactly as before.
+  planMonth,
   // Both filters are owned by the page, because the summary cards above this tab
   // follow them too. Controlled here, stored there.
   filterOwner = 'all',
@@ -340,7 +343,7 @@ export default function OpportunitiesModule({
     if (!form.customer_name?.trim() || !form.planned_amount) return;
     // An approved plan is locked for the month — a salesman cannot add to or
     // change it until their manager sends it back.
-    if (await blockIfPlanLocked({ ownerId: user?.id, role })) return;
+    if (await blockIfPlanLocked({ ownerId: user?.id, role, planMonth })) return;
     setSaving(true);
     try {
       const payload = {
@@ -377,7 +380,7 @@ export default function OpportunitiesModule({
   }
 
   async function handleDelete(id) {
-    if (await blockIfPlanLocked({ ownerId: user?.id, role })) return;
+    if (await blockIfPlanLocked({ ownerId: user?.id, role, planMonth })) return;
     if (!window.confirm('Delete this opportunity?')) return;
     const { error } = await supabase.from('opportunities').delete().eq('id', id);
     if (error) { alert(`Could not delete: ${error.message}`); return; }

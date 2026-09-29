@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from 'contexts/AuthContext';
 import { supabase } from 'lib/supabase';
 import Icon from 'components/AppIcon';
+import { monthKeyOf, monthLabelOf } from 'utils/planMonths';
 import {
   fetchPendingApprovals,
   approvePlan,
@@ -96,6 +97,21 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
   // (a company with no manager or supervisor) keeps the buttons.
   const canDecide = (row) => !!user?.id && approverMap[row.owner_id] === user.id;
 
+  // The queue can hold two months at once in the last week of a month: this
+  // month's plans (some overdue) and next month's, submitted early. They are
+  // grouped and headed by month rather than interleaved by submission time,
+  // which would put an early October plan above a late September one with
+  // nothing but a date to tell them apart.
+  const thisMonthKey = monthKeyOf(new Date());
+  const monthGroups = Object.values(
+    rows.reduce((acc, row) => {
+      const key = String(row.plan_month).slice(0, 10);
+      if (!acc[key]) acc[key] = { key, rows: [], isFuture: key > thisMonthKey };
+      acc[key].rows.push(row);
+      return acc;
+    }, {}),
+  ).sort((a, b) => a.key.localeCompare(b.key));
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -138,7 +154,25 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
         </div>
       )}
 
-      {rows.map((row) => {
+      {monthGroups.map((group) => (
+        <div key={group.key} className="space-y-3">
+          {/* The month is a heading, not a word buried in each row: near
+              month-end this queue holds two different months at once, and an
+              approver must never have to read a date to tell them apart. */}
+          <div className="flex items-center gap-2 pt-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {monthLabelOf(group.key)}
+            </h3>
+            {group.isFuture && (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                submitted early
+              </span>
+            )}
+            <span className="text-[11px] text-muted-foreground">
+              {group.rows.length} plan{group.rows.length === 1 ? '' : 's'}
+            </span>
+          </div>
+      {group.rows.map((row) => {
         const planned = Number(row.total_planned) || 0;
         const required = Number(row.required_plan) || 0;
         const meets = required > 0 ? planned >= required : planned > 0;
@@ -206,6 +240,8 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
           </div>
         );
       })}
+        </div>
+      ))}
 
       {/* Reject — reason is mandatory, it is sent to the salesman verbatim. */}
       {rejecting && (
