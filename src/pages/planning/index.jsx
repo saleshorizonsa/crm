@@ -15,6 +15,10 @@ import { periodLabelFromRange, isAnnualRange } from "utils/dashboardDateUtils";
 import QuickDateSelector from "components/QuickDateSelector";
 import PlanApprovalsModule from "./components/PlanApprovalsModule";
 import {
+  monthKeyOf, nextMonthKeyOf, isEarlyWindowOpen, earlyWindowOpensAt,
+  monthBoundsOf, deadlineFor, isLateFor, monthNameOf, monthLabelOf,
+} from "utils/planMonths";
+import {
   notifyPlanSubmitted,
   fetchPendingApprovalCount,
   resolveApproverScope,
