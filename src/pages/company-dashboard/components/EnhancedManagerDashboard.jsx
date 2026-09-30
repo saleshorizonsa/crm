@@ -1504,6 +1504,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       <KPICardsStrip
         salesmanData={kpiStrip.salesmanData}
         totals={kpiStrip.totals}
+        targetBreakdown={kpiStrip.targetBreakdown}
         role={userProfile?.role}
         loading={kpiStrip.loading}
         period={kpiPeriod}

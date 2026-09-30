@@ -2531,6 +2531,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       <KPICardsStrip
         salesmanData={kpiStrip.salesmanData}
         totals={kpiStrip.totals}
+        targetBreakdown={kpiStrip.targetBreakdown}
         role={userProfile?.role}
         loading={kpiStrip.loading}
         period={

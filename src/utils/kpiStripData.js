@@ -12,6 +12,8 @@ import {
   wonNotInvoicedList,
   summarizeWonNotInvoiced,
 } from 'utils/planningCalculations';
+import { breakdownByType, breakdownByDivision } from 'utils/targetBreakdown';
+import { fetchAdditionalDivisions } from 'utils/divisionMembership';
 
 // TEMP: set true to re-enable the KPI diagnostic logs (see end of the function).
 const KPI_DEBUG = false;
@@ -70,7 +72,7 @@ function threeMonthWindow() {
 // window. Omitted = current month. isAnnual makes Target the company yearly target
 // (win rate stays a 3-month rolling average, planned/coverage stay current-month).
 export async function computeKpiStripData({ companyId, ownerIds = null, range = null }) {
-  const empty = { salesmanData: [], totals: { ...EMPTY_TOTALS } };
+  const empty = { salesmanData: [], totals: { ...EMPTY_TOTALS }, targetBreakdown: null };
   if (!companyId) return empty;
   if (Array.isArray(ownerIds) && ownerIds.length === 0) return empty;
 
@@ -102,13 +104,23 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   const achievedScopeIds = [...scopeIds, ...achievedOnlyUsers.map((u) => u.id)];
 
   // 2a. Per-contributor MONTHLY targets overlapping the window. A person can hold
-  //     a `total_value` (overall) target and/or `by_clients` targets — the overall
-  //     value is the manager-set goal, so: use total_value when present, otherwise
-  //     sum the by_clients rows (never mix the two — they're two views of one goal).
+  //     a `total_value` (overall) target AND `by_clients` targets, and those are
+  //     two DIFFERENT commitments, so they are summed — see targetPerPerson.
+  //     (This comment used to describe an either/or rule, "total_value when
+  //     present, otherwise by_clients". That rule was replaced; the comment was
+  //     not, and it reads as though the card shows 1,550,000 for a person who is
+  //     actually carrying 2,050,000.)
   const targetRows = await fetchMonthlyTargets({
     companyId, contributorIds: achievedScopeIds, start: winStart, end: winEnd,
   });
   const targetPer = targetPerPerson(targetRows);
+
+  // 2a-ii. What that Target number is made of, for the card's expander. Built
+  //        from the SAME rows, so both breakdowns reconcile with the card.
+  //        Scoped to whoever actually HOLDS a target row rather than to
+  //        userList, which is contributor-roles only and so excludes a manager
+  //        carrying his own target.
+  const targetBreakdown = await buildTargetBreakdown({ companyId, targetRows });
   // 2b. Annual view → prefer an explicit YEARLY target for this scope (the company
   //     yearly for a director; a manager/supervisor's own if assigned); otherwise
   //     annualize the monthly quotas (×12) — e.g. a salesman with no yearly target.
@@ -380,7 +392,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     console.log('companyId:', companyId);
     console.log('ownerIds (scope requested):', ownerIds === null ? 'NULL → whole company' : ownerIds);
     console.log('users/scopeIds:', scopeIds.length, userList.map((u) => `${u.full_name} (${u.role})`));
-    console.log('targets rows fetched:', (targets || []).length, targets);
+    console.log('targets rows fetched:', (targetRows || []).length, targetRows);
     console.log('won deals this month:', wonDealCount);
     console.log('deals (3-mo window):', (deals3 || []).length, '| won:', won3);
     console.log('opportunities (open, this month):', (opps || []).length);
@@ -389,7 +401,37 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     /* eslint-enable no-console */
   }
 
-  return { salesmanData, totals };
+  return { salesmanData, totals, targetBreakdown };
+}
+
+/**
+ * The Target card's composition: by target_type, and by division.
+ *
+ * Scoped to the people who hold the rows, deliberately — a manager carrying his
+ * own target is not in the contributor-roles user list but his target is in the
+ * card, so reading divisions from that list would drop him from the breakdown
+ * while his money stayed in the total.
+ */
+async function buildTargetBreakdown({ companyId, targetRows }) {
+  const empty = { byType: { rows: [], total: 0, typeCount: 0 }, byDivision: { rows: [], total: 0, divisionCount: 0, multiDivisionCount: 0, reconciles: true } };
+  const ids = [...new Set((targetRows || []).map((r) => r?.assigned_to).filter(Boolean))];
+  if (!companyId || ids.length === 0) return empty;
+
+  const [{ data: holders }, { data: divisions }, extraByUser] = await Promise.all([
+    supabase.from('users').select('id, full_name, sales_division_id').in('id', ids),
+    supabase.from('sales_divisions').select('id, name').eq('company_id', companyId),
+    fetchAdditionalDivisions({ companyId, userIds: ids }).catch(() => ({})),
+  ]);
+
+  return {
+    byType: breakdownByType(targetRows),
+    byDivision: breakdownByDivision({
+      targetRows,
+      users: holders || [],
+      divisions: divisions || [],
+      extraByUser: extraByUser || {},
+    }),
+  };
 }
 
 // Director annual view: the company's YEARLY target from management vs the

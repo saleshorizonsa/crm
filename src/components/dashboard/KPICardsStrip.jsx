@@ -311,13 +311,115 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
   );
 }
 
+// What the Target number is made of. Shown only inside the Target popup, so no
+// other card's behaviour changes.
+//
+// Two questions, two answers. "Which commitments is this?" — target rows are
+// additive, so a person holding an overall value target AND a by-client target
+// carries both, and the card is their sum. "Whose divisions is this?" —
+// sales_targets has no division of its own, so the division figures are
+// assembled by attributing each PERSON's target to their primary division,
+// exactly once. See utils/targetBreakdown.js for why it is not split.
+function TargetBreakdown({ breakdown }) {
+  const [openDivision, setOpenDivision] = useState(null);
+  const byType = breakdown?.byType;
+  const byDivision = breakdown?.byDivision;
+  const showType = (byType?.rows?.length || 0) > 1;
+  // One division and nobody in two of them tells a salesman nothing.
+  const showDivision = (byDivision?.rows?.length || 0) > 1 || (byDivision?.multiDivisionCount || 0) > 0;
+  if (!showType && !showDivision) return null;
+
+  const line = (label, amount, meta, key, onClick, isOpen) => (
+    <button
+      key={key}
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-left ${
+        onClick ? 'hover:bg-muted transition-colors' : ''
+      }`}
+    >
+      <span className="min-w-0 flex items-center gap-1.5">
+        {onClick && <Icon name={isOpen ? 'ChevronDown' : 'ChevronRight'} size={12} className="text-muted-foreground flex-shrink-0" />}
+        <span className="text-sm text-foreground truncate">{label}</span>
+        {meta && <span className="text-[11px] text-muted-foreground flex-shrink-0">· {meta}</span>}
+      </span>
+      <span className="text-sm font-semibold tabular-nums text-foreground flex-shrink-0">{fmtSAR(amount)} SAR</span>
+    </button>
+  );
+
+  return (
+    <div className="mb-4 border border-border rounded-xl overflow-hidden">
+      <div className="px-3 py-2 bg-muted/50 border-b border-border">
+        <p className="text-xs font-semibold text-foreground">What this target is made of</p>
+      </div>
+
+      {showType && (
+        <div className="px-1 py-1 border-b border-border">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground px-3 pt-1.5">By target type</p>
+          {byType.rows.map((r) => line(
+            r.label, r.amount, `${r.rowCount} row${r.rowCount === 1 ? '' : 's'}`, r.type, null, false,
+          ))}
+          <p className="text-[11px] text-muted-foreground px-3 pb-1.5">
+            Each type is a separate commitment, so they add up to the card total.
+          </p>
+        </div>
+      )}
+
+      {showDivision && (
+        <div className="px-1 py-1">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground px-3 pt-1.5">By division</p>
+          {byDivision.rows.map((g) => {
+            const key = g.divisionId || 'unassigned';
+            const isOpen = openDivision === key;
+            return (
+              <div key={key}>
+                {line(
+                  g.name, g.amount,
+                  `${g.people.length} ${g.people.length === 1 ? 'person' : 'people'}`,
+                  key,
+                  () => setOpenDivision(isOpen ? null : key),
+                  isOpen,
+                )}
+                {isOpen && (
+                  <div className="pl-7 pr-3 pb-2 space-y-1">
+                    {g.people.map((p) => (
+                      <div key={p.id} className="flex items-center justify-between gap-3">
+                        <span className="text-xs text-muted-foreground truncate">
+                          {p.name}
+                          {p.alsoIn.length > 0 && (
+                            <span className="text-[11px]"> · also in {p.alsoIn.join(', ')}</span>
+                          )}
+                        </span>
+                        <span className="text-xs tabular-nums text-muted-foreground flex-shrink-0">{fmtSAR(p.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {byDivision.multiDivisionCount > 0 && (
+            <p className="text-[11px] text-muted-foreground px-3 pb-1.5">
+              A target belongs to a person, not a division. Anyone in more than one
+              division is counted once, under their primary one, so these add up to
+              the card total rather than double-counting them.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Reusable 5-KPI strip. The parent passes already role-scoped data.
-//   salesmanData — per-salesman rows for the scope
-//   totals       — scope totals for the cards
-//   role         — current user role (drives popup behaviour in later phases)
-//   loading      — skeletons while data loads
-//   onDrillDown  — (salesman) => void  (manager/supervisor drill-down; optional)
-export default function KPICardsStrip({ salesmanData = [], totals, role, loading = false, onDrillDown, period = null }) {
+//   salesmanData   — per-salesman rows for the scope
+//   totals         — scope totals for the cards
+//   role           — current user role (drives popup behaviour in later phases)
+//   loading        — skeletons while data loads
+//   onDrillDown    — (salesman) => void  (manager/supervisor drill-down; optional)
+//   targetBreakdown— composition of the Target card (by type, by division)
+export default function KPICardsStrip({ salesmanData = [], totals, role, loading = false, onDrillDown, period = null, targetBreakdown = null }) {
   const [activePopup, setActivePopup] = useState(null);
   const [drillSalesman, setDrillSalesman] = useState(null);
   const [showHealthPopup, setShowHealthPopup] = useState(false);
@@ -807,6 +909,9 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
 
               {/* Body */}
               <div className="px-4 py-4 overflow-y-auto flex-1">
+                {activePopup === 'target' && !drillSalesman && (
+                  <TargetBreakdown breakdown={targetBreakdown} />
+                )}
                 {viewSalesman ? (
                   <DrillView
                     salesman={viewSalesman}
