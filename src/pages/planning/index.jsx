@@ -567,35 +567,6 @@ const PlanningPage = () => {
             </div>
           </div>
         )}
-        {/* During the last 7 days of the month both plans are live. They get a
-            switch rather than one bar replacing the other, so neither hides the
-            other and it is always obvious which month is on screen. */}
-        {showSubmitBar && earlyOpen && (
-          <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <span className="text-xs text-muted-foreground">Planning for</span>
-            {[
-              { key: "current", label: monthNameOf(currentMonthKey), month: currentMonthKey },
-              { key: "next", label: `${monthNameOf(nextMonthKey)} (early)`, month: nextMonthKey },
-            ].map((opt) => {
-              const row = submissions[opt.month];
-              return (
-                <button
-                  key={opt.key}
-                  onClick={() => setPlanTarget(opt.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-                    planTarget === opt.key
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "bg-card text-foreground border-border hover:bg-muted"
-                  }`}
-                >
-                  {opt.label}
-                  {row?.is_locked ? " 🔒" : row?.is_submitted ? " ✅" : ""}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
         {showSubmitBar && (
           <div className="flex items-center justify-between gap-3 px-5 py-3 bg-card border border-border rounded-xl mb-4 flex-wrap">
             <div className="flex items-center gap-3">
@@ -909,6 +880,48 @@ const PlanningPage = () => {
           )}
 
           {activeTab === "opportunities" && (
+            <>
+            {/* During the last 7 days of the month both plans are live. The
+                switch lives HERE, inside the tab whose contents it changes —
+                not up by the period selector, where it was invisible to anyone
+                looking at their plan. It gets banner styling because a salesman
+                has to notice it without being told it exists. */}
+            {showSubmitBar && earlyOpen && (
+              <div className="px-4 py-3 mb-4 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div>
+                    <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                      🗓️ {monthNameOf(nextMonthKey)} planning is open
+                    </p>
+                    <p className="text-xs text-blue-700 dark:text-blue-300">
+                      You can plan next month now — pick which month you are working on.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
+                    {[
+                      { key: "current", label: monthNameOf(currentMonthKey), month: currentMonthKey },
+                      { key: "next", label: `${monthNameOf(nextMonthKey)} (early)`, month: nextMonthKey },
+                    ].map((opt) => {
+                      const row = submissions[opt.month];
+                      return (
+                        <button
+                          key={opt.key}
+                          onClick={() => setPlanTarget(opt.key)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                            planTarget === opt.key
+                              ? "bg-blue-600 text-white border-blue-600"
+                              : "bg-card text-foreground border-border hover:bg-muted"
+                          }`}
+                        >
+                          {opt.label}
+                          {row?.is_locked ? " 🔒" : row?.is_submitted ? " ✅" : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
             <OpportunitiesModule
               adminCompany={adminCompany}
               onOpportunityChange={() => { fetchPlanningSummary(); fetchNextMonthSummary(); }}
@@ -929,6 +942,7 @@ const PlanningPage = () => {
               onFilterProductGroupChange={setFilterProductGroup}
               productGroups={productGroups}
             />
+            </>
           )}
 
           {activeTab === "future_orders" && (
