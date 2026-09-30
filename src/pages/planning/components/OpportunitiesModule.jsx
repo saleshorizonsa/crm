@@ -6,7 +6,7 @@ import Icon from 'components/AppIcon';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
-import { blockIfPlanLocked } from 'utils/planApproval';
+import { blockIfPlanLocked, blockIfPlanNotApproved, planMonthForDate } from 'utils/planApproval';
 import {
   fetchContributors,
   fetchMonthlyTargets,
@@ -393,6 +393,18 @@ export default function OpportunitiesModule({
   // expected-close value). Links are two-way (opportunities.deal_id +
   // deals.opportunity_id) so the 3-day lead-expiry check can find converted leads.
   async function handleConvert(opp) {
+    // A plan must be APPROVED before the work in it can become a deal. The month
+    // checked is the opportunity's own expected_month, not the month the page is
+    // showing — converting an October opportunity is governed by October's plan
+    // even if the switch is on September. Existing converted opportunities are
+    // untouched; this only governs new attempts.
+    const oppPlanMonth = planMonthForDate(opp.expected_month);
+    if (await blockIfPlanNotApproved({
+      ownerId: opp.owner_id || user?.id,
+      role,
+      planMonth: oppPlanMonth,
+    })) return;
+
     try {
       const now = new Date().toISOString();
       const { data: deal, error } = await supabase

@@ -14,6 +14,10 @@ import { periodLabelFromRange, isAnnualRange } from "utils/dashboardDateUtils";
 import QuickDateSelector from "components/QuickDateSelector";
 import PlanApprovalsModule from "./components/PlanApprovalsModule";
 import {
+  monthKeyOf, nextMonthKeyOf, isEarlyWindowOpen, earlyWindowOpensAt,
+  monthBoundsOf, deadlineFor, isLateFor, monthNameOf, monthLabelOf,
+} from "utils/planMonths";
+import {
   notifyPlanSubmitted,
   fetchPendingApprovalCount,
   resolveApproverScope,
@@ -92,7 +96,10 @@ const PlanningPage = () => {
   const canUploadHistory = ["director", "admin", "head"].includes(role);
 
   // ── Planning summary bar (visible on every tab) ─────────────────────────────
-  const [summaryData, setSummaryData] = useState({
+  // This holds the SHARED PERIOD's figures. What the tiles actually render is
+  // `summaryData` further down, which switches to next month's figures while the
+  // early-plan switch is on next month — see the comment there.
+  const [currentSummary, setCurrentSummary] = useState({
     target: 0,
     achieved: 0,
     attainmentPct: null,
@@ -109,7 +116,7 @@ const PlanningPage = () => {
     untaggedPlanned: 0,
     untaggedFunnel: 0,
   });
-  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [currentSummaryLoading, setCurrentSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState(null);
   // Monotonic request id — see fetchPlanningSummary. useRef so it survives
   // re-renders without causing one.
@@ -213,22 +220,72 @@ const PlanningPage = () => {
 
   useEffect(() => { refreshPendingApprovals(); }, [refreshPendingApprovals]);
 
+  // Next month's own figures, loaded only while the early window is open.
+  // Separate from summaryData because that one follows the shared period
+  // selector (which the dashboards also read) — scoping next month must not
+  // move everyone else's period.
+  //
+  // These are declared HERE, above activeSummary, and must stay above it:
+  // activeSummary reads nextSummary during render, so a declaration below it is
+  // a temporal-dead-zone crash that only fires once planTarget flips to "next"
+  // (the && short-circuit hides it until then).
+  const emptySummary = {
+    target: 0, achieved: 0, remainingTarget: 0,
+    attainmentPct: null,
+    winRate3m: 0, winRateIsDefault: false, requiredPlan: 0,
+    plannedOpen: 0, openFunnel: 0, availableCoverage: 0,
+    coveragePct: null, plannedGap: 0, hasTargetRows: false,
+    untaggedPlanned: 0, untaggedFunnel: 0,
+  };
+
+  const [nextSummary, setNextSummary] = useState(emptySummary);
+  const [nextSummaryLoading, setNextSummaryLoading] = useState(false);
+
   // Which month the salesman is currently planning. Only ever "next" while the
   // early window is open; it falls back on its own when the window closes or
   // the month rolls over, so no state can strand someone on a month they can no
   // longer submit.
   const [planTarget, setPlanTarget] = useState("current");
-  const activeMonthKey = planTarget === "next" && earlyOpen ? nextMonthKey : currentMonthKey;
+  const planningNextMonth = planTarget === "next" && earlyOpen;
+  const activeMonthKey = planningNextMonth ? nextMonthKey : currentMonthKey;
   const planSubmission = submissions[activeMonthKey] || null;
+
+  // What the five summary tiles read. While the early-plan switch is on next
+  // month, the list below showed next month's plans but the tiles still showed
+  // the shared period's — so someone planning October read September's target
+  // and coverage above it. The tiles now follow the month on screen.
+  //
+  // The shared period SELECTOR is deliberately untouched: the dashboards read
+  // the same selector, and moving it would drag every other screen into next
+  // month. Only this page's choice of data source depends on planTarget.
+  const summaryData = planningNextMonth ? nextSummary : currentSummary;
+  const summaryLoading = planningNextMonth ? nextSummaryLoading : currentSummaryLoading;
+  const tilePeriodLabel = planningNextMonth ? monthLabelOf(nextMonthKey) : periodLabel;
 
   // Everything below is now ABOUT activeMonthKey rather than about "now".
   const deadlineDay = new Date(`${deadlineFor(activeMonthKey)}T00:00:00`);
   const isLate = isLateFor(activeMonthKey, now);
   // Submission completeness stays a question about the PLAN, not about coverage:
   // a big open funnel must not let a month be submitted with nothing planned.
-  const activeSummary = planTarget === "next" && earlyOpen ? nextSummary : summaryData;
+  const activeSummary = summaryData;
   const planComplete = activeSummary.plannedOpen >= activeSummary.requiredPlan;
-  const canSubmit = planComplete && !planSubmission?.is_submitted;
+
+  // Required Plan is Remaining Target ÷ win rate, and a month that has not
+  // started has no invoiced revenue, so its ENTIRE target is still remaining.
+  // Requiring full coverage there made early submission unreachable — Amer had
+  // to plan another 545,351 SAR before the button would unlock at all. So the
+  // next-month path may be submitted under-planned; the shortfall is recorded on
+  // the row (total_planned vs required_plan) and shown to the approving manager,
+  // rather than the plan being silently accepted as if it were complete.
+  // Current-month submission keeps the original rule.
+  const underPlanned = activeSummary.requiredPlan > 0
+    && activeSummary.plannedOpen < activeSummary.requiredPlan;
+  // Planned vs Required — the SAME basis the approval queue's "short by" uses.
+  // plannedGap is a different quantity (it credits the open funnel as well), so
+  // showing that here told the salesman a smaller shortfall than the number his
+  // manager would read off the queue for the same plan.
+  const plannedShortfall = Math.max(0, activeSummary.requiredPlan - activeSummary.plannedOpen);
+  const canSubmit = (planningNextMonth || planComplete) && !planSubmission?.is_submitted;
   const showSubmitBar = (isSalesman || isSupervisor) && !!companyId;
 
   const handleSubmitPlan = async () => {
@@ -292,22 +349,6 @@ const PlanningPage = () => {
     }
   };
 
-  // Next month's own figures, loaded only while the early window is open.
-  // Separate from summaryData because that one follows the shared period
-  // selector (which the dashboards also read) — scoping next month must not
-  // move everyone else's period.
-  const emptySummary = {
-    target: 0, achieved: 0, remainingTarget: 0,
-    attainmentPct: null,
-    winRate3m: 0, winRateIsDefault: false, requiredPlan: 0,
-    plannedOpen: 0, openFunnel: 0, availableCoverage: 0,
-    coveragePct: null, plannedGap: 0, hasTargetRows: false,
-    untaggedPlanned: 0, untaggedFunnel: 0,
-  };
-
-  const [nextSummary, setNextSummary] = useState(emptySummary);
-  const [nextSummaryLoading, setNextSummaryLoading] = useState(false);
-
   const fetchPlanningSummary = useCallback(async () => {
     // Every filter or period change starts a new request while the previous one
     // may still be in flight, and each of these takes ~1-2s (eight round trips).
@@ -325,10 +366,10 @@ const PlanningPage = () => {
     const isCurrent = () => seq === summaryReq.current;
 
     if (!companyId) {
-      if (isCurrent()) { setSummaryData(emptySummary); setSummaryLoading(false); }
+      if (isCurrent()) { setCurrentSummary(emptySummary); setCurrentSummaryLoading(false); }
       return;
     }
-    setSummaryLoading(true);
+    setCurrentSummaryLoading(true);
     setSummaryError(null);
     const startedAt = Date.now();
     try {
@@ -381,7 +422,7 @@ const PlanningPage = () => {
       // the one the user is waiting for, so drop this one on the floor.
       if (!isCurrent()) return;
 
-      setSummaryData({
+      setCurrentSummary({
         target: sum.target,
         achieved: sum.achieved,
         attainmentPct: sum.attainmentPct,
@@ -403,11 +444,11 @@ const PlanningPage = () => {
       // new filter applied — wrong figures that look like real ones. Say so.
       console.error("Planning summary:", err);
       if (isCurrent()) {
-        setSummaryData(emptySummary);
+        setCurrentSummary(emptySummary);
         setSummaryError(err?.message || "Could not load the summary.");
       }
     } finally {
-      if (isCurrent()) setSummaryLoading(false);
+      if (isCurrent()) setCurrentSummaryLoading(false);
     }
   }, [companyId, role, user?.id, rangeStart, rangeEnd, filterOwner, filterProductGroup]);
 
@@ -555,35 +596,6 @@ const PlanningPage = () => {
             </div>
           </div>
         )}
-        {/* During the last 7 days of the month both plans are live. They get a
-            switch rather than one bar replacing the other, so neither hides the
-            other and it is always obvious which month is on screen. */}
-        {showSubmitBar && earlyOpen && (
-          <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <span className="text-xs text-muted-foreground">Planning for</span>
-            {[
-              { key: "current", label: monthNameOf(currentMonthKey), month: currentMonthKey },
-              { key: "next", label: `${monthNameOf(nextMonthKey)} (early)`, month: nextMonthKey },
-            ].map((opt) => {
-              const row = submissions[opt.month];
-              return (
-                <button
-                  key={opt.key}
-                  onClick={() => setPlanTarget(opt.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-                    planTarget === opt.key
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "bg-card text-foreground border-border hover:bg-muted"
-                  }`}
-                >
-                  {opt.label}
-                  {row?.is_locked ? " 🔒" : row?.is_submitted ? " ✅" : ""}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
         {showSubmitBar && (
           <div className="flex items-center justify-between gap-3 px-5 py-3 bg-card border border-border rounded-xl mb-4 flex-wrap">
             <div className="flex items-center gap-3">
@@ -607,9 +619,13 @@ const PlanningPage = () => {
                 <p className="text-xs text-muted-foreground">
                   {planSubmission?.is_submitted
                     ? `Submitted ${new Date(planSubmission.submitted_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}${planSubmission.is_late ? " (Late)" : ""}`
-                    : !planComplete
-                      ? `Add ${fmtSAR(activeSummary.plannedGap)} SAR more to enable submission`
-                      : `Due ${deadlineDay.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`}
+                    : planningNextMonth && underPlanned
+                      /* Submission is allowed here, so this says what will
+                         happen rather than what is being withheld. */
+                      ? `${fmtSAR(plannedShortfall)} SAR under target — you can submit, your manager will see it flagged as under-planned`
+                      : !planComplete
+                        ? `Add ${fmtSAR(activeSummary.plannedGap)} SAR more to enable submission`
+                        : `Due ${deadlineDay.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`}
                 </p>
               </div>
             </div>
@@ -622,7 +638,11 @@ const PlanningPage = () => {
                   canSubmit
                     ? isLate
                       ? "bg-red-600 text-white hover:bg-red-700"
-                      : "bg-blue-600 text-white hover:bg-blue-700"
+                      /* Amber, not blue: submitting under target is allowed but
+                         is not the same as submitting a complete plan. */
+                      : planningNextMonth && underPlanned
+                        ? "bg-amber-500 text-white hover:bg-amber-600"
+                        : "bg-blue-600 text-white hover:bg-blue-700"
                     : "bg-muted text-muted-foreground cursor-not-allowed"
                 }`}
               >
@@ -729,7 +749,7 @@ const PlanningPage = () => {
               </div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              {!summaryLoading && !summaryData.hasTargetRows ? "No target assigned" : periodLabel}
+              {!summaryLoading && !summaryData.hasTargetRows ? "No target assigned" : tilePeriodLabel}
             </p>
           </div>
 
@@ -861,7 +881,7 @@ const PlanningPage = () => {
             >
               {!summaryLoading && summaryData.plannedGap <= 0
                 ? `Covered: ${fmtSAR(summaryData.availableCoverage)} SAR`
-                : `${periodLabel} planning gap`}
+                : `${tilePeriodLabel} planning gap`}
             </p>
           </div>
         </div>
@@ -897,6 +917,48 @@ const PlanningPage = () => {
           )}
 
           {activeTab === "opportunities" && (
+            <>
+            {/* During the last 7 days of the month both plans are live. The
+                switch lives HERE, inside the tab whose contents it changes —
+                not up by the period selector, where it was invisible to anyone
+                looking at their plan. It gets banner styling because a salesman
+                has to notice it without being told it exists. */}
+            {showSubmitBar && earlyOpen && (
+              <div className="px-4 py-3 mb-4 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div>
+                    <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                      🗓️ {monthNameOf(nextMonthKey)} planning is open
+                    </p>
+                    <p className="text-xs text-blue-700 dark:text-blue-300">
+                      You can plan next month now — pick which month you are working on.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
+                    {[
+                      { key: "current", label: monthNameOf(currentMonthKey), month: currentMonthKey },
+                      { key: "next", label: `${monthNameOf(nextMonthKey)} (early)`, month: nextMonthKey },
+                    ].map((opt) => {
+                      const row = submissions[opt.month];
+                      return (
+                        <button
+                          key={opt.key}
+                          onClick={() => setPlanTarget(opt.key)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                            planTarget === opt.key
+                              ? "bg-blue-600 text-white border-blue-600"
+                              : "bg-card text-foreground border-border hover:bg-muted"
+                          }`}
+                        >
+                          {opt.label}
+                          {row?.is_locked ? " 🔒" : row?.is_submitted ? " ✅" : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
             <OpportunitiesModule
               adminCompany={adminCompany}
               onOpportunityChange={() => { fetchPlanningSummary(); fetchNextMonthSummary(); }}
@@ -917,6 +979,7 @@ const PlanningPage = () => {
               onFilterProductGroupChange={setFilterProductGroup}
               productGroups={productGroups}
             />
+            </>
           )}
 
           {activeTab === "future_orders" && (

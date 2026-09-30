@@ -141,6 +141,13 @@ const ManagerSalesTargetAssignment = ({
   // was no way to tell whether anything had happened.
   const [pendingDivision, setPendingDivision] = useState({});
   const [savedDivisionFor, setSavedDivisionFor] = useState(null);
+  // ADDITIONAL divisions per user (user_sales_divisions), on top of the primary
+  // sales_division_id above. { userId: [divisionId, ...] }, empty for anyone in
+  // a single division. Read below alongside the primary, so the "Assign To"
+  // filter and the member list both count either route into a division.
+  const [extraDivisions, setExtraDivisions] = useState({});
+  const [extraOpenFor, setExtraOpenFor] = useState(null);     // which row's popover is open
+  const [savingExtraFor, setSavingExtraFor] = useState(null); // "userId:divisionId" being written
 
   const periodTypes = [
     { value: "weekly", label: "Weekly" },
@@ -231,12 +238,23 @@ const ManagerSalesTargetAssignment = ({
       if (divisionsError || membersError) {
         setDivisions([]);
         setDivisionByUser({});
+        setExtraDivisions({});
         return;
       }
       setDivisions(divisionRows || []);
       setDivisionByUser(
         Object.fromEntries((memberRows || []).map((m) => [m.id, m.sales_division_id]))
       );
+
+      // Additional divisions, read AFTER the primary and in its own call so a
+      // missing user_sales_divisions table cannot break the primary-division
+      // control that works without it. fetchAdditionalDivisions already
+      // degrades to {} on error rather than throwing.
+      const extraByUser = await fetchAdditionalDivisions({
+        companyId: divisionCompanyId,
+        userIds: [userProfile?.id, ...subordinates.map((s) => s.id)].filter(Boolean),
+      });
+      if (!cancelled) setExtraDivisions(extraByUser);
     })();
     return () => {
       cancelled = true;

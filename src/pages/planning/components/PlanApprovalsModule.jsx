@@ -181,9 +181,22 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
           <div key={row.id} className="p-4 border border-border rounded-xl bg-card">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">
-                  {row.owner?.full_name || 'Unknown salesman'}
-                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-semibold text-foreground truncate">
+                    {row.owner?.full_name || 'Unknown salesman'}
+                  </p>
+                  {/* A next-month plan may be submitted below the completeness
+                      threshold — a month that has not started has its whole
+                      target still remaining, so demanding full coverage made
+                      early submission unreachable. It must not arrive here
+                      looking like a complete plan, so the shortfall is stated
+                      next to the name rather than only in the figures. */}
+                  {!meets && required > 0 && (
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
+                      under-planned
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   {monthLabel(row.plan_month)} · submitted {dateLabel(row.submitted_at)}
                 </p>
