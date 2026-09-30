@@ -218,6 +218,27 @@ const PlanningPage = () => {
 
   useEffect(() => { refreshPendingApprovals(); }, [refreshPendingApprovals]);
 
+  // Next month's own figures, loaded only while the early window is open.
+  // Separate from summaryData because that one follows the shared period
+  // selector (which the dashboards also read) — scoping next month must not
+  // move everyone else's period.
+  //
+  // These are declared HERE, above activeSummary, and must stay above it:
+  // activeSummary reads nextSummary during render, so a declaration below it is
+  // a temporal-dead-zone crash that only fires once planTarget flips to "next"
+  // (the && short-circuit hides it until then).
+  const emptySummary = {
+    target: 0, achieved: 0, remainingTarget: 0,
+    attainmentPct: null,
+    winRate3m: 0, winRateIsDefault: false, requiredPlan: 0,
+    plannedOpen: 0, openFunnel: 0, availableCoverage: 0,
+    coveragePct: null, plannedGap: 0, hasTargetRows: false,
+    untaggedPlanned: 0, untaggedFunnel: 0,
+  };
+
+  const [nextSummary, setNextSummary] = useState(emptySummary);
+  const [nextSummaryLoading, setNextSummaryLoading] = useState(false);
+
   // Which month the salesman is currently planning. Only ever "next" while the
   // early window is open; it falls back on its own when the window closes or
   // the month rolls over, so no state can strand someone on a month they can no
@@ -296,22 +317,6 @@ const PlanningPage = () => {
       setSubmitting(null);
     }
   };
-
-  // Next month's own figures, loaded only while the early window is open.
-  // Separate from summaryData because that one follows the shared period
-  // selector (which the dashboards also read) — scoping next month must not
-  // move everyone else's period.
-  const emptySummary = {
-    target: 0, achieved: 0, remainingTarget: 0,
-    attainmentPct: null,
-    winRate3m: 0, winRateIsDefault: false, requiredPlan: 0,
-    plannedOpen: 0, openFunnel: 0, availableCoverage: 0,
-    coveragePct: null, plannedGap: 0, hasTargetRows: false,
-    untaggedPlanned: 0, untaggedFunnel: 0,
-  };
-
-  const [nextSummary, setNextSummary] = useState(emptySummary);
-  const [nextSummaryLoading, setNextSummaryLoading] = useState(false);
 
   const fetchPlanningSummary = useCallback(async () => {
     // Every filter or period change starts a new request while the previous one
