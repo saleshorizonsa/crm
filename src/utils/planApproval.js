@@ -251,6 +251,97 @@ export async function blockIfPlanLocked({ ownerId, role, planMonth = currentPlan
   return locked;
 }
 
+// ── Conversion gate ─────────────────────────────────────────────────────────
+// An opportunity may only become a deal once the OWNER's plan for THAT
+// opportunity's month has been approved. Until this existed, conversion was
+// unrestricted and salesmen were converting against months they had never
+// submitted a plan for.
+//
+// Note this is the opposite polarity to isPlanLocked above: that one guards
+// EDITING and fails open, because a missing row must never lock someone out of
+// their own plan. This one guards CONVERSION, where a missing row means nothing
+// was ever planned or approved, so it fails closed.
+
+/** The plan_month key for an opportunity's expected_month (first of that month). */
+export function planMonthForDate(value) {
+  if (!value) return null;
+  const s = String(value);
+  // Already a yyyy-MM-* date string: take the month directly rather than
+  // constructing a Date, which would apply the local timezone to a date-only
+  // value and could roll it back a day (and so a month, on the 1st).
+  const m = s.match(/^(\d{4})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-01`;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  return currentPlanMonth(d);
+}
+
+// Roles the gate applies to. Salesmen and supervisors both own opportunities
+// and both submit plans; managers and above are not gated, matching the
+// existing lock guard.
+const CONVERSION_GATED_ROLES = ['salesman', 'supervisor'];
+
+/**
+ * The owner's plan state for one month.
+ * @returns {{ allowed:boolean, reason:string, status:string|null }}
+ *   reason ∈ approved | no_plan | unsubmitted | pending | rejected |
+ *            schema_missing | lookup_failed | no_month | no_owner
+ */
+export async function planApprovalState(ownerId, planMonth) {
+  if (!ownerId) return { allowed: true, reason: 'no_owner', status: null };
+  if (!planMonth) return { allowed: true, reason: 'no_month', status: null };
+
+  const { data, error } = await supabase
+    .from('plan_submissions')
+    .select('approval_status, is_submitted')
+    .eq('owner_id', ownerId)
+    .eq('plan_month', planMonth)
+    .maybeSingle();
+
+  // The approval migration not being applied is "feature off", not "block
+  // everyone" — the same rule the rest of this module follows.
+  if (isMissingApprovalSchema(error)) return { allowed: true, reason: 'schema_missing', status: null };
+  // Any other error must NOT silently permit the thing the gate exists to stop.
+  if (error) return { allowed: false, reason: 'lookup_failed', status: null };
+
+  if (!data) return { allowed: false, reason: 'no_plan', status: null };
+  if (data.approval_status === 'approved') return { allowed: true, reason: 'approved', status: 'approved' };
+  if (data.approval_status === 'rejected') return { allowed: false, reason: 'rejected', status: 'rejected' };
+  if (!data.is_submitted) return { allowed: false, reason: 'unsubmitted', status: data.approval_status || null };
+  return { allowed: false, reason: 'pending', status: data.approval_status || 'pending' };
+}
+
+/** What to tell the user, naming the month and the actual thing standing in the way. */
+export function conversionBlockedMessage(reason, planMonth) {
+  const month = planMonth ? monthLabel(planMonth) : 'this month';
+  switch (reason) {
+    case 'no_plan':
+      return `${month}'s plan must be approved before converting to a deal. No plan has been submitted for ${month} yet.`;
+    case 'unsubmitted':
+      return `${month}'s plan must be approved before converting to a deal. It has not been submitted yet.`;
+    case 'pending':
+      return `${month}'s plan must be approved before converting to a deal. It is submitted and waiting for your manager.`;
+    case 'rejected':
+      return `${month}'s plan must be approved before converting to a deal. It was sent back — revise it and submit again.`;
+    case 'lookup_failed':
+      return `Could not check whether ${month}'s plan is approved, so the conversion was not made. Please try again.`;
+    default:
+      return `${month}'s plan must be approved before converting to a deal.`;
+  }
+}
+
+/**
+ * Guard for converting an opportunity into a deal/lead. Returns true when the
+ * caller should stop, having already told the user why.
+ */
+export async function blockIfPlanNotApproved({ ownerId, role, planMonth, notify = alert }) {
+  if (role && !CONVERSION_GATED_ROLES.includes(role)) return false;
+  const { allowed, reason } = await planApprovalState(ownerId, planMonth);
+  if (allowed) return false;
+  notify(conversionBlockedMessage(reason, planMonth));
+  return true;
+}
+
 // ── Submit ──────────────────────────────────────────────────────────────────
 // Called after plan_submissions has been upserted with is_submitted = true.
 // Sends the notification that never existed before.
