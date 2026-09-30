@@ -97,7 +97,10 @@ const PlanningPage = () => {
   const canUploadHistory = ["director", "admin", "head"].includes(role);
 
   // ── Planning summary bar (visible on every tab) ─────────────────────────────
-  const [summaryData, setSummaryData] = useState({
+  // This holds the SHARED PERIOD's figures. What the tiles actually render is
+  // `summaryData` further down, which switches to next month's figures while the
+  // early-plan switch is on next month — see the comment there.
+  const [currentSummary, setCurrentSummary] = useState({
     target: 0,
     achieved: 0,
     attainmentPct: null,
@@ -114,7 +117,7 @@ const PlanningPage = () => {
     untaggedPlanned: 0,
     untaggedFunnel: 0,
   });
-  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [currentSummaryLoading, setCurrentSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState(null);
   // Monotonic request id — see fetchPlanningSummary. useRef so it survives
   // re-renders without causing one.
@@ -244,17 +247,46 @@ const PlanningPage = () => {
   // the month rolls over, so no state can strand someone on a month they can no
   // longer submit.
   const [planTarget, setPlanTarget] = useState("current");
-  const activeMonthKey = planTarget === "next" && earlyOpen ? nextMonthKey : currentMonthKey;
+  const planningNextMonth = planTarget === "next" && earlyOpen;
+  const activeMonthKey = planningNextMonth ? nextMonthKey : currentMonthKey;
   const planSubmission = submissions[activeMonthKey] || null;
+
+  // What the five summary tiles read. While the early-plan switch is on next
+  // month, the list below showed next month's plans but the tiles still showed
+  // the shared period's — so someone planning October read September's target
+  // and coverage above it. The tiles now follow the month on screen.
+  //
+  // The shared period SELECTOR is deliberately untouched: the dashboards read
+  // the same selector, and moving it would drag every other screen into next
+  // month. Only this page's choice of data source depends on planTarget.
+  const summaryData = planningNextMonth ? nextSummary : currentSummary;
+  const summaryLoading = planningNextMonth ? nextSummaryLoading : currentSummaryLoading;
+  const tilePeriodLabel = planningNextMonth ? monthLabelOf(nextMonthKey) : periodLabel;
 
   // Everything below is now ABOUT activeMonthKey rather than about "now".
   const deadlineDay = new Date(`${deadlineFor(activeMonthKey)}T00:00:00`);
   const isLate = isLateFor(activeMonthKey, now);
   // Submission completeness stays a question about the PLAN, not about coverage:
   // a big open funnel must not let a month be submitted with nothing planned.
-  const activeSummary = planTarget === "next" && earlyOpen ? nextSummary : summaryData;
+  const activeSummary = summaryData;
   const planComplete = activeSummary.plannedOpen >= activeSummary.requiredPlan;
-  const canSubmit = planComplete && !planSubmission?.is_submitted;
+
+  // Required Plan is Remaining Target ÷ win rate, and a month that has not
+  // started has no invoiced revenue, so its ENTIRE target is still remaining.
+  // Requiring full coverage there made early submission unreachable — Amer had
+  // to plan another 545,351 SAR before the button would unlock at all. So the
+  // next-month path may be submitted under-planned; the shortfall is recorded on
+  // the row (total_planned vs required_plan) and shown to the approving manager,
+  // rather than the plan being silently accepted as if it were complete.
+  // Current-month submission keeps the original rule.
+  const underPlanned = activeSummary.requiredPlan > 0
+    && activeSummary.plannedOpen < activeSummary.requiredPlan;
+  // Planned vs Required — the SAME basis the approval queue's "short by" uses.
+  // plannedGap is a different quantity (it credits the open funnel as well), so
+  // showing that here told the salesman a smaller shortfall than the number his
+  // manager would read off the queue for the same plan.
+  const plannedShortfall = Math.max(0, activeSummary.requiredPlan - activeSummary.plannedOpen);
+  const canSubmit = (planningNextMonth || planComplete) && !planSubmission?.is_submitted;
   const showSubmitBar = (isSalesman || isSupervisor) && !!companyId;
 
   const handleSubmitPlan = async () => {
@@ -335,10 +367,10 @@ const PlanningPage = () => {
     const isCurrent = () => seq === summaryReq.current;
 
     if (!companyId) {
-      if (isCurrent()) { setSummaryData(emptySummary); setSummaryLoading(false); }
+      if (isCurrent()) { setCurrentSummary(emptySummary); setCurrentSummaryLoading(false); }
       return;
     }
-    setSummaryLoading(true);
+    setCurrentSummaryLoading(true);
     setSummaryError(null);
     const startedAt = Date.now();
     try {
@@ -391,7 +423,7 @@ const PlanningPage = () => {
       // the one the user is waiting for, so drop this one on the floor.
       if (!isCurrent()) return;
 
-      setSummaryData({
+      setCurrentSummary({
         target: sum.target,
         achieved: sum.achieved,
         attainmentPct: sum.attainmentPct,
@@ -413,11 +445,11 @@ const PlanningPage = () => {
       // new filter applied — wrong figures that look like real ones. Say so.
       console.error("Planning summary:", err);
       if (isCurrent()) {
-        setSummaryData(emptySummary);
+        setCurrentSummary(emptySummary);
         setSummaryError(err?.message || "Could not load the summary.");
       }
     } finally {
-      if (isCurrent()) setSummaryLoading(false);
+      if (isCurrent()) setCurrentSummaryLoading(false);
     }
   }, [companyId, role, user?.id, rangeStart, rangeEnd, filterOwner, filterProductGroup]);
 
@@ -595,9 +627,13 @@ const PlanningPage = () => {
                 <p className="text-xs text-muted-foreground">
                   {planSubmission?.is_submitted
                     ? `Submitted ${new Date(planSubmission.submitted_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}${planSubmission.is_late ? " (Late)" : ""}`
-                    : !planComplete
-                      ? `Add ${fmtSAR(activeSummary.plannedGap)} SAR more to enable submission`
-                      : `Due ${deadlineDay.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`}
+                    : planningNextMonth && underPlanned
+                      /* Submission is allowed here, so this says what will
+                         happen rather than what is being withheld. */
+                      ? `${fmtSAR(plannedShortfall)} SAR under target — you can submit, your manager will see it flagged as under-planned`
+                      : !planComplete
+                        ? `Add ${fmtSAR(activeSummary.plannedGap)} SAR more to enable submission`
+                        : `Due ${deadlineDay.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`}
                 </p>
               </div>
             </div>
@@ -610,7 +646,11 @@ const PlanningPage = () => {
                   canSubmit
                     ? isLate
                       ? "bg-red-600 text-white hover:bg-red-700"
-                      : "bg-blue-600 text-white hover:bg-blue-700"
+                      /* Amber, not blue: submitting under target is allowed but
+                         is not the same as submitting a complete plan. */
+                      : planningNextMonth && underPlanned
+                        ? "bg-amber-500 text-white hover:bg-amber-600"
+                        : "bg-blue-600 text-white hover:bg-blue-700"
                     : "bg-muted text-muted-foreground cursor-not-allowed"
                 }`}
               >
@@ -717,7 +757,7 @@ const PlanningPage = () => {
               </div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              {!summaryLoading && !summaryData.hasTargetRows ? "No target assigned" : periodLabel}
+              {!summaryLoading && !summaryData.hasTargetRows ? "No target assigned" : tilePeriodLabel}
             </p>
           </div>
 
@@ -849,7 +889,7 @@ const PlanningPage = () => {
             >
               {!summaryLoading && summaryData.plannedGap <= 0
                 ? `Covered: ${fmtSAR(summaryData.availableCoverage)} SAR`
-                : `${periodLabel} planning gap`}
+                : `${tilePeriodLabel} planning gap`}
             </p>
           </div>
         </div>
