@@ -51,23 +51,50 @@ export function breakdownByType(targetRows) {
   return { rows, total, typeCount: rows.length };
 }
 
+/** Every division a person belongs to: primary first, then the additional ones. */
+export function divisionsOfPerson(user, extras) {
+  const primary = user?.sales_division_id ? String(user.sales_division_id) : null;
+  const all = [...new Set([primary, ...(extras || []).map((d) => String(d))].filter(Boolean))];
+  return { primary, all };
+}
+
+/**
+ * How ONE target row is attributed to a division.
+ *
+ *   row      the row names its own division_id — the real answer
+ *   primary  no division_id, but the owner is in exactly one division, so
+ *            there is only one answer it could have
+ *   unsplit  no division_id and the owner is in SEVERAL divisions: the split
+ *            was never recorded. Held against their primary division so the
+ *            parts still sum, and reported as unsplit so it can be corrected.
+ *   none     the owner has no division at all — nothing to attribute to
+ */
+export function attributionFor(row, user, extras) {
+  const { primary, all } = divisionsOfPerson(user, extras);
+  if (row?.division_id) return { divisionId: String(row.division_id), basis: 'row' };
+  if (all.length === 1) return { divisionId: all[0], basis: 'primary' };
+  if (all.length > 1) return { divisionId: primary, basis: 'unsplit' };
+  return { divisionId: null, basis: 'none' };
+}
+
 /**
  * One entry per division, for a card whose total is a roll-up of several
  * people's targets.
  *
- * sales_targets has NO division_id — a target belongs to a PERSON, not a
- * division — so a division figure can only be assembled by attributing each
- * person's target to a division. With multi-division membership that is where
- * the double count creeps in: counting a person under every division they
- * belong to inflates the total by their whole target for each extra division.
+ * A target row may now carry its own division_id, and when it does that is
+ * simply used. Where it is NULL the old rule still applies, because NULL means
+ * one of two things and neither is a licence to guess:
  *
- * So each person is counted EXACTLY ONCE, under their primary division
- * (users.sales_division_id). Their additional memberships are reported on the
- * person as `alsoIn` — visible, but never a second amount. Splitting the target
- * across their divisions was rejected: nothing in the data says how it divides,
- * and an invented split would read as fact.
+ *   - the owner is in exactly one division, so the row can only belong there
+ *     (this is what the migration filled in for everyone single-division);
+ *   - the owner is in several and the split was never recorded. Inventing a
+ *     ratio would read as fact, so the whole amount is held against their
+ *     primary division, exactly as before, and surfaced as `unsplitAmount` so
+ *     the number can be corrected rather than quietly believed.
  *
- * @param {object[]} targetRows   monthly rows in the period
+ * Either way each ROW is counted exactly once, so the parts sum to the total.
+ *
+ * @param {object[]} targetRows   rows in the period, may carry division_id
  * @param {object[]} users        { id, full_name, sales_division_id }
  * @param {object[]} divisions    { id, name }
  * @param {object}   extraByUser  userId -> [divisionId] additional memberships
@@ -76,42 +103,59 @@ export function breakdownByDivision({ targetRows, users, divisions, extraByUser 
   const divisionName = new Map((divisions || []).map((d) => [String(d.id), d.name]));
   const userById = new Map((users || []).map((u) => [String(u.id), u]));
 
-  // Per person first — a person is the unit that gets counted once.
-  const perPerson = new Map();
+  const groups = new Map();
+  const seenPeople = new Map();   // "divisionKey|personId" -> person entry
+  const multiDivisionPeople = new Set();
   let total = 0;
+  let unsplitAmount = 0;
+  let unsplitRowCount = 0;
+
   (targetRows || []).forEach((row) => {
     const value = targetRowValue(row);
     if (!value || !row?.assigned_to) return;
     const id = String(row.assigned_to);
-    if (!perPerson.has(id)) perPerson.set(id, 0);
-    perPerson.set(id, perPerson.get(id) + value);
-    total += value;
-  });
-
-  const groups = new Map();
-  let multiDivisionCount = 0;
-
-  perPerson.forEach((amount, id) => {
     const user = userById.get(id);
-    const primary = user?.sales_division_id ? String(user.sales_division_id) : null;
-    const key = primary || UNASSIGNED_DIVISION;
+    const extras = extraByUser?.[id] || [];
+    const { primary, all } = divisionsOfPerson(user, extras);
+    if (all.length > 1) multiDivisionPeople.add(id);
+
+    const { divisionId, basis } = attributionFor(row, user, extras);
+    const key = divisionId || UNASSIGNED_DIVISION;
     if (!groups.has(key)) {
       groups.set(key, {
-        divisionId: primary,
-        name: primary ? (divisionName.get(primary) || 'Unknown division') : 'No division',
+        divisionId: divisionId || null,
+        name: divisionId ? (divisionName.get(divisionId) || 'Unknown division') : 'No division',
         amount: 0,
+        unsplitAmount: 0,
         people: [],
       });
     }
-    const extras = (extraByUser?.[id] || [])
-      .map((d) => String(d))
-      .filter((d) => d !== primary)
-      .map((d) => divisionName.get(d) || 'Unknown division');
-    if (extras.length) multiDivisionCount += 1;
-
     const g = groups.get(key);
-    g.amount += amount;
-    g.people.push({ id, name: user?.full_name || 'Unknown', amount, alsoIn: extras });
+    g.amount += value;
+    total += value;
+    if (basis === 'unsplit') {
+      g.unsplitAmount += value;
+      unsplitAmount += value;
+      unsplitRowCount += 1;
+    }
+
+    const personKey = `${key}|${id}`;
+    if (!seenPeople.has(personKey)) {
+      const entry = {
+        id,
+        name: user?.full_name || 'Unknown',
+        amount: 0,
+        unsplitAmount: 0,
+        // Other divisions this person belongs to, for context only — never a
+        // second amount.
+        alsoIn: all.filter((d) => d !== (divisionId || primary)).map((d) => divisionName.get(d) || 'Unknown division'),
+      };
+      seenPeople.set(personKey, entry);
+      g.people.push(entry);
+    }
+    const p = seenPeople.get(personKey);
+    p.amount += value;
+    if (basis === 'unsplit') p.unsplitAmount += value;
   });
 
   const rows = [...groups.values()]
@@ -122,8 +166,10 @@ export function breakdownByDivision({ targetRows, users, divisions, extraByUser 
     rows,
     total,
     divisionCount: rows.length,
-    multiDivisionCount,
-    // Every person counted once means this always holds; asserted in tests so a
+    multiDivisionCount: multiDivisionPeople.size,
+    unsplitAmount,
+    unsplitRowCount,
+    // Every ROW counted once means this always holds; asserted in tests so a
     // future change to the attribution rule cannot quietly break it.
     reconciles: Math.abs(rows.reduce((s, g) => s + g.amount, 0) - total) < 0.005,
   };

@@ -120,7 +120,7 @@ export async function fetchMonthlyTargets({ companyId, contributorIds, start, en
   const { data, error } = await supabase
     .from('sales_targets')
     .select(
-      'target_amount, assigned_to, target_type, period_start, product_group, client_targets(target_amount)',
+      'target_amount, assigned_to, target_type, period_start, product_group, division_id, client_targets(target_amount)',
     )
     .eq('company_id', companyId)
     .eq('status', 'active')

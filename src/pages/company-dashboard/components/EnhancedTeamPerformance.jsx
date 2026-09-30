@@ -3,6 +3,7 @@ import { useCurrency } from "../../../contexts/CurrencyContext";
 import Button from "../../../components/ui/Button";
 import Icon from "../../../components/AppIcon";
 import { useLanguage } from "../../../i18n";
+import PersonTargetRows from "../../../components/targets/PersonTargetRows";
 
 const EnhancedTeamPerformance = ({
   teamData,
@@ -17,6 +18,9 @@ const EnhancedTeamPerformance = ({
   const [sortBy, setSortBy] = useState("totalValue");
   const [sortOrder, setSortOrder] = useState("desc");
   const [filterBy, setFilterBy] = useState("all");
+  // Which member's target rows are open. One at a time: the point is to read one
+  // person's targets, and several open at once turns the table into a wall.
+  const [expandedMember, setExpandedMember] = useState(null);
 
   const getEnhancedTeamData = () => {
     console.log("Enhanced team performance - teamData:", teamData);
@@ -309,15 +313,27 @@ const EnhancedTeamPerformance = ({
             <tbody className="bg-white divide-y divide-gray-200">
               {enhancedData.map((member) => {
                 const statusConfig = getStatusConfig(member.status);
+                const isExpanded = expandedMember === member.id;
                 return (
+                  <React.Fragment key={member.id}>
                   <tr
-                    key={member.id}
                     className={
                       member.isManager ? "bg-blue-50" : "hover:bg-gray-50"
                     }
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
+                      {/* The name opens this person's own target rows, by type
+                          and by division. */}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedMember(isExpanded ? null : member.id)}
+                        className="flex items-center text-left w-full"
+                        aria-expanded={isExpanded}
+                      >
+                        <Icon
+                          name={isExpanded ? "ChevronDown" : "ChevronRight"}
+                          className="w-3 h-3 mr-1 text-gray-400 flex-shrink-0"
+                        />
                         <div className="flex-shrink-0 h-8 w-8">
                           <div
                             className={`h-8 w-8 rounded-full flex items-center justify-center text-white text-sm font-medium ${
@@ -338,7 +354,7 @@ const EnhancedTeamPerformance = ({
                             {member.role}
                           </div>
                         </div>
-                      </div>
+                      </button>
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -450,6 +466,14 @@ const EnhancedTeamPerformance = ({
                       </div>
                     </td>
                   </tr>
+                  {isExpanded && (
+                    <tr className="bg-gray-50">
+                      <td colSpan={7} className="px-6 py-2">
+                        <PersonTargetRows userId={member.id} />
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>

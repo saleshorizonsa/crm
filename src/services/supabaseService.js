@@ -3491,18 +3491,25 @@ export const salesTargetService = {
         );
       }
 
-      // Guard against duplicate: one target per (assigned_to, period_start, period_end, company_id, target_type)
-      // A salesman can have separate By Value, By Clients, and By Product targets for the same period
+      // Guard against duplicate: one target per (assigned_to, period_start, period_end, company_id, target_type, division_id)
+      // A salesman can have separate By Value, By Clients, and By Product targets for the same period,
+      // and someone in several divisions holds one of each type PER DIVISION — so the
+      // division has to be part of this check too, or the second division's row
+      // would be refused as a duplicate of the first.
       const resolvedTargetType = targetData.targetType || targetData.target_type || "total_value";
-      const { data: existingTarget } = await supabase
+      const resolvedDivisionId = targetData.divisionId || targetData.division_id || null;
+      let dupQuery = supabase
         .from("sales_targets")
         .select("id")
         .eq("assigned_to", targetData.assignedTo)
         .eq("period_start", targetData.periodStart)
         .eq("period_end", targetData.periodEnd)
         .eq("company_id", targetData.companyId)
-        .eq("target_type", resolvedTargetType)
-        .maybeSingle();
+        .eq("target_type", resolvedTargetType);
+      dupQuery = resolvedDivisionId
+        ? dupQuery.eq("division_id", resolvedDivisionId)
+        : dupQuery.is("division_id", null);
+      const { data: existingTarget } = await dupQuery.maybeSingle();
 
       if (existingTarget) {
         const typeLabel =
@@ -3528,6 +3535,9 @@ export const salesTargetService = {
         period_start: targetData.periodStart,
         period_end: targetData.periodEnd,
         target_type: targetData.targetType || targetData.target_type || "total_value",
+        // NULL when the assigner did not name one: either the owner has no
+        // division, or they are in several and this target has not been split.
+        division_id: resolvedDivisionId,
         notes: targetData.notes || "",
         status: targetData.status || "active",
         progress_amount: 0,
