@@ -102,7 +102,10 @@ async function fetchPlannedOpen({ companyId, ownerIds, start, end, productGroup 
     .in('owner_id', ownerIds)
     .gte('expected_month', start)
     .lte('expected_month', end);
-  if (error) { console.error('fetchPlannedOpen:', error); return { total: 0, untagged: 0 }; }
+  // `failed` matters as much as the zero. A swallowed error here returns a
+  // total of 0, which is indistinguishable from "nothing planned" — that is how
+  // a plan came to be filed with total_planned 0.00 against a real pipeline.
+  if (error) { console.error('fetchPlannedOpen:', error); return { total: 0, untagged: 0, failed: true }; }
 
   let total = 0;
   let untagged = 0;
@@ -139,7 +142,7 @@ async function fetchOpenFunnel({ companyId, ownerIds, start, end, productGroup }
     .not('stage', 'in', '("won","lost")')
     .gte('expected_close_date', start)
     .lte('expected_close_date', end);
-  if (error) { console.error('fetchOpenFunnel:', error); return { total: 0, untagged: 0 }; }
+  if (error) { console.error('fetchOpenFunnel:', error); return { total: 0, untagged: 0, failed: true }; }
 
   const rows = data || [];
   const amountOf = (d) => parseFloat(d.amount) || 0;
@@ -278,6 +281,11 @@ export async function computePlanningPageSummary({
     hasTargetRows: targetRows.length > 0,
     untaggedPlanned: planned.untagged,
     untaggedFunnel: funnel.untagged,
+    // True when any underlying read failed. The figures are still returned, so
+    // the screen can show what it has, but a caller about to WRITE them — the
+    // plan submission — must refuse: a partial failure looks exactly like an
+    // empty plan, and "0 planned" is not a safe thing to record by accident.
+    partialFailure: !!(planned.failed || funnel.failed),
     scopeIds, contributorIds,
   };
 }

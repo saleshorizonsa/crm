@@ -263,6 +263,10 @@ const PlanningPage = () => {
 
   const [nextSummary, setNextSummary] = useState(emptySummary);
   const [nextSummaryLoading, setNextSummaryLoading] = useState(false);
+  // A failed fetch falls back to the empty summary, which is indistinguishable
+  // from "nothing planned" unless the failure is recorded separately. Without
+  // this, a broken load looked exactly like a complete plan of zero.
+  const [nextSummaryError, setNextSummaryError] = useState(null);
 
   // The month that just ended, for the grace window. Its own figures, for the
   // same reason next month has its own: the shared period selector has already
@@ -271,6 +275,7 @@ const PlanningPage = () => {
   // Declared above activeSummary for the same dead-zone reason as nextSummary.
   const [prevSummary, setPrevSummary] = useState(emptySummary);
   const [prevSummaryLoading, setPrevSummaryLoading] = useState(false);
+  const [prevSummaryError, setPrevSummaryError] = useState(null);
 
   // Which month the salesman is currently planning. Only ever "next" while the
   // early window is open, or "prev" during the first days of a month; both fall
@@ -327,10 +332,21 @@ const PlanningPage = () => {
   const plannedShortfall = Math.max(0, activeSummary.requiredPlan - activeSummary.plannedOpen);
   // Nobody submits on someone else's behalf: the bar still shows, so a lead can
   // read where that person's plan stands, but the button is not theirs to press.
+  // Whether the figures on screen are real yet. An unloaded summary is all
+  // zeros, and `planComplete` then reads 0 >= 0 as "complete" — which is how a
+  // plan was filed with total_planned 0.00 and required_plan 0.00 while the
+  // owner had 386,340 SAR of open pipeline and a 406,000 target. A failed fetch
+  // lands on the same zeros, so both are excluded here.
+  const activeSummaryError = planningNextMonth ? nextSummaryError
+    : planningPrevMonth ? prevSummaryError
+      : summaryError;
+  const summaryReady = !summaryLoading && !activeSummaryError;
+
   // The grace window is for a month that is already over and already late, so
   // the completeness bar is not applied to it either — withholding the button
   // from someone trying to file a late plan is what created this gap.
-  const canSubmit = (planningNextMonth || planningPrevMonth || planComplete)
+  const canSubmit = summaryReady
+    && (planningNextMonth || planningPrevMonth || planComplete)
     && !planSubmission?.is_submitted
     && !isViewingOther;
   // Managers file their own plan too. The bar also appears for a lead who is
@@ -348,6 +364,18 @@ const PlanningPage = () => {
   ];
   const extraMonthOpen = graceOpen || earlyOpen;
 
+  // The owner scope a submitted plan covers: a salesman's own, a lead's own plus
+  // their team, null (whole company) for a director. Deliberately ignores the
+  // owner FILTER — what a lead is looking at must not change what they file.
+  const resolveSubmitterScope = useCallback(async () => {
+    if (DIRECTOR_ROLES.includes(role)) return null;
+    const isTeamLead = TEAM_ROLES.includes(role);
+    const scope = isTeamLead
+      ? [user?.id, ...(await fetchTeamHierarchy({ companyId, userId: user?.id, role })).map((m) => m.id)].filter(Boolean)
+      : [user?.id].filter(Boolean);
+    return scope.length ? scope : ["00000000-0000-0000-0000-000000000000"];
+  }, [role, companyId, user?.id]);
+
   const handleSubmitPlan = async () => {
     if (!canSubmit || submitting) return;
     // Belt and braces. The summary on screen belongs to whoever is selected, so
@@ -359,10 +387,32 @@ const PlanningPage = () => {
     // that month, not from today's date: an October plan sent on 24 September
     // carries October's deadline and is not late.
     const planMonth = activeMonthKey;
-    const summaryForMonth = activeSummary;
     setSubmitting(planMonth);
     const stamp = new Date();
     try {
+      // Recomputed HERE rather than read from state. Trusting whatever was in
+      // state is what recorded a plan of zero, and state can be wrong for more
+      // reasons than the load race: it follows the shared period selector, so a
+      // supervisor viewing "This Year", or filtered to one salesman, would have
+      // filed those figures against a single month's plan.
+      //
+      // Bounded to the plan's own month and scoped to the submitter's own team,
+      // which is what a plan_month row is actually about.
+      const bounds = monthBoundsOf(planMonth);
+      const ownerIds = await resolveSubmitterScope();
+      const fresh = await computePlanningPageSummary({
+        companyId, ownerIds, start: bounds.start, end: bounds.end,
+        productGroup: null,
+      });
+      // Never record figures assembled from a partially failed read: a dropped
+      // opportunities query returns 0 planned, which is indistinguishable from
+      // an empty plan once it is written down.
+      if (fresh.partialFailure) {
+        alert("Your figures could not be loaded just now, so the plan was not submitted. Please reload and try again.");
+        return;
+      }
+      const summaryForMonth = { ...emptySummary, ...fresh, winRate3m: fresh.winRatePct };
+
       const base = {
         company_id: companyId,
         owner_id: user?.id,
@@ -491,6 +541,12 @@ const PlanningPage = () => {
       // the one the user is waiting for, so drop this one on the floor.
       if (!isCurrent()) return;
 
+      // A read inside the summary failed, so these numbers are incomplete. Say
+      // so instead of presenting them as the plan.
+      if (sum.partialFailure) {
+        setSummaryError("Some figures could not be loaded. Reload before submitting.");
+      }
+
       setCurrentSummary({
         target: sum.target,
         achieved: sum.achieved,
@@ -544,9 +600,11 @@ const PlanningPage = () => {
         productGroup: filterProductGroup,
       });
       setNextSummary({ ...emptySummary, ...sum, winRate3m: sum.winRatePct });
+      setNextSummaryError(null);
     } catch (err) {
       console.error("Next-month summary:", err);
       setNextSummary(emptySummary);
+      setNextSummaryError(err?.message || "Could not load next month's figures.");
     } finally {
       setNextSummaryLoading(false);
     }
@@ -577,9 +635,11 @@ const PlanningPage = () => {
         productGroup: filterProductGroup,
       });
       setPrevSummary({ ...emptySummary, ...sum, winRate3m: sum.winRatePct });
+      setPrevSummaryError(null);
     } catch (err) {
       console.error("Previous-month summary:", err);
       setPrevSummary(emptySummary);
+      setPrevSummaryError(err?.message || "Could not load last month's figures.");
     } finally {
       setPrevSummaryLoading(false);
     }
@@ -774,13 +834,20 @@ const PlanningPage = () => {
                 {submitting === activeMonthKey && (
                   <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 )}
+                {/* "Plan Incomplete" was shown for three different situations —
+                    genuinely under-planned, still loading, and failed to load —
+                    and the last two are not the salesman's fault to fix. */}
                 {canSubmit
                   ? isLate
                     ? "Submit Late"
                     : planTarget === "next" && earlyOpen
                       ? `Submit ${monthNameOf(activeMonthKey)} Plan`
                       : "Submit Plan"
-                  : "Plan Incomplete"}
+                  : summaryLoading
+                    ? "Loading your figures…"
+                    : activeSummaryError
+                      ? "Figures unavailable — reload"
+                      : "Plan Incomplete"}
               </button>
             )}
           </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from 'lib/supabase';
 import { useAuth } from 'contexts/AuthContext';
 import { useCurrency } from 'contexts/CurrencyContext';
@@ -54,6 +54,9 @@ export default function FutureOrdersModule({
   const [filterStatus, setFilterStatus] = useState('pending');
   const setFilterOwner = (id) => onFilterOwnerChange?.(id === 'all' ? 'all' : id);
   const [movingId, setMovingId]       = useState(null);
+  // One auto-move pass at a time. A ref, not state, because it must take effect
+  // on the very next call rather than after a re-render.
+  const autoMoveRunning = useRef(false);
 
   // ── Team members (feed the salesman drill-down) ─────────────────────────────
   const fetchTeam = useCallback(async () => {
@@ -115,8 +118,30 @@ export default function FutureOrdersModule({
 
   // ── Move a future order into the Current Sales Plan (opportunities table) ────
   // Shared by the manual "Move" button and the auto-move on load.
+  // CLAIM FIRST, then create. The order used to be inserted first and marked
+  // moved afterwards, which left a window where a second pass still saw it as
+  // 'pending' and created a second opportunity for it — on 1 October that
+  // produced 9 duplicate pairs across two people.
+  //
+  // Flipping the row to 'moved' with `.eq('status', 'pending')` makes the claim
+  // atomic: whoever's UPDATE matches the row wins, and anyone else matches zero
+  // rows and stops. That holds across tabs and sessions, which an in-process
+  // lock alone cannot.
+  //
+  // Returns null when the order was already claimed by someone else.
   const createOppFromOrder = useCallback(async (order) => {
     const now = new Date().toISOString();
+
+    const { data: claimed, error: claimErr } = await supabase
+      .from('future_orders')
+      .update({ status: 'moved', moved_at: now, updated_at: now })
+      .eq('id', order.id)
+      .eq('status', 'pending')
+      .select('id')
+      .maybeSingle();
+    if (claimErr) throw claimErr;
+    if (!claimed) return null;          // another pass got there first
+
     const { data: opp, error } = await supabase
       .from('opportunities')
       .insert({
@@ -132,11 +157,19 @@ export default function FutureOrdersModule({
       })
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      // Put the claim back, or the order would be marked moved with nothing to
+      // show for it — worse than the duplicate this is guarding against.
+      await supabase
+        .from('future_orders')
+        .update({ status: 'pending', moved_at: null, updated_at: now })
+        .eq('id', order.id);
+      throw error;
+    }
 
     const { error: updErr } = await supabase
       .from('future_orders')
-      .update({ status: 'moved', opportunity_id: opp.id, moved_at: now, updated_at: now })
+      .update({ opportunity_id: opp.id, updated_at: now })
       .eq('id', order.id);
     if (updErr) throw updErr;
 
@@ -145,9 +178,13 @@ export default function FutureOrdersModule({
 
   // Manual move (button on a pending row).
   async function moveToCurrentPlan(order) {
+    if (movingId) return;              // no double-click
     setMovingId(order.id);
     try {
-      await createOppFromOrder(order);
+      // null = the auto-move (or another tab) already moved it. Refresh so the
+      // row stops offering a button for work that is already done.
+      const opp = await createOppFromOrder(order);
+      if (!opp) { fetchOrders(); return; }
       fetchOrders();
       onOrderChange?.();
     } catch (err) {
@@ -181,25 +218,42 @@ export default function FutureOrdersModule({
   // log in, which is the intended "auto-move on login" behaviour.
   const checkAutoMove = useCallback(async () => {
     if (!company?.id || !user?.id) return;
-    const { data: toMove } = await supabase
-      .from('future_orders')
-      .select('*')
-      .eq('company_id', company.id)
-      .eq('owner_id', user.id)
-      .eq('status', 'pending')
-      .lte('expected_month', currentMonthStart());
+    // This effect re-fires whenever checkAutoMove's identity changes, and two of
+    // its dependencies are unstable: fetchOrders is rebuilt when the teamMembers
+    // ARRAY reloads, and onOrderChange is the page's fetchPlanningSummary, which
+    // is rebuilt on any filter or period change. A second pass could therefore
+    // start ~150ms into the first, read the same 'pending' rows, and move them
+    // again. One run at a time.
+    if (autoMoveRunning.current) return;
+    autoMoveRunning.current = true;
+    try {
+      const { data: toMove } = await supabase
+        .from('future_orders')
+        .select('*')
+        .eq('company_id', company.id)
+        .eq('owner_id', user.id)
+        .eq('status', 'pending')
+        .lte('expected_month', currentMonthStart());
 
-    if (!toMove?.length) return;
-    for (const order of toMove) {
-      try {
-        await createOppFromOrder(order);
-        await notifyMoved(order);
-      } catch (err) {
-        console.error('autoMove:', err);
+      if (!toMove?.length) return;
+      let movedAny = false;
+      for (const order of toMove) {
+        try {
+          // null = somebody else had already claimed it; nothing was created,
+          // so there is nothing to announce either.
+          const opp = await createOppFromOrder(order);
+          if (opp) { movedAny = true; await notifyMoved(order); }
+        } catch (err) {
+          console.error('autoMove:', err);
+        }
       }
+      if (movedAny) {
+        fetchOrders();
+        onOrderChange?.();
+      }
+    } finally {
+      autoMoveRunning.current = false;
     }
-    fetchOrders();
-    onOrderChange?.();
   }, [company?.id, user?.id, createOppFromOrder, fetchOrders, onOrderChange]);
 
   useEffect(() => { checkAutoMove(); }, [checkAutoMove]);
