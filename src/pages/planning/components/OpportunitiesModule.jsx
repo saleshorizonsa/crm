@@ -486,14 +486,22 @@ export default function OpportunitiesModule({
   // approval queue reads it. Change a row underneath a submitted plan and the
   // queue goes on showing the as-submitted figure.
   //
-  // Three paths could do that, and none used to correct it:
+  // Four paths could do that, and none used to correct it:
   //   the MANAGER correcting a number during review — he would then be approving
   //     against the total he had just changed;
   //   the OWNER editing after submitting, which became possible once the lock
   //     moved to approval, so a salesman could revise a plan already in the queue
   //     and leave the manager reviewing the figure it was filed with;
   //   the OWNER adding a row to a plan already in the queue, which an approved
-  //     plan permits too and which therefore has to be told apart from it.
+  //     plan permits too and which therefore has to be told apart from it;
+  //   the OWNER deleting a row from a pending plan, which moves the total DOWN;
+  //   CONVERTING a row, which sets status='converted' and so drops it out of the
+  //     status='open' sum — reachable on a pending plan only by a manager or
+  //     director, who are not in CONVERSION_GATED_ROLES.
+  //
+  // EVERY writer of `opportunities` on this tab now calls this: handleSave
+  // (create and edit), handleDelete, handleConvert. That is the property worth
+  // keeping — add a fifth, and it has to call this too.
   //
   // A draft plan needs no resync and gets none: the UPDATE below matches only a
   // submitted, still-pending row, so there is nothing to keep in step until the
@@ -629,6 +637,10 @@ export default function OpportunitiesModule({
     if (!window.confirm('Delete this opportunity?')) return;
     const { error } = await supabase.from('opportunities').delete().eq('id', id);
     if (error) { alert(`Could not delete: ${error.message}`); return; }
+    // Run AFTER the delete, so the recomputed total no longer counts the row that
+    // just went. An approved plan cannot reach here at all — blockIfPlanLocked
+    // returned above — and the pending-only clause inside would refuse it anyway.
+    await resyncSubmittedTotal(ownerId);
     fetchOpportunities();
     onOpportunityChange?.();
   }
@@ -686,6 +698,15 @@ export default function OpportunitiesModule({
         })
         .eq('id', opp.id);
       if (updErr) throw updErr;
+
+      // status='converted' drops this row out of the status='open' sum, so the
+      // plan's total has just fallen. For a salesman or supervisor this is a
+      // no-op: blockIfPlanNotApproved only let them here on an APPROVED plan, and
+      // the pending-only clause inside refuses to rewrite an approved total — the
+      // protection stays exactly as it was. It matters for a manager or director,
+      // who are not in CONVERSION_GATED_ROLES and so can convert off a plan that
+      // is still pending.
+      await resyncSubmittedTotal(opp.owner_id || user?.id);
 
       fetchOpportunities();
       onOpportunityChange?.();
