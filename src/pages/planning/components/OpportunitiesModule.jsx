@@ -63,6 +63,10 @@ export default function OpportunitiesModule({
   // follow them too. Controlled here, stored there.
   filterOwner = 'all',
   onFilterOwnerChange,
+  // True when the owner filter points at somebody else's plan. Computed by the
+  // page and passed down, rather than re-derived here, so there is one rule
+  // behind the read-only chip, the removed submit button and the Add action.
+  isViewingOther = false,
   filterProductGroup = null,
   onFilterProductGroupChange,
   productGroups = [],
@@ -451,6 +455,10 @@ export default function OpportunitiesModule({
 
   // ── Modal helpers ─────────────────────────────────────────────────────────
   function openAdd() {
+    // Adding while pointed at someone else's plan would create the opportunity
+    // under the VIEWER (the insert uses user.id), so it would not even appear in
+    // the filtered list it was added from. Guarded here as well as in the UI.
+    if (isViewingOther) return;
     setEditingOpp(null);
     setForm(emptyForm(currentMonth));
     setShowModal(true);
@@ -500,7 +508,13 @@ export default function OpportunitiesModule({
           </div>
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors"
+            disabled={isViewingOther}
+            title={isViewingOther ? "Only this plan's owner can add to it" : undefined}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-colors ${
+              isViewingOther
+                ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
           >
             <Icon name="Plus" size={15} />
             Add to Current Sales Plan
@@ -687,16 +701,27 @@ export default function OpportunitiesModule({
             <Icon name="Target" size={24} className="text-blue-400" />
           </div>
           <h3 className="text-sm font-semibold text-foreground mb-2">No plans yet</h3>
-          <p className="text-xs text-muted-foreground mb-5 max-w-xs mx-auto">
-            Start planning your monthly target by adding customers you plan to sell to this month.
-          </p>
-          <button
-            onClick={openAdd}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors"
-          >
-            <Icon name="Plus" size={15} />
-            Add to Current Sales Plan
-          </button>
+          {/* The empty state normally invites the owner to start planning. Read
+              by someone else it must not, and offering a dead button here would
+              be worse than offering none. */}
+          {isViewingOther ? (
+            <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+              Nothing planned for this month yet. Only this plan&apos;s owner can add to it.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground mb-5 max-w-xs mx-auto">
+                Start planning your monthly target by adding customers you plan to sell to this month.
+              </p>
+              <button
+                onClick={openAdd}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors"
+              >
+                <Icon name="Plus" size={15} />
+                Add to Current Sales Plan
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-3">

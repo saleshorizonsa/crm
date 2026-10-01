@@ -1022,6 +1022,9 @@ const PlanningPage = () => {
               planMonth={activeMonthKey}
               filterOwner={filterOwner}
               onFilterOwnerChange={setFilterOwner}
+              // Same rule as the read-only chip and the hidden submit button:
+              // somebody else's plan is readable, not editable.
+              isViewingOther={isViewingOther}
               filterProductGroup={filterProductGroup}
               onFilterProductGroupChange={setFilterProductGroup}
               productGroups={productGroups}
