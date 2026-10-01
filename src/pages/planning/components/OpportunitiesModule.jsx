@@ -227,10 +227,10 @@ export default function OpportunitiesModule({
   // ── Fetch: In Funnel + this month's Achieved ──────────────────────────────
   // In Funnel is the raw open-deal value for the scope — the same query and the
   // same unweighted definition as the KPI strip's funnel figure
-  // (utils/kpiStripData.js), so Planning and the dashboards agree. It carries no
-  // date bound, deliberately: an open deal counts whenever it is expected to
-  // close (see utils/openFunnel.js). Achieved comes from the one shared rule,
-  // scoped to the PLANNED month; together they feed Remaining.
+  // (utils/kpiStripData.js), so Planning and the dashboards agree. Achieved comes
+  // from the one shared rule. BOTH are scoped to the planned month, which is also
+  // what the target above uses, so all three figures behind Remaining describe
+  // the same month.
   const fetchFunnelAndAchieved = useCallback(async (ids) => {
     if (!company?.id || !ids?.length) { setFunnelValue(0); setAchievedThisMonth(0); return; }
 
@@ -243,7 +243,22 @@ export default function OpportunitiesModule({
     // utils/openFunnel.js is the one definition of "funnel" — see the note there
     // for the three figures this replaced. The scope is already narrowed, so it
     // is handed over rather than resolved twice.
-    const funnel = await fetchOpenFunnel({ companyId: company.id, scopeIds });
+    //
+    // The window is targetMonth, like the target and Achieved below. Left to its
+    // default, fetchOpenFunnel uses the WALL-CLOCK month, which is only the right
+    // answer while the planned month happens to be the current one: in the grace
+    // window a late September plan would show September's target and September's
+    // Achieved beside OCTOBER's funnel.
+    //
+    // Note this means undated open deals (INCLUDE_UNDATED, openFunnel.js) count
+    // toward whichever month is on screen — they are dated to no month, so they
+    // belong to the one being planned.
+    const funnel = await fetchOpenFunnel({
+      companyId: company.id,
+      scopeIds,
+      start: targetMonth.start,
+      end: targetMonth.end,
+    });
     setFunnelValue(funnel.total);
 
     // resolveScopeIds already folded in any flagged achieved-only manager, so
