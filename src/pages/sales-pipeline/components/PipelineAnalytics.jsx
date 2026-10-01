@@ -49,7 +49,14 @@ const LOST_CODE_LABELS = {
   CAPACITY:          "Capacity not available",
 };
 
-const PipelineAnalytics = ({ deals, onStageFilter, activePeriodFrom, activePeriodTo }) => {
+const PipelineAnalytics = ({
+  deals, onStageFilter, activePeriodFrom, activePeriodTo,
+  // The shared funnel figure and whether the list is currently narrowed. Default
+  // to "not loaded" so the card falls back to describing the list if the parent
+  // does not supply them.
+  sharedFunnel = { total: 0, dealCount: 0, loaded: false },
+  isFiltered = false,
+}) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [collapseToggle, setCollapseToggle] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
@@ -125,12 +132,28 @@ const PipelineAnalytics = ({ deals, onStageFilter, activePeriodFrom, activePerio
   }, [company?.id]);
 
   // Calculate metrics
+  // The value of the list on screen, whatever it currently contains — including
+  // won and lost deals, because the list does. Everything on this tab except the
+  // headline funnel card is about that list, so this stays as it was.
   const getTotalPipelineValue = () => {
     return deals?.reduce((sum, deal) => {
       const convertedAmount = deal?.amount;
       return sum + convertedAmount;
     }, 0);
   };
+
+  // The headline "Total Funnel" card. Unfiltered, it is the SHARED definition
+  // (utils/openFunnel.js) so it agrees with Planning and the KPI strip; filtered,
+  // it describes the list and says so. It used to be getTotalPipelineValue()
+  // always, which meant company-wide, won and lost included, and 1,778,761.08
+  // against Planning's 2,151,781.87 for the same person.
+  //
+  // Deal count is inlined rather than calling getTotalDeals(), which is a const
+  // arrow declared further down: calling it from here would read it before its
+  // own initialiser and throw.
+  const showSharedFunnel = !isFiltered && sharedFunnel?.loaded;
+  const funnelCardValue = showSharedFunnel ? sharedFunnel.total : getTotalPipelineValue();
+  const funnelCardDeals = showSharedFunnel ? sharedFunnel.dealCount : (deals?.length || 0);
 
   // Stage-based weighting for weighted pipeline value
   const stageWeights = {
@@ -378,13 +401,20 @@ const PipelineAnalytics = ({ deals, onStageFilter, activePeriodFrom, activePerio
                   <Icon name="DollarSign" size={16} className="text-primary" />
                   <span className="text-xs text-muted-foreground">
                     {t("pipeline.totalFunnel")}
+                    {/* Never let a filtered figure be mistaken for the shared one. */}
+                    {!showSharedFunnel && (
+                      <span className="text-amber-600"> ({t("common.filtered") || "Filtered"})</span>
+                    )}
                   </span>
                 </div>
                 <p className="text-lg font-bold text-card-foreground">
-                  {formatCurrency(getTotalPipelineValue(), preferredCurrency)}
+                  {formatCurrency(funnelCardValue, preferredCurrency)}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {getTotalDeals()} {t("pipeline.deals")}
+                  {funnelCardDeals} {t("pipeline.deals")}
+                  {showSharedFunnel
+                    ? " · open deals, your team"
+                    : " · matching the current filters"}
                 </p>
               </div>
 

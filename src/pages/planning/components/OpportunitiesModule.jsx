@@ -7,6 +7,7 @@ import SalesmanSelector from 'components/ui/SalesmanSelector';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
 import { blockIfPlanLocked, blockIfPlanNotApproved, planMonthForDate } from 'utils/planApproval';
+import { fetchOpenFunnel } from 'utils/openFunnel';
 import {
   fetchContributors,
   fetchMonthlyTargets,
@@ -212,13 +213,11 @@ export default function OpportunitiesModule({
     const scopeIds = await resolveScopeIds(ids);
     if (!scopeIds.length) { setFunnelValue(0); setAchievedThisMonth(0); return; }
 
-    const { data: openDeals } = await supabase
-      .from('deals')
-      .select('owner_id, amount')
-      .eq('company_id', company.id)
-      .in('owner_id', scopeIds)
-      .not('stage', 'in', '("won","lost")');
-    setFunnelValue((openDeals || []).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0));
+    // utils/openFunnel.js is the one definition of "funnel" — see the note there
+    // for the three figures this replaced. The scope is already narrowed, so it
+    // is handed over rather than resolved twice.
+    const funnel = await fetchOpenFunnel({ companyId: company.id, scopeIds });
+    setFunnelValue(funnel.total);
 
     // resolveScopeIds already folded in any flagged achieved-only manager, so
     // there is no second users lookup here any more.

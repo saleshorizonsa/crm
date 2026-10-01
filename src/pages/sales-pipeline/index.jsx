@@ -27,6 +27,8 @@ import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { resolveDateRange } from "../../components/ui/DateRangePicker";
 import { getDealOrigin } from "../../utils/dealGroupUtils";
+import { fetchOpenFunnel } from "../../utils/openFunnel";
+import { fetchTeamHierarchy } from "../../utils/teamHierarchy";
 
 const SalesPipeline = () => {
   const { t } = useLanguage();
@@ -60,6 +62,7 @@ const SalesPipeline = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [deals, setDeals] = useState([]);
   const [filteredDeals, setFilteredDeals] = useState([]);
+  const [sharedFunnel, setSharedFunnel] = useState({ total: 0, dealCount: 0, loaded: false });
   const [contacts, setContacts] = useState([]);
 
   // ── Mark-as-invoiced (Won deals) — Achievement counts only once invoiced ──
@@ -189,6 +192,7 @@ const SalesPipeline = () => {
       loadDeals();
       loadContacts();
       loadUsers();
+      loadSharedFunnel();
     }
   }, [company, userProfile?.role]); // Reload when role changes
 
@@ -223,6 +227,40 @@ const SalesPipeline = () => {
     }
   };
 
+  // The shared funnel figure (utils/openFunnel.js), for the analytics card when
+  // no filter is narrowing the list. The page's own deal list is deliberately
+  // company-wide and unfiltered by stage, which is right for browsing a pipeline
+  // and wrong for a figure labelled "Total Funnel" — so the headline number comes
+  // from the shared definition instead, and agrees with Planning and the KPI strip.
+  const loadSharedFunnel = async () => {
+    if (!company?.id || !user?.id) return;
+    try {
+      const isTeamLead = ["manager", "supervisor"].includes(userProfile?.role);
+      const isDirector = ["director", "head", "admin"].includes(userProfile?.role);
+      let ownerIds;
+      if (isDirector) {
+        ownerIds = null;                       // whole company, resolved by the util
+      } else if (isTeamLead) {
+        const team = await fetchTeamHierarchy({
+          companyId: company.id, userId: user.id, role: userProfile?.role,
+        });
+        ownerIds = [user.id, ...team.map((m) => m.id)].filter(Boolean);
+      } else {
+        ownerIds = [user.id];
+      }
+      if (ownerIds === null) {
+        const { data: everyone } = await supabase
+          .from("users").select("id").eq("company_id", company.id).eq("is_active", true);
+        ownerIds = (everyone || []).map((u) => u.id);
+      }
+      const funnel = await fetchOpenFunnel({ companyId: company.id, ownerIds });
+      setSharedFunnel({ total: funnel.total, dealCount: funnel.dealCount, loaded: !funnel.failed });
+    } catch (err) {
+      console.error("loadSharedFunnel:", err);
+      setSharedFunnel({ total: 0, dealCount: 0, loaded: false });
+    }
+  };
+
   const loadContacts = async () => {
     try {
       const { data, error } = await contactService.getContacts(company.id);
@@ -244,6 +282,19 @@ const SalesPipeline = () => {
   };
 
   console.log(deals);
+
+  // Is anything narrowing the list? Mirrors exactly what applyFilters() acts on,
+  // so the card cannot claim "unfiltered" while a filter is in force.
+  const hasActiveFilters = !!(
+    filters.search
+    || filters.owner_id
+    || filters.stage
+    || filters.minValue
+    || filters.maxValue
+    || filters.dateRange
+    || filters.showOverdue
+    || originFilter !== 'all'
+  );
 
   const applyFilters = () => {
     let filtered = [...deals];
@@ -879,6 +930,12 @@ const SalesPipeline = () => {
         <div className="mt-20">
           <PipelineAnalytics
             deals={filteredDeals}
+            // With no filter active the headline funnel comes from the shared
+            // definition, so this card agrees with Planning and the KPI strip.
+            // With a filter active the card keeps describing the filtered list —
+            // that is the page doing its job — and says so in its label.
+            sharedFunnel={sharedFunnel}
+            isFiltered={hasActiveFilters}
             activePeriodFrom={
               filters.customDateRange?.from ||
               format(startOfMonth(new Date()), 'yyyy-MM-dd')

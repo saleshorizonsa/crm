@@ -12,6 +12,7 @@ import {
   wonNotInvoicedList,
   summarizeWonNotInvoiced,
 } from 'utils/planningCalculations';
+import { fetchOpenFunnel, funnelInWindow } from 'utils/openFunnel';
 
 // TEMP: set true to re-enable the KPI diagnostic logs (see end of the function).
 const KPI_DEBUG = false;
@@ -254,25 +255,21 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     plannedPer[o.owner_id] = (plannedPer[o.owner_id] || 0) + (parseFloat(o.planned_amount) || 0);
   });
 
-  // 6. Funnel value — open (not won/lost) deal amounts, for the coverage check.
-  const { data: openDeals } = await supabase
-    .from('deals')
-    .select('owner_id, amount, expected_close_date')
-    .eq('company_id', companyId)
-    .in('owner_id', scopeIds)
-    .not('stage', 'in', '("won","lost")');
-  const funnelValue = (openDeals || []).reduce((s, d) => s + (parseFloat(d.amount) || 0), 0);
+  // 6. Funnel value — utils/openFunnel.js, the one shared definition.
+  //
+  // Scoped to achievedScopeIds, NOT scopeIds. That is the behaviour change: this
+  // used to count contributor ROLES only, so a manager flagged is_contributor
+  // was missing from his own funnel while his Planning card included him — for
+  // Kamal, 308,750 across 2 of his own open deals, which is why the strip read
+  // 1,843,031.87 against Planning's 2,151,781.87. Same people now.
+  const funnel = await fetchOpenFunnel({ companyId, scopeIds: achievedScopeIds });
+  const funnelValue = funnel.total;
   // The slice of that funnel dated INTO the window, which is what nets off the
   // pipeline requirement — same rule as planningPageSummary.js, the Coverage
   // Console and Insights. `funnelValue` above stays every open deal, for the
-  // coverage check.
-  const monthFunnelPer = {};
-  (openDeals || []).forEach((d) => {
-    const due = d.expected_close_date;
-    if (!due || due < winStart || due > winEnd) return;
-    monthFunnelPer[d.owner_id] = (monthFunnelPer[d.owner_id] || 0) + (parseFloat(d.amount) || 0);
-  });
-  const monthFunnelTotal = Object.values(monthFunnelPer).reduce((s, v) => s + v, 0);
+  // coverage check. Taken from the rows already read, so there is no second
+  // query that could drift from the definition.
+  const { per: monthFunnelPer, total: monthFunnelTotal } = funnelInWindow(funnel.rows, winStart, winEnd);
 
   // 7. Future-order carryover — pending future orders for NEXT month count toward
   //    the required plan (customers already committed), reducing the new pipeline
