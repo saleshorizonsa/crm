@@ -241,12 +241,22 @@ export async function isPlanLocked(ownerId, planMonth = currentPlanMonth()) {
 }
 
 // Guard for opportunity create/update/delete. Returns true when the caller
-// should stop. Managers and above are never blocked by a subordinate's lock.
-export async function blockIfPlanLocked({ ownerId, role, planMonth = currentPlanMonth() }) {
-  if (role && role !== 'salesman') return false;
+// should stop.
+//
+// This used to open with `if (role && role !== 'salesman') return false`, so an
+// approved, locked plan restrained only salesmen. That was defensible while
+// salesmen were the only people filing plans; supervisors and managers now file
+// their own and have them approved, and their own lock has to mean the same
+// thing. `role` is still accepted so callers need not change, but it no longer
+// decides anything — what matters is whose plan the row belongs to, which is
+// `ownerId`, and callers are responsible for passing the ROW's owner rather than
+// the viewer.
+export async function blockIfPlanLocked({ ownerId, planMonth = currentPlanMonth() }) {
   const locked = await isPlanLocked(ownerId, planMonth);
   if (locked) {
-    alert('Your plan for this month is locked. Contact your manager if changes are needed.');
+    // Deliberately not "Your plan": CustomerMaster passes the CUSTOMER's owner,
+    // which may be a subordinate, and the message must not claim otherwise.
+    alert("This month's plan is locked. Contact your manager if changes are needed.");
   }
   return locked;
 }

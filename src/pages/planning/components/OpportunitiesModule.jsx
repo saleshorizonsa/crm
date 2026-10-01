@@ -81,6 +81,15 @@ export default function OpportunitiesModule({
 
   const setFilterOwner = onFilterOwnerChange || (() => {});
 
+  // An opportunity is only modifiable by the person who owns it.
+  //
+  // This is the per-ROW form of the read-only rule and it subsumes the
+  // per-FILTER one: with the filter on one subordinate every row is theirs, so
+  // every row is locked out — but it also covers the "All Salesmen" view, where
+  // a lead sees the whole team's rows mixed together and `isViewingOther` is
+  // false because no single person is selected.
+  const isOwnRow = (opp) => !!user?.id && opp?.owner_id === user.id;
+
   // Month bounds for every query on this tab: the selected period when the page
   // supplies one, else the current month (the previous behaviour).
   const period = useMemo(() => {
@@ -345,7 +354,9 @@ export default function OpportunitiesModule({
   // ── Save (create / update) ────────────────────────────────────────────────
   async function handleSave() {
     if (!form.customer_name?.trim() || !form.planned_amount) return;
-    if (isViewingOther) return;
+    // Editing: the row must be yours. Creating: a new row is always yours, but
+    // not while the page is pointed at someone else's plan.
+    if (editingOpp ? !isOwnRow(editingOpp) : isViewingOther) return;
     // An approved plan is locked for the month — a salesman cannot add to or
     // change it until their manager sends it back.
     //
@@ -396,7 +407,7 @@ export default function OpportunitiesModule({
   // plan was locked, which is a different person whenever a lead is looking at
   // someone else's plan.
   async function handleDelete(opp) {
-    if (isViewingOther) return;
+    if (!isOwnRow(opp)) return;
     const id = typeof opp === 'string' ? opp : opp?.id;
     const ownerId = (typeof opp === 'object' && opp?.owner_id) || user?.id;
     if (await blockIfPlanLocked({ ownerId, role, planMonth })) return;
@@ -412,7 +423,7 @@ export default function OpportunitiesModule({
   // expected-close value). Links are two-way (opportunities.deal_id +
   // deals.opportunity_id) so the 3-day lead-expiry check can find converted leads.
   async function handleConvert(opp) {
-    if (isViewingOther) return;
+    if (!isOwnRow(opp)) return;
     // A plan must be APPROVED before the work in it can become a deal. The month
     // checked is the opportunity's own expected_month, not the month the page is
     // showing — converting an October opportunity is governed by October's plan
@@ -480,7 +491,7 @@ export default function OpportunitiesModule({
     setShowModal(true);
   }
   function openEdit(opp) {
-    if (isViewingOther) return;
+    if (!isOwnRow(opp)) return;
     setEditingOpp(opp);
     setForm({
       customer_name:  opp.customer_name || '',
@@ -886,10 +897,10 @@ export default function OpportunitiesModule({
                       <div className="flex gap-2">
                         <button
                           onClick={() => openEdit(opp)}
-                          disabled={isViewingOther}
-                          title={isViewingOther ? "Only this plan's owner can change it" : undefined}
+                          disabled={!isOwnRow(opp)}
+                          title={!isOwnRow(opp) ? "Only this plan's owner can change it" : undefined}
                           className={`text-xs px-3 py-1.5 border rounded-lg transition-colors ${
-                            isViewingOther
+                            !isOwnRow(opp)
                               ? 'border-border text-muted-foreground/50 cursor-not-allowed'
                               : 'border-border text-muted-foreground hover:bg-muted'
                           }`}
@@ -898,10 +909,10 @@ export default function OpportunitiesModule({
                         </button>
                         <button
                           onClick={() => handleDelete(opp)}
-                          disabled={isViewingOther}
-                          title={isViewingOther ? "Only this plan's owner can change it" : undefined}
+                          disabled={!isOwnRow(opp)}
+                          title={!isOwnRow(opp) ? "Only this plan's owner can change it" : undefined}
                           className={`text-xs px-3 py-1.5 border rounded-lg transition-colors ${
-                            isViewingOther
+                            !isOwnRow(opp)
                               ? 'border-border text-muted-foreground/50 cursor-not-allowed'
                               : 'border-red-200 text-red-500 hover:bg-red-50'
                           }`}
@@ -911,10 +922,10 @@ export default function OpportunitiesModule({
                       </div>
                       <button
                         onClick={() => handleConvert(opp)}
-                        disabled={isViewingOther}
-                        title={isViewingOther ? "Only this plan's owner can convert it" : undefined}
+                        disabled={!isOwnRow(opp)}
+                        title={!isOwnRow(opp) ? "Only this plan's owner can convert it" : undefined}
                         className={`flex items-center gap-1.5 text-xs px-4 py-1.5 font-medium rounded-xl transition-colors ${
-                          isViewingOther
+                          !isOwnRow(opp)
                             ? 'bg-muted text-muted-foreground cursor-not-allowed'
                             : 'bg-blue-600 text-white hover:bg-blue-700'
                         }`}
