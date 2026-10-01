@@ -183,11 +183,17 @@ const PipelineFilters = ({
         )}
 
         {/* Date Range */}
+        {/* All Time, and the default, because this page's Total Funnel card can
+            only match Planning and the KPI strip when no date bound is applied —
+            and the picker otherwise emits This Month on mount, which left the
+            card permanently reading "(Filtered)" with no way back. */}
         <DateRangePicker
           value={localFilters?.dateRange}
           customRange={localFilters?.customDateRange}
           onChange={handleDateRangeChange}
           placeholder={t("pipeline.closeDate")}
+          includeAllTime
+          defaultPreset="allTime"
         />
 
         {/* Stage */}

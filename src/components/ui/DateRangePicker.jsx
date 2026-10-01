@@ -27,6 +27,7 @@ export const resolveDateRange = (value, customRange = {}) => {
   }
   switch (value) {
     case "": return { special: "all" };
+    case "allTime": return { special: "all" };
     case "today": return { startDate: _sod(now), endDate: _eod(now) };
     case "yesterday": { const y = _add(now, -1); return { startDate: _sod(y), endDate: _eod(y) }; }
     case "this-week": { const d = now.getDay(); const s = _sod(_add(now, -d)); return { startDate: s, endDate: _eod(_add(s, 6)) }; }
@@ -56,7 +57,15 @@ export const resolveDateRange = (value, customRange = {}) => {
 
 // ─── Preset definitions ───────────────────────────────────────────────────────
 
+// "All Time" is opt-in per caller (`includeAllTime`), because it means "no date
+// bound at all" and most screens are deliberately period-based. The Sales
+// Pipeline needs it: without a way to clear the date, its Total Funnel card
+// could never reach the unfiltered state that matches Planning and the KPI strip.
+const ALL_TIME_PRESET = { key: "allTime", label: "All Time", periodType: "custom" };
+
 const PRESETS = [
+  ALL_TIME_PRESET,
+  null,
   { key: "today",        label: "Today",          periodType: "day"     },
   null,
   { key: "thisMonth",    label: "This Month",     periodType: "month"   },
@@ -87,6 +96,10 @@ const getPeriodType = (presetKey) =>
 const calculateDates = (presetKey) => {
   const now = new Date();
   switch (presetKey) {
+    // No bounds. Callers that map an empty range to "no date filter" (the
+    // pipeline does) get exactly that.
+    case "allTime":
+      return { from: "", to: "" };
     case "today":
       return { from: format(startOfDay(now), "yyyy-MM-dd"), to: format(endOfDay(now), "yyyy-MM-dd") };
     case "thisMonth":
@@ -290,15 +303,23 @@ const DateRangePicker = ({
   // These props are accepted for backward compat but the component manages its own state
   value,
   customRange,
+  // Offer "All Time" in the menu. Off by default so no existing screen's options
+  // change; the Sales Pipeline turns it on.
+  includeAllTime = false,
+  // Which preset to start on when no `range` is supplied. Defaults to This Month,
+  // which is what every caller got before this existed.
+  defaultPreset = "thisMonth",
   className = "",
   triggerClassName = "",
   placeholder,
 }) => {
-  const [seed] = useState(() =>
-    range
-      ? seedFromRange(range)
-      : { ...THIS_MONTH_SEED, navigatedDate: new Date() },
-  );
+  const [seed] = useState(() => {
+    if (range) return seedFromRange(range);
+    if (defaultPreset === "allTime") {
+      return { activePreset: "allTime", activePeriodType: "custom", navigatedDate: new Date(), customFrom: "", customTo: "" };
+    }
+    return { ...THIS_MONTH_SEED, navigatedDate: new Date() };
+  });
 
   const [open, setOpen]                   = useState(false);
   const [activePreset, setActivePreset]   = useState(seed.activePreset);      // string | null
@@ -324,6 +345,10 @@ const DateRangePicker = ({
   // and emitting here would replace a restored selection with This Month.
   useEffect(() => {
     if (range) return;
+    // All Time emits an empty range, which is how a caller learns there is no
+    // date bound. Without this the pipeline would load on This Month and its
+    // funnel card could never show the unfiltered figure.
+    if (activePreset === "allTime") { emit({ from: "", to: "" }); return; }
     if (activePreset === "custom") {
       if (customFrom && customTo) emit({ from: customFrom, to: customTo });
       return;
@@ -429,8 +454,8 @@ const DateRangePicker = ({
 
   // ── Trigger label ──
   const triggerLabel = (() => {
-    // Only reachable via `range` — All Time is set elsewhere (e.g. Forecast) and
-    // has no preset in this picker.
+    // Reachable either via `range` (Forecast sets it) or, where a caller passes
+    // includeAllTime, by picking it from the menu.
     if (activePreset === "allTime") return "All time";
     if (activePreset === "custom") {
       if (customFrom && customTo) {
@@ -484,7 +509,9 @@ const DateRangePicker = ({
         >
           {/* Section 1 — Preset list */}
           <div className="py-1">
-            {PRESETS.map((preset, i) => {
+            {/* All Time only appears where the caller asked for it. Sliced past
+                its separator too, so hiding it leaves no stray divider. */}
+            {(includeAllTime ? PRESETS : PRESETS.slice(2)).map((preset, i) => {
               if (!preset) {
                 return (
                   <div
