@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from 'lib/supabase';
 import { useAuth } from 'contexts/AuthContext';
-import { blockIfPlanLocked } from 'utils/planApproval';
 import Icon from 'components/AppIcon';
 import AdminCompanySelector from 'pages/admin-dashboard/components/AdminCompanySelector';
 import CustomerDetailDrawer from './CustomerDetailDrawer';
@@ -465,9 +464,10 @@ export default function CustomerMaster({
       inlineInputRef.current?.focus();
       return;
     }
-    // Same lock as the Current Sales Plan tab: the opportunity would land in
-    // this month, which an approved plan has frozen.
-    if (await blockIfPlanLocked({ ownerId: customer.owner_id || user?.id, role: userProfile?.role })) return;
+    // NOT lock-gated, deliberately. This is the other way to ADD to a plan, and
+    // an approved plan never stops the owner adding new work to the month — the
+    // same rule the Current Sales Plan tab's Add follows. An approved plan freezes
+    // the rows it was approved with; it does not close the month.
     setSavingId(customer.id);
     try {
       const now = new Date();

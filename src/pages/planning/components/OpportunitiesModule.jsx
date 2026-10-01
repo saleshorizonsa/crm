@@ -421,15 +421,22 @@ export default function OpportunitiesModule({
     // Editing: the row must be yours. Creating: a new row is always yours, but
     // not while the page is pointed at someone else's plan.
     if (editingOpp ? !isOwnRow(editingOpp) : isViewingOther) return;
-    // An approved plan is locked for the month — a salesman cannot add to or
-    // change it until their manager sends it back.
+    // An approved plan freezes the rows it was APPROVED WITH. It does not close
+    // the month: the owner can always add new work to their plan, approved or
+    // not. Selling more than you promised is not a thing to be stopped, and
+    // blocking it is the bug this guard caused — a salesman adding a new customer
+    // was told "This month's plan is locked. Contact your manager", which should
+    // never happen for an add, in any role.
     //
-    // The lock that matters is the OPPORTUNITY OWNER's, not the logged-in user's.
-    // On a create they are the same person (the insert uses user.id), but on an
-    // edit they need not be, and checking the viewer's lock asked the wrong
-    // question entirely.
-    if (await blockIfPlanLocked({
-      ownerId: editingOpp?.owner_id || user?.id, role, planMonth,
+    // So the lock is checked ONLY on an edit. `editingOpp` is what distinguishes
+    // the two: this one handler serves both the Add and the Edit modal.
+    //
+    // The lock that matters is the row OWNER's, not the logged-in user's — on an
+    // edit those need not be the same person, and checking the viewer's lock
+    // asked the wrong question entirely. (`role` is not passed: blockIfPlanLocked
+    // accepts it but no longer lets it decide anything.)
+    if (editingOpp && await blockIfPlanLocked({
+      ownerId: editingOpp.owner_id || user?.id, planMonth,
     })) return;
     setSaving(true);
     try {
