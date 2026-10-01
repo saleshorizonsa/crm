@@ -92,6 +92,9 @@ export default function OpportunitiesModule({
   // every row is locked out — but it also covers the "All Salesmen" view, where
   // a lead sees the whole team's rows mixed together and `isViewingOther` is
   // false because no single person is selected.
+  //
+  // This remains the rule for ADD, DELETE and CONVERT. EDIT now has one
+  // exception on top of it — see canEditRow below.
   const isOwnRow = (opp) => !!user?.id && opp?.owner_id === user.id;
 
   // The shared date selector's range. NOTHING ON THIS TAB READS IT ANY MORE.
@@ -161,6 +164,27 @@ export default function OpportunitiesModule({
   const [showModal, setShowModal]   = useState(false);
   const [editingOpp, setEditingOpp] = useState(null);
   const [form, setForm]             = useState(() => emptyForm(currentMonth));
+
+  // ── Manager edit during review ────────────────────────────────────────────
+  // The owners (other than the viewer) whose plan for the month on screen is
+  // SUBMITTED and still PENDING — the window in which the manager is deciding
+  // whether to approve or reject, and the only window in which he may change
+  // somebody else's numbers.
+  //
+  // A set of ids rather than a per-row lookup: the gate is consulted during
+  // render for every row's Edit button, which must not await anything.
+  //
+  // Any failure leaves the set EMPTY, which means read-only. This grants a
+  // capability, so it fails closed — the opposite of the plan lock, which fails
+  // open so a missing row can never shut someone out of their own plan.
+  const [reviewOwners, setReviewOwners] = useState(() => new Set());
+
+  // Only the 'manager' role, as specified. Note this is NOT the same set as the
+  // people who can actually approve a plan: resolveApprover() routes by
+  // supervisor_id, so a SUPERVISOR is the real reviewer for the salesmen under
+  // him and does not get this exception. Widening it to TEAM_ROLES is a one-word
+  // change here if that turns out to be wanted.
+  const isManagerReviewer = role === 'manager';
 
   // ── Owner scope for the target calculation ────────────────────────────────
   // "All" for a manager or supervisor means THEIR TEAM INCLUDING THEMSELVES —
@@ -403,6 +427,59 @@ export default function OpportunitiesModule({
   useEffect(() => { fetchTarget(ownerScope); }, [fetchTarget, ownerScope]);
   useEffect(() => { fetchFunnelAndAchieved(ownerScope); }, [fetchFunnelAndAchieved, ownerScope]);
 
+  // Which of the owners on screen are mid-review. Keyed off the loaded rows
+  // rather than the team, so it asks about exactly the people whose Edit buttons
+  // are about to be rendered, and off targetMonth, so switching plan months
+  // re-asks for that month.
+  //
+  // Only a manager has the exception, so nobody else pays for the query.
+  useEffect(() => {
+    if (!isManagerReviewer || !company?.id) { setReviewOwners(new Set()); return undefined; }
+    const ids = [...new Set(
+      opportunities.map((o) => o.owner_id).filter((id) => id && id !== user?.id),
+    )];
+    if (!ids.length) { setReviewOwners(new Set()); return undefined; }
+
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('plan_submissions')
+        .select('owner_id, is_submitted, approval_status')
+        .eq('company_id', company.id)
+        .in('owner_id', ids)
+        .eq('plan_month', targetMonth.start);
+      if (!alive) return;
+      if (error) {
+        // Read-only on failure, deliberately: see reviewOwners above.
+        console.error('reviewOwners:', error);
+        setReviewOwners(new Set());
+        return;
+      }
+      setReviewOwners(new Set(
+        (data || [])
+          .filter((r) => r.is_submitted === true && r.approval_status === 'pending')
+          .map((r) => r.owner_id),
+      ));
+    })();
+    // The month or the row set can change while this is in flight; a late reply
+    // must not grant edit rights for a plan state that is no longer on screen.
+    return () => { alive = false; };
+  }, [isManagerReviewer, company?.id, user?.id, opportunities, targetMonth.start]);
+
+  // ── The EDIT gate ─────────────────────────────────────────────────────────
+  // Your own row, or a subordinate's row whose plan you are currently reviewing.
+  //
+  // Deliberately separate from isOwnRow, which still governs add, delete and
+  // convert. A manager may correct a number he is being asked to approve; he may
+  // not add work to someone's plan, remove work from it, or convert it — those
+  // belong to the person who owns the plan and is measured on it.
+  //
+  // Once he approves, reviewOwners no longer contains that owner (the row stops
+  // being pending), so the capability ends by itself — there is no second rule
+  // to keep in step. A rejected or still-draft plan is never in the set either.
+  const canEditRow = (opp) => isOwnRow(opp)
+    || (isManagerReviewer && !!opp?.owner_id && reviewOwners.has(opp.owner_id));
+
   // ── Derived totals ────────────────────────────────────────────────────────
   const totalPlanned = opportunities.reduce(
     (s, o) => s + (parseFloat(o.planned_amount) || 0), 0,
@@ -420,7 +497,10 @@ export default function OpportunitiesModule({
     if (!form.customer_name?.trim() || !form.planned_amount) return;
     // Editing: the row must be yours. Creating: a new row is always yours, but
     // not while the page is pointed at someone else's plan.
-    if (editingOpp ? !isOwnRow(editingOpp) : isViewingOther) return;
+    // Editing: canEditRow — yours, or a subordinate's row you are reviewing.
+    // Creating: a new row is always yours, but not while the page is pointed at
+    // someone else's plan. The manager exception does NOT extend to creating.
+    if (editingOpp ? !canEditRow(editingOpp) : isViewingOther) return;
     // An approved plan freezes the rows it was APPROVED WITH. It does not close
     // the month: the owner can always add new work to their plan, approved or
     // not. Selling more than you promised is not a thing to be stopped, and
@@ -562,7 +642,7 @@ export default function OpportunitiesModule({
     setShowModal(true);
   }
   function openEdit(opp) {
-    if (!isOwnRow(opp)) return;
+    if (!canEditRow(opp)) return;
     setEditingOpp(opp);
     setForm({
       customer_name:  opp.customer_name || '',
@@ -966,12 +1046,18 @@ export default function OpportunitiesModule({
                   {isOpen && (
                     <div className="mt-3 pt-3 border-t border-border flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex gap-2">
+                        {/* canEditRow, not isOwnRow: a manager may correct the
+                            numbers on a plan he is being asked to approve, while
+                            it is still pending. Delete and Convert below stay on
+                            isOwnRow. */}
                         <button
                           onClick={() => openEdit(opp)}
-                          disabled={!isOwnRow(opp)}
-                          title={!isOwnRow(opp) ? "Only this plan's owner can change it" : undefined}
+                          disabled={!canEditRow(opp)}
+                          title={!canEditRow(opp)
+                            ? "Only this plan's owner can change it"
+                            : (!isOwnRow(opp) ? 'Reviewing: you can adjust this while the plan is pending' : undefined)}
                           className={`text-xs px-3 py-1.5 border rounded-lg transition-colors ${
-                            !isOwnRow(opp)
+                            !canEditRow(opp)
                               ? 'border-border text-muted-foreground/50 cursor-not-allowed'
                               : 'border-border text-muted-foreground hover:bg-muted'
                           }`}
