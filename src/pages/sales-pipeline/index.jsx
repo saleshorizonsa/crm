@@ -27,7 +27,7 @@ import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { resolveDateRange } from "../../components/ui/DateRangePicker";
 import { getDealOrigin } from "../../utils/dealGroupUtils";
-import { fetchOpenFunnel } from "../../utils/openFunnel";
+import { fetchOpenFunnel, currentMonthBounds } from "../../utils/openFunnel";
 import { fetchTeamHierarchy } from "../../utils/teamHierarchy";
 
 const SalesPipeline = () => {
@@ -254,7 +254,11 @@ const SalesPipeline = () => {
         ownerIds = (everyone || []).map((u) => u.id);
       }
       const funnel = await fetchOpenFunnel({ companyId: company.id, ownerIds });
-      setSharedFunnel({ total: funnel.total, dealCount: funnel.dealCount, loaded: !funnel.failed });
+      setSharedFunnel({
+        total: funnel.total, dealCount: funnel.dealCount,
+        undated: funnel.undated, bounds: funnel.bounds,
+        loaded: !funnel.failed,
+      });
     } catch (err) {
       console.error("loadSharedFunnel:", err);
       setSharedFunnel({ total: 0, dealCount: 0, loaded: false });
@@ -283,18 +287,29 @@ const SalesPipeline = () => {
 
   console.log(deals);
 
-  // Is anything narrowing the list? Mirrors exactly what applyFilters() acts on,
-  // so the card cannot claim "unfiltered" while a filter is in force.
-  const hasActiveFilters = !!(
+  // Everything except the date, mirroring what applyFilters() acts on.
+  const nonDateFiltersActive = !!(
     filters.search
     || filters.owner_id
     || filters.stage
     || filters.minValue
     || filters.maxValue
-    || filters.dateRange
     || filters.showOverdue
     || originFilter !== 'all'
   );
+
+  // The shared funnel definition is CURRENT MONTH, so the current month is the
+  // date selection that matches it — not an empty one. All Time is therefore a
+  // filtered view here, even though it narrows nothing: it no longer describes
+  // the same thing as Planning and the KPI strip.
+  const dateIsCurrentMonth = (() => {
+    const dr = filters.dateRange;
+    if (!dr || typeof dr !== 'object') return false;      // "" = All Time
+    const cm = currentMonthBounds();
+    return dr.from === cm.start && dr.to === cm.end;
+  })();
+
+  const hasActiveFilters = nonDateFiltersActive || !dateIsCurrentMonth;
 
   const applyFilters = () => {
     let filtered = [...deals];
