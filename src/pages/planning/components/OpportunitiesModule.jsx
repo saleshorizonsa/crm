@@ -8,6 +8,7 @@ import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
 import { blockIfPlanLocked, blockIfPlanNotApproved, planMonthForDate } from 'utils/planApproval';
 import { fetchOpenFunnel } from 'utils/openFunnel';
+import { monthBoundsOf } from 'utils/planMonths';
 import {
   fetchContributors,
   fetchMonthlyTargets,
@@ -57,8 +58,10 @@ export default function OpportunitiesModule({
   // real-world current month.
   periodStart,
   periodEnd,
-  // The plan month whose lock governs editing here. Defaults to undefined so
-  // blockIfPlanLocked falls back to the current month, exactly as before.
+  // The month this page is planning (the page's activeMonthKey). It governs the
+  // edit lock AND the "Monthly Target" card, both of which are about one month.
+  // Defaults to undefined so blockIfPlanLocked falls back to the current month,
+  // exactly as before, and the target falls back to the period's own month.
   planMonth,
   // Both filters are owned by the page, because the summary cards above this tab
   // follow them too. Controlled here, stored there.
@@ -91,13 +94,32 @@ export default function OpportunitiesModule({
   // false because no single person is selected.
   const isOwnRow = (opp) => !!user?.id && opp?.owner_id === user.id;
 
-  // Month bounds for every query on this tab: the selected period when the page
-  // supplies one, else the current month (the previous behaviour).
+  // The SELECTED PERIOD, not month bounds — it is whatever the shared date
+  // selector holds, which can span a quarter or a year. The one thing it still
+  // scopes is the opportunity LIST: which rows you are browsing. It does NOT
+  // scope the monthly target or Achieved any more — both of those are about one
+  // month; see targetMonth below.
   const period = useMemo(() => {
     if (periodStart && periodEnd) return { start: periodStart, end: periodEnd };
     const mb = monthBounds();
     return { start: mb.startDate, end: mb.endDate };
   }, [periodStart, periodEnd]);
+
+  // The ONE month "Monthly Target" is about.
+  //
+  // This used to come from `period`, and fetchMonthlyTargets matches any monthly
+  // row OVERLAPPING the window — so with a year-long selection the card summed
+  // every month it touched and presented the total as a monthly target. For
+  // Kamal that read 12,808,589.56 (Jan–Oct) where October alone is 3,701,000.
+  //
+  // planMonth is the month the page is actually planning (activeMonthKey), so
+  // the card is now independent of whatever the shared selector is set to
+  // elsewhere. Falling back to the period's own month keeps it correct when the
+  // page does not supply one.
+  const targetMonth = useMemo(() => {
+    const key = planMonth || `${String(period.start).slice(0, 7)}-01`;
+    return monthBoundsOf(key);
+  }, [planMonth, period.start]);
 
   // A new opportunity defaults to the month being viewed, not to today's month,
   // so adding a row while looking at October does not silently file it in September.
@@ -183,11 +205,14 @@ export default function OpportunitiesModule({
     const scopeIds = await resolveScopeIds(ids);
     if (!scopeIds.length) { setMonthlyTarget(0); setHasTargetRows(false); return; }
 
+    // targetMonth, NOT period: fetchMonthlyTargets matches any monthly row that
+    // overlaps the window, so a multi-month selection would sum several months
+    // into a figure labelled "Monthly Target".
     const rows = await fetchMonthlyTargets({
       companyId: company.id,
       contributorIds: scopeIds,
-      start: period.start,
-      end: period.end,
+      start: targetMonth.start,
+      end: targetMonth.end,
     });
     // Whether a target EXISTS is its own fact, separate from its value. Nobody
     // in scope holding a target row reads "No target assigned" rather than
@@ -197,13 +222,15 @@ export default function OpportunitiesModule({
     setMonthlyTarget(
       Object.values(targetPerPerson(rows)).reduce((sum, v) => sum + v, 0),
     );
-  }, [company?.id, resolveScopeIds, period.start, period.end]);
+  }, [company?.id, resolveScopeIds, targetMonth.start, targetMonth.end]);
 
   // ── Fetch: In Funnel + this month's Achieved ──────────────────────────────
   // In Funnel is the raw open-deal value for the scope — the same query and the
   // same unweighted definition as the KPI strip's funnel figure
-  // (utils/kpiStripData.js), so Planning and the dashboards agree. Achieved comes
-  // from the one shared rule, scoped to this month; together they feed Remaining.
+  // (utils/kpiStripData.js), so Planning and the dashboards agree. It carries no
+  // date bound, deliberately: an open deal counts whenever it is expected to
+  // close (see utils/openFunnel.js). Achieved comes from the one shared rule,
+  // scoped to the PLANNED month; together they feed Remaining.
   const fetchFunnelAndAchieved = useCallback(async (ids) => {
     if (!company?.id || !ids?.length) { setFunnelValue(0); setAchievedThisMonth(0); return; }
 
@@ -221,14 +248,20 @@ export default function OpportunitiesModule({
 
     // resolveScopeIds already folded in any flagged achieved-only manager, so
     // there is no second users lookup here any more.
+    //
+    // targetMonth, the same window the target uses. Remaining subtracts Achieved
+    // from the target, so the two have to describe the same month or the
+    // subtraction is between different spans: with the selector on This Year it
+    // took a YEAR of invoiced revenue off ONE month's target and drove Remaining
+    // to 0 (Kamal: 2,551,340.28 against a 3,701,000 October target).
     const { total } = await fetchAchieved({
       companyId: company.id,
       contributorIds: scopeIds,
-      start: period.start,
-      end: period.end,
+      start: targetMonth.start,
+      end: targetMonth.end,
     });
     setAchievedThisMonth(total);
-  }, [company?.id, resolveScopeIds, period.start, period.end]);
+  }, [company?.id, resolveScopeIds, targetMonth.start, targetMonth.end]);
 
   // ── Fetch: opportunities ──────────────────────────────────────────────────
   const fetchOpportunities = useCallback(async () => {
