@@ -91,8 +91,14 @@ export async function fetchProductGroups({ companyId, ownerIds = null }) {
  * selected period. "Untransferred" is what status='open' already means — once an
  * opportunity becomes a deal it is 'converted', and once it is pushed out it is
  * 'moved_to_future'.
+ *
+ * Exported because this IS the definition of plan_submissions.total_planned: the
+ * submit path records computePlanningPageSummary().plannedOpen, which is this.
+ * Anything that later rewrites that column has to agree with it exactly, so it
+ * calls this rather than re-deriving the rule (status, month bounds, the
+ * free-text group match) and drifting.
  */
-async function fetchPlannedOpen({ companyId, ownerIds, start, end, productGroup }) {
+export async function fetchPlannedOpen({ companyId, ownerIds, start, end, productGroup }) {
   if (!companyId || !ownerIds?.length) return { total: 0, untagged: 0 };
   const { data, error } = await supabase
     .from('opportunities')

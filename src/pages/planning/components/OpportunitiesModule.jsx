@@ -17,7 +17,7 @@ import {
   targetPerPerson,
   monthBounds,
 } from 'utils/planningCalculations';
-import { matchesGroup } from 'utils/planningPageSummary';
+import { matchesGroup, fetchPlannedOpen } from 'utils/planningPageSummary';
 
 const DIRECTOR_ROLES = ['director', 'head', 'admin'];
 const TEAM_ROLES     = ['manager', 'supervisor'];
@@ -480,6 +480,59 @@ export default function OpportunitiesModule({
   const canEditRow = (opp) => isOwnRow(opp)
     || (isManagerReviewer && !!opp?.owner_id && reviewOwners.has(opp.owner_id));
 
+  // Put plan_submissions.total_planned back in step after ANY edit to a row.
+  //
+  // That column is a SNAPSHOT taken at submit time, not a live sum, and the
+  // approval queue reads it. Change a row underneath a submitted plan and the
+  // queue goes on showing the as-submitted figure.
+  //
+  // Three paths could do that, and none used to correct it:
+  //   the MANAGER correcting a number during review — he would then be approving
+  //     against the total he had just changed;
+  //   the OWNER editing after submitting, which became possible once the lock
+  //     moved to approval, so a salesman could revise a plan already in the queue
+  //     and leave the manager reviewing the figure it was filed with;
+  //   the OWNER adding a row to a plan already in the queue, which an approved
+  //     plan permits too and which therefore has to be told apart from it.
+  //
+  // A draft plan needs no resync and gets none: the UPDATE below matches only a
+  // submitted, still-pending row, so there is nothing to keep in step until the
+  // plan has actually been filed. An APPROVED plan is excluded by the same
+  // clause, which is what makes adding to one safe.
+  //
+  // fetchPlannedOpen is the same function the submit path's total comes from
+  // (utils/planningPageSummary.js), called with the same productGroup: null and
+  // the owner alone, which is the scope a salesman's own submission uses. A
+  // second hand-rolled sum here would be a different definition waiting to drift.
+  const resyncSubmittedTotal = useCallback(async (ownerId) => {
+    if (!company?.id || !ownerId) return;
+    const { total, failed } = await fetchPlannedOpen({
+      companyId: company.id,
+      ownerIds: [ownerId],
+      start: targetMonth.start,
+      end: targetMonth.end,
+      productGroup: null,
+    });
+    // Never write a total derived from a failed read. A dropped opportunities
+    // query returns 0, which is indistinguishable from an empty plan once it is
+    // written down — that is exactly how a plan came to be filed at 0.00 against
+    // a real pipeline. Leaving the old figure is the lesser wrong.
+    if (failed) { console.error('resyncSubmittedTotal: read failed, total left as submitted'); return; }
+    // Still-pending only. If the plan was approved or sent back while the modal
+    // was open, its total belongs to that decision and must not be rewritten.
+    // Narrowing the UPDATE is also what keeps the approver-guard trigger on its
+    // early-return path: approval_status and is_locked are untouched.
+    const { error } = await supabase
+      .from('plan_submissions')
+      .update({ total_planned: total, updated_at: new Date().toISOString() })
+      .eq('company_id', company.id)
+      .eq('owner_id', ownerId)
+      .eq('plan_month', targetMonth.start)
+      .eq('is_submitted', true)
+      .eq('approval_status', 'pending');
+    if (error) console.error('resyncSubmittedTotal:', error);
+  }, [company?.id, targetMonth.start, targetMonth.end]);
+
   // ── Derived totals ────────────────────────────────────────────────────────
   const totalPlanned = opportunities.reduce(
     (s, o) => s + (parseFloat(o.planned_amount) || 0), 0,
@@ -541,6 +594,17 @@ export default function OpportunitiesModule({
           .insert({ ...payload, owner_id: user?.id, created_by: user?.id }));
       }
       if (error) throw error;
+
+      // EVERY path that changes the rows resyncs — create and edit, owner and
+      // manager. Unconditional rather than `editingOpp || !editingOpp`, which is
+      // the same thing written as a riddle.
+      //
+      // Safety for an approved plan does not live here, it lives in the UPDATE's
+      // pending-only narrowing: adding to an approved plan is always allowed, and
+      // because no pending row matches, the total it was approved on is left
+      // exactly as it was. On a create the owner is the inserting user, which is
+      // who the row was just filed under.
+      await resyncSubmittedTotal(editingOpp?.owner_id || user?.id);
 
       closeModal();
       fetchOpportunities();
