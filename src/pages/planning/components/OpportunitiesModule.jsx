@@ -95,9 +95,10 @@ export default function OpportunitiesModule({
   const isOwnRow = (opp) => !!user?.id && opp?.owner_id === user.id;
 
   // The SELECTED PERIOD, not month bounds — it is whatever the shared date
-  // selector holds, which can span a quarter or a year. It scopes the
-  // opportunity LIST and this tab's Achieved figure. It deliberately does NOT
-  // scope the monthly target any more; see targetMonth below.
+  // selector holds, which can span a quarter or a year. The one thing it still
+  // scopes is the opportunity LIST: which rows you are browsing. It does NOT
+  // scope the monthly target or Achieved any more — both of those are about one
+  // month; see targetMonth below.
   const period = useMemo(() => {
     if (periodStart && periodEnd) return { start: periodStart, end: periodEnd };
     const mb = monthBounds();
@@ -226,8 +227,10 @@ export default function OpportunitiesModule({
   // ── Fetch: In Funnel + this month's Achieved ──────────────────────────────
   // In Funnel is the raw open-deal value for the scope — the same query and the
   // same unweighted definition as the KPI strip's funnel figure
-  // (utils/kpiStripData.js), so Planning and the dashboards agree. Achieved comes
-  // from the one shared rule, scoped to this month; together they feed Remaining.
+  // (utils/kpiStripData.js), so Planning and the dashboards agree. It carries no
+  // date bound, deliberately: an open deal counts whenever it is expected to
+  // close (see utils/openFunnel.js). Achieved comes from the one shared rule,
+  // scoped to the PLANNED month; together they feed Remaining.
   const fetchFunnelAndAchieved = useCallback(async (ids) => {
     if (!company?.id || !ids?.length) { setFunnelValue(0); setAchievedThisMonth(0); return; }
 
@@ -245,14 +248,20 @@ export default function OpportunitiesModule({
 
     // resolveScopeIds already folded in any flagged achieved-only manager, so
     // there is no second users lookup here any more.
+    //
+    // targetMonth, the same window the target uses. Remaining subtracts Achieved
+    // from the target, so the two have to describe the same month or the
+    // subtraction is between different spans: with the selector on This Year it
+    // took a YEAR of invoiced revenue off ONE month's target and drove Remaining
+    // to 0 (Kamal: 2,551,340.28 against a 3,701,000 October target).
     const { total } = await fetchAchieved({
       companyId: company.id,
       contributorIds: scopeIds,
-      start: period.start,
-      end: period.end,
+      start: targetMonth.start,
+      end: targetMonth.end,
     });
     setAchievedThisMonth(total);
-  }, [company?.id, resolveScopeIds, period.start, period.end]);
+  }, [company?.id, resolveScopeIds, targetMonth.start, targetMonth.end]);
 
   // ── Fetch: opportunities ──────────────────────────────────────────────────
   const fetchOpportunities = useCallback(async () => {
