@@ -15,7 +15,9 @@ import { periodLabelFromRange, isAnnualRange } from "utils/dashboardDateUtils";
 import QuickDateSelector from "components/QuickDateSelector";
 import PlanApprovalsModule from "./components/PlanApprovalsModule";
 import {
-  monthKeyOf, nextMonthKeyOf, isEarlyWindowOpen, earlyWindowOpensAt,
+  monthKeyOf, nextMonthKeyOf, prevMonthKeyOf,
+  isEarlyWindowOpen, earlyWindowOpensAt,
+  isGraceWindowOpen, graceClosesAfter, GRACE_DAYS,
   monthBoundsOf, deadlineFor, isLateFor, monthNameOf, monthLabelOf,
 } from "utils/planMonths";
 import {
@@ -208,6 +210,10 @@ const PlanningPage = () => {
   const currentMonthKey = monthKeyOf(now);
   const nextMonthKey = nextMonthKeyOf(now);
   const earlyOpen = isEarlyWindowOpen(now);
+  // The first 3 days of a month keep the month that just ended submittable. It
+  // is still late — this only restores the action, never the deadline.
+  const prevMonthKey = prevMonthKeyOf(now);
+  const graceOpen = isGraceWindowOpen(now);
 
   const fetchPlanSubmission = useCallback(async () => {
     if (!companyId || !viewedOwnerId) { setSubmissions({}); return; }
@@ -218,11 +224,14 @@ const PlanningPage = () => {
       .select("*")
       .eq("company_id", companyId)
       .eq("owner_id", viewedOwnerId)
-      .in("plan_month", [currentMonthKey, nextMonthKey]);
+      // Three months, because up to three can be live at once: last month during
+      // its grace window, this month, and next month during the early window.
+      // Keys that are not applicable simply match nothing.
+      .in("plan_month", [prevMonthKey, currentMonthKey, nextMonthKey]);
     const byMonth = {};
     (data || []).forEach((r) => { byMonth[String(r.plan_month).slice(0, 10)] = r; });
     setSubmissions(byMonth);
-  }, [companyId, viewedOwnerId, currentMonthKey, nextMonthKey]);
+  }, [companyId, viewedOwnerId, prevMonthKey, currentMonthKey, nextMonthKey]);
 
   useEffect(() => { fetchPlanSubmission(); }, [fetchPlanSubmission]);
 
@@ -255,13 +264,24 @@ const PlanningPage = () => {
   const [nextSummary, setNextSummary] = useState(emptySummary);
   const [nextSummaryLoading, setNextSummaryLoading] = useState(false);
 
+  // The month that just ended, for the grace window. Its own figures, for the
+  // same reason next month has its own: the shared period selector has already
+  // moved on to the new month, and the plan being filed is about the old one, so
+  // writing the current period's totals onto it would record the wrong numbers.
+  // Declared above activeSummary for the same dead-zone reason as nextSummary.
+  const [prevSummary, setPrevSummary] = useState(emptySummary);
+  const [prevSummaryLoading, setPrevSummaryLoading] = useState(false);
+
   // Which month the salesman is currently planning. Only ever "next" while the
-  // early window is open; it falls back on its own when the window closes or
-  // the month rolls over, so no state can strand someone on a month they can no
-  // longer submit.
+  // early window is open, or "prev" during the first days of a month; both fall
+  // back on their own when the window closes or the month rolls over, so no
+  // state can strand someone on a month they can no longer submit.
   const [planTarget, setPlanTarget] = useState("current");
   const planningNextMonth = planTarget === "next" && earlyOpen;
-  const activeMonthKey = planningNextMonth ? nextMonthKey : currentMonthKey;
+  const planningPrevMonth = planTarget === "prev" && graceOpen;
+  const activeMonthKey = planningNextMonth ? nextMonthKey
+    : planningPrevMonth ? prevMonthKey
+      : currentMonthKey;
   const planSubmission = submissions[activeMonthKey] || null;
 
   // What the five summary tiles read. While the early-plan switch is on next
@@ -272,9 +292,15 @@ const PlanningPage = () => {
   // The shared period SELECTOR is deliberately untouched: the dashboards read
   // the same selector, and moving it would drag every other screen into next
   // month. Only this page's choice of data source depends on planTarget.
-  const summaryData = planningNextMonth ? nextSummary : currentSummary;
-  const summaryLoading = planningNextMonth ? nextSummaryLoading : currentSummaryLoading;
-  const tilePeriodLabel = planningNextMonth ? monthLabelOf(nextMonthKey) : periodLabel;
+  const summaryData = planningNextMonth ? nextSummary
+    : planningPrevMonth ? prevSummary
+      : currentSummary;
+  const summaryLoading = planningNextMonth ? nextSummaryLoading
+    : planningPrevMonth ? prevSummaryLoading
+      : currentSummaryLoading;
+  const tilePeriodLabel = planningNextMonth ? monthLabelOf(nextMonthKey)
+    : planningPrevMonth ? monthLabelOf(prevMonthKey)
+      : periodLabel;
 
   // Everything below is now ABOUT activeMonthKey rather than about "now".
   const deadlineDay = new Date(`${deadlineFor(activeMonthKey)}T00:00:00`);
@@ -301,12 +327,26 @@ const PlanningPage = () => {
   const plannedShortfall = Math.max(0, activeSummary.requiredPlan - activeSummary.plannedOpen);
   // Nobody submits on someone else's behalf: the bar still shows, so a lead can
   // read where that person's plan stands, but the button is not theirs to press.
-  const canSubmit = (planningNextMonth || planComplete)
+  // The grace window is for a month that is already over and already late, so
+  // the completeness bar is not applied to it either — withholding the button
+  // from someone trying to file a late plan is what created this gap.
+  const canSubmit = (planningNextMonth || planningPrevMonth || planComplete)
     && !planSubmission?.is_submitted
     && !isViewingOther;
   // Managers file their own plan too. The bar also appears for a lead who is
   // reading a subordinate's plan, because its whole content is that plan's state.
   const showSubmitBar = (isSalesman || isSupervisor || isManager || isViewingOther) && !!companyId;
+
+  // Every month that can be submitted right now, oldest first. Usually just this
+  // month; a second appears during the early window (next month) or the grace
+  // window (last month). The two windows cannot overlap — one is the first 3 days
+  // of a month, the other the last 7 — but nothing here depends on that.
+  const monthOptions = [
+    ...(graceOpen ? [{ key: "prev", label: `${monthNameOf(prevMonthKey)} (late)`, month: prevMonthKey }] : []),
+    { key: "current", label: monthNameOf(currentMonthKey), month: currentMonthKey },
+    ...(earlyOpen ? [{ key: "next", label: `${monthNameOf(nextMonthKey)} (early)`, month: nextMonthKey }] : []),
+  ];
+  const extraMonthOpen = graceOpen || earlyOpen;
 
   const handleSubmitPlan = async () => {
     if (!canSubmit || submitting) return;
@@ -333,7 +373,12 @@ const PlanningPage = () => {
         is_submitted: true,
         is_late: isLateFor(planMonth, stamp),
         deadline_date: deadlineFor(planMonth),
-        flagged: false,
+        // `flagged` is deliberately NOT written. It is the deadline checker's
+        // record that this month was missed, and submitting late does not undo
+        // that — this payload used to set it to false, which quietly cleared the
+        // flag on exactly the late submissions the grace window now enables.
+        // Omitting it leaves an existing flag alone, and a fresh row still gets
+        // the column default of false.
         updated_at: stamp.toISOString(),
       };
       // Resubmitting after a rejection puts the plan back in the queue.
@@ -509,6 +554,39 @@ const PlanningPage = () => {
   }, [earlyOpen, companyId, user?.id, role, nextMonthKey, filterProductGroup]);
 
   useEffect(() => { fetchNextMonthSummary(); }, [fetchNextMonthSummary]);
+
+  // Last month's figures, for the grace window. Same chain again, bounded to the
+  // month that just ended — so a late plan records that month's planned value
+  // and required plan, not the new month's, which is what the shared period
+  // selector has already moved on to.
+  const fetchPrevMonthSummary = useCallback(async () => {
+    if (!graceOpen || !companyId || !user?.id) { setPrevSummary(emptySummary); return; }
+    setPrevSummaryLoading(true);
+    try {
+      const bounds = monthBoundsOf(prevMonthKey);
+      let ownerIds = null;
+      if (!DIRECTOR_ROLES.includes(role)) {
+        const isTeamLead = TEAM_ROLES.includes(role);
+        const scope = isTeamLead
+          ? [user?.id, ...(await fetchTeamHierarchy({ companyId, userId: user?.id, role })).map((m) => m.id)].filter(Boolean)
+          : [user?.id].filter(Boolean);
+        ownerIds = scope.length ? scope : ["00000000-0000-0000-0000-000000000000"];
+      }
+      const sum = await computePlanningPageSummary({
+        companyId, ownerIds, start: bounds.start, end: bounds.end,
+        productGroup: filterProductGroup,
+      });
+      setPrevSummary({ ...emptySummary, ...sum, winRate3m: sum.winRatePct });
+    } catch (err) {
+      console.error("Previous-month summary:", err);
+      setPrevSummary(emptySummary);
+    } finally {
+      setPrevSummaryLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graceOpen, companyId, user?.id, role, prevMonthKey, filterProductGroup]);
+
+  useEffect(() => { fetchPrevMonthSummary(); }, [fetchPrevMonthSummary]);
 
   // Product-group options, scoped the same way the cards are.
   useEffect(() => {
@@ -970,22 +1048,33 @@ const PlanningPage = () => {
                 not up by the period selector, where it was invisible to anyone
                 looking at their plan. It gets banner styling because a salesman
                 has to notice it without being told it exists. */}
-            {showSubmitBar && earlyOpen && (
-              <div className="px-4 py-3 mb-4 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl">
+            {showSubmitBar && extraMonthOpen && (
+              <div className={`px-4 py-3 mb-4 border rounded-xl ${
+                graceOpen
+                  ? "bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800"
+                  : "bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800"
+              }`}>
                 <div className="flex items-center gap-3 flex-wrap">
                   <div>
-                    <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
-                      🗓️ {monthNameOf(nextMonthKey)} planning is open
+                    {/* Amber, not blue: the grace window is a last chance on a
+                        plan that is already late, not an invitation to plan ahead. */}
+                    <p className={`text-sm font-semibold ${
+                      graceOpen ? "text-amber-900 dark:text-amber-100" : "text-blue-900 dark:text-blue-100"
+                    }`}>
+                      {graceOpen
+                        ? `⏳ ${monthNameOf(prevMonthKey)} can still be submitted`
+                        : `🗓️ ${monthNameOf(nextMonthKey)} planning is open`}
                     </p>
-                    <p className="text-xs text-blue-700 dark:text-blue-300">
-                      You can plan next month now — pick which month you are working on.
+                    <p className={`text-xs ${
+                      graceOpen ? "text-amber-700 dark:text-amber-300" : "text-blue-700 dark:text-blue-300"
+                    }`}>
+                      {graceOpen
+                        ? `Last ${GRACE_DAYS} days to file it — until ${graceClosesAfter(now).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}. It still counts as late.`
+                        : "You can plan next month now — pick which month you are working on."}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
-                    {[
-                      { key: "current", label: monthNameOf(currentMonthKey), month: currentMonthKey },
-                      { key: "next", label: `${monthNameOf(nextMonthKey)} (early)`, month: nextMonthKey },
-                    ].map((opt) => {
+                    {monthOptions.map((opt) => {
                       const row = submissions[opt.month];
                       return (
                         <button
@@ -1013,8 +1102,10 @@ const PlanningPage = () => {
               // SHARED period selector is deliberately not touched — it is the
               // dashboards' period too, and moving it would drag every other
               // screen into next month.
-              periodStart={planTarget === "next" && earlyOpen ? monthBoundsOf(nextMonthKey).start : rangeStart}
-              periodEnd={planTarget === "next" && earlyOpen ? monthBoundsOf(nextMonthKey).end : rangeEnd}
+              periodStart={planningNextMonth ? monthBoundsOf(nextMonthKey).start
+                : planningPrevMonth ? monthBoundsOf(prevMonthKey).start : rangeStart}
+              periodEnd={planningNextMonth ? monthBoundsOf(nextMonthKey).end
+                : planningPrevMonth ? monthBoundsOf(prevMonthKey).end : rangeEnd}
               // Which month's lock governs editing here. Without this the module
               // checks the CURRENT month's lock, so an approved September plan
               // would freeze October's planning and an approved October plan

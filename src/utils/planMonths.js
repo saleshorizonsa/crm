@@ -21,9 +21,42 @@ export function nextMonthKeyOf(d = new Date()) {
   return monthKeyOf(new Date(d.getFullYear(), d.getMonth() + 1, 1));
 }
 
+/** yyyy-MM-01 for the month before the one `d` falls in (rolls the year). */
+export function prevMonthKeyOf(d = new Date()) {
+  return monthKeyOf(new Date(d.getFullYear(), d.getMonth() - 1, 1));
+}
+
 /** Days in the month `d` falls in. */
 export function daysInMonthOf(d = new Date()) {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+}
+
+/**
+ * GRACE WINDOW = the first 3 calendar days of a month, during which the month
+ * that JUST ENDED can still be submitted.
+ *
+ * Once a month was over there was no way to file its plan at all, so anyone who
+ * missed the 25th was simply stuck with an unsubmitted month. This keeps the
+ * door open for three days and then shuts it: on the 4th it is closed, and it
+ * cannot drift open because the test is purely the day of the month.
+ *
+ * It does NOT make the plan on time. is_late and flagged are whatever the
+ * deadline logic already decided; the window only restores the submit action.
+ */
+export const GRACE_DAYS = 3;
+
+export function isGraceWindowOpen(d = new Date()) {
+  return d.getDate() <= GRACE_DAYS;
+}
+
+/** The month the grace window applies to, or null when it is shut. */
+export function graceMonthKeyOf(d = new Date()) {
+  return isGraceWindowOpen(d) ? prevMonthKeyOf(d) : null;
+}
+
+/** Last instant the grace window is open, for wording like "until 3 Oct". */
+export function graceClosesAfter(d = new Date()) {
+  return new Date(d.getFullYear(), d.getMonth(), GRACE_DAYS, 23, 59, 59);
 }
 
 /**
