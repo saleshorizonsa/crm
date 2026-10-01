@@ -94,39 +94,49 @@ export default function OpportunitiesModule({
   // false because no single person is selected.
   const isOwnRow = (opp) => !!user?.id && opp?.owner_id === user.id;
 
-  // The SELECTED PERIOD, not month bounds — it is whatever the shared date
-  // selector holds, which can span a quarter or a year. The one thing it still
-  // scopes is the opportunity LIST: which rows you are browsing. It does NOT
-  // scope the monthly target or Achieved any more — both of those are about one
-  // month; see targetMonth below.
+  // The shared date selector's range. NOTHING ON THIS TAB READS IT ANY MORE.
+  //
+  // Its only remaining job is to name a fallback month for targetMonth below,
+  // for the case where the page does not pass planMonth. Every figure and every
+  // query on this tab is about ONE month — the month being planned — so a
+  // selector that can span a quarter or a year has nothing to say here. It is
+  // still rendered by the page, because the dashboards share it.
+  //
+  // If you are adding something to this tab, it almost certainly wants
+  // targetMonth, not this.
   const period = useMemo(() => {
     if (periodStart && periodEnd) return { start: periodStart, end: periodEnd };
     const mb = monthBounds();
     return { start: mb.startDate, end: mb.endDate };
   }, [periodStart, periodEnd]);
 
-  // The ONE month "Monthly Target" is about.
+  // THE month this tab is about: the one being planned. Everything here is
+  // scoped to it — the opportunity list, Total Planned, Still Unplanned, Monthly
+  // Target, Achieved and In Funnel — so the five cards and the rows beneath them
+  // always describe the same month, and Remaining subtracts like for like.
   //
-  // This used to come from `period`, and fetchMonthlyTargets matches any monthly
-  // row OVERLAPPING the window — so with a year-long selection the card summed
-  // every month it touched and presented the total as a monthly target. For
-  // Kamal that read 12,808,589.56 (Jan–Oct) where October alone is 3,701,000.
+  // All of these used to follow `period`, the shared selector, with a different
+  // consequence each time:
+  //   target    fetchMonthlyTargets matches any row OVERLAPPING the window, so a
+  //             year-long selection summed Jan-Oct and labelled it a MONTHLY
+  //             target: 12,808,589.56 for Kamal where October alone is 3,701,000.
+  //   achieved  a year of invoiced revenue came off one month's target.
+  //   funnel    defaulted to the WALL-CLOCK month, so a late September plan in
+  //             the grace window sat beside October's funnel.
+  //   list      a multi-month selection mixed several months' rows, and
+  //             totalPlanned under them described no particular month.
   //
-  // planMonth is the month the page is actually planning (activeMonthKey), so
-  // the card is now independent of whatever the shared selector is set to
-  // elsewhere. Falling back to the period's own month keeps it correct when the
-  // page does not supply one.
+  // planMonth is the page's activeMonthKey. The fallback is only for a caller
+  // that does not supply one.
   const targetMonth = useMemo(() => {
     const key = planMonth || `${String(period.start).slice(0, 7)}-01`;
     return monthBoundsOf(key);
   }, [planMonth, period.start]);
 
-  // A new opportunity defaults to the month being viewed, not to today's month,
-  // so adding a row while looking at October does not silently file it in September.
-  const currentMonth = useMemo(
-    () => `${String(period.start).slice(0, 7)}-01`,
-    [period.start],
-  );
+  // A new opportunity defaults to the month being planned, which is also the only
+  // month the list shows — so a row added here cannot be filed into a month where
+  // it would be invisible the moment it saved.
+  const currentMonth = targetMonth.start;
 
   const [opportunities, setOpportunities] = useState([]);
   const [loading, setLoading]             = useState(true);
@@ -295,16 +305,23 @@ export default function OpportunitiesModule({
           deal:deals!deal_id(id, title, stage, amount)
         `)
         .eq('company_id', company.id)
-        // The Current Sales Plan is the plan for ONE month. Without this the tab
-        // listed every month at once, so July, August and September rows sat in
-        // one list and the totals underneath described no particular month.
+        // The Current Sales Plan is the plan for ONE month, and that month is the
+        // one being PLANNED — not whatever the shared date selector happens to
+        // hold. A month bound was always the intent here; it was bound to the
+        // selector, so a multi-month selection put it straight back into the state
+        // this was written to prevent: July, August and September rows in one
+        // list, with totals under them describing no particular month.
+        //
+        // Browsing several months at once from this tab is therefore gone, by
+        // intent. Switching plan months (September <-> October) is the way to look
+        // at another month.
         //
         // Rows whose expected_month is in a future month are not orphaned by
         // this: they appear when that month is selected. The Future Orders tab
         // remains the route for parking a deal in a later month (it creates the
         // opportunity when the month arrives, carrying expected_month across).
-        .gte('expected_month', period.start)
-        .lte('expected_month', period.end)
+        .gte('expected_month', targetMonth.start)
+        .lte('expected_month', targetMonth.end)
         .order('created_at', { ascending: false });
 
       if (!isDirector && !isTeamLead) {
@@ -339,7 +356,7 @@ export default function OpportunitiesModule({
       setLoading(false);
     }
   }, [company?.id, isDirector, isTeamLead, user?.id, filterOwner, filterStatus, teamMembers,
-      period.start, period.end, filterProductGroup]);
+      targetMonth.start, targetMonth.end, filterProductGroup]);
 
   // ── Fetch: contacts + team ────────────────────────────────────────────────
   // Contacts are scoped by OWNER, not company: contacts.company_id is null in
