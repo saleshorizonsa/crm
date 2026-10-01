@@ -179,8 +179,21 @@ const PlanningPage = () => {
   const isAnnualView = isAnnualRange(rangeStart, rangeEnd);
   const periodLabel = periodLabelFromRange(rangeStart, rangeEnd);
   const isSupervisor = role === "supervisor";
+  // A manager carries a target of his own and files a plan for it like anyone
+  // else; reviewing the team's plans is a separate job he also has.
+  const isManager = role === "manager";
   // Manager/supervisor/director review their team's submitted plans.
   const canApprove = TEAM_ROLES.includes(role) || DIRECTOR_ROLES.includes(role);
+
+  // Whose plan is on screen. A team lead or director can point the owner filter
+  // at anyone in their scope and read that person's Current Sales Plan — the
+  // opportunity list and the summary cards already follow this filter, so the
+  // plan's SUBMISSION state has to follow it too or the bar would describe the
+  // viewer's own plan while the page below it describes someone else's.
+  const canViewOthers = TEAM_ROLES.includes(role) || isDirectorRole;
+  const viewedOwnerId = (canViewOthers && filterOwner !== "all") ? filterOwner : user?.id;
+  // Only the plan's own owner may submit it. Everyone else is read-only.
+  const isViewingOther = !!viewedOwnerId && viewedOwnerId !== user?.id;
 
   // ── Plan submission (deadline: 25th of the month) ───────────────────────────
   // Keyed BY PLAN MONTH rather than a single row, because in the last 7 days of
@@ -197,19 +210,19 @@ const PlanningPage = () => {
   const earlyOpen = isEarlyWindowOpen(now);
 
   const fetchPlanSubmission = useCallback(async () => {
-    if (!companyId || !user?.id) { setSubmissions({}); return; }
+    if (!companyId || !viewedOwnerId) { setSubmissions({}); return; }
     // Both months in one round trip; outside the window the second key simply
     // matches nothing.
     const { data } = await supabase
       .from("plan_submissions")
       .select("*")
       .eq("company_id", companyId)
-      .eq("owner_id", user.id)
+      .eq("owner_id", viewedOwnerId)
       .in("plan_month", [currentMonthKey, nextMonthKey]);
     const byMonth = {};
     (data || []).forEach((r) => { byMonth[String(r.plan_month).slice(0, 10)] = r; });
     setSubmissions(byMonth);
-  }, [companyId, user?.id, currentMonthKey, nextMonthKey]);
+  }, [companyId, viewedOwnerId, currentMonthKey, nextMonthKey]);
 
   useEffect(() => { fetchPlanSubmission(); }, [fetchPlanSubmission]);
 
@@ -286,11 +299,21 @@ const PlanningPage = () => {
   // showing that here told the salesman a smaller shortfall than the number his
   // manager would read off the queue for the same plan.
   const plannedShortfall = Math.max(0, activeSummary.requiredPlan - activeSummary.plannedOpen);
-  const canSubmit = (planningNextMonth || planComplete) && !planSubmission?.is_submitted;
-  const showSubmitBar = (isSalesman || isSupervisor) && !!companyId;
+  // Nobody submits on someone else's behalf: the bar still shows, so a lead can
+  // read where that person's plan stands, but the button is not theirs to press.
+  const canSubmit = (planningNextMonth || planComplete)
+    && !planSubmission?.is_submitted
+    && !isViewingOther;
+  // Managers file their own plan too. The bar also appears for a lead who is
+  // reading a subordinate's plan, because its whole content is that plan's state.
+  const showSubmitBar = (isSalesman || isSupervisor || isManager || isViewingOther) && !!companyId;
 
   const handleSubmitPlan = async () => {
     if (!canSubmit || submitting) return;
+    // Belt and braces. The summary on screen belongs to whoever is selected, so
+    // submitting while pointed at someone else would file the VIEWER's plan
+    // carrying the OTHER person's numbers.
+    if (isViewingOther) return;
     // The month being submitted is whichever one is on screen — this month, or
     // next month during the early window. Everything on the row is derived from
     // that month, not from today's date: an October plan sent on 24 September
@@ -581,11 +604,15 @@ const PlanningPage = () => {
           <div className="flex items-center gap-2 px-5 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl mb-4">
             <span className="text-base">🔒</span>
             <div>
-              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Plan Locked</p>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                {isViewingOther ? `${filterOwnerName || "Team member"}: Plan Locked` : "Plan Locked"}
+              </p>
               <p className="text-xs text-slate-600 dark:text-slate-300">
+                {/* "Contact your manager" is advice for the plan's owner, not for
+                    a lead reading it. */}
                 {planSubmission.approved_at
-                  ? `Approved ${new Date(planSubmission.approved_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}. Contact your manager if changes are needed.`
-                  : "Approved. Contact your manager if changes are needed."}
+                  ? `Approved ${new Date(planSubmission.approved_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}.${isViewingOther ? "" : " Contact your manager if changes are needed."}`
+                  : `Approved.${isViewingOther ? "" : " Contact your manager if changes are needed."}`}
               </p>
             </div>
           </div>
@@ -595,11 +622,13 @@ const PlanningPage = () => {
           <div className="flex items-center gap-2 px-5 py-3 bg-amber-50 border border-amber-200 rounded-xl mb-4">
             <span className="text-base">❌</span>
             <div>
-              <p className="text-sm font-semibold text-amber-800">Plan Sent Back</p>
+              <p className="text-sm font-semibold text-amber-800">
+                {isViewingOther ? `${filterOwnerName || "Team member"}: Plan Sent Back` : "Plan Sent Back"}
+              </p>
               <p className="text-xs text-amber-700">
                 {planSubmission.rejection_reason
-                  ? `"${planSubmission.rejection_reason}" — revise your plan and submit again.`
-                  : "Revise your plan and submit again."}
+                  ? `"${planSubmission.rejection_reason}"${isViewingOther ? " — awaiting their revision." : " — revise your plan and submit again."}`
+                  : isViewingOther ? "Awaiting their revision." : "Revise your plan and submit again."}
               </p>
             </div>
           </div>
@@ -618,6 +647,12 @@ const PlanningPage = () => {
               />
               <div>
                 <p className="text-sm font-semibold text-foreground">
+                  {/* Whose plan this is, whenever it is not the reader's own. */}
+                  {isViewingOther && (
+                    <span className="text-muted-foreground font-normal">
+                      {filterOwnerName || "Team member"}:{" "}
+                    </span>
+                  )}
                   {planSubmission?.is_submitted
                     ? `✅ ${monthNameOf(activeMonthKey)} Plan Submitted`
                     : isLate
@@ -638,7 +673,11 @@ const PlanningPage = () => {
               </div>
             </div>
 
-            {!planSubmission?.is_submitted && (
+            {isViewingOther ? (
+              <span className="text-[11px] px-2.5 py-1 rounded-full bg-muted text-muted-foreground border border-border whitespace-nowrap">
+                read-only — only {filterOwnerName || "the owner"} can submit this
+              </span>
+            ) : !planSubmission?.is_submitted && (
               <button
                 onClick={handleSubmitPlan}
                 disabled={!canSubmit || submitting === activeMonthKey}
