@@ -97,6 +97,15 @@ export function DivisionCoverageHero({ metrics, scope, title, sub, periodLabel }
         ))}
       </div>
 
+      {/* The equation's Target column is a 9px micro-label with no room for a
+          qualifier, so the span is stated once beneath it. Hidden for All Time,
+          where the Target comparison is suppressed anyway. */}
+      {!metrics.isAllTime && metrics.targetSpan ? (
+        <p className="-mt-3 mb-5 text-[11px] text-gray-500">
+          Target covers <span className="font-medium text-gray-700">{metrics.targetSpan}</span>.
+        </p>
+      ) : null}
+
       <DivisionCoverageRail
         invoiced={metrics.achieved}
         weightedFunnel={metrics.weightedFunnel}
@@ -135,7 +144,11 @@ export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
     // exists for months that have rows, so target-derived rows are dropped.
     ...(metrics.isAllTime
       ? []
-      : [["Target", SAR(metrics.target) + " SAR", ""]]),
+      // The note names the span the figure covers. Target here is the sum of the
+      // monthly target of every month the window touches, and an incomplete month
+      // contributes its whole target — both invisible when the row said only
+      // "Target". See targetSpanLabel in utils/salesDivisionMetrics.js.
+      : [["Target", SAR(metrics.target) + " SAR", metrics.targetSpan || ""]]),
     [
       "Achieved",
       SAR(metrics.achieved) + " SAR",

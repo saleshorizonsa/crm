@@ -1,4 +1,5 @@
 import { dealInDivision } from 'utils/divisionMembership';
+import { partitionOpenFunnel } from 'utils/openFunnel';
 import {
   CONTRIBUTOR_ROLES,
   isAchievedOnly,
@@ -31,6 +32,53 @@ export const DIVISION_PAGE_ROLES = ['director', 'manager'];
 export const MEMBER_ROLES = ['salesman', 'supervisor', 'manager'];
 
 export const UNASSIGNED = 'unassigned';
+
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const dateParts = (s) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
+  return m ? { y: +m[1], m: +m[2], d: +m[3] } : null;
+};
+const lastDayOf = (y, m) => new Date(y, m, 0).getDate();
+
+/**
+ * What span the Target figure actually covers, for the label beside it.
+ *
+ * Target here is CUMULATIVE over the selected period — the sum of the monthly
+ * target of every month the window touches — because Achieved on this page is
+ * cumulative over the same window, so the two compare like for like. That is the
+ * opposite of Planning, where the card is about one planned month.
+ *
+ * Two things were impossible to tell from a row labelled only "Target":
+ *   how many months are in it — This Year reads 12,808,589.56 for Kamal, which is
+ *     ten monthly targets and not a monthly figure gone wrong;
+ *   that an INCOMPLETE month still contributes its WHOLE target. A monthly row is
+ *     matched when it overlaps the window, so Oct 1–Oct 15 carries all of
+ *     October. The selector's own "This Month" caps at today, which on the 1st of
+ *     the month is a one-day window against a full month's target — the case this
+ *     reads worst without a label.
+ *
+ * Parsed from the yyyy-MM-dd strings rather than through Date, so a timezone
+ * behind UTC cannot roll the month back a day (and so a month, on the 1st).
+ *
+ * @returns {string} 'October 2026' | 'October 2026 · full month' |
+ *                   'Jan–Oct 2026 · 10 months' | 'Nov 2025–Oct 2026 · 12 months'
+ */
+export function targetSpanLabel(start, end) {
+  const a = dateParts(start);
+  const b = dateParts(end);
+  if (!a || !b) return '';
+  const months = (b.y - a.y) * 12 + (b.m - a.m) + 1;
+  if (months <= 1) {
+    const wholeMonth = a.d === 1 && b.d === lastDayOf(a.y, a.m);
+    return `${MONTHS_LONG[a.m - 1]} ${a.y}${wholeMonth ? '' : ' · full month'}`;
+  }
+  const from = a.y === b.y ? MONTHS_SHORT[a.m - 1] : `${MONTHS_SHORT[a.m - 1]} ${a.y}`;
+  return `${from}–${MONTHS_SHORT[b.m - 1]} ${b.y} · ${months} months`;
+}
 
 /**
  * The user ids this viewer may see. Director = whole company; manager = his own
@@ -199,7 +247,8 @@ export function calcDivisionMetrics(userIds, data) {
   const contributorIds = (users || [])
     .filter((u) => scope.has(u.id) && CONTRIBUTOR_ROLES.includes(u.role))
     .map((u) => u.id);
-  const isContributor = new Set(contributorIds);
+  // contributorIds stays for the WIN RATE, which is a property of the people who
+  // close deals for a living and deliberately not of a flagged manager's handful.
   // Target counts over the same people as Achieved below: contributors plus any
   // flagged manager who sells himself. Without this a division carried by a
   // flagged manager — Export, in the case this was built for — showed Achieved
@@ -252,26 +301,34 @@ export function calcDivisionMetrics(userIds, data) {
   // (business decision, 2026-09-28).
   const deficit = Math.max(0, target - achieved);
 
+  // isAchiever, not isContributor. Target, Achieved, Planned and the funnel below
+  // are all measured over achievers, and this was the one figure that was not —
+  // so a flagged manager's own open deals vanished from the coverage rail and from
+  // `coverage` while his target and revenue were counted in full. For Kamal that
+  // is 308,750 of his own pipeline, the same defect that had supervisor Diba
+  // reading In Funnel 0.00 against 1,510,602.80 of his own deals.
   const openDeals = (deals || []).filter(
-    (d) => isContributor.has(d.owner_id) && !['won', 'lost'].includes(d.stage),
+    (d) => isAchiever.has(d.owner_id) && !['won', 'lost'].includes(d.stage),
   );
-  const pipeline = openDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
+  const pipeline = openDeals.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
 
   // Plan and funnel are measured over the SAME people as Target and Achieved —
   // contributors plus any flagged manager — so a flagged manager's own plan and
   // deals net off the requirement his own target created.
   const achieverIds = [...isAchiever];
   const planned = sumPlannedByOwner({ rows: opps, ownerIds: achieverIds }).total;
-  // Open funnel dated into THIS month, raw. Distinct from `pipeline` above,
-  // which is every open deal regardless of date and feeds the coverage rail.
-  const monthFunnel = (deals || [])
-    .filter(
-      (d) => isAchiever.has(d.owner_id)
-        && !['won', 'lost'].includes(d.stage)
-        && d.expected_close_date >= monthStart
-        && d.expected_close_date <= monthEnd,
-    )
-    .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+  // Open funnel for the window, raw — THE shared definition
+  // (utils/openFunnel.js), not a local re-derivation. The inline version this
+  // replaced required an expected_close_date and so silently dropped every
+  // undated open deal: 13 worth 123,540.34 for JASCO PVC, which is why Insights
+  // read 3,168,939.08 where Planning and the KPI strip read 3,292,479.42 for the
+  // same people and the same month. Undated work is work somebody has not dated,
+  // not work that does not exist; see INCLUDE_UNDATED.
+  //
+  // Distinct from `pipeline` above, which is every open deal regardless of date
+  // and feeds the coverage rail.
+  const funnelSplit = partitionOpenFunnel({ rows: openDeals, start: monthStart, end: monthEnd });
+  const monthFunnel = funnelSplit.total;
   // Shown for visibility only — NOT netted off the requirement any more. It is
   // NEXT month's commitment, and subtracting it understated what still had to be
   // built this month. Planning never did it; Planning is the standard.
@@ -305,6 +362,10 @@ export function calcDivisionMetrics(userIds, data) {
 
   return {
     target,
+    // The span the Target above covers, for the label beside it. Carried on the
+    // metrics rather than threaded as a prop because it is derived from the same
+    // window the figure is, and must never disagree with it.
+    targetSpan: targetSpanLabel(monthStart, monthEnd),
     achieved,
     achievedGross,
     returnsTotal,
@@ -323,6 +384,9 @@ export function calcDivisionMetrics(userIds, data) {
     winRateBorrowed,
     planned,
     monthFunnel,
+    // How much of monthFunnel carries no close date, so a screen can disclose it
+    // rather than let the figure read as "all due in this period".
+    monthFunnelUndated: funnelSplit.undated,
     monthCoverage,
     carryIn,
     requiredRaw,

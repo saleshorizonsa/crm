@@ -118,15 +118,43 @@ export async function fetchOpenFunnel({
   }
 
   const allOpenRows = data || [];
-  const amt = (d) => parseFloat(d.amount) || 0;
 
+  return {
+    ...partitionOpenFunnel({ rows: allOpenRows, start: bounds.start, end: bounds.end }),
+    // The unbounded set, for a caller that needs its own window off the same
+    // read (the KPI strip takes its plan-gap slice from this).
+    allOpenRows,
+    scopeIds: ids,
+    bounds,
+  };
+}
+
+/**
+ * THE partition, for a caller that already holds the rows.
+ *
+ * Split out of fetchOpenFunnel so a screen that fetches its own deals — the
+ * Insights page computes every level in memory from one company-wide read, and
+ * has to filter by division on the way — applies this rule instead of writing
+ * its own. Insights previously did write its own, and dropped every undated deal
+ * (13 worth 123,540.34), so its funnel disagreed with Planning and the KPI strip
+ * for the same people in the same month.
+ *
+ * Rows must already be scoped and already be open (stage not won/lost); this
+ * decides only the DATE question, which is where the definitions diverged.
+ *
+ * @returns {{ total:number, dealCount:number, rows:object[],
+ *             undated:{total:number,count:number},
+ *             outsideMonth:{total:number,count:number} }}
+ */
+export function partitionOpenFunnel({ rows, start, end }) {
+  const amt = (d) => parseFloat(d.amount) || 0;
   const inMonth = [];
   const undated = [];
   const outside = [];
-  allOpenRows.forEach((d) => {
+  (rows || []).forEach((d) => {
     const due = d.expected_close_date;
     if (!due) undated.push(d);
-    else if (due >= bounds.start && due <= bounds.end) inMonth.push(d);
+    else if (due >= start && due <= end) inMonth.push(d);
     else outside.push(d);
   });
 
@@ -137,11 +165,6 @@ export async function fetchOpenFunnel({
     total: sum(counted),
     dealCount: counted.length,
     rows: counted,
-    // The unbounded set, for a caller that needs its own window off the same
-    // read (the KPI strip takes its plan-gap slice from this).
-    allOpenRows,
-    scopeIds: ids,
-    bounds,
     // So a screen can say how much of the figure is undated rather than letting
     // it read as "all due this month".
     undated: { total: sum(undated), count: undated.length },
