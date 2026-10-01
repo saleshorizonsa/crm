@@ -413,7 +413,9 @@ const PipelineAnalytics = ({
                 <p className="text-xs text-muted-foreground mt-1">
                   {funnelCardDeals} {t("pipeline.deals")}
                   {showSharedFunnel
-                    ? " · open deals, your team"
+                    ? ` · open, this month, your team${
+                      sharedFunnel.undated?.count
+                        ? ` (incl. ${sharedFunnel.undated.count} undated)` : ''}`
                     : " · matching the current filters"}
                 </p>
               </div>

@@ -262,6 +262,8 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   // was missing from his own funnel while his Planning card included him — for
   // Kamal, 308,750 across 2 of his own open deals, which is why the strip read
   // 1,843,031.87 against Planning's 2,151,781.87. Same people now.
+  // Current-month bound, like Planning and Funnel Analytics — the util decides
+  // the window, so the three cannot drift apart again.
   const funnel = await fetchOpenFunnel({ companyId, scopeIds: achievedScopeIds });
   const funnelValue = funnel.total;
   // The slice of that funnel dated INTO the window, which is what nets off the
@@ -269,7 +271,11 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   // Console and Insights. `funnelValue` above stays every open deal, for the
   // coverage check. Taken from the rows already read, so there is no second
   // query that could drift from the definition.
-  const { per: monthFunnelPer, total: monthFunnelTotal } = funnelInWindow(funnel.rows, winStart, winEnd);
+  // Taken from allOpenRows, not from the counted rows: this slice follows the
+  // strip's OWN window (which may be an annual view), and must not be narrowed
+  // to the current month first or an annual plan gap would be computed from one
+  // month of funnel.
+  const { per: monthFunnelPer, total: monthFunnelTotal } = funnelInWindow(funnel.allOpenRows, winStart, winEnd);
 
   // 7. Future-order carryover — pending future orders for NEXT month count toward
   //    the required plan (customers already committed), reducing the new pipeline
