@@ -345,9 +345,17 @@ export default function OpportunitiesModule({
   // ── Save (create / update) ────────────────────────────────────────────────
   async function handleSave() {
     if (!form.customer_name?.trim() || !form.planned_amount) return;
+    if (isViewingOther) return;
     // An approved plan is locked for the month — a salesman cannot add to or
     // change it until their manager sends it back.
-    if (await blockIfPlanLocked({ ownerId: user?.id, role, planMonth })) return;
+    //
+    // The lock that matters is the OPPORTUNITY OWNER's, not the logged-in user's.
+    // On a create they are the same person (the insert uses user.id), but on an
+    // edit they need not be, and checking the viewer's lock asked the wrong
+    // question entirely.
+    if (await blockIfPlanLocked({
+      ownerId: editingOpp?.owner_id || user?.id, role, planMonth,
+    })) return;
     setSaving(true);
     try {
       const payload = {
@@ -383,8 +391,15 @@ export default function OpportunitiesModule({
     }
   }
 
-  async function handleDelete(id) {
-    if (await blockIfPlanLocked({ ownerId: user?.id, role, planMonth })) return;
+  // Takes the row, not just its id, because the lock to check belongs to the
+  // opportunity's OWNER — previously this asked whether the logged-in user's own
+  // plan was locked, which is a different person whenever a lead is looking at
+  // someone else's plan.
+  async function handleDelete(opp) {
+    if (isViewingOther) return;
+    const id = typeof opp === 'string' ? opp : opp?.id;
+    const ownerId = (typeof opp === 'object' && opp?.owner_id) || user?.id;
+    if (await blockIfPlanLocked({ ownerId, role, planMonth })) return;
     if (!window.confirm('Delete this opportunity?')) return;
     const { error } = await supabase.from('opportunities').delete().eq('id', id);
     if (error) { alert(`Could not delete: ${error.message}`); return; }
@@ -397,6 +412,7 @@ export default function OpportunitiesModule({
   // expected-close value). Links are two-way (opportunities.deal_id +
   // deals.opportunity_id) so the 3-day lead-expiry check can find converted leads.
   async function handleConvert(opp) {
+    if (isViewingOther) return;
     // A plan must be APPROVED before the work in it can become a deal. The month
     // checked is the opportunity's own expected_month, not the month the page is
     // showing — converting an October opportunity is governed by October's plan
@@ -464,6 +480,7 @@ export default function OpportunitiesModule({
     setShowModal(true);
   }
   function openEdit(opp) {
+    if (isViewingOther) return;
     setEditingOpp(opp);
     setForm({
       customer_name:  opp.customer_name || '',
@@ -869,20 +886,38 @@ export default function OpportunitiesModule({
                       <div className="flex gap-2">
                         <button
                           onClick={() => openEdit(opp)}
-                          className="text-xs px-3 py-1.5 border border-border rounded-lg text-muted-foreground hover:bg-muted transition-colors"
+                          disabled={isViewingOther}
+                          title={isViewingOther ? "Only this plan's owner can change it" : undefined}
+                          className={`text-xs px-3 py-1.5 border rounded-lg transition-colors ${
+                            isViewingOther
+                              ? 'border-border text-muted-foreground/50 cursor-not-allowed'
+                              : 'border-border text-muted-foreground hover:bg-muted'
+                          }`}
                         >
                           Edit
                         </button>
                         <button
-                          onClick={() => handleDelete(opp.id)}
-                          className="text-xs px-3 py-1.5 border border-red-200 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                          onClick={() => handleDelete(opp)}
+                          disabled={isViewingOther}
+                          title={isViewingOther ? "Only this plan's owner can change it" : undefined}
+                          className={`text-xs px-3 py-1.5 border rounded-lg transition-colors ${
+                            isViewingOther
+                              ? 'border-border text-muted-foreground/50 cursor-not-allowed'
+                              : 'border-red-200 text-red-500 hover:bg-red-50'
+                          }`}
                         >
                           Delete
                         </button>
                       </div>
                       <button
                         onClick={() => handleConvert(opp)}
-                        className="flex items-center gap-1.5 text-xs px-4 py-1.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors"
+                        disabled={isViewingOther}
+                        title={isViewingOther ? "Only this plan's owner can convert it" : undefined}
+                        className={`flex items-center gap-1.5 text-xs px-4 py-1.5 font-medium rounded-xl transition-colors ${
+                          isViewingOther
+                            ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
                       >
                         Convert to Lead
                         <Icon name="ArrowRight" size={12} />
