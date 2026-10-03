@@ -114,24 +114,49 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const [selectedQuarter, setSelectedQuarter] = useState(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
-  // Single source of truth for the active date range — defaults to current month 1st → today
+  // Single source of truth for the active date range.
+  //
+  // A director opens on the FULL CURRENT YEAR — the annual view this dashboard is
+  // built around — but only LOCALLY. It used to reach for setRange() on mount and
+  // write This Year into DateRangeContext, which every other screen reads: one
+  // visit here and Planning, Insights, the Coverage Console, the Forecast and the
+  // dashboards all switched to the year, and the write persisted to localStorage
+  // so it survived the session. Scoping it here keeps the annual landing view and
+  // leaves everyone else on the shared current-month default.
+  //
+  // A range the director has already CHOSEN still wins, which is what hasSelection
+  // distinguishes — restored from storage or set anywhere this session.
   const [activeDateRange, setActiveDateRange] = useState(() => {
     const now = new Date();
+    if (hasSelection && dateRange?.from && dateRange?.to) {
+      return { from: dateRange.from, to: dateRange.to };
+    }
+    const y = now.getFullYear();
     return {
-      from: format(startOfMonth(now), 'yyyy-MM-dd'),
-      to:   format(now, 'yyyy-MM-dd'),
-      label: format(now, 'MMMM yyyy'),
-      type:  'monthly',
-      period: format(now, 'MMMM yyyy'),
+      from: `${y}-01-01`,
+      to: `${y}-12-31`,
+      label: String(y),
+      type: 'yearly',
+      period: String(y),
     };
   });
   const [refreshing, setRefreshing] = useState(false);
 
-  // Sync from top-right DateRangePicker (via context) → local dropdowns
+  // Sync from top-right DateRangePicker (via context) → local dropdowns.
+  //
+  // The context value AT MOUNT is remembered and ignored once, so the annual
+  // default above is not immediately overwritten by the shared current month.
+  // Only a real change — the picker, a quick-range button, a restore — applies.
   const activeDateRangeRef = React.useRef(activeDateRange);
   activeDateRangeRef.current = activeDateRange;
+  const mountedRangeRef = React.useRef(
+    dateRange?.from && dateRange?.to ? `${dateRange.from}|${dateRange.to}` : null,
+  );
   useEffect(() => {
     if (!dateRange?.from || !dateRange?.to) return;
+    const key = `${dateRange.from}|${dateRange.to}`;
+    if (mountedRangeRef.current === key) return;
+    mountedRangeRef.current = null;
     if (
       dateRange.from === activeDateRangeRef.current.from &&
       dateRange.to   === activeDateRangeRef.current.to
@@ -150,20 +175,9 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     return () => clearTimeout(timer);
   }, [activeDateRange.from, activeDateRange.to]);
 
-  // Director defaults to This Year (annual view) — but only when no range has
-  // been chosen yet this session. This used to fire on every mount, which was
-  // harmless while the range reset on each visit anyway; now that the range is
-  // kept for the session, it would overwrite the director's own selection every
-  // time they came back to the dashboard. Only the director dashboard mounts
-  // this, so other roles keep the context's current-month default.
-  const didInitRange = React.useRef(false);
-  useEffect(() => {
-    if (didInitRange.current) return;
-    didInitRange.current = true;
-    if (hasSelection) return;
-    const y = new Date().getFullYear();
-    setRange({ from: `${y}-01-01`, to: `${y}-12-31` });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // The annual default is applied to LOCAL state in the useState initialiser
+  // above, not written to DateRangeContext. There is deliberately no setRange()
+  // on mount: this dashboard no longer changes what any other screen shows.
 
   // Whether the active range spans the full current year → annual KPIs + labels.
   const isAnnualView = !!(
