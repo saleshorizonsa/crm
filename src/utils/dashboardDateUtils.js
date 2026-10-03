@@ -163,8 +163,28 @@ export function getQuickRanges() {
   const month = now.getMonth();
   const fmt   = d => format(d, 'yyyy-MM-dd');
 
+  // WHOLE calendar periods, not "up to today".
+  //
+  // These three used to end at `now`, which made this component disagree with
+  // every other date control in the app: DateRangePicker and the Forecast page's
+  // own buttons both emit endOfMonth / endOfQuarter / endOfYear. The same label
+  // therefore meant two different windows depending on which control you used,
+  // and a dashboard renders BOTH — the picker above it and this row inside it.
+  //
+  // Capping only moved the END into the past, so it only ever suppressed
+  // FORWARD-looking data: open deals and opportunities dated later in the period.
+  // For JASCO PVC "This Month" hid 5 open deals worth 2,233,178 dated after the
+  // 3rd, about three quarters of the month's funnel. Nothing keyed on created_at
+  // or closed_at can be affected, because those cannot be in the future.
+  //
+  // It also made the period-shape helpers below disagree with their own buttons:
+  // isCurrentMonthRange() wants the whole month, so clicking "This Month" used to
+  // switch the pacing verdict OFF. Now it matches, and the verdict stays.
+  //
+  // "Last Month" was already whole. "All Time" still ends today, which is what
+  // all-time means — there is no future end to extend to.
   const thisMonthStart = startOfMonth(now);
-  const thisMonthEnd   = now;
+  const thisMonthEnd   = endOfMonth(now);
 
   const lastMonthStart = startOfMonth(new Date(year, month - 1, 1));
   const lastMonthEnd   = endOfMonth(new Date(year, month - 1, 1));
@@ -174,6 +194,7 @@ export function getQuickRanges() {
   const qEnd     = endOfMonth(new Date(year, currentQ * 3 + 2, 1));
 
   const yearStart = new Date(year, 0, 1);
+  const yearEnd   = new Date(year, 11, 31);
 
   return [
     {
@@ -193,14 +214,14 @@ export function getQuickRanges() {
     {
       label:  'This Quarter',
       from:   fmt(qStart),
-      to:     fmt(now < qEnd ? now : qEnd),
+      to:     fmt(qEnd),
       type:   'quarterly',
       period: `Q${currentQ + 1} ${year}`,
     },
     {
       label:  'This Year',
       from:   fmt(yearStart),
-      to:     fmt(now),
+      to:     fmt(yearEnd),
       type:   'yearly',
       period: String(year),
     },
