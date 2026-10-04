@@ -4110,6 +4110,34 @@ export const productService = {
 // DEAL PRODUCTS SERVICES
 // ========================================
 
+// Reported once per session, not once per saved product line. A deal with eight
+// lines calls updateDealMargin eight times through add/update/delete/convert, and
+// a missing column fails identically every time: the first report says everything
+// the later ones would, and a repeating error teaches people to ignore the
+// console. Anything that is NOT the missing-column case is logged every time,
+// because that would be a new fault.
+let marginColumnsMissingReported = false;
+function reportMarginColumnsMissing(error) {
+  // PostgREST reports an unknown column in the payload as PGRST204, and Postgres
+  // itself as 42703 ("column ... does not exist").
+  const code = String(error?.code || "");
+  const message = String(error?.message || "");
+  const isMissingColumn = code === "PGRST204" || code === "42703"
+    || /total_cost|gross_margin|margin_pct/.test(message);
+
+  if (!isMissingColumn) {
+    console.error("Error in updateDealMargin:", error);
+    return;
+  }
+  if (marginColumnsMissingReported) return;
+  marginColumnsMissingReported = true;
+  console.warn(
+    "[margin] deals.total_cost / gross_margin / margin_pct are missing, so deal "
+    + "margins are not being stored. Apply migrations/complete_gross_margin_deals_columns.sql. "
+    + `Reported once per session; first error: ${message || code || "unknown"}`,
+  );
+}
+
 export const dealProductService = {
   // Get all products for a deal
   async getDealProducts(dealId) {
@@ -4133,7 +4161,16 @@ export const dealProductService = {
     }
   },
 
-  // Recalculate and persist deal-level margin totals
+  // Recalculate and persist deal-level margin totals.
+  //
+  // deals.total_cost / gross_margin / margin_pct DO NOT EXIST in this database:
+  // migrations/add_gross_margin.sql was applied to products and deal_products
+  // only, so this update is rejected on every call. It used to be rejected
+  // invisibly — the error was never read, since the update's result was awaited
+  // without destructuring `error`, and PostgREST reports a missing column as an
+  // error rather than throwing. Nothing in the console said margins were not
+  // being written. It is now reported ONCE per session, with the migration that
+  // fixes it: migrations/complete_gross_margin_deals_columns.sql (NOT APPLIED).
   async updateDealMargin(dealId) {
     try {
       const { data: rows } = await supabase
@@ -4146,12 +4183,14 @@ export const dealProductService = {
       const grossMargin  = totalRevenue - totalCost;
       const marginPct    = totalRevenue > 0 ? (grossMargin / totalRevenue) * 100 : null;
 
-      await supabase
+      const { error } = await supabase
         .from("deals")
         .update({ total_cost: totalCost, gross_margin: grossMargin, margin_pct: marginPct })
         .eq("id", dealId);
+
+      if (error) reportMarginColumnsMissing(error);
     } catch (err) {
-      console.error("Error in updateDealMargin:", err);
+      reportMarginColumnsMissing(err);
     }
   },
 
