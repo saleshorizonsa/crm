@@ -316,9 +316,11 @@ const PlanningPage = () => {
   // Everything below is now ABOUT activeMonthKey rather than about "now".
   const deadlineDay = new Date(`${deadlineFor(activeMonthKey)}T00:00:00`);
   const isLate = isLateFor(activeMonthKey, now);
-  // Submission completeness stays a question about the PLAN, not about coverage:
-  // a big open funnel must not let a month be submitted with nothing planned.
-  const activeSummary = summaryData;
+  // `activeSummary` used to be aliased here for the submit bar's "how much is
+  // missing" line. Nothing in the bar reads the summary any more — submission
+  // completeness is a question about the PLAN, not about coverage, and the
+  // summary is the coverage view (see submitBarNote). The tiles read
+  // summaryData directly.
 
   // ── The submitter's OWN plan, which is what the submit bar is about ────────
   //
@@ -389,6 +391,61 @@ const PlanningPage = () => {
   const underPlanned = ownPlan.loaded && ownPlan.target > 0
     && ownPlan.plannedOpen < ownPlan.target;
   const plannedShortfall = Math.max(0, ownPlan.target - ownPlan.plannedOpen);
+
+  // ── Whose figures the bar DESCRIBES, which is not whose it gates on ─────────
+  //
+  // When a lead points the owner filter at a subordinate, the bar is about that
+  // person's plan — the opportunity list and the tiles below it already are — so
+  // a shortfall read off ownPlan would print the VIEWER's missing amount under
+  // the subordinate's name. The alternative was to show no amount at all; a
+  // number is the whole reason a lead opens that screen, so it is computed for
+  // the viewed owner instead, from the same three calls on the same month.
+  //
+  // The GATE is untouched: planComplete and canSubmit stay on ownPlan, and
+  // canSubmit is false while viewing someone else anyway.
+  //
+  // Fetched only when actually viewing someone else — otherwise this IS ownPlan,
+  // so the ordinary case keeps its two queries.
+  const [viewedPlan, setViewedPlan] = useState({ target: 0, plannedOpen: 0, loaded: false, failed: false });
+  useEffect(() => {
+    if (!isViewingOther || !companyId || !viewedOwnerId || !activeMonthKey) {
+      setViewedPlan({ target: 0, plannedOpen: 0, loaded: false, failed: false });
+      return undefined;
+    }
+    let alive = true;
+    (async () => {
+      const bounds = monthBoundsOf(activeMonthKey);
+      const [rows, planned] = await Promise.all([
+        fetchMonthlyTargets({
+          companyId, contributorIds: [viewedOwnerId], start: bounds.start, end: bounds.end,
+        }),
+        fetchPlannedOpen({
+          companyId, ownerIds: [viewedOwnerId], start: bounds.start, end: bounds.end, productGroup: null,
+        }),
+      ]);
+      if (!alive) return;
+      setViewedPlan({
+        target: Object.values(targetPerPerson(rows)).reduce((sum, v) => sum + v, 0),
+        plannedOpen: planned.total,
+        loaded: true,
+        failed: !!planned.failed,
+      });
+    })();
+    return () => { alive = false; };
+  }, [isViewingOther, companyId, viewedOwnerId, activeMonthKey]);
+
+  const subjectPlan = isViewingOther ? viewedPlan : ownPlan;
+  // Identical to plannedShortfall for one's own plan — deliberately written as
+  // the same expression on the same two numbers, so the figure the bar prints
+  // cannot drift from the figure the gate uses.
+  const subjectShortfall = isViewingOther
+    ? Math.max(0, viewedPlan.target - viewedPlan.plannedOpen)
+    : plannedShortfall;
+  const subjectComplete = subjectPlan.loaded && !subjectPlan.failed
+    && subjectPlan.plannedOpen >= subjectPlan.target;
+  const subjectUnderPlanned = subjectPlan.loaded && subjectPlan.target > 0
+    && subjectPlan.plannedOpen < subjectPlan.target;
+
   // Nobody submits on someone else's behalf: the bar still shows, so a lead can
   // read where that person's plan stands, but the button is not theirs to press.
   // Whether the figures on screen are real yet. An unloaded summary is all
@@ -411,6 +468,59 @@ const PlanningPage = () => {
   // Managers file their own plan too. The bar also appears for a lead who is
   // reading a subordinate's plan, because its whole content is that plan's state.
   const showSubmitBar = (isSalesman || isSupervisor || isManager || isViewingOther) && !!companyId;
+
+  // ── The line under the submit bar's heading ─────────────────────────────────
+  //
+  // The "how much is missing" figure here used to be activeSummary.plannedGap,
+  // which answers a different question than the button does: it is team- and
+  // filter-wide, measured against Required Plan (target ÷ win rate) and net of
+  // the open funnel, while the button unlocks on the owner's OWN open plan
+  // against his OWN target for the month on screen. So a salesman with a big
+  // funnel read "Add 0 SAR more to enable submission" beside a disabled button,
+  // and a lead with "All Salesmen" selected read his whole team's gap.
+  //
+  // It is now the figure the gate actually uses — the same target − planned as
+  // plannedShortfall — and it names both sides, so it can be checked against the
+  // plan listed underneath it.
+  //
+  // "Add 0 SAR" is no longer reachable: until the fetch lands the numbers are
+  // 0 and 0, and those two states now say so instead of quoting a zero.
+  const submitBarNote = () => {
+    if (planSubmission?.is_submitted) {
+      const when = planSubmission.submitted_at
+        ? new Date(planSubmission.submitted_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+        : "";
+      return `Submitted ${when}${planSubmission.is_late ? " (Late)" : ""}`;
+    }
+    if (!subjectPlan.loaded) {
+      return isViewingOther ? "Loading their figures…" : "Loading your figures…";
+    }
+    if (subjectPlan.failed) {
+      return isViewingOther
+        ? "Couldn't load their plan figures — refresh to try again."
+        : "Couldn't load your plan figures — refresh to try again.";
+    }
+
+    const month = monthNameOf(activeMonthKey);
+
+    // Next month and the grace window may both be filed under-planned, so these
+    // say what will happen rather than what is being withheld. The old single
+    // branch told someone to "enable submission" beside an already-enabled
+    // button all through the grace window.
+    if (planningNextMonth && subjectUnderPlanned) {
+      return `${fmtSAR(subjectShortfall)} SAR under target — you can submit, your manager will see it flagged as under-planned`;
+    }
+    if (planningPrevMonth && subjectUnderPlanned) {
+      return `${fmtSAR(subjectShortfall)} SAR under target — you can still file this late ${month} plan`;
+    }
+    if (!subjectComplete) {
+      const sides = `(target ${fmtSAR(subjectPlan.target)}, planned ${fmtSAR(subjectPlan.plannedOpen)})`;
+      return isViewingOther
+        ? `Needs ${fmtSAR(subjectShortfall)} SAR more in the ${month} plan before it can be submitted ${sides}`
+        : `Add ${fmtSAR(subjectShortfall)} SAR more to your ${month} plan to enable submission ${sides}`;
+    }
+    return `Due ${deadlineDay.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`;
+  };
 
   // Every month that can be submitted right now, oldest first. Usually just this
   // month; a second appears during the early window (next month) or the grace
@@ -875,15 +985,7 @@ const PlanningPage = () => {
                       : `📋 ${monthNameOf(activeMonthKey)} Plan Due by 25th`}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {planSubmission?.is_submitted
-                    ? `Submitted ${new Date(planSubmission.submitted_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}${planSubmission.is_late ? " (Late)" : ""}`
-                    : planningNextMonth && underPlanned
-                      /* Submission is allowed here, so this says what will
-                         happen rather than what is being withheld. */
-                      ? `${fmtSAR(plannedShortfall)} SAR under target — you can submit, your manager will see it flagged as under-planned`
-                      : !planComplete
-                        ? `Add ${fmtSAR(activeSummary.plannedGap)} SAR more to enable submission`
-                        : `Due ${deadlineDay.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`}
+                  {submitBarNote()}
                 </p>
               </div>
             </div>
@@ -913,16 +1015,20 @@ const PlanningPage = () => {
                 )}
                 {/* "Plan Incomplete" was shown for three different situations —
                     genuinely under-planned, still loading, and failed to load —
-                    and the last two are not the salesman's fault to fix. */}
+                    and the last two are not the salesman's fault to fix.
+                    ownPlan is checked alongside the summary because the gate
+                    reads BOTH: with the summary loaded and ownPlan still in
+                    flight, the button read "Plan Incomplete" about figures it
+                    did not have yet. */}
                 {canSubmit
                   ? isLate
                     ? "Submit Late"
                     : planTarget === "next" && earlyOpen
                       ? `Submit ${monthNameOf(activeMonthKey)} Plan`
                       : "Submit Plan"
-                  : summaryLoading
+                  : summaryLoading || !ownPlan.loaded
                     ? "Loading your figures…"
-                    : activeSummaryError
+                    : activeSummaryError || ownPlan.failed
                       ? "Figures unavailable — reload"
                       : "Plan Incomplete"}
               </button>
