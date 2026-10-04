@@ -121,6 +121,11 @@ const PlanningPage = () => {
   });
   const [currentSummaryLoading, setCurrentSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState(null);
+  // Why a submit failure gets its OWN state rather than reusing summaryError:
+  // that one belongs to the summary fetch and is rewritten by every refetch, so a
+  // submit failure parked there would be wiped by the next period or filter
+  // change — the user would see the message vanish without having fixed anything.
+  const [submitError, setSubmitError] = useState(null);
   // Monotonic request id — see fetchPlanningSummary. useRef so it survives
   // re-renders without causing one.
   const summaryReq = useRef(0);
@@ -388,6 +393,9 @@ const PlanningPage = () => {
     // carries October's deadline and is not late.
     const planMonth = activeMonthKey;
     setSubmitting(planMonth);
+    // Clear any previous failure, so a retry that succeeds does not leave the old
+    // error standing next to a plan that is now filed.
+    setSubmitError(null);
     const stamp = new Date();
     try {
       // Recomputed HERE rather than read from state. Trusting whatever was in
@@ -462,7 +470,13 @@ const PlanningPage = () => {
       });
       await fetchPlanSubmission();
     } catch (err) {
+      // This used to log and stop. The button went back to normal and the user
+      // was told nothing, which is indistinguishable from never having clicked —
+      // so a salesman whose submit failed had every reason to believe it had
+      // worked. Anything in the try can land here: the upsert, the scope lookup,
+      // or the summary recompute.
       console.error("Submit plan:", err);
+      setSubmitError(err?.message || String(err) || "Unknown error");
     } finally {
       setSubmitting(null);
     }
@@ -850,6 +864,30 @@ const PlanningPage = () => {
                       : "Plan Incomplete"}
               </button>
             )}
+          </div>
+        )}
+
+        {/* A submit that threw. Directly under the submit bar, because that is
+            where the person is looking after pressing the button, and it says
+            plainly that the plan was NOT filed — the thing the silent catch left
+            them to guess. Same styling as the summary error below. */}
+        {submitError && (
+          <div className="flex items-start gap-2 p-3 mb-3 rounded-xl bg-red-50 border border-red-200">
+            <Icon name="AlertCircle" size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-red-700">
+                {monthNameOf(activeMonthKey)} plan was NOT submitted
+              </p>
+              <p className="text-xs text-red-600 mt-0.5">
+                {submitError} — nothing was saved. Try again, and tell your administrator if it keeps failing.
+              </p>
+            </div>
+            <button
+              onClick={handleSubmitPlan}
+              className="ml-auto text-xs px-3 py-1.5 border border-red-300 rounded-lg text-red-700 hover:bg-red-100 transition-colors flex-shrink-0"
+            >
+              Retry
+            </button>
           </div>
         )}
 
