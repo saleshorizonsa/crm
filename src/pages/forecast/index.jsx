@@ -88,7 +88,9 @@ const ForecastPage = () => {
   const { preferredCurrency } = useCurrency();
 
   const { dateRange, setRange } = useDateRange();
-  const [rawData, setRawData] = useState({ deals: [], target: null });
+  // closedLost.count starts null — "not read yet", which the win rate reports as
+  // no figure rather than as a 0 denominator.
+  const [rawData, setRawData] = useState({ deals: [], target: null, closedLost: { count: null } });
   const [groupBreakdown, setGroupBreakdown] = useState([]);
   const [isLoading, setIsLoading]     = useState(false);
   const [fetchError, setFetchError]   = useState(null);
@@ -155,7 +157,14 @@ const ForecastPage = () => {
       if (forecastResult.error) {
         setFetchError(forecastResult.error);
       } else {
-        setRawData({ deals: forecastResult.deals || [], target: forecastResult.target });
+        // closedLost is the win rate's denominator — the lost half of the same
+        // scope and window. It is kept OUT of `deals` on purpose; see
+        // forecastService.getForecastData section 2b.
+        setRawData({
+          deals: forecastResult.deals || [],
+          target: forecastResult.target,
+          closedLost: forecastResult.closedLost || { count: null },
+        });
       }
       setGroupBreakdown(groupResult.groups || []);
       setIsLoading(false);
@@ -216,7 +225,7 @@ const ForecastPage = () => {
   }, [company?.id, selectedSalesman]);
 
   const forecast   = useMemo(() => buildForecast(rawData.deals, rawData.target?.target_amount ?? 0), [rawData]);
-  const insights   = useMemo(() => generateInsights(forecast, rawData.deals, rawData.target?.target_amount ?? 0), [forecast, rawData]);
+  const insights   = useMemo(() => generateInsights(forecast, rawData.deals, rawData.target?.target_amount ?? 0, rawData.closedLost), [forecast, rawData]);
   const prediction = useMemo(
     () => generatePrediction(forecast, rawData.deals, rawData.target?.target_amount ?? 0, winRate),
     [forecast, rawData, winRate],

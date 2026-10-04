@@ -5613,6 +5613,39 @@ export const leadService = {
   },
 };
 
+// Asia/Riyadh is UTC+3 all year — Saudi Arabia keeps no DST — so the offset is
+// written into the literal rather than computed from the runtime's zone.
+const RIYADH_UTC_OFFSET = "+03:00";
+
+/**
+ * A Riyadh calendar-day range as the two INSTANTS a timestamptz column should be
+ * compared against: [startAt, endBefore).
+ *
+ * `closed_at` is a timestamptz and the forecast query used to bound it with the
+ * bare dates 'yyyy-MM-dd'. PostgREST runs with the session time zone at UTC, so
+ * `closed_at <= '2026-09-30'` meant "up to 2026-09-30 00:00 UTC" — 03:00 Riyadh
+ * on the 30th — and the rest of that day was dropped. Measured over the deals in
+ * this database it lost 7 won deals from June 2026, 3 from March and 2 from
+ * August. The lower bound had the mirror-image flaw: a deal closed between 00:00
+ * and 03:00 Riyadh on day 1 was after neither period's start nor before the
+ * previous period's end, so it fell out of both.
+ *
+ * The end is EXCLUSIVE — pair it with `lt` — because that is the only form that
+ * covers 23:59:59.999 of the last day without naming a time.
+ */
+function riyadhPeriodBounds(periodStart, periodEnd) {
+  const startDay = String(periodStart).slice(0, 10);
+  const endDay = String(periodEnd).slice(0, 10);
+  // Advanced in UTC off a bare date, never through a local Date — in Riyadh the
+  // latter would shift the day it lands on.
+  const next = new Date(`${endDay}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return {
+    startAt: `${startDay}T00:00:00${RIYADH_UTC_OFFSET}`,
+    endBefore: `${next.toISOString().slice(0, 10)}T00:00:00${RIYADH_UTC_OFFSET}`,
+  };
+}
+
 export const forecastService = {
   /**
    * getForecastData({ companyId, userId, role, periodStart, periodEnd })
@@ -5629,7 +5662,10 @@ export const forecastService = {
    * Target returned: the single active sales_target assigned to userId
    * whose period overlaps [periodStart, periodEnd], or null when none exists.
    *
-   * @returns {{ deals: Array, target: Object|null, error: Error|null }}
+   * closedLost returned: how many deals were LOST in the same scope and the same
+   * window — a count only, deliberately not rows. See section 2b.
+   *
+   * @returns {{ deals: Array, target: Object|null, closedLost: {count: number|null, from: string|null, to: string|null}, error: Error|null }}
    */
   async getForecastData({ companyId, userId, role, periodStart, periodEnd, ownerId = null }) {
     try {
@@ -5674,9 +5710,14 @@ export const forecastService = {
       //                  setting an expected close date, or with a date in a different month.
       //   • Open deals → ALL of them regardless of close date (needed for the 12-week projection)
       // When isAllTime (no period), the outer .neq("stage","lost") already returns every non-lost deal.
+      //
+      // The window is a pair of instants from riyadhPeriodBounds(), with an
+      // EXCLUSIVE end. It used to be the bare periodStart/periodEnd dates, which
+      // cut the period off at 03:00 Riyadh on its last day.
       if (periodStart && periodEnd) {
+        const { startAt, endBefore } = riyadhPeriodBounds(periodStart, periodEnd);
         dealsQuery = dealsQuery.or(
-          `and(stage.eq.won,closed_at.gte.${periodStart},closed_at.lte.${periodEnd}),` +
+          `and(stage.eq.won,closed_at.gte.${startAt},closed_at.lt.${endBefore}),` +
             `stage.neq.won`,
         );
       }
@@ -5686,6 +5727,60 @@ export const forecastService = {
 
       const { data: deals, error: dealsError } = await dealsQuery;
       if (dealsError) throw dealsError;
+
+      // ── 2b. How many deals were LOST in the same scope and window ──────────
+      //
+      // For the win rate, which is won ÷ (won + lost) over the deals CLOSED in
+      // the selected period. The page had no lost deals at all — the query above
+      // excludes them — so the rate read 100% whenever anything had been won.
+      //
+      // A COUNT, not rows, and returned under its own key: `deals` feeds
+      // buildForecast, the projection chart, ForecastDealTable, the salesman
+      // breakdown and the AI widgets, and none of those should start seeing lost
+      // deals. A number cannot be concatenated into that array by accident,
+      // which rows sitting beside it could be.
+      //
+      // It lives inside getForecastData rather than in a second exported
+      // function so that the two halves of the ratio can only ever be read over
+      // the SAME owner scope and the SAME window. A separate function would have
+      // had to re-resolve the role scope — including the supervisor's reports
+      // lookup, a second round trip — and could then drift from this one, which
+      // is how a win rate ends up dividing one population by another.
+      let closedLost = { count: null, from: null, to: null };
+      {
+        let lostQuery = supabase
+          .from("deals")
+          .select("id", { count: "exact", head: true })
+          .eq("stage", "lost");
+
+        if (periodStart && periodEnd) {
+          const { startAt, endBefore } = riyadhPeriodBounds(periodStart, periodEnd);
+          // One of the lost deals in this database has no closed_at at all.
+          // stage_changed_at is when it was moved to `lost`, so it stands in —
+          // otherwise that deal would be lost from every period's denominator.
+          lostQuery = lostQuery.or(
+            `and(closed_at.gte.${startAt},closed_at.lt.${endBefore}),` +
+              `and(closed_at.is.null,stage_changed_at.gte.${startAt},stage_changed_at.lt.${endBefore})`,
+          );
+          closedLost = { count: null, from: startAt, to: endBefore };
+        }
+        // No period (All Time) → every lost deal in scope, which mirrors the
+        // won side above returning every won deal regardless of close date.
+
+        if (companyId) lostQuery = lostQuery.eq("company_id", companyId);
+        if (ownerIds)  lostQuery = lostQuery.in("owner_id", ownerIds);
+
+        const { count: lostCount, error: lostError } = await lostQuery;
+        if (lostError) {
+          // NOT rethrown: this is one card's denominator, and the forecast page
+          // must not go blank because of it. count stays null, which the win
+          // rate reads as "unknown" and reports as such — never as zero, which
+          // would put the 100% back.
+          console.error("getForecastData (lost count):", lostError);
+        } else {
+          closedLost = { ...closedLost, count: lostCount || 0 };
+        }
+      }
 
       // ── 3. Sum active revenue targets overlapping this period ──────────
       // Managers/directors have no personal target — the period target is the
@@ -5751,11 +5846,12 @@ export const forecastService = {
         deals:  deals || [],
         // Preserve the "no target" state (null) so cards fall back gracefully.
         target: totalTarget > 0 ? { target_amount: totalTarget } : null,
+        closedLost,
         error:  null,
       };
     } catch (error) {
       console.error("Error in getForecastData:", error);
-      return { deals: [], target: null, error };
+      return { deals: [], target: null, closedLost: { count: null, from: null, to: null }, error };
     }
   },
 
