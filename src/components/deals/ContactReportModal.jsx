@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import { dealService } from '../../services/supabaseService';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   Phone, MapPin, MessageCircle, Mail, X, CheckCircle,
@@ -44,6 +45,14 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
   });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  // Shown when the save got part-way. Previously every failure here was only
+  // console.error'd: the report could fail, or the stage move could fail, and
+  // the person saw nothing either way.
+  const [saveError, setSaveError] = useState(null);
+  // The report is inserted ONCE. If the report saves and the stage move then
+  // fails, the modal stays open for a retry — and a retry must not file a
+  // second contact report for the same conversation.
+  const reportSaved = useRef(false);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -62,36 +71,55 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
     const e = validate();
     if (Object.keys(e).length) { setErrors(e); return; }
     setSaving(true);
+    setSaveError(null);
     try {
       const now = new Date().toISOString();
-      const { error } = await supabase.from('contact_reports').insert({
-        company_id: company?.id,
-        deal_id: deal.id,
-        owner_id: user?.id,
-        contact_type: form.contact_type,
-        contact_date: form.contact_date,
-        duration_minutes: parseInt(form.duration_minutes, 10),
-        customer_response: form.customer_response,
-        next_action: form.next_action,
-        follow_up_date: form.follow_up_date,
-        notes: form.notes.trim() || null,
-        is_audited: false,
-        created_at: now,
-      });
-      if (error) throw error;
+      if (!reportSaved.current) {
+        const { error } = await supabase.from('contact_reports').insert({
+          company_id: company?.id,
+          deal_id: deal.id,
+          owner_id: user?.id,
+          contact_type: form.contact_type,
+          contact_date: form.contact_date,
+          duration_minutes: parseInt(form.duration_minutes, 10),
+          customer_response: form.customer_response,
+          next_action: form.next_action,
+          follow_up_date: form.follow_up_date,
+          notes: form.notes.trim() || null,
+          is_audited: false,
+          created_at: now,
+        });
+        if (error) throw error;
+        reportSaved.current = true;
+      }
 
-      // Report-gated stage change: advance only after the report is recorded.
+      // Report-gated stage change: advance only after the report is recorded,
+      // and through dealService.updateDeal — the one path that recomputes the
+      // weighted forecast, stamps stage_changed_at, resets lead_warning_sent,
+      // clears closed_at when a won/lost deal is reopened, writes
+      // deal_stage_history and notifies the hierarchy.
+      //
+      // This was a bare update of stage/stage_changed_at with its error thrown
+      // away. Every stage change made by dragging a card — which is every one
+      // except Won and Lost — therefore left the forecast on the OLD stage's
+      // probability: "Ali alghamdi Est." sits in negotiation (75%) carrying
+      // forecast_probability 25, so it is forecast at 11,399 instead of 34,198.
       if (nextStage) {
-        await supabase
-          .from('deals')
-          .update({ stage: nextStage, stage_changed_at: now, updated_at: now })
-          .eq('id', deal.id);
+        const { error: stageError } = await dealService.updateDeal(deal.id, { stage: nextStage });
+        if (stageError) {
+          // The report IS saved; only the move failed. Say so, keep the modal
+          // open so it can be retried, and do NOT call onSaved — the board must
+          // not reload as though the deal had moved.
+          setSaveError(`Report saved, but the stage could not be changed: ${stageError.message || stageError}`);
+          return;
+        }
       }
 
       onSaved?.();
       onClose?.();
     } catch (err) {
       console.error('Contact report:', err);
+      setSaveError(`The report could not be saved: ${err?.message || err}`);
     } finally {
       setSaving(false);
     }
@@ -252,6 +280,21 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
               />
             </div>
           </div>
+
+          {/* What went wrong, where the person is already looking. */}
+          {saveError && (
+            <div
+              data-testid="contact-report-error"
+              className="mx-6 mb-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex-shrink-0"
+            >
+              {saveError}
+              {reportSaved.current && (
+                <span className="block mt-1 text-red-600">
+                  Your report was not lost — press the button again to retry the move.
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Footer */}
           <div className="px-6 py-4 border-t border-gray-200 flex gap-3 justify-end flex-shrink-0">

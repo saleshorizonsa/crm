@@ -18,6 +18,7 @@ import {
   monthBounds,
 } from 'utils/planningCalculations';
 import { matchesGroup, fetchPlannedOpen } from 'utils/planningPageSummary';
+import { dealService } from 'services/supabaseService';
 
 const DIRECTOR_ROLES = ['director', 'head', 'admin'];
 const TEAM_ROLES     = ['manager', 'supervisor'];
@@ -665,28 +666,32 @@ export default function OpportunitiesModule({
 
     try {
       const now = new Date().toISOString();
-      const { data: deal, error } = await supabase
-        .from('deals')
-        .insert({
-          title:       opp.customer_name,
-          stage:       'lead',
-          amount:      parseFloat(opp.planned_amount) || 0,
-          original_amount: parseFloat(opp.planned_amount) || 0,
-          final_amount: null,
-          // Always the company currency — never inherit a stray currency, so the
-          // Funnel card never exchange-converts the planned amount.
-          currency:    company?.currency || 'SAR',
-          company_id:  company?.id,
-          owner_id:    opp.owner_id || user?.id,
-          contact_id:  opp.contact_id || null,
-          description: opp.notes || null,
-          expected_close_date: opp.expected_month || null,
-          opportunity_id: opp.id,
-          converted_at: now,
-          stage_changed_at: now,
-        })
-        .select()
-        .single();
+      // Through dealService.createDeal rather than a bare insert: a converted
+      // opportunity is a new deal like any other, and this path wrote none of
+      // the weighted forecast fields, so a converted lead sat in the pipeline
+      // with forecast_amount null — missing from every forecast total — and
+      // left no opening row in deal_stage_history. createDeal computes both
+      // from stage_probabilities and is otherwise a plain insert of this same
+      // payload; it sends no notification, so nothing else about converting
+      // changes.
+      const { data: deal, error } = await dealService.createDeal({
+        title:       opp.customer_name,
+        stage:       'lead',
+        amount:      parseFloat(opp.planned_amount) || 0,
+        original_amount: parseFloat(opp.planned_amount) || 0,
+        final_amount: null,
+        // Always the company currency — never inherit a stray currency, so the
+        // Funnel card never exchange-converts the planned amount.
+        currency:    company?.currency || 'SAR',
+        company_id:  company?.id,
+        owner_id:    opp.owner_id || user?.id,
+        contact_id:  opp.contact_id || null,
+        description: opp.notes || null,
+        expected_close_date: opp.expected_month || null,
+        opportunity_id: opp.id,
+        converted_at: now,
+        stage_changed_at: now,
+      });
       if (error) throw error;
 
       const { error: updErr } = await supabase
