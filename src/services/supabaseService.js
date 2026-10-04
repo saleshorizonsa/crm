@@ -681,6 +681,29 @@ export const companyService = {
 // DEALS SERVICES
 // ========================================
 
+/**
+ * The opening stage row for a brand-new deal.
+ *
+ * Fire-and-forget, like the transition write in updateDeal: deal_stage_history
+ * does not exist in this database (migrations/add_deal_stage_history.sql was
+ * never applied), and a missing table must not fail a deal save. Once the table
+ * exists these rows are what forecastEngine.calculateHistoricalWinRates counts.
+ */
+function recordInitialStage(deal) {
+  if (!deal?.id) return;
+  supabase
+    .from("deal_stage_history")
+    .insert({
+      deal_id: deal.id,
+      company_id: deal.company_id,
+      stage: deal.stage || "lead",
+      entered_at: deal.created_at || new Date().toISOString(),
+      created_by: deal.owner_id,
+    })
+    .then(() => {})
+    .catch(() => {});
+}
+
 export const dealService = {
   // Get all deals for a company
   async getDeals(companyId, filters = {}, userId = null) {
@@ -775,19 +798,7 @@ export const dealService = {
         `,
         )
         ?.single();
-      if (data?.id) {
-        supabase
-          .from("deal_stage_history")
-          .insert({
-            deal_id:    data.id,
-            company_id: data.company_id,
-            stage:      data.stage || "lead",
-            entered_at: data.created_at || new Date().toISOString(),
-            created_by: data.owner_id,
-          })
-          .then(() => {})
-          .catch(() => {});
-      }
+      recordInitialStage(data);
       return { data, error };
     } catch (error) {
       return { data: null, error };
@@ -1053,6 +1064,21 @@ export const dealService = {
       if (!dealData.id) {
         payload.created_at = new Date().toISOString();
         if (!payload.stage_changed_at) payload.stage_changed_at = payload.created_at;
+        // The weighted forecast, at creation. This is the live creation path for
+        // both the pipeline's New Deal modal and QuickActions, and it never
+        // computed these fields: a new deal kept forecast_amount null — ALSEHLY
+        // PLASTIC FACTORY, 155,000 at stage lead, read null instead of 15,500 —
+        // and was missing from every forecast total until a director's dashboard
+        // next ran backfillForecasts(). Same call createDeal makes, so both
+        // creation paths now agree. Null means "not determinable" (no company,
+        // unknown stage, probabilities not configured) and leaves the fields
+        // unset rather than writing a figure that was not computed.
+        const fc = await forecastFieldsFor({
+          companyId: payload.company_id,
+          stage: payload.stage || "lead",
+          amount: payload.amount,
+        });
+        if (fc) Object.assign(payload, fc);
       }
 
       // If stage is won or lost, set closed_at timestamp
@@ -1080,6 +1106,10 @@ export const dealService = {
         .single();
 
       if (error) throw error;
+
+      // The opening stage row, for a new deal only — an update's transition is
+      // written by updateDeal, which is the path existing deals take.
+      if (data && !dealData.id) recordInitialStage(data);
 
       // Create notification for new deal creation (pipeline update)
       if (data && !dealData.id) {
@@ -1245,6 +1275,30 @@ export const dealService = {
   async updateDealLost(dealId, { lost_reason_code, lost_reason_notes, company_id }) {
     try {
       const now = new Date().toISOString();
+
+      // The forecast has to follow the stage. This path writes `lost` directly
+      // rather than through updateDeal, and it left the old weighted figure
+      // behind: 7 lost deals in this database still carry 297,407 SAR of
+      // forecast_amount between them, and forecastVarianceCheck sums
+      // forecast_amount by expected_close_date with NO stage filter, so every
+      // one of them is still being forecast for its month.
+      //
+      // The probability comes from stage_probabilities like everywhere else, so
+      // 'lost' configured at 0 gives forecast_amount 0. If the company has no
+      // 'lost' row at all, forecastFieldsFor returns null and the existing
+      // values are left alone rather than a zero being invented — the same
+      // contract it keeps on every other write path.
+      const { data: before } = await supabase
+        .from("deals")
+        .select("company_id, amount")
+        .eq("id", dealId)
+        .single();
+      const fcLost = await forecastFieldsFor({
+        companyId: company_id || before?.company_id,
+        stage: "lost",
+        amount: before?.amount,
+      });
+
       const { data, error } = await supabase
         .from("deals")
         .update({
@@ -1256,6 +1310,7 @@ export const dealService = {
           lost_at:           now,
           closed_at:         now,
           updated_at:        now,
+          ...(fcLost || {}),
         })
         .eq("id", dealId)
         .select()
