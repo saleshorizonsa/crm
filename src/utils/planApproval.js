@@ -327,8 +327,13 @@ export function conversionBlockedMessage(reason, planMonth) {
   switch (reason) {
     case 'no_plan':
       return `${month}'s plan must be approved before converting to a deal. No plan has been submitted for ${month} yet.`;
+    // Leads with the action the owner has to take, rather than opening on the
+    // approval rule. The previous wording — "<month>'s plan must be approved
+    // before converting to a deal. It has not been submitted yet." — was accurate
+    // but read as being about approval, so a salesman who had never submitted took
+    // it to mean his plan was sitting with his manager.
     case 'unsubmitted':
-      return `${month}'s plan must be approved before converting to a deal. It has not been submitted yet.`;
+      return `You haven't submitted your ${month} plan yet. Submit it and have it approved before converting.`;
     case 'pending':
       return `${month}'s plan must be approved before converting to a deal. It is submitted and waiting for your manager.`;
     case 'rejected':
