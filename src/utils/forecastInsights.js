@@ -23,15 +23,24 @@ function formatK(value) {
 
 /**
  * Returns 4 insight objects describing pipeline health.
+ *
+ * @param {{count: number|null}} closedLost  deals LOST in the same scope and
+ *   window as `deals`, from forecastService.getForecastData. It has to come in
+ *   separately because `deals` deliberately excludes lost deals — every other
+ *   consumer of that array (the projection, the deal table, the salesman
+ *   breakdown) would change if they were in it. `count: null` means the figure
+ *   could not be read and is NOT the same as zero: treating it as zero is what
+ *   made this card read 100%.
  */
-export function generateInsights(forecast, deals = [], targetAmount = 0) {
+export function generateInsights(forecast, deals = [], targetAmount = 0, closedLost = {}) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const openDeals  = deals.filter((d) => OPEN_STAGES.has(d.stage));
   const wonDeals   = deals.filter((d) => d.stage === "won");
-  const lostDeals  = deals.filter((d) => d.stage === "lost");
-  const closedCount = wonDeals.length + lostDeals.length;
+  const lostCount  = typeof closedLost?.count === "number" && Number.isFinite(closedLost.count)
+    ? closedLost.count
+    : null;
 
   // ── Pipeline Coverage ────────────────────────────────────────────────────
   const coverage = targetAmount > 0
@@ -54,25 +63,34 @@ export function generateInsights(forecast, deals = [], targetAmount = 0) {
             : { status: "danger",  color: "red",   description: `${coverage}% coverage — pipeline below target. At risk of missing quota.` }),
   };
 
-  // ── Win Rate ─────────────────────────────────────────────────────────────
-  const winRate = closedCount > 0
+  // ── Win rate ─────────────────────────────────────────────────────────────
+  // Won ÷ (won + lost) over the deals CLOSED in the selected period. This is a
+  // different figure from the AI Prediction card's "Conversion (3m)", which is
+  // the shared 3-month rolling rate (utils/winRate3m.js) and is resolved at the
+  // call site; the two are not meant to agree.
+  const closedCount = lostCount === null ? null : wonDeals.length + lostCount;
+  const winRate = closedCount !== null && closedCount > 0
     ? Math.round((wonDeals.length / closedCount) * 100)
     : null;
+  const FORMULA = "Won ÷ (won + lost), deals closed in this period";
+  const counts = `${wonDeals.length} won, ${lostCount} lost`;
 
   const winRateInsight = {
     id:    "win-rate",
-    title: "Win Rate",
+    title: "Win rate",
     icon:  "Target",
     value: winRate !== null ? `${winRate}%` : "—",
-    ...(winRate === null
-      ? { status: "neutral",   color: "blue",   description: "No closed deals in this period to calculate win rate." }
-      : winRate >= 40
-        ? { status: "excellent", color: "emerald", description: `${winRate}% win rate — strong close performance.` }
-        : winRate >= 25
-          ? { status: "good",    color: "blue",   description: `${winRate}% win rate — in-line with industry average.` }
-          : winRate >= 15
-            ? { status: "warning", color: "amber", description: `${winRate}% win rate — below average. Review qualifying criteria.` }
-            : { status: "danger",  color: "red",   description: `${winRate}% win rate — significantly below average.` }),
+    ...(lostCount === null
+      ? { status: "neutral",   color: "blue",   description: `${FORMULA}. The lost-deal count could not be read, so no rate is shown.` }
+      : winRate === null
+        ? { status: "neutral",   color: "blue",   description: `${FORMULA}. Nothing closed in this period.` }
+        : winRate >= 40
+          ? { status: "excellent", color: "emerald", description: `${FORMULA} — ${counts}. Strong close performance.` }
+          : winRate >= 25
+            ? { status: "good",    color: "blue",   description: `${FORMULA} — ${counts}. In-line with industry average.` }
+            : winRate >= 15
+              ? { status: "warning", color: "amber", description: `${FORMULA} — ${counts}. Below average; review qualifying criteria.` }
+              : { status: "danger",  color: "red",   description: `${FORMULA} — ${counts}. Significantly below average.` }),
   };
 
   // ── Overdue Deals ────────────────────────────────────────────────────────
@@ -133,9 +151,11 @@ export function generateInsights(forecast, deals = [], targetAmount = 0) {
  */
 export function generatePrediction(forecast, deals = [], targetAmount = 0, winRate = {}) {
   const openDeals   = deals.filter((d) => OPEN_STAGES.has(d.stage));
-  const wonDeals    = deals.filter((d) => d.stage === "won");
-  const lostDeals   = deals.filter((d) => d.stage === "lost");
-  const closedCount = wonDeals.length + lostDeals.length;
+  // This used to derive wonDeals / lostDeals / closedCount as well. Nothing in
+  // the prediction read them — its rate is the resolved 3-month one below, not a
+  // period ratio — and lostDeals could never have been anything but empty,
+  // because `deals` excludes lost deals. Dropped rather than wired to the new
+  // count, so the card keeps resolving its rate exactly as it did.
 
   // ── Win rate ──────────────────────────────────────────────────────────────
   // The caller resolved which rung of the ladder applies; `basis` records it so
