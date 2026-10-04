@@ -1725,48 +1725,41 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
                 salesTargetService.getAssignedTargets(company.id),
               ]);
 
-            // Filter targets by selected period - only consider monthly targets
+            // Monthly target rows overlapping THE SAME WINDOW the revenue below
+            // uses — activeDateRange — so this card divides one period's revenue
+            // by that same period's target.
+            //
+            // What this replaced read the month/quarter dropdowns instead of the
+            // selected range, and read them off by one in both cases:
+            //   selectedMonth is 0-based (Oct = 9) but the filter built
+            //     new Date(year, selectedMonth - 1, 1), so October was measured
+            //     against SEPTEMBER's targets;
+            //   `if (selectedMonth)` is false for January (0), so January fell
+            //     through to the quarter or whole-year branch;
+            //   selectedQuarter is 0-based too (set from Math.floor(month / 3),
+            //     and labelled Q${selectedQuarter + 1}) but the filter used
+            //     (selectedQuarter - 1) * 3, so Q3 picked Q2 and Q1 (0) fell
+            //     through to the whole year.
+            // The result was revenue for one period over a target for another.
+            //
+            // Compared as yyyy-MM-dd STRINGS. period_start/period_end are date
+            // columns, so PostgREST returns them already in that form, and
+            // activeDateRange is built the same way — no Date objects and no
+            // toISOString(), either of which would shift the day (and so the
+            // month, on the 1st) for users at UTC+3.
+            const ymd = (v) => String(v || "").slice(0, 10);
+            const rangeFrom = ymd(activeDateRange?.from);
+            const rangeTo = ymd(activeDateRange?.to);
             const filteredTargets = (targets || []).filter((target) => {
               if (!target.period_start) return false;
               if ((target.period_type || "monthly") !== "monthly") return false;
-              const targetStart = new Date(target.period_start);
-              const targetEnd = target.period_end
-                ? new Date(target.period_end)
-                : targetStart;
-
-              // Check if target period overlaps with selected period
-              if (selectedMonth) {
-                const selectedDate = new Date(
-                  selectedYear,
-                  selectedMonth - 1,
-                  1,
-                );
-                const selectedEndDate = new Date(
-                  selectedYear,
-                  selectedMonth,
-                  0,
-                );
-                return (
-                  targetStart <= selectedEndDate && targetEnd >= selectedDate
-                );
-              } else if (selectedQuarter) {
-                const quarterStart = new Date(
-                  selectedYear,
-                  (selectedQuarter - 1) * 3,
-                  1,
-                );
-                const quarterEnd = new Date(
-                  selectedYear,
-                  selectedQuarter * 3,
-                  0,
-                );
-                return targetStart <= quarterEnd && targetEnd >= quarterStart;
-              } else if (selectedYear) {
-                const yearStart = new Date(selectedYear, 0, 1);
-                const yearEnd = new Date(selectedYear, 11, 31);
-                return targetStart <= yearEnd && targetEnd >= yearStart;
-              }
-              return true;
+              // Unreachable in practice — activeDateRange is initialised before
+              // first render — but an unset range must not silently narrow to
+              // nothing, which would read as "no target".
+              if (!rangeFrom || !rangeTo) return true;
+              const targetStart = ymd(target.period_start);
+              const targetEnd = ymd(target.period_end) || targetStart;
+              return targetStart <= rangeTo && targetEnd >= rangeFrom;
             });
 
             // Revenue = Achieved — the one shared rule (utils/planningCalculations.js):
