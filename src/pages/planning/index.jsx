@@ -8,7 +8,8 @@ import OpportunitiesModule from "./components/OpportunitiesModule";
 import FutureOrdersModule from "./components/FutureOrdersModule";
 import HistoricalDataModule from "./components/HistoricalDataModule";
 import SalesReturnsModule from "./components/SalesReturnsModule";
-import { computePlanningPageSummary, fetchProductGroups } from "utils/planningPageSummary";
+import { computePlanningPageSummary, fetchProductGroups, fetchPlannedOpen } from "utils/planningPageSummary";
+import { fetchMonthlyTargets, targetPerPerson } from "utils/planningCalculations";
 import { fetchTeamHierarchy } from "utils/teamHierarchy";
 import { useDateRange } from "contexts/DateRangeContext";
 import { periodLabelFromRange, isAnnualRange } from "utils/dashboardDateUtils";
@@ -318,7 +319,55 @@ const PlanningPage = () => {
   // Submission completeness stays a question about the PLAN, not about coverage:
   // a big open funnel must not let a month be submitted with nothing planned.
   const activeSummary = summaryData;
-  const planComplete = activeSummary.plannedOpen >= activeSummary.requiredPlan;
+
+  // ── The submitter's OWN plan, which is what the submit bar is about ────────
+  //
+  // Deliberately NOT taken from the summary above. That one follows the owner
+  // filter and the shared period, so the gate moved with whatever was on screen:
+  // with "All Salesmen" selected a supervisor was judged against his whole team's
+  // target, and filtered to his own name against his own — the same button,
+  // enabled or disabled depending on a dropdown. It is now always his own target
+  // for the month being planned, whatever the page is showing.
+  //
+  // `loaded` matters as much as the numbers: an unloaded fetch is 0 and 0, and
+  // 0 >= 0 reads as "complete", which is how a plan was once filed at 0.00
+  // against a real pipeline. `failed` is kept apart from a true zero for the same
+  // reason.
+  const [ownPlan, setOwnPlan] = useState({ target: 0, plannedOpen: 0, loaded: false, failed: false });
+  useEffect(() => {
+    if (!companyId || !user?.id || !activeMonthKey) {
+      setOwnPlan({ target: 0, plannedOpen: 0, loaded: false, failed: false });
+      return undefined;
+    }
+    let alive = true;
+    (async () => {
+      const bounds = monthBoundsOf(activeMonthKey);
+      const [rows, planned] = await Promise.all([
+        fetchMonthlyTargets({
+          companyId, contributorIds: [user.id], start: bounds.start, end: bounds.end,
+        }),
+        fetchPlannedOpen({
+          companyId, ownerIds: [user.id], start: bounds.start, end: bounds.end, productGroup: null,
+        }),
+      ]);
+      if (!alive) return;
+      setOwnPlan({
+        target: Object.values(targetPerPerson(rows)).reduce((sum, v) => sum + v, 0),
+        plannedOpen: planned.total,
+        loaded: true,
+        failed: !!planned.failed,
+      });
+    })();
+    return () => { alive = false; };
+  }, [companyId, user?.id, activeMonthKey]);
+
+  // Complete when the owner has planned at least his own target. Deliberately NOT
+  // target ÷ win rate: that is a coverage estimate, and gating on it meant the
+  // "Still Unplanned" figure on screen was never the amount that would unlock the
+  // button — Amer could plan his target in full and still be refused. Required
+  // Plan stays on the row and in the approval queue as the coverage view.
+  const planComplete = ownPlan.loaded && !ownPlan.failed
+    && ownPlan.plannedOpen >= ownPlan.target;
 
   // Required Plan is Remaining Target ÷ win rate, and a month that has not
   // started has no invoiced revenue, so its ENTIRE target is still remaining.
@@ -328,13 +377,18 @@ const PlanningPage = () => {
   // the row (total_planned vs required_plan) and shown to the approving manager,
   // rather than the plan being silently accepted as if it were complete.
   // Current-month submission keeps the original rule.
-  const underPlanned = activeSummary.requiredPlan > 0
-    && activeSummary.plannedOpen < activeSummary.requiredPlan;
-  // Planned vs Required — the SAME basis the approval queue's "short by" uses.
-  // plannedGap is a different quantity (it credits the open funnel as well), so
-  // showing that here told the salesman a smaller shortfall than the number his
-  // manager would read off the queue for the same plan.
-  const plannedShortfall = Math.max(0, activeSummary.requiredPlan - activeSummary.plannedOpen);
+  // Both now measured against the owner's OWN target — the same basis as the gate
+  // above, so the shortfall the salesman is shown is exactly the amount that will
+  // unlock his button. Taken from ownPlan rather than the summary for the same
+  // reason the gate is: the summary follows the owner filter and the shared
+  // period, and a shortfall that moves with a dropdown is not actionable.
+  //
+  // The approval queue still shows its own "short by" from the row's
+  // total_planned vs required_plan, which is the coverage view (÷ win rate) and
+  // so a larger number. That is the manager's question, not the salesman's.
+  const underPlanned = ownPlan.loaded && ownPlan.target > 0
+    && ownPlan.plannedOpen < ownPlan.target;
+  const plannedShortfall = Math.max(0, ownPlan.target - ownPlan.plannedOpen);
   // Nobody submits on someone else's behalf: the bar still shows, so a lead can
   // read where that person's plan stands, but the button is not theirs to press.
   // Whether the figures on screen are real yet. An unloaded summary is all
@@ -372,14 +426,23 @@ const PlanningPage = () => {
   // The owner scope a submitted plan covers: a salesman's own, a lead's own plus
   // their team, null (whole company) for a director. Deliberately ignores the
   // owner FILTER — what a lead is looking at must not change what they file.
+  // A plan is about the person who files it and NOBODY ELSE.
+  //
+  // This used to scope a supervisor's plan to himself PLUS his whole downline,
+  // which double-counted: the Sales Manager assigns a target to every supervisor
+  // and salesman directly, and each of them files their own plan against it. So
+  // Amer's plan covered Hussein, whose own plan Amer had already approved, and
+  // Amer's completeness was judged against 826,000 — his own 406,000 plus two
+  // targets belonging to people who plan for themselves.
+  //
+  // A supervisor's plan now behaves exactly like a salesman's. A director still
+  // gets null (whole company); directors do not file plans.
   const resolveSubmitterScope = useCallback(async () => {
     if (DIRECTOR_ROLES.includes(role)) return null;
-    const isTeamLead = TEAM_ROLES.includes(role);
-    const scope = isTeamLead
-      ? [user?.id, ...(await fetchTeamHierarchy({ companyId, userId: user?.id, role })).map((m) => m.id)].filter(Boolean)
-      : [user?.id].filter(Boolean);
-    return scope.length ? scope : ["00000000-0000-0000-0000-000000000000"];
-  }, [role, companyId, user?.id]);
+    return [user?.id].filter(Boolean).length
+      ? [user?.id]
+      : ["00000000-0000-0000-0000-000000000000"];
+  }, [role, user?.id]);
 
   const handleSubmitPlan = async () => {
     if (!canSubmit || submitting) return;
