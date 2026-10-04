@@ -39,7 +39,9 @@ import {
   computeAchieved,
   achievedAmount,
   achieverIdsFrom,
+  fetchReturns,
 } from "../../../utils/planningCalculations";
+import { achievedByClient } from "../../../utils/clientTargetAchievement";
 import SalesForecast from "./SalesForecast";
 import MarginSummaryWidget from "./MarginSummaryWidget";
 import ForecastAISummary from "./forecast/ForecastAISummary";
@@ -58,7 +60,7 @@ import {
   isAnnualRange,
 } from "../../../utils/dashboardDateUtils";
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
-import { ownAllocation } from '../../../utils/selfTarget';
+import { ownAllocation, isSelfAssignedTarget, sumTargetAmount } from '../../../utils/selfTarget';
 import { Edit2 } from "lucide-react";
 import SalesTargetTable from "../../../components/SalesTargetTable";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
@@ -74,6 +76,38 @@ import {
   Bar,
   Cell,
 } from "recharts";
+
+// yyyy-MM-dd out of whatever the database returned (a date or a timestamp),
+// compared as a STRING. Never rebuilt from a local Date: users are in
+// Asia/Riyadh (UTC+3), where a midnight date read through toISOString() lands on
+// the previous day and walks a period boundary.
+const ymd = (v) => String(v || "").slice(0, 10);
+
+const MONTH_ABBR = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/**
+ * What ONE target row's period is called: "Oct 2026" for a month, "2026" for a
+ * year, the span itself for anything else. Read off the yyyy-MM-dd strings, so
+ * no timezone can move it, and shown on the card because `period_type` alone
+ * ("monthly", "yearly") does not say WHICH month or year a card is about — with
+ * three rows on screen that was the only thing distinguishing them.
+ */
+const targetPeriodLabel = (row) => {
+  const start = ymd(row?.period_start);
+  const end = ymd(row?.period_end) || start;
+  if (!start) return row?.period_type || "";
+  const [year, month] = start.split("-");
+  if (row?.period_type === "yearly" || (start.endsWith("-01-01") && end.endsWith("-12-31"))) {
+    return year;
+  }
+  if (start.slice(0, 7) === end.slice(0, 7)) {
+    return `${MONTH_ABBR[Number(month) - 1] || month} ${year}`;
+  }
+  return `${start} → ${end}`;
+};
 
 const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   const { user, userProfile, company } = useAuth();
@@ -172,7 +206,9 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       setPlanSubmissions(map);
     })();
   }, [company?.id, effectiveUser.id, allSubordinates]);
-  const [clientTargetsData, setClientTargetsData] = useState([]);
+  // The raw client_targets rows. Achievement is NOT stored on them here: it is
+  // computed below from the shared client rule, so the loader stays a loader.
+  const [clientTargetRows, setClientTargetRows] = useState([]);
   const [productTargetsData, setProductTargetsData] = useState([]);
   const [allDeals, setAllDeals] = useState([]);
   const [allContacts, setAllContacts] = useState([]);
@@ -404,6 +440,182 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     });
   }, [myTargets, activeDateRange.from, activeDateRange.to]);
 
+  // ── Progress on the manager's OWN target rows ───────────────────────────────
+  //
+  // ONE figure per ROW, over that ROW'S OWN period.
+  //
+  // It used to be a single lifetime total stamped onto every row: every deal the
+  // manager could see with stage = 'won', no date filter at all, valued at
+  // `amount`, for himself plus every subordinate of any role — so his 2026 card
+  // and each of his October cards read the same ~9.93M, whatever period they were
+  // for. There was also a fallback to the stored `progress_amount` column, which
+  // only ever increases and is not maintained when a deal closes.
+  //
+  // The rule is now the shared one (utils/planningCalculations.js): won AND
+  // invoiced, by invoice_date inside the ROW's period, at final_amount ?? amount,
+  // net of returns dated in the same window — the same definition as teamAchieved
+  // above and the KPI "Achieved (invoiced)" card, with the page's currency
+  // conversion wrapped around the value exactly as teamAchieved wraps it.
+  //
+  // Scope depends on who set the row:
+  //   assigned to him by the Director — his TEAM allocation, so the team's
+  //     achievers (achieverIdsFrom), which is teamAchieved's scope exactly;
+  //   assigned to himself (assigned_by = assigned_to, see utils/selfTarget.js) —
+  //     a carve-out he carries personally, so his OWN deals only, whatever his
+  //     users.is_contributor flag says.
+  const myTargetScopes = useMemo(() => {
+    const team = achieverIdsFrom([effectiveUserProfile, ...(allSubordinates || [])]);
+    const self = effectiveUserProfile?.id ? [effectiveUserProfile.id] : [];
+    return { team, self, union: Array.from(new Set([...team, ...self])) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allSubordinates, effectiveUserProfile?.id, effectiveUserProfile?.role, effectiveUserProfile?.is_active, effectiveUserProfile?.is_contributor]);
+
+  // The widest window his rows cover, so returns are read ONCE rather than once
+  // per card. computeAchieved narrows them per row by the same scope and window
+  // it counts invoices over (computeReturns), so a January credit note cannot
+  // reduce an October card.
+  const myTargetsWindow = useMemo(() => {
+    const days = (myTargets || [])
+      .flatMap((row) => [ymd(row?.period_start), ymd(row?.period_end)])
+      .filter(Boolean)
+      .sort();
+    return days.length ? { start: days[0], end: days[days.length - 1] } : null;
+  }, [myTargets]);
+
+  const [myTargetReturns, setMyTargetReturns] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    if (!company?.id || !myTargetsWindow || !myTargetScopes.union.length) {
+      setMyTargetReturns([]);
+      return undefined;
+    }
+    fetchReturns({
+      companyId: company.id,
+      ownerIds: myTargetScopes.union,
+      start: myTargetsWindow.start,
+      end: myTargetsWindow.end,
+    }).then((rows) => {
+      // A failed read degrades to gross Achieved (fetchReturns logs and returns
+      // []), which is what these cards showed before returns existed.
+      if (alive) setMyTargetReturns(rows || []);
+    });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company?.id, myTargetsWindow?.start, myTargetsWindow?.end, myTargetScopes]);
+
+  /** target row id -> Achieved over that row's own period, net of returns. */
+  const myTargetsProgress = useMemo(() => {
+    const convertedAchievedAmount = (deal) => {
+      const amount = achievedAmount(deal);
+      const dealCurrency = deal.currency || preferredCurrency;
+      if (dealCurrency === preferredCurrency) return amount;
+      return convertCurrency(amount, dealCurrency, preferredCurrency);
+    };
+    const byRow = {};
+    (myTargets || []).forEach((row) => {
+      const start = ymd(row?.period_start);
+      const end = ymd(row?.period_end) || start;
+      if (!row?.id || !start) return;
+      byRow[row.id] = computeAchieved({
+        deals: allDeals,
+        contributorIds: isSelfAssignedTarget(row) ? myTargetScopes.self : myTargetScopes.team,
+        start,
+        end,
+        amountOf: convertedAchievedAmount,
+        returns: myTargetReturns,
+      }).total;
+    });
+    return byRow;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myTargets, allDeals, myTargetReturns, myTargetScopes, preferredCurrency]);
+
+  // Achieved for one row — 0 while the deals are still loading. The stored
+  // progress_amount column is deliberately NOT a fallback: it is stale, and it
+  // only ever rises, so it reported progress on periods with no invoices at all.
+  const progressForTarget = (row) => myTargetsProgress[row?.id] || 0;
+
+  // Newest period first, so the current month leads and the yearly roll-up is
+  // not buried between last year's monthly rows.
+  const myTargetsByPeriod = useMemo(
+    () => [...(myTargets || [])].sort(
+      (a, b) => ymd(b?.period_start).localeCompare(ymd(a?.period_start)),
+    ),
+    [myTargets],
+  );
+
+  // His own carve-outs that overlap the selected period, shown on their own line
+  // instead of inside Total Allocated: a self-target is carved OUT of what the
+  // Director gave him, not extra on top, so adding it would report him against
+  // more than he was ever allocated. Same reason ownAllocation drops them from
+  // filteredMyTargets.
+  const selfTargetsInPeriod = useMemo(() => {
+    const from = ymd(activeDateRange.from);
+    const to = ymd(activeDateRange.to);
+    return (myTargets || []).filter((row) => {
+      if (!isSelfAssignedTarget(row)) return false;
+      const start = ymd(row?.period_start);
+      const end = ymd(row?.period_end) || start;
+      if (!start) return false;
+      return start <= to && end >= from;
+    });
+  }, [myTargets, activeDateRange.from, activeDateRange.to]);
+
+  // ── Progress on his CLIENT targets ──────────────────────────────────────────
+  //
+  // The shared client rule (utils/clientTargetAchievement.js): won AND invoiced,
+  // by invoice_date inside the PARENT row's period, at final_amount ?? amount,
+  // net of returns matched to that client's deals. It was an inline filter —
+  // stage = 'won' by closed_at (falling back to updated_at/created_at) at
+  // `amount` — which is the old Achieved definition this file no longer uses
+  // anywhere else, and counted won-but-uninvoiced deals.
+  const [clientAchievedByRow, setClientAchievedByRow] = useState({});
+  useEffect(() => {
+    let alive = true;
+    const rows = clientTargetRows || [];
+    if (!company?.id || !rows.length || !myTargetScopes.union.length) {
+      setClientAchievedByRow({});
+      return undefined;
+    }
+    // One query per (scope, window) rather than per client: every client target
+    // under the same parent row shares both.
+    const groups = new Map();
+    rows.forEach((row) => {
+      const parent = row.sales_target || {};
+      const start = ymd(parent.period_start);
+      const end = ymd(parent.period_end) || start;
+      if (!start) return;
+      const ownerIds = isSelfAssignedTarget(parent) ? myTargetScopes.self : myTargetScopes.team;
+      const key = `${start}|${end}|${ownerIds.join(",")}`;
+      if (!groups.has(key)) groups.set(key, { start, end, ownerIds, rows: [] });
+      groups.get(key).rows.push(row);
+    });
+    Promise.all(
+      [...groups.values()].map(async (group) => {
+        const perClient = await achievedByClient({
+          companyId: company.id,
+          ownerIds: group.ownerIds,
+          start: group.start,
+          end: group.end,
+        });
+        return group.rows.map((row) => [row.id, perClient[row.contact_id] || 0]);
+      }),
+    ).then((pairs) => {
+      if (alive) setClientAchievedByRow(Object.fromEntries(pairs.flat()));
+    });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientTargetRows, company?.id, myTargetScopes]);
+
+  // The shape the client panels already render: the row plus achieved/progress.
+  const clientTargetsData = useMemo(
+    () => (clientTargetRows || []).map((row) => {
+      const achieved = clientAchievedByRow[row.id] || 0;
+      const target = parseFloat(row.target_amount) || 0;
+      return { ...row, achieved, progress: target > 0 ? (achieved / target) * 100 : 0 };
+    }),
+    [clientTargetRows, clientAchievedByRow],
+  );
+
   // Filter assigned targets whose period overlaps with activeDateRange
   const filteredAssignedTargets = useMemo(() => {
     if (!assignedTargets) return assignedTargets;
@@ -415,6 +627,17 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       return targetStart <= to && targetEnd >= from;
     });
   }, [assignedTargets, activeDateRange.from, activeDateRange.to]);
+
+  // The three summary figures, each from ONE period-filtered set, so they
+  // reconcile: Allocated − Assigned = Available. Total Allocated used to sum
+  // every row of myTargets — every period, yearly AND monthly, self-targets
+  // included — while Available used the period-filtered set, so the three cards
+  // described different things and could not add up.
+  const allocatedInPeriod = useMemo(() => sumTargetAmount(filteredMyTargets), [filteredMyTargets]);
+  const assignedInPeriod = useMemo(
+    () => sumTargetAmount(filteredAssignedTargets),
+    [filteredAssignedTargets],
+  );
 
   // Recalculate per-subordinate target progress from deals.
   // The DB column `progress_amount` is not auto-updated when deals close,
@@ -778,7 +1001,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
       await loadExecutiveMetrics(allUserIds);
       await loadPipelineData();
-      await loadActionItems();
+      await loadActionItems(uniqueTeam);
       await loadSalesTargets();
 
       // Team activity this week
@@ -1045,7 +1268,11 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     }
   };
 
-  const loadActionItems = async () => {
+  // `teamMembers` are the manager's downline user ROWS (role / is_active /
+  // is_contributor), which the Achieved scope is resolved from. Passed in from
+  // loadManagerData rather than read off state, which is not populated yet when
+  // this runs during the first load.
+  const loadActionItems = async (teamMembers = []) => {
     try {
       const { data: deals } = await dealService.getDeals(
         company.id,
@@ -1088,24 +1315,52 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         });
       }
 
-      // Behind schedule targets
-      if (targets) {
-        const behindTargets = targets.filter((t) => {
-          const progress =
-            (parseFloat(t.progress_amount || 0) /
-              parseFloat(t.target_amount || 1)) *
-            100;
-          return progress < 50;
-        });
-        behindTargets.forEach((target) => {
+      // Behind schedule targets.
+      //
+      // Measured with the shared Achieved rule over each row's OWN period, like
+      // the target cards. It was the stored `progress_amount` column, which is
+      // never written when a deal closes: a row with real invoices read 0% and
+      // was flagged, and a row whose stale figure was high was never flagged at
+      // all. Scope follows the cards too — his own deals for a target he set
+      // himself, the team's achievers for one the Director assigned him.
+      if (targets?.length) {
+        const scopeTeam = achieverIdsFrom([userProfile, ...(teamMembers || [])]);
+        const scopeSelf = user?.id ? [user.id] : [];
+        const days = targets
+          .flatMap((row) => [ymd(row?.period_start), ymd(row?.period_end)])
+          .filter(Boolean)
+          .sort();
+        const returns = days.length
+          ? await fetchReturns({
+            companyId: company.id,
+            ownerIds: Array.from(new Set([...scopeTeam, ...scopeSelf])),
+            start: days[0],
+            end: days[days.length - 1],
+          })
+          : [];
+
+        const pctOf = (target) => {
+          const start = ymd(target?.period_start);
+          const end = ymd(target?.period_end) || start;
+          const amount = parseFloat(target?.target_amount) || 0;
+          if (!start || amount <= 0) return null;
+          const { total } = computeAchieved({
+            deals,
+            contributorIds: isSelfAssignedTarget(target) ? scopeSelf : scopeTeam,
+            start,
+            end,
+            returns,
+          });
+          return (total / amount) * 100;
+        };
+
+        targets.forEach((target) => {
+          const pct = pctOf(target);
+          if (pct === null || pct >= 50) return;
           actions.push({
             type: "performance_review",
             title: `Target Behind Schedule`,
-            description: `Your ${target.target_type} target is at ${Math.round(
-              (parseFloat(target.progress_amount || 0) /
-                parseFloat(target.target_amount || 1)) *
-                100,
-            )}%`,
+            description: `Your ${target.target_type} target for ${targetPeriodLabel(target)} is at ${Math.round(pct)}%`,
             priority: "medium",
             created_at: target.created_at,
           });
@@ -1222,7 +1477,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               parent_target_id: target.id, // Keep reference to parent
               target_type: "by_clients",
               target_amount: ct.target_amount,
-              progress_amount: ct.progress_amount,
               contact_id: ct.contact_id,
               contact: ct.contact,
               client_target_data: ct,
@@ -1262,7 +1516,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                   parent_target_id: target.id,
                   target_type: "by_products",
                   target_amount: pt.target_amount,
-                  progress_amount: pt.progress_amount,
                   product_group: pt.product_group,
                   product_target_data: pt,
                 });
@@ -1339,41 +1592,15 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         effectiveUserProfile.id,
       );
 
-      // Calculate progress including manager's own revenue + subordinates' revenue
+      // The rows are stored as they come. Progress per row is derived from the
+      // shared Achieved rule over each row's OWN period (myTargetsProgress) —
+      // this used to stamp one all-time won-at-`amount` total onto every row.
       if (myTargetsData && myTargetsData.length > 0) {
-        const deals = scopedDeals;
+        setMyTargets(myTargetsData);
 
-        // Get manager's own won deals revenue
-        const managerRevenue =
-          deals
-            ?.filter(
-              (d) =>
-                d.stage === "won" && d.owner_id === effectiveUserProfile.id,
-            )
-            ?.reduce((sum, d) => sum + getConvertedAmount(d), 0) || 0;
-
-        // Get subordinates' won deals revenue (using fresh subordinate IDs)
-        const subordinatesRevenue =
-          deals
-            ?.filter(
-              (d) =>
-                d.stage === "won" && freshSubordinateIds.includes(d.owner_id),
-            )
-            ?.reduce((sum, d) => sum + getConvertedAmount(d), 0) || 0;
-
-        const totalProgress = managerRevenue + subordinatesRevenue;
-
-        // Update targets with calculated progress
-        const targetsWithProgress = myTargetsData.map((target) => ({
-          ...target,
-          calculated_progress: totalProgress,
-          manager_revenue: managerRevenue,
-          subordinates_contribution: subordinatesRevenue,
-        }));
-
-        setMyTargets(targetsWithProgress);
-
-        // Load client targets for client-based targets
+        // Load client targets for client-based targets. `assigned_by`/
+        // `assigned_to` come along so the achievement scope can tell a row the
+        // Director assigned him from one he set for himself.
         const clientBasedTargetIds = myTargetsData
           .filter((t) => t.target_type === "by_clients")
           .map((t) => t.id);
@@ -1381,51 +1608,18 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
           const { data: clientTargets } = await supabase
             .from("client_targets")
             .select(
-              "*, contact:contacts(id, first_name, last_name, company_name), sales_target:sales_targets(period_start, period_end)",
+              "*, contact:contacts(id, first_name, last_name, company_name), sales_target:sales_targets(period_start, period_end, assigned_by, assigned_to)",
             )
             .in("sales_target_id", clientBasedTargetIds);
 
-          // Calculate client achievements from deals (filtered by target period)
-          const clientTargetsWithProgress = (clientTargets || []).map((ct) => {
-            const parentTarget = ct.sales_target;
-            let clientDeals =
-              deals?.filter(
-                (d) => d.stage === "won" && d.contact_id === ct.contact_id,
-              ) || [];
-
-            if (parentTarget?.period_start && parentTarget?.period_end) {
-              const periodStart = new Date(parentTarget.period_start);
-              const periodEnd = new Date(parentTarget.period_end);
-              periodEnd.setHours(23, 59, 59, 999);
-              clientDeals = clientDeals.filter((d) => {
-                const dealDate = d.closed_at
-                  ? new Date(d.closed_at)
-                  : new Date(d.updated_at || d.created_at);
-                return dealDate >= periodStart && dealDate <= periodEnd;
-              });
-            }
-
-            const clientAchieved = clientDeals.reduce(
-              (sum, d) => sum + getConvertedAmount(d),
-              0,
-            );
-            return {
-              ...ct,
-              achieved: clientAchieved,
-              progress:
-                ct.target_amount > 0
-                  ? (clientAchieved / ct.target_amount) * 100
-                  : 0,
-            };
-          });
-          setClientTargetsData(clientTargetsWithProgress);
+          setClientTargetRows(clientTargets || []);
         } else {
-          setClientTargetsData([]);
+          setClientTargetRows([]);
         }
 
       } else {
         setMyTargets(myTargetsData || []);
-        setClientTargetsData([]);
+        setClientTargetRows([]);
       }
     } catch (error) {
       console.error("Error loading sales targets:", error);
@@ -2491,13 +2685,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           {t("dashboard.totalAllocated")}
                         </p>
                         <p className="text-lg font-bold tabular-nums text-blue-700">
-                          {formatCurrency(
-                            myTargets.reduce(
-                              (sum, t) =>
-                                sum + (parseFloat(t.target_amount) || 0),
-                              0,
-                            ),
-                          )}
+                          {formatCurrency(allocatedInPeriod)}
                         </p>
                       </div>
                       <div className="p-4 bg-green-50 rounded-lg border border-green-100">
@@ -2505,13 +2693,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           {t("dashboard.assignedToTeam")}
                         </p>
                         <p className="text-lg font-bold tabular-nums text-green-700">
-                          {formatCurrency(
-                            filteredAssignedTargets.reduce(
-                              (sum, t) =>
-                                sum + (parseFloat(t.target_amount) || 0),
-                              0,
-                            ),
-                          )}
+                          {formatCurrency(assignedInPeriod)}
                         </p>
                       </div>
                       <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
@@ -2519,37 +2701,29 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                           {t("dashboard.availableBudget")}
                         </p>
                         <p className="text-lg font-bold tabular-nums text-amber-700">
-                          {formatCurrency(
-                            Math.max(
-                              0,
-                              filteredMyTargets.reduce(
-                                (sum, t) =>
-                                  sum + (parseFloat(t.target_amount) || 0),
-                                0,
-                              ) -
-                                filteredAssignedTargets.reduce(
-                                  (sum, t) =>
-                                    sum + (parseFloat(t.target_amount) || 0),
-                                  0,
-                                ),
-                            ),
-                          )}
+                          {formatCurrency(Math.max(0, allocatedInPeriod - assignedInPeriod))}
                         </p>
                       </div>
                     </div>
 
+                    {/* His own carve-outs, beside the allocation rather than
+                        inside it — see selfTargetsInPeriod. */}
+                    {selfTargetsInPeriod.length > 0 && (
+                      <p className="text-xs text-gray-500">
+                        {t("dashboard.myOwnTargets")}:{" "}
+                        <span className="font-medium tabular-nums text-gray-700">
+                          {formatCurrency(sumTargetAmount(selfTargetsInPeriod))}
+                        </span>
+                      </p>
+                    )}
+
                     {/* Target Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {myTargets.map((target) => {
+                      {myTargetsByPeriod.map((target) => {
+                        const achieved = progressForTarget(target);
                         const progress =
                           parseFloat(target.target_amount) > 0
-                            ? (parseFloat(
-                                target.calculated_progress ||
-                                  target.progress_amount ||
-                                  0,
-                              ) /
-                                parseFloat(target.target_amount)) *
-                              100
+                            ? (achieved / parseFloat(target.target_amount)) * 100
                             : 0;
 
                         return (
@@ -2558,8 +2732,14 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             className="border border-gray-200 rounded-lg p-4"
                           >
                             <div className="flex items-center justify-between mb-3">
-                              <span className="text-sm font-medium text-gray-900 capitalize">
-                                {target.period_type} {t("dashboard.periodTarget")}
+                              <span className="text-sm font-medium text-gray-900">
+                                {targetPeriodLabel(target)}{" "}
+                                {t("dashboard.periodTarget")}
+                                {isSelfAssignedTarget(target) && (
+                                  <span className="ml-2 text-xs font-normal text-gray-500">
+                                    ({t("dashboard.myOwnTarget")})
+                                  </span>
+                                )}
                               </span>
                               <span
                                 className={`px-2 py-1 text-xs rounded-full ${
@@ -2578,11 +2758,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                               </div>
                               <div className="text-sm text-gray-600">
                                 {t("common.progress")}:{" "}
-                                {formatCurrency(
-                                  target.calculated_progress ||
-                                    target.progress_amount ||
-                                    0,
-                                )}
+                                {formatCurrency(achieved)}
                                 <span className="ml-2 text-xs">
                                   ({progress.toFixed(1)}%)
                                 </span>
@@ -2863,13 +3039,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                             {filteredMyTargets
                               .filter((t) => t.target_type === "by_value")
                               .map((target) => {
+                                const achieved = progressForTarget(target);
                                 const progress =
                                   parseFloat(target.target_amount) > 0
-                                    ? (parseFloat(
-                                        target.calculated_progress ||
-                                          target.progress_amount ||
-                                          0,
-                                      ) /
+                                    ? (achieved /
                                         parseFloat(target.target_amount)) *
                                       100
                                     : 0;
@@ -2900,11 +3073,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                                       </span>
                                     </div>
                                     <div className="text-xl font-bold text-gray-900 mb-1">
-                                      {formatCurrency(
-                                        target.calculated_progress ||
-                                          target.progress_amount ||
-                                          0,
-                                      )}{" "}
+                                      {formatCurrency(achieved)}{" "}
                                       / {formatCurrency(target.target_amount)}
                                     </div>
                                     <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
