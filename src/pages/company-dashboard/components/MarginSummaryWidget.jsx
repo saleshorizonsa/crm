@@ -17,13 +17,27 @@ const MarginSummaryWidget = ({ deals = [] }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
   const { t } = useLanguage();
 
-  const { avgMargin, totalGrossProfit, lowestMarginDeal, repData } = useMemo(() => {
-    const wonDeals = deals.filter(
-      (d) => d.stage === "won" && d.margin_pct != null
-    );
+  const { avgMargin, totalGrossProfit, lowestMarginDeal, repData, costedWon, totalWon } = useMemo(() => {
+    // A deal only has a margin when it has a COST to compare against. margin_pct
+    // sitting beside total_cost 0 is not a measurement — it is 100% by
+    // arithmetic, and that is exactly what dealProductService.updateDealMargin
+    // computes for a deal whose lines carry no cost_price (no line in this
+    // database carries one). So the cost is required here, and a cost-free deal
+    // is treated as having no margin data rather than a perfect one.
+    //
+    // The deals/margin columns do not exist in this database yet, so every deal
+    // falls out of this filter today and the widget shows its empty state. See
+    // migrations/complete_gross_margin_deals_columns.sql.
+    const hasMarginData = (d) => d.margin_pct != null && (parseFloat(d.total_cost) || 0) > 0;
+
+    const won = deals.filter((d) => d.stage === "won");
+    const wonDeals = won.filter(hasMarginData);
 
     if (wonDeals.length === 0) {
-      return { avgMargin: null, totalGrossProfit: 0, lowestMarginDeal: null, repData: [] };
+      return {
+        avgMargin: null, totalGrossProfit: 0, lowestMarginDeal: null, repData: [],
+        costedWon: 0, totalWon: won.length,
+      };
     }
 
     const avg = wonDeals.reduce((s, d) => s + (d.margin_pct || 0), 0) / wonDeals.length;
@@ -33,7 +47,7 @@ const MarginSummaryWidget = ({ deals = [] }) => {
     );
 
     // Group by rep — use all deals (not just won) for pipeline view
-    const allWithMargin = deals.filter((d) => d.margin_pct != null);
+    const allWithMargin = deals.filter(hasMarginData);
     const repMap = {};
     allWithMargin.forEach((d) => {
       const name = d.owner?.full_name || t("dashboard.unassigned");
@@ -50,7 +64,10 @@ const MarginSummaryWidget = ({ deals = [] }) => {
       .sort((a, b) => b.margin - a.margin)
       .slice(0, 10);
 
-    return { avgMargin: avg, totalGrossProfit: profit, lowestMarginDeal: lowest, repData: reps };
+    return {
+      avgMargin: avg, totalGrossProfit: profit, lowestMarginDeal: lowest, repData: reps,
+      costedWon: wonDeals.length, totalWon: won.length,
+    };
   }, [deals]);
 
   const marginColor = (pct) =>
@@ -69,7 +86,10 @@ const MarginSummaryWidget = ({ deals = [] }) => {
     </div>
   );
 
-  if (avgMargin == null && totalGrossProfit === 0) {
+  // No costed deal at all → the empty state, never 0% / 100% / blank cards. The
+  // old condition also required totalGrossProfit === 0, which let a deal with a
+  // margin_pct and no profit through and rendered 0.0% beside two zeroes.
+  if (avgMargin == null) {
     return (
       <div className="bg-card border border-border rounded-xl p-6 text-center text-muted-foreground text-sm">
         <Icon name="TrendingUp" size={24} className="mx-auto mb-2 opacity-40" />
@@ -102,6 +122,13 @@ const MarginSummaryWidget = ({ deals = [] }) => {
           color={lowestMarginDeal && lowestMarginDeal.margin_pct < 10 ? "bg-red-500" : "bg-amber-500"}
         />
       </div>
+
+      {/* What share of the won deals these three cards actually describe. */}
+      {costedWon < totalWon && (
+        <p className="text-xs text-muted-foreground">
+          {t("dashboard.marginCoverage", { costed: costedWon, total: totalWon })}
+        </p>
+      )}
 
       {/* Horizontal bar chart by rep */}
       {repData.length > 0 && (

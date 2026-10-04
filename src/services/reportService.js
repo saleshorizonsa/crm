@@ -11,11 +11,18 @@ const DEAL_SELECT = `
   owner:users!owner_id(id, full_name, is_active),
   deal_products(
     id, line_total, uom_value, unit_price,
+    quantity, cost_price, line_cost,
     product:products(
       id, material, description, material_group
     )
   )
 `;
+// `quantity, cost_price, line_cost` are here for the Margin report, which had no
+// cost column to read at all: it fell back to 0 and every deal came out at 100%
+// margin. cost_price is PER UNIT (dealProductService.addProductToDeal stores it
+// alongside line_cost = effectiveQty × cost_price), so a line's cost is
+// line_cost, or quantity × cost_price when the line_cost was never written.
+// `quantity` comes along because that multiplication needs it.
 
 // Reports is a HISTORICAL view, so this scope deliberately differs from the
 // "current" team scopes in teamHierarchy.js / Coverage Console in two ways:
