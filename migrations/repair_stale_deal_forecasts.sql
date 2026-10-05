@@ -1,5 +1,5 @@
 -- ============================================================================
--- NOT APPLIED — this file has NOT been run against any database.
+-- APPLIED to production 2026-10-05 (SQL editor)
 -- ============================================================================
 --
 -- Repairs forecast_probability / forecast_amount on rows that were written

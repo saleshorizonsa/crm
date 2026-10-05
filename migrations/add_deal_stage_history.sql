@@ -1,5 +1,5 @@
 -- ============================================================================
--- NOT APPLIED — neither table exists in production (checked).
+-- APPLIED to production 2026-10-05 (SQL editor)
 -- ============================================================================
 --
 -- Run as ONE transaction. Without it, a failure part-way (the policies below

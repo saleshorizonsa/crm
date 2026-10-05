@@ -24,6 +24,11 @@ import {
 import { exportToExcel } from "../../utils/exportUtils";
 import { now } from "d3";
 import { format, startOfMonth, endOfMonth } from 'date-fns';
+import {
+  parseInvoiceNumbers,
+  formatInvoiceNumbers,
+  isPlaceholderInvoice,
+} from '../../utils/invoiceNumber';
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { resolveDateRange } from "../../components/ui/DateRangePicker";
 import { getDealOrigin } from "../../utils/dealGroupUtils";
@@ -82,9 +87,24 @@ const SalesPipeline = () => {
     setShowInvoiceModal(true);
   };
 
+  // What the typed text normalises to, recomputed as they type so the modal can
+  // show it before anything is saved.
+  const parsedInvoiceNumbers = parseInvoiceNumbers(invoiceForm.invoice_number);
+
   const confirmInvoice = async () => {
     const errors = {};
-    if (!invoiceForm.invoice_number.trim()) errors.invoice_number = "Invoice number is required";
+    // A real ERP number, not just "something". This accepted "1", "gg" and
+    // "J5412" — 12 deals carry one of those today, and a credit note can only
+    // find a deal BY its invoice number, so each of them is permanently
+    // unmatchable. Several numbers are fine: one deal can cover several
+    // invoices.
+    if (!invoiceForm.invoice_number.trim()) {
+      errors.invoice_number = "Invoice number is required";
+    } else if (isPlaceholderInvoice(invoiceForm.invoice_number)) {
+      errors.invoice_number = "PRE-CRM placeholders are history only. Enter the ERP invoice number, e.g. 93002906";
+    } else if (!parsedInvoiceNumbers.length) {
+      errors.invoice_number = "Enter the ERP invoice number, e.g. 93002906";
+    }
     if (!invoiceForm.invoice_date) errors.invoice_date = "Invoice date is required";
     if (Object.keys(errors).length) { setInvoiceErrors(errors); return; }
 
@@ -95,7 +115,9 @@ const SalesPipeline = () => {
         .from("deals")
         .update({
           is_invoiced: true,
-          invoice_number: invoiceForm.invoice_number.trim(),
+          // Stored normalised — 10 digits, comma-separated for several — so the
+          // returns file's 0093002906 and a typed 93002906 are the same value.
+          invoice_number: formatInvoiceNumbers(parsedInvoiceNumbers),
           invoice_date: invoiceForm.invoice_date,
           invoiced_at: now,
           invoiced_by: user?.id,
@@ -1080,19 +1102,36 @@ const SalesPipeline = () => {
 
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                    Invoice Number *
+                    ERP Invoice Number *
                   </label>
                   <input
                     type="text"
                     value={invoiceForm.invoice_number}
                     onChange={(e) => setInvoiceForm((f) => ({ ...f, invoice_number: e.target.value }))}
-                    placeholder="e.g. INV-2026-001"
+                    /* The old placeholder read "e.g. INV-2026-001", a format the
+                       ERP has never used — it taught the shape this field is now
+                       full of. */
+                    placeholder="e.g. 93002906"
                     className={`w-full border rounded-xl px-3 py-2.5 text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500/20 ${
                       invoiceErrors.invoice_number ? "border-destructive" : "border-border"
                     }`}
                   />
-                  {invoiceErrors.invoice_number && (
+                  {invoiceErrors.invoice_number ? (
                     <p className="text-xs text-destructive mt-1">{invoiceErrors.invoice_number}</p>
+                  ) : parsedInvoiceNumbers.length > 0 ? (
+                    /* What will actually be stored, before saving: the ERP's own
+                       10-digit form, which is how the returns file writes it. */
+                    <p data-testid="invoice-preview" className="text-xs text-green-700 mt-1">
+                      {parsedInvoiceNumbers.length === 1 ? "Will be saved as" : `Will be saved as ${parsedInvoiceNumbers.length} invoices:`}{" "}
+                      <span className="font-mono font-medium">
+                        {formatInvoiceNumbers(parsedInvoiceNumbers)}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      8–10 digits. Several invoices on one deal: separate them with
+                      {" "}<span className="font-mono">/</span> or <span className="font-mono">,</span>
+                    </p>
                   )}
                 </div>
 

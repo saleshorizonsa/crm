@@ -1,3 +1,5 @@
+import { parseInvoiceNumbers } from './invoiceNumber';
+
 // Parsing and matching for the ERP sales-returns import.
 //
 // Kept out of the component so the matching rules can be tested directly —
@@ -97,11 +99,15 @@ const text = (row, headerMap, col) => String(cell(row, headerMap, col) ?? '').tr
  * Three outcomes per row, and none of them is "silently dropped":
  *   matched    — exactly one invoiced deal carries this invoice number
  *   unmatched  — no deal does; stored for audit, reduces nobody's Achieved
- *   ambiguous  — SEVERAL deals share it. Not guessed at: picking one would
- *                charge the return to an arbitrary owner and customer. JASCO
- *                PVC has two such numbers today ("1" and "11", placeholders
- *                shared by 10 deals), so this is a real case, not a theoretical
- *                one.
+ *   ambiguous  — SEVERAL deals carry the same real invoice number. Not guessed
+ *                at: picking one would charge the return to an arbitrary owner
+ *                and customer.
+ *
+ * "1" and "11" — placeholders shared by ten JASCO PVC deals — used to land here
+ * as ambiguous, which dressed a data-entry gap up as a decision somebody could
+ * make. They are not invoice numbers (see utils/invoiceNumber.js), so they are
+ * no longer keys: a return carrying one finds nothing and is `unmatched`, and
+ * the deals holding one are unmatchable until their real number is entered.
  * Rows missing a date or a parseable amount are returned as `invalid`.
  *
  * @param {Array[]} rows        data rows (arrays), header row already removed
@@ -110,14 +116,23 @@ const text = (row, headerMap, col) => String(cell(row, headerMap, col) ?? '').tr
  * @param {object}  XLSX        the xlsx module, for date serials
  */
 export function buildReturnRows({ rows, headerMap, deals, XLSX = null }) {
-  // invoice_number -> every deal carrying it, so duplicates are visible rather
-  // than being collapsed by a last-one-wins map.
+  // NORMALISED invoice number -> every deal carrying it, so duplicates are
+  // visible rather than being collapsed by a last-one-wins map.
+  //
+  // Both sides go through parseInvoiceNumbers (utils/invoiceNumber.js), which is
+  // what makes the match work at all: the CRM holds 8-digit numbers as people
+  // type them (93002906) and this file brings the ERP's 10-digit form
+  // (0093002906). Compared as raw strings — which is what this did — they are
+  // simply different numbers, so a correctly recorded invoice went unmatched.
+  // A deal covering several invoices is now reachable by any one of them, and
+  // junk like "1" or "gg" is not a key at all: it cannot match, and it cannot
+  // be offered as an ambiguous choice between owners either.
   const byInvoice = new Map();
   (deals || []).forEach((d) => {
-    const key = String(d.invoice_number ?? '').trim();
-    if (!key) return;
-    if (!byInvoice.has(key)) byInvoice.set(key, []);
-    byInvoice.get(key).push(d);
+    parseInvoiceNumbers(d.invoice_number).forEach((key) => {
+      if (!byInvoice.has(key)) byInvoice.set(key, []);
+      byInvoice.get(key).push(d);
+    });
   });
 
   const matched = [];
@@ -158,7 +173,17 @@ export function buildReturnRows({ rows, headerMap, deals, XLSX = null }) {
       return;
     }
 
-    const hits = byInvoice.get(invoiceNo) || [];
+    // The return's own invoice, normalised the same way. A blank or unreadable
+    // one finds nothing, which is `unmatched` — never a guess.
+    const seenDeals = new Set();
+    const hits = [];
+    parseInvoiceNumbers(invoiceNo).forEach((n) => {
+      (byInvoice.get(n) || []).forEach((d) => {
+        if (seenDeals.has(d.id)) return;
+        seenDeals.add(d.id);
+        hits.push(d);
+      });
+    });
     if (hits.length === 1) {
       matched.push({ ...record, deal: hits[0], deal_id: hits[0].id });
     } else if (hits.length > 1) {
