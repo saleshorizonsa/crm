@@ -5,12 +5,33 @@ const COLORS = ["#2563EB","#16A34A","#D97706","#7C3AED","#0891B2","#DB2777","#EA
 
 const fmt = (n) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n || 0);
 
-const ByProduct = ({ deals, formatCurrency }) => {
+// INVOICED / RETURNS / NET. The page hands down the shared Achieved split
+// (reportService.reportAchievedTotals -> computeAchieved), so this screen shows
+// the same revenue as every dashboard instead of its own sum. Where a figure is
+// GROSS it says so: "Invoiced (before returns)", with the credit notes and the
+// net on their own lines, because a reader comparing this with a dashboard
+// needs to see which of the two numbers they are looking at.
+//
+// WHICH DEALS. This used to break down EVERY deal it was handed, at every
+// stage, so "value by product" was a mixture of revenue, open pipeline and
+// lost deals presented as one figure. It now breaks down the ACHIEVED deals —
+// won, invoiced, dated by invoice_date, over the achievers.
+//
+// WHY THE COLUMN TOTAL MAY NOT EQUAL ACHIEVED EXACTLY. A product line carries
+// its own `line_total`, while Achieved values a deal at final_amount ?? amount.
+// Those agree only when the lines were kept in step with a negotiated final
+// value, and not every deal has product lines at all. The reconciliation is
+// shown on screen rather than hidden: the Achieved total, the sum of the lines,
+// and the difference.
+const ByProduct = ({ deals, achievedDeals = null, achieved = null, formatCurrency }) => {
+  // Fall back to `deals` only when the page has not supplied the revenue rows
+  // (older callers, and the first render before the fetch resolves).
+  const rows = achievedDeals || deals;
   const { groups, products } = useMemo(() => {
     const gMap = {};
     const pMap = {};
 
-    deals.forEach((deal) => {
+    rows.forEach((deal) => {
       (deal.deal_products || []).forEach((dp) => {
         const p     = dp.product;
         const val   = parseFloat(dp.line_total) || 0;
@@ -37,9 +58,44 @@ const ByProduct = ({ deals, formatCurrency }) => {
       .sort((a, b) => b.value - a.value);
 
     return { groups, products };
-  }, [deals]);
+  }, [rows]);
+
+  // The reconciliation between the line totals above and the shared Achieved.
+  const lineTotal = products.reduce((s, p) => s + p.value, 0);
+  const achievedNet = achieved?.net ?? null;
+  const unexplained = achievedNet === null ? null : achievedNet - lineTotal;
 
   const hasProducts = products.length > 0;
+
+  // The line totals above come from deal_products; Achieved values a deal at
+  // final_amount ?? amount. Stating the gap is the only honest option — a
+  // product breakdown that silently fails to add up to the revenue it claims
+  // to break down is worse than one that says by how much.
+  const Reconciliation = () => (achievedNet === null ? null : (
+    <div className="mb-4 rounded-lg border border-gray-200 bg-white p-3 text-xs">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+        <span className="text-gray-500">
+          Revenue (net){" "}
+          <span className="font-semibold tabular-nums text-green-700">{formatCurrency(achievedNet)}</span>
+        </span>
+        <span className="text-gray-500">
+          Sum of product lines{" "}
+          <span className="font-semibold tabular-nums text-gray-800">{formatCurrency(lineTotal)}</span>
+        </span>
+        {Math.abs(unexplained) >= 1 && (
+          <span className="text-amber-700">
+            Not attributed to a product{" "}
+            <span className="font-semibold tabular-nums">{formatCurrency(unexplained)}</span>
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-gray-400">
+        Only invoiced deals count, dated by invoice date. A deal with no product
+        lines, or whose lines were not updated to a negotiated final value,
+        contributes to the revenue but not to the breakdown.
+      </p>
+    </div>
+  ));
 
   if (!hasProducts) return (
     <div className="flex flex-col items-center justify-center py-20 text-gray-400">
@@ -51,6 +107,7 @@ const ByProduct = ({ deals, formatCurrency }) => {
 
   return (
     <div className="space-y-6">
+      <Reconciliation />
       {/* Group bar chart */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="text-sm font-semibold text-gray-700 mb-4">Revenue by Product Group</h3>

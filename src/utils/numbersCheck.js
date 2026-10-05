@@ -28,7 +28,12 @@ import { calcDivisionMetrics } from 'utils/salesDivisionMetrics';
 import { subtreeIdsOf } from 'utils/teamHierarchy';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
-import { reportService, reportWonTotal } from 'services/reportService';
+import {
+  reportService,
+  reportWonTotal,
+  getReportAchieved,
+  reportAchievedTotals,
+} from 'services/reportService';
 
 // THE NUMBERS CHECK — every figure the app shows for one scope, beside ONE
 // reference figure.
@@ -695,6 +700,10 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
   // nobody has taken; what matters is that the difference is visible and
   // explained rather than discovered by someone comparing two tabs.
   const knownRows = [];
+  // Rows that USED to be in the known-to-differ group and now agree, kept as
+  // their own group so the history stays visible: each note says what the
+  // figure was before it was unified.
+  const reportRows = [];
   const viewerId = viewer?.id || null;
   const viewerRole = viewer?.role || 'admin';
   if (viewerId) {
@@ -731,8 +740,8 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       }),
     );
 
-    // Reports: the page's own fetch, then the figure its Revenue card shows.
-    // A person-scope check narrows that fetch to the one person by asking for a
+    // Reports: the page's own fetches, then the figures its screens show.
+    // A person-scope check narrows the fetch to the one person by asking for a
     // salesman scope, which is exactly what getTeamUserIds does for a salesman.
     const rptIdentity = (!scope || scope.kind === 'company' || !scope.userId)
       ? { userId: viewerId, role: viewerRole }
@@ -740,18 +749,66 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
         userId: scope.userId,
         role: scope.kind === 'person' ? 'salesman' : (person?.role || viewerRole),
       };
+
+    // THE REVENUE FIGURE THE SCREEN SHOWS. This row used to measure
+    // reportWonTotal over getReportDeals — which is ReportKPIBar's formula, and
+    // ReportKPIBar is NOT MOUNTED ANYWHERE. So the row was faithfully checking a
+    // figure no user could see, while the By Value tile that users do see went
+    // unchecked. It now reads the same function the tile reads.
+    const rptAchieved = await getReportAchieved({
+      companyId, userId: rptIdentity.userId, role: rptIdentity.role,
+      dateFrom: start, dateTo: end,
+    });
+    const rptTotals = reportAchievedTotals({ ...rptAchieved, start, end });
+    reportRows.push(
+      row({
+        label: 'Reports → By Value — Revenue (net)',
+        value: rptTotals.net,
+        expected: reference.achieved,
+        note: 'the shared Achieved since 2026-10-05: won AND invoiced, by'
+          + ' invoice_date, final_amount ?? amount, over the achievers, net of'
+          + ' credit notes raised in the period',
+      }),
+      row({
+        label: 'Reports → By Value — Invoiced (before returns)',
+        value: rptTotals.invoiced,
+        expected: reference.achievedGross,
+      }),
+      row({
+        label: 'Reports → By Value — Returns',
+        value: rptTotals.returns,
+        expected: reference.returns,
+        note: 'ALL FIVE credit notes in production are unmatched (deal_id IS NULL),'
+          + ' so they reduce nobody and this reads 0.00. An unmatched return has no'
+          + ' owner to charge; migrations/relink_returns_on_invoice_correction.sql'
+          + ' (NOT APPLIED) is what links them.',
+      }),
+      row({
+        label: `Reports → By Salesman — sum of the ${Object.keys(rptTotals.perPerson).length} revenue rows`,
+        value: Object.values(rptTotals.perPerson).reduce((s, v) => s + v, 0),
+        expected: reference.achieved,
+      }),
+    );
+
+    // The pipeline figure, kept as a labelled row because it is a different
+    // question and always will be.
     const { data: reportDeals } = await reportService.getReportDeals(
       companyId, rptIdentity.userId, rptIdentity.role,
       `${start}T00:00:00`, `${end}T23:59:59`,
     );
-    knownRows.push(row({
-      label: 'Reports — Revenue (won deals)',
+    // INFO, not a comparison. This figure has no reference to be measured
+    // against: it answers "what did we close this period", where Achieved
+    // answers "what did we bill". Giving it `expected: reference.achieved` and
+    // calling the result "known to differ" was the wrong shape — a row that can
+    // never agree is not a failing check, it is a different measurement, and
+    // every other such figure on this page is already an info row.
+    reportRows.push(row({
+      label: `Reports — value of deals WON in the period (${(reportDeals || []).length} deals, info only)`,
       value: reportWonTotal(reportDeals || []),
-      expected: reference.achieved,
-      knownToDiffer: true,
-      note: 'every won deal at `amount`, dated by closed_at, invoiced or not, with no'
-        + ' returns subtracted. Reports is a historical pipeline view, not a revenue'
-        + ` ledger. Scope read as ${rptIdentity.role}; ${(reportDeals || []).length} deals in window.`,
+      note: 'every won deal at `amount`, dated by CLOSED_AT, invoiced or not —'
+        + ' what the stage and velocity tables describe. Deliberately not revenue:'
+        + ' a deal closed in September and invoiced in October is September'
+        + ' pipeline and October revenue, and both statements are true.',
     }));
   } else {
     knownRows.push(row({
@@ -760,8 +817,15 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       note: 'not checked: both scope themselves from the signed-in user, and no viewer was passed',
     }));
   }
+  if (reportRows.length) {
+    groups.push({
+      screen: 'Reports (unified 2026-10-05)',
+      fn: 'reportService.getReportAchieved + reportAchievedTotals',
+      rows: reportRows,
+    });
+  }
   groups.push({
-    screen: 'Known to differ — not yet unified',
+    screen: 'Different question by design — labelled on screen',
     fn: 'forecastService.getForecastData + buildForecast / reportService.getReportDeals + reportWonTotal',
     knownToDiffer: true,
     rows: knownRows,
