@@ -3,6 +3,9 @@ import { useCurrency } from "../../../contexts/CurrencyContext";
 import Button from "../../../components/ui/Button";
 import Icon from "../../../components/AppIcon";
 import { useLanguage } from "../../../i18n";
+// Percentages that cannot crash a render: a figure that has not arrived shows
+// "—" instead of taking the page down. See utils/formatPct.js.
+import { fmtPct } from "utils/formatPct";
 
 const EnhancedTeamPerformance = ({
   teamData,
@@ -372,7 +375,7 @@ const EnhancedTeamPerformance = ({
                             }`}
                           >
                             {member.hasTarget
-                              ? `${member.targetAchievement.toFixed(1)}%`
+                              ? fmtPct(member.targetAchievement)
                               : t("dashboard.noTargetNA")}
                           </div>
                           {member.hasTarget && (

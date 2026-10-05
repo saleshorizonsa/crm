@@ -8,6 +8,9 @@ import { supabase } from "../../../lib/supabase";
 import ContactReportModal from "../../../components/deals/ContactReportModal";
 import { useLanguage } from "../../../i18n";
 import { getDealProductSummary, getDealOrigin, getOriginLabel, getWonDealOrigin } from "../../../utils/dealGroupUtils";
+// Percentages that cannot crash a render: a figure that has not arrived shows
+// "—" instead of taking the page down. See utils/formatPct.js.
+import { fmtPct, hasFigure } from "utils/formatPct";
 
 // Fallback label map — kept in sync with the default seed list
 const LOST_CODE_LABELS = {
@@ -216,7 +219,12 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onCorrectIn
       </div>
 
       {/* --- Margin Indicator --- */}
-      {canSeeMargin && deal?.margin_pct != null && (
+      {/* hasFigure, not `!= null`: the loose form was right here, but the
+          Planning page went blank in production because a sibling screen used
+          `!== null`, which passes on undefined. One helper everywhere, so
+          nothing depends on spotting which operator was typed. It also
+          rejects NaN, which `!= null` would render as "NaN%". */}
+      {canSeeMargin && hasFigure(deal?.margin_pct) && (
         <div className="mb-2">
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
             deal.margin_pct >= 20
@@ -226,7 +234,7 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onCorrectIn
               : "bg-red-100 text-red-700"
           }`}>
             <Icon name="TrendingUp" size={10} />
-            {deal.margin_pct.toFixed(1)}% {t("pipeline.margin")}
+            {fmtPct(deal.margin_pct)} {t("pipeline.margin")}
           </span>
         </div>
       )}

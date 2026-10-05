@@ -10,6 +10,10 @@ import HistoricalDataModule from "./components/HistoricalDataModule";
 import SalesReturnsModule from "./components/SalesReturnsModule";
 import { computePlanningPageSummary, fetchProductGroups, fetchPlannedOpen } from "utils/planningPageSummary";
 import { fetchMonthlyTargets, targetPerPerson } from "utils/planningCalculations";
+// Percentages that cannot crash a render. planning/index.jsx:1305 took the
+// whole page down in production on 2026-10-05 by calling .toFixed on a figure
+// that was undefined behind a `!== null` guard — see utils/formatPct.js.
+import { fmtPct, fmtPctValue, hasFigure } from "utils/formatPct";
 
 // The two rate labels, written once so the page and the KPI strip say the
 // same thing. "Win rate" is deliberately NOT used for either: it means
@@ -110,27 +114,35 @@ const PlanningPage = () => {
   // Historical sales upload is a director/admin/head-only tool
   const canUploadHistory = ["director", "admin", "head"].includes(role);
 
+  // ── THE SUMMARY SHAPE — one literal, used by all three summary states ──────
+  //
+  // Every field the tiles read must be here, because a field that is absent
+  // reads as `undefined`, and `undefined !== null` is true: a guard written as
+  // `x !== null` lets it straight through to `.toFixed`. That is exactly how the
+  // whole page went blank in production on 2026-10-05. There used to be TWO
+  // copies of this object — this one and `emptySummary` below — and the copy
+  // here was missing six fields the render reads (pipelineConversion3m,
+  // pipelineTotal3m, importedExcluded, annualTarget, unassignedAnnual,
+  // annualYear). One literal now, so the two cannot drift again.
+  //
+  // Declared at the TOP of the component: the three useState calls below and
+  // fetchPlanningSummary all read it, so anything later is a temporal dead zone.
+  const emptySummary = {
+    target: 0, achieved: 0, remainingTarget: 0,
+    attainmentPct: null,
+    winRate3m: 0, winRateIsDefault: false, requiredPlan: 0,
+    plannedOpen: 0, openFunnel: 0, availableCoverage: 0,
+    coveragePct: null, plannedGap: 0, hasTargetRows: false,
+    annualTarget: null, unassignedAnnual: 0, annualYear: null,
+    pipelineConversion3m: null, pipelineTotal3m: 0, importedExcluded: 0,
+    untaggedPlanned: 0, untaggedFunnel: 0,
+  };
+
   // ── Planning summary bar (visible on every tab) ─────────────────────────────
   // This holds the SHARED PERIOD's figures. What the tiles actually render is
   // `summaryData` further down, which switches to next month's figures while the
   // early-plan switch is on next month — see the comment there.
-  const [currentSummary, setCurrentSummary] = useState({
-    target: 0,
-    achieved: 0,
-    attainmentPct: null,
-    remainingTarget: 0,
-    winRate3m: 0,
-    winRateIsDefault: false,
-    requiredPlan: 0,
-    plannedOpen: 0,
-    openFunnel: 0,
-    availableCoverage: 0,
-    coveragePct: null,
-    plannedGap: 0,
-    hasTargetRows: false,
-    untaggedPlanned: 0,
-    untaggedFunnel: 0,
-  });
+  const [currentSummary, setCurrentSummary] = useState(emptySummary);
   const [currentSummaryLoading, setCurrentSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState(null);
   // Why a submit failure gets its OWN state rather than reusing summaryError:
@@ -272,18 +284,9 @@ const PlanningPage = () => {
   // These are declared HERE, above activeSummary, and must stay above it:
   // activeSummary reads nextSummary during render, so a declaration below it is
   // a temporal-dead-zone crash that only fires once planTarget flips to "next"
-  // (the && short-circuit hides it until then).
-  const emptySummary = {
-    target: 0, achieved: 0, remainingTarget: 0,
-    attainmentPct: null,
-    winRate3m: 0, winRateIsDefault: false, requiredPlan: 0,
-    plannedOpen: 0, openFunnel: 0, availableCoverage: 0,
-    coveragePct: null, plannedGap: 0, hasTargetRows: false,
-    annualTarget: null, unassignedAnnual: 0, annualYear: null,
-    pipelineConversion3m: null, pipelineTotal3m: 0, importedExcluded: 0,
-    untaggedPlanned: 0, untaggedFunnel: 0,
-  };
-
+  // (the && short-circuit hides it until then). `emptySummary` itself now lives
+  // at the top of the component, because currentSummary's initial state uses it
+  // too.
   const [nextSummary, setNextSummary] = useState(emptySummary);
   const [nextSummaryLoading, setNextSummaryLoading] = useState(false);
   // A failed fetch falls back to the empty summary, which is indistinguishable
@@ -811,23 +814,14 @@ const PlanningPage = () => {
         setSummaryError("Some figures could not be loaded. Reload before submitting.");
       }
 
-      setCurrentSummary({
-        target: sum.target,
-        achieved: sum.achieved,
-        attainmentPct: sum.attainmentPct,
-        remainingTarget: sum.remainingTarget,
-        winRate3m: sum.winRatePct,
-        winRateIsDefault: sum.winRateIsDefault,
-        requiredPlan: sum.requiredPlan,
-        plannedOpen: sum.plannedOpen,
-        openFunnel: sum.openFunnel,
-        availableCoverage: sum.availableCoverage,
-        coveragePct: sum.coveragePct,
-        plannedGap: sum.plannedGap,
-        hasTargetRows: sum.hasTargetRows,
-        untaggedPlanned: sum.untaggedPlanned,
-        untaggedFunnel: sum.untaggedFunnel,
-      });
+      // SPREAD, not a hand-written field list — the same form the next-month and
+      // previous-month setters below already use. The hand-written list that was
+      // here copied 15 of the producer's 24 fields and silently dropped the six
+      // the render reads, so `summaryData.pipelineConversion3m` was undefined on
+      // every successful load and the page crashed at the tile that shows it.
+      // `...emptySummary` first so a field the producer ever stops returning
+      // falls back to its contract value instead of vanishing.
+      setCurrentSummary({ ...emptySummary, ...sum, winRate3m: sum.winRatePct });
     } catch (err) {
       // Swallowing this left the PREVIOUS filter's numbers on screen with the
       // new filter applied — wrong figures that look like real ones. Say so.
@@ -1231,9 +1225,9 @@ const PlanningPage = () => {
               <div className="mt-2 pt-2 border-t border-border">
                 <p className="text-xs text-green-600">
                   Achieved: <span className="tabular-nums">{fmtSAR(summaryData.achieved)} SAR</span>
-                  {summaryData.attainmentPct !== null && (
+                  {hasFigure(summaryData.attainmentPct) && (
                     <span className="text-muted-foreground">
-                      {" "}({summaryData.attainmentPct.toFixed(0)}% of target)
+                      {" "}({fmtPct(summaryData.attainmentPct, 0)} of target)
                     </span>
                   )}
                 </p>
@@ -1249,7 +1243,7 @@ const PlanningPage = () => {
                 (CEO decision D3, 2026-10-05). The monthly sum alone hid
                 27.8M of allocation nobody is carrying yet; the annual figure
                 alone measured the team against a number it was never given. */}
-            {!summaryLoading && isAnnualView && summaryData.annualTarget !== null && (
+            {!summaryLoading && isAnnualView && hasFigure(summaryData.annualTarget) && (
               <div className="mt-2 pt-2 border-t border-border space-y-0.5">
                 <p className="text-xs text-foreground">
                   Annual allocation:{" "}
@@ -1289,20 +1283,20 @@ const PlanningPage = () => {
               <div className="h-7 w-16 bg-muted rounded animate-pulse" />
             ) : (
               <p className="text-xl font-bold text-purple-600 tabular-nums" title={CONVERSION_TOOLTIP}>
-                {summaryData.winRate3m.toFixed(1)}%
+                {fmtPct(summaryData.winRate3m)}
               </p>
             )}
             <p className="text-xs text-muted-foreground mt-1">
               3 completed months{summaryData.winRateIsDefault && " (default)"}
             </p>
             {/* INFORMATION ONLY (CEO decision D2) — drives nothing. */}
-            {!summaryLoading && summaryData.pipelineConversion3m !== null && (
+            {!summaryLoading && hasFigure(summaryData.pipelineConversion3m) && (
               <p
                 className="text-xs text-muted-foreground mt-1.5 pt-1.5 border-t border-border"
                 title={PIPELINE_CONVERSION_TOOLTIP}
               >
                 Pipeline conversion:{" "}
-                <span className="tabular-nums">{summaryData.pipelineConversion3m.toFixed(1)}%</span>
+                <span className="tabular-nums">{fmtPct(summaryData.pipelineConversion3m)}</span>
                 <span className="ml-1">(info)</span>
               </p>
             )}
@@ -1338,7 +1332,7 @@ const PlanningPage = () => {
                 ? summaryData.hasTargetRows
                   ? "Target already achieved"
                   : "Nothing to plan against"
-                : `Remaining Target ÷ ${summaryData.winRate3m.toFixed(0)}% conversion (3m)`}
+                : `Remaining Target ÷ ${fmtPct(summaryData.winRate3m, 0)} conversion (3m)`}
             </p>
           </div>
 
@@ -1350,7 +1344,7 @@ const PlanningPage = () => {
           <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
             <div
               className={`absolute top-0 left-0 right-0 h-1 ${
-                !summaryLoading && summaryData.coveragePct !== null && summaryData.coveragePct < 100
+                !summaryLoading && hasFigure(summaryData.coveragePct) && summaryData.coveragePct < 100
                   ? "bg-orange-500"
                   : "bg-teal-500"
               }`}
@@ -1379,7 +1373,7 @@ const PlanningPage = () => {
               className={`text-xs mt-1 font-medium ${
                 summaryLoading
                   ? "text-muted-foreground"
-                  : summaryData.coveragePct === null
+                  : !hasFigure(summaryData.coveragePct)
                     ? "text-muted-foreground"
                     : summaryData.coveragePct >= 100
                       ? "text-green-600"
@@ -1388,11 +1382,11 @@ const PlanningPage = () => {
             >
               {summaryLoading
                 ? ""
-                : summaryData.coveragePct === null
+                : !hasFigure(summaryData.coveragePct)
                   ? summaryData.hasTargetRows
                     ? "Fully covered — nothing required"
                     : "No target to cover"
-                  : `${summaryData.coveragePct.toFixed(0)}% of Required Plan`}
+                  : `${fmtPctValue(summaryData.coveragePct, 0)}% of Required Plan`}
             </p>
           </div>
 

@@ -17,6 +17,9 @@ import {
   Line,
   LineChart,
 } from "recharts";
+// Percentages that cannot crash a render: a figure that has not arrived shows
+// "—" instead of taking the page down. See utils/formatPct.js.
+import { fmtPct } from "utils/formatPct";
 
 const ManagerPipelineCharts = ({
   teamData,
@@ -138,7 +141,7 @@ const ManagerPipelineCharts = ({
               {["revenue", "target", "achieved"].includes(entry.dataKey)
                 ? formatCurrency(entry.value)
                 : entry.dataKey === "conversion"
-                ? `${entry.value.toFixed(1)}%`
+                ? fmtPct(entry.value)
                 : entry.value}
             </p>
           ))}

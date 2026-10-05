@@ -2,6 +2,9 @@ import React from "react";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import Icon from "../../../components/AppIcon";
 import { useLanguage } from "../../../i18n";
+// Percentages that cannot crash a render: a figure that has not arrived shows
+// "—" instead of taking the page down. See utils/formatPct.js.
+import { fmtPct } from "utils/formatPct";
 
 const ManagerSummaryCards = ({
   teamData,
@@ -103,7 +106,7 @@ const ManagerSummaryCards = ({
     },
     {
       title: t("dashboard.targetAchievement"),
-      value: `${metrics.targetAchievement.toFixed(1)}%`,
+      value: fmtPct(metrics.targetAchievement),
       subtitle: `${formatCurrency(
         metrics.totalProgressAmount
       )} / ${formatCurrency(metrics.totalTargetAmount)}`,
@@ -138,7 +141,7 @@ const ManagerSummaryCards = ({
     },
     {
       title: t("dashboard.teamPerformance"),
-      value: `${metrics.avgTeamConversion.toFixed(1)}%`,
+      value: fmtPct(metrics.avgTeamConversion),
       subtitle: `${t("dashboard.conversionRate")} (${metrics.teamSize} ${t("dashboard.teamSize")})`,
       icon: "users",
       color:

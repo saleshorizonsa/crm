@@ -12,6 +12,9 @@ import {
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
+// Percentages that cannot crash a render: a figure that has not arrived shows
+// "—" instead of taking the page down. See utils/formatPct.js.
+import { fmtPct } from "utils/formatPct";
 
 const MarginSummaryWidget = ({ deals = [] }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
@@ -117,7 +120,7 @@ const MarginSummaryWidget = ({ deals = [] }) => {
         <MetricCard
           icon="AlertTriangle"
           label={t("dashboard.lowestMarginDeal")}
-          value={lowestMarginDeal ? `${lowestMarginDeal.margin_pct.toFixed(1)}%` : "—"}
+          value={fmtPct(lowestMarginDeal?.margin_pct)}
           sub={lowestMarginDeal?.title}
           color={lowestMarginDeal && lowestMarginDeal.margin_pct < 10 ? "bg-red-500" : "bg-amber-500"}
         />

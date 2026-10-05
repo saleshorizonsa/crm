@@ -1,6 +1,9 @@
 import React from "react";
 import DivisionCoverageRail from "./DivisionCoverageRail";
 import DivisionPacingRail from "./DivisionPacingRail";
+// Percentages that cannot crash a render: a figure that has not arrived shows
+// "—" instead of taking the page down. See utils/formatPct.js.
+import { fmtPct } from "utils/formatPct";
 
 // The Coverage Console's hero (status chip, coverage equation, coverage rail,
 // pacing rail) and its Cycle Ledger, copied from
@@ -164,7 +167,7 @@ export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
       : [["Gap to target", SAR(metrics.deficit) + " SAR", "", "neg"]]),
     [
       "Win rate",
-      metrics.winRatePct.toFixed(1) + "%",
+      fmtPct(metrics.winRatePct),
       metrics.winRateBorrowed ? "company rate (no deals in 3 months)" : "3-month average · to date",
     ],
     ...(metrics.isAllTime
