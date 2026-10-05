@@ -15,31 +15,69 @@ const STAGE_LABELS = {
   negotiation: "Negotiation", won: "Won", lost: "Lost",
 };
 
-const BySalesman = ({ deals, formatCurrency }) => {
+// INVOICED / RETURNS / NET. The page hands down the shared Achieved split
+// (reportService.reportAchievedTotals -> computeAchieved), so this screen shows
+// the same revenue as every dashboard instead of its own sum. Where a figure is
+// GROSS it says so: "Invoiced (before returns)", with the credit notes and the
+// net on their own lines, because a reader comparing this with a dashboard
+// needs to see which of the two numbers they are looking at.
+//
+// The WON column is now each person's Achieved — their share of the shared
+// split, keyed by owner — so this table and the Target table on every
+// dashboard report the same revenue per person. It used to be every won deal
+// at its entered `amount`, invoiced or not, which is a different figure for
+// almost everybody. Counts, lost value and pipeline still come from the
+// pipeline rows, which is what they describe.
+const BySalesman = ({ deals, achieved = null, formatCurrency }) => {
+  const totals = {
+    invoiced: achieved?.invoiced ?? 0,
+    returned: achieved?.returns ?? 0,
+    net: achieved?.net ?? 0,
+  };
   const salesmen = useMemo(() => {
     const map = {};
+    const perPerson = achieved?.perPerson || {};
+    const returnsPer = achieved?.returnsPerPerson || {};
+
+    const ensure = (key, label) => {
+      if (!map[key]) {
+        map[key] = {
+          key, label, total: 0, won: 0, invoiced: 0, returned: 0,
+          lost: 0, pipeline: 0, wonCount: 0, lostCount: 0, count: 0, stages: {},
+        };
+      }
+      return map[key];
+    };
+
     deals.forEach((d) => {
       const key   = d.owner?.id || "__none__";
       const label = d.owner?.full_name || "Unassigned";
-
-      if (!map[key]) map[key] = {
-        key, label, total: 0, won: 0, lost: 0, pipeline: 0,
-        wonCount: 0, lostCount: 0, count: 0, stages: {},
-      };
-
-      const sm = map[key];
+      const sm = ensure(key, label);
       sm.total += d.amount || 0;
       sm.count++;
 
-      if (d.stage === "won")       { sm.won  += d.amount || 0; sm.wonCount++; }
+      if (d.stage === "won")       { sm.wonCount++; }
       else if (d.stage === "lost") { sm.lost += d.amount || 0; sm.lostCount++; }
       else                         { sm.pipeline += d.amount || 0; }
 
       sm.stages[d.stage] = (sm.stages[d.stage] || 0) + 1;
     });
 
-    return Object.values(map).sort((a, b) => b.total - a.total);
-  }, [deals]);
+    // Somebody can have revenue in this period without a pipeline row in it —
+    // a deal closed last month and invoiced this one. Those people were simply
+      // absent from this table before.
+    (achieved?.deals || []).forEach((d) => {
+      ensure(d.owner?.id || "__none__", d.owner?.full_name || "Unassigned");
+    });
+
+    Object.values(map).forEach((sm) => {
+      sm.invoiced = (perPerson[sm.key] || 0) + (returnsPer[sm.key] || 0);
+      sm.returned = returnsPer[sm.key] || 0;
+      sm.won = perPerson[sm.key] || 0;   // NET — the shared Achieved
+    });
+
+    return Object.values(map).sort((a, b) => b.won - a.won || b.total - a.total);
+  }, [deals, achieved]);
 
   const chartData = salesmen.map((s) => ({
     name: s.label.split(" ")[0],
@@ -152,7 +190,9 @@ const BySalesman = ({ deals, formatCurrency }) => {
                 <th className="px-5 py-2.5 text-left">Salesman</th>
                 <th className="px-5 py-2.5 text-right">Deals</th>
                 <th className="px-5 py-2.5 text-right">Pipeline</th>
-                <th className="px-5 py-2.5 text-right">Won</th>
+                {/* Revenue, not "Won": invoiced in this period net of returns,
+                  which is the Achieved on every dashboard. */}
+              <th className="px-5 py-2.5 text-right" title="Invoiced in this period, net of credit notes — the same Achieved the dashboards show">Revenue</th>
                 <th className="px-5 py-2.5 text-right">Lost</th>
                 <th className="px-5 py-2.5 text-right">Total</th>
                 <th className="px-5 py-2.5 text-right">Win Rate</th>
@@ -190,6 +230,23 @@ const BySalesman = ({ deals, formatCurrency }) => {
                 );
               })}
             </tbody>
+            {/* The three revenue figures for whatever is on screen, so the
+                column above is never ambiguous about which one it shows. */}
+            <tfoot className="border-t-2 border-gray-200 bg-gray-50 text-xs">
+              <tr>
+                <td className="px-5 py-3 font-semibold text-gray-700">Total</td>
+                <td className="px-5 py-3" />
+                <td className="px-5 py-3 text-right font-semibold text-green-700 tabular-nums">
+                  {formatCurrency(totals.net)}
+                  {totals.returned > 0 && (
+                    <span className="block font-normal text-gray-500">
+                      invoiced {formatCurrency(totals.invoiced)} − returns {formatCurrency(totals.returned)}
+                    </span>
+                  )}
+                </td>
+                <td className="px-5 py-3" colSpan={6} />
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>

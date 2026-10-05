@@ -1,4 +1,10 @@
 import { supabase } from '../lib/supabase';
+// THE revenue rule. Reports does not get its own.
+import {
+  computeAchieved,
+  fetchReturns,
+} from '../utils/planningCalculations';
+import { fetchAchieverIds } from '../utils/achieverScope';
 
 const DEAL_SELECT = `
   id, title, amount, final_amount, is_invoiced, invoice_date, stage_changed_at,
@@ -112,26 +118,111 @@ export function computeDateRange(period) {
 }
 
 /**
- * The Reports page's Revenue card: won deals at `amount`.
+ * Won deals at their entered `amount`, over whatever rows are passed.
  *
- * Lifted out of ReportKPIBar so the numbers-check page can read the figure
- * that screen actually shows instead of recomputing it. The arithmetic is
- * unchanged.
- *
- * THIS IS DELIBERATELY NOT `Achieved`, and the two are known to differ:
- *   - it counts every WON deal, invoiced or not;
- *   - it values them at `amount`, not final_amount ?? amount;
- *   - it does not subtract sales returns;
- *   - the rows reaching it are dated by closed_at (getReportDeals above),
- *     not by invoice_date.
- * Reports is a historical pipeline view, not a revenue ledger, so unifying
- * it is a business decision nobody has taken yet. The numbers-check page
- * labels this row "known to differ" rather than calling it a bug.
+ * NOT Achieved, and no longer used for any revenue figure — see
+ * getReportAchieved below, which is. This stays for the ONE thing it is
+ * right for: describing the deals the pipeline tables are listing, which are
+ * dated by closed_at and include deals not yet invoiced.
  */
 export function reportWonTotal(deals = []) {
   return (deals || [])
     .filter((d) => d?.stage === 'won')
     .reduce((s, d) => s + (d.amount || 0), 0);
+}
+
+/**
+ * ACHIEVED for the Reports page: the shared rule, nothing local.
+ *
+ * WHY THIS IS A SECOND FETCH rather than a filter over getReportDeals.
+ * Those two select DIFFERENT ROWS on purpose and neither is wrong:
+ *
+ *   getReportDeals   a historical PIPELINE view. A won deal belongs to the
+ *                    period it was CLOSED in (closed_at), because that is
+ *                    when the selling happened.
+ *   this             a revenue LEDGER. A won deal belongs to the period it
+ *                    was INVOICED in (invoice_date), because that is when the
+ *                    money was billed — and a deal closed in September and
+ *                    invoiced in October is September pipeline and October
+ *                    revenue.
+ *
+ * Making one array serve both would have meant dating one of them wrongly, so
+ * the page now carries both and every REVENUE figure reads this one while
+ * every count, stage and velocity figure keeps reading the other.
+ *
+ * Scope is the report team scope (getTeamUserIds, which deliberately includes
+ * INACTIVE former team members — see its comment) INTERSECTED with the
+ * achievers, because Achieved is only ever measured over achievers.
+ *
+ * @returns {{ deals: object[], returns: object[], achieverIds: string[],
+ *             error: Error|null }} the invoiced rows and the credit notes, for
+ *   the caller to put through computeAchieved once its own filters are applied
+ *   — so the figure on screen always describes the rows on screen.
+ */
+export async function getReportAchieved({ companyId, userId, role, dateFrom, dateTo }) {
+  const empty = { deals: [], returns: [], achieverIds: [], error: null };
+  if (!companyId || !dateFrom || !dateTo) return empty;
+
+  const teamIds = await getTeamUserIds(userId, role, companyId);
+  const achievers = await fetchAchieverIds({ companyId, ownerIds: teamIds });
+  if (!achievers.length) return empty;
+
+  // Windowed in the QUERY, not client-side: invoice_date is a plain date
+  // column, so there is no timezone question to get wrong and no reason to
+  // pull the whole history back to filter it here.
+  const [dealsRes, returns] = await Promise.all([
+    supabase
+      .from('deals')
+      // `owner_id` EXPLICITLY, as well as the embedded owner. DEAL_SELECT carries
+      // only `owner:users!owner_id(...)`, and computeAchieved scopes on the raw
+      // `d.owner_id` column — so without this every row read `undefined` for its
+      // owner, matched nobody in the achiever set, and the whole report returned
+      // 0.00. /numbers-check caught it on the first September run.
+      .select(`owner_id, ${DEAL_SELECT}`)
+      .eq('company_id', companyId)
+      .in('owner_id', achievers)
+      .eq('stage', 'won')
+      .eq('is_invoiced', true)
+      .gte('invoice_date', dateFrom)
+      .lte('invoice_date', dateTo)
+      .order('invoice_date', { ascending: false }),
+    fetchReturns({ companyId, ownerIds: achievers, start: dateFrom, end: dateTo }),
+  ]);
+
+  if (dealsRes.error) return { ...empty, error: dealsRes.error };
+  return {
+    deals: dealsRes.data || [],
+    returns: returns || [],
+    achieverIds: achievers,
+    error: null,
+  };
+}
+
+/**
+ * The three figures every revenue surface on Reports shows, from rows the
+ * caller has already filtered. computeAchieved is the shared rule; this only
+ * names its outputs the way the screen labels them.
+ *
+ * NOTE ON RETURNS, as of 2026-10-05: all five credit notes in production are
+ * UNMATCHED (deal_id IS NULL), so they reduce nobody's Achieved and `returns`
+ * reads 0.00 with `net` equal to `invoiced`. That is correct, not a bug — an
+ * unmatched return has no owner to charge. migrations/
+ * relink_returns_on_invoice_correction.sql (NOT APPLIED) is what links them.
+ */
+export function reportAchievedTotals({ deals = [], returns = [], achieverIds = [], start, end }) {
+  const split = computeAchieved({
+    deals, contributorIds: achieverIds, start, end, returns,
+  });
+  return {
+    invoiced: split.grossTotal,   // before returns
+    returns: split.returnsTotal,
+    net: split.total,             // what every dashboard calls Achieved
+    invoiceCount: split.count,
+    returnsCount: split.returnsCount,
+    perPerson: split.perPerson,
+    returnsPerPerson: split.returnsPerPerson,
+    deals: split.deals,
+  };
 }
 
 export const reportService = {

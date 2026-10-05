@@ -33,23 +33,34 @@ const monthLabel = (ym) => {
   return new Date(+y, +m - 1).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 };
 
-const ByValue = ({ deals, formatCurrency, winRate3m = null, openPipeline = null }) => {
+// INVOICED / RETURNS / NET. The page hands down the shared Achieved split
+// (reportService.reportAchievedTotals -> computeAchieved), so this screen shows
+// the same revenue as every dashboard instead of its own sum. Where a figure is
+// GROSS it says so: "Invoiced (before returns)", with the credit notes and the
+// net on their own lines, because a reader comparing this with a dashboard
+// needs to see which of the two numbers they are looking at.
+//
+// `deals` stays the PIPELINE set (dated by closed_at) and still drives every
+// count, the stage mix and the monthly bars. Only the money comes from
+// `achieved`, which is dated by invoice_date. The two answer different
+// questions and the old single sum could only be right about one of them.
+const ByValue = ({ deals, achieved = null, formatCurrency, winRate3m = null, openPipeline = null }) => {
   const stats = useMemo(() => {
-    let pipeline = 0, won = 0, lost = 0, wonCount = 0, lostCount = 0;
+    let pipeline = 0, lost = 0, wonCount = 0, lostCount = 0;
     deals.forEach((d) => {
-      // Won revenue counts only INVOICED deals at their final (negotiated) value,
-      // matching the Director dashboard's achievement figure.
-      // GROSS of sales returns: this component only sees the deal rows it is
-      // handed, and a return usually credits an invoice from outside the
-      // reported window. Netting it here needs the Reports page to load
-      // deal_returns for the period and pass them down.
-      if (d.stage === "won")       { if (d.is_invoiced) won += parseFloat(d.final_amount ?? d.amount) || 0; wonCount++; }
+      if (d.stage === "won")       { wonCount++; }
       else if (d.stage === "lost") { lost += d.amount || 0; lostCount++; }
       else                         { pipeline += d.amount || 0; }
     });
     const closed = wonCount + lostCount;
-    return { pipeline, won, lost, winRate: closed ? Math.round(wonCount / closed * 100) : 0, wonCount, lostCount };
+    return { pipeline, lost, winRate: closed ? Math.round(wonCount / closed * 100) : 0, wonCount, lostCount };
   }, [deals]);
+
+  // THE revenue figures. Net is what every dashboard calls Achieved.
+  const invoiced = achieved?.invoiced ?? 0;
+  const returned = achieved?.returns ?? 0;
+  const netRevenue = achieved?.net ?? 0;
+  const hasReturns = returned > 0;
 
   // Prefer the dashboard-consistent figures when provided (3-month win rate and
   // all-open pipeline); otherwise fall back to this period's own numbers.
@@ -82,6 +93,35 @@ const ByValue = ({ deals, formatCurrency, winRate3m = null, openPipeline = null 
     return Object.values(map).sort((a, b) => b.value - a.value);
   }, [deals]);
 
+  // Shown under the tiles: the gross figure, the credit notes and the net, so
+  // the one on the tile is never ambiguous. Hidden when there are no returns,
+  // where "invoiced" and "net" are the same number and three lines saying so
+  // would be noise.
+  const ReturnsBreakdown = () => (!hasReturns ? null : (
+    <div className="mb-4 rounded-lg border border-gray-200 bg-white p-3 text-xs">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+        <span className="text-gray-500">
+          Invoiced (before returns){" "}
+          <span className="font-semibold tabular-nums text-gray-800">{formatCurrency(invoiced)}</span>
+        </span>
+        <span className="text-gray-500">
+          Returns{" "}
+          <span className="font-semibold tabular-nums text-red-600">− {formatCurrency(returned)}</span>
+          {achieved?.returnsCount ? <span className="text-gray-400"> ({achieved.returnsCount})</span> : null}
+        </span>
+        <span className="text-gray-500">
+          Net revenue{" "}
+          <span className="font-semibold tabular-nums text-green-700">{formatCurrency(netRevenue)}</span>
+        </span>
+      </div>
+      <p className="mt-1 text-gray-400">
+        A credit note reduces the month it was RAISED in, which is often not the
+        month of the invoice it credits. Net revenue is the figure the
+        dashboards call Achieved.
+      </p>
+    </div>
+  ));
+
   if (!deals.length) return (
     <div className="flex flex-col items-center justify-center py-20 text-gray-400">
       <span className="text-5xl mb-3">📊</span>
@@ -91,11 +131,21 @@ const ByValue = ({ deals, formatCurrency, winRate3m = null, openPipeline = null 
 
   return (
     <div className="space-y-6">
+      <ReturnsBreakdown />
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: "Active Pipeline", value: formatCurrency(displayPipeline), color: "text-blue-600",  bg: "bg-blue-50"  },
-          { label: "Won",             value: formatCurrency(stats.won),      color: "text-green-600", bg: "bg-green-50" },
+          // "Revenue (net)", not "Won": it is money invoiced in this period less the
+    // credit notes raised in it — the same Achieved every dashboard shows — and
+    // NOT the value of the deals won in this period, which is what a reader
+    // assumes from the word "Won" and what this tile used to be.
+    {
+      label: hasReturns ? "Revenue (net of returns)" : "Revenue (invoiced)",
+      value: formatCurrency(netRevenue),
+      color: "text-green-600",
+      bg: "bg-green-50",
+    },
           { label: "Lost",            value: formatCurrency(stats.lost),     color: "text-red-500",   bg: "bg-red-50"   },
           { label: "Win Rate",        value: displayWinRate,                 color: "text-purple-600",bg: "bg-purple-50", subtitle: winRate3m != null ? "3-month avg" : undefined },
         ].map(({ label, value, color, bg, subtitle }) => (
