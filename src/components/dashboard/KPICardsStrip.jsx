@@ -4,6 +4,9 @@ import Icon from 'components/AppIcon';
 import { supabase } from 'lib/supabase';
 import { STALE_INVOICE_DAYS } from 'utils/planningCalculations';
 import { capitalize } from 'utils/helper';
+// Percentages that cannot crash a render: a figure that has not arrived shows
+// "—" instead of taking the page down. See utils/formatPct.js.
+import { fmtPct } from "utils/formatPct";
 
 // Whole-SAR integer formatter.
 const fmtSAR = (n) =>
@@ -223,7 +226,7 @@ function SalesmanTable({ rows, active, canDrill, onRowClick }) {
               {cell('target', `${fmtSAR(s.target)}`)}
               {cell('achieved', `${fmtSAR(s.achieved)}`)}
               {cell('deficit', s.deficit <= 0 ? '✓' : fmtSAR(s.deficit))}
-              {cell('winRate', s.achievedOnly ? NA : `${s.winRate3m.toFixed(0)}%`)}
+              {cell('winRate', s.achievedOnly ? NA : fmtPct(s.winRate3m, 0))}
               {cell('plannedGap', s.achievedOnly ? NA : s.plannedGap <= 0 ? '✓' : fmtSAR(s.plannedGap))}
               {canDrill && (
                 <td className="px-3 py-2.5 text-right whitespace-nowrap">
@@ -320,7 +323,10 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
             {stat('Target', fmtSAR(salesman.target), 'text-foreground')}
             {stat('Achieved', fmtSAR(salesman.achieved), 'text-green-600')}
             {stat('Gap to target', salesman.deficit <= 0 ? '✓' : fmtSAR(salesman.deficit), salesman.deficit <= 0 ? 'text-green-600' : 'text-red-600')}
-            {stat('Win%', `${salesman.winRate3m.toFixed(0)}%`, 'text-purple-600')}
+            {/* fmtPct, not .toFixed: winRate3m is null for an achieved-only salesman
+                (no quota, so no rate is measured) and this drill-down, unlike the
+                table cell above, had no achievedOnly branch to protect it. */}
+            {stat('Win%', fmtPct(salesman.winRate3m, 0), 'text-purple-600')}
             {stat('New pipeline', salesman.plannedGap <= 0 ? '✓' : fmtSAR(salesman.plannedGap), salesman.plannedGap <= 0 ? 'text-green-600' : 'text-red-600')}
           </>
         )}

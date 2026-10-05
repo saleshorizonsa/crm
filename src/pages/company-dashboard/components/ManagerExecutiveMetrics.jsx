@@ -4,6 +4,9 @@ import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { companyService } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
+// Percentages that cannot crash a render: a figure that has not arrived shows
+// "—" instead of taking the page down. See utils/formatPct.js.
+import { fmtPct } from "utils/formatPct";
 
 const ManagerExecutiveMetrics = ({
   metrics,
@@ -175,7 +178,7 @@ const ManagerExecutiveMetrics = ({
       alerts.push({
         type: "warning",
         title: t("dashboard.salesTargetBehindSchedule"),
-        description: `${managerMetrics.targetAchievement.toFixed(1)}% ${t("dashboard.percentAchieved")}`,
+        description: `${fmtPct(managerMetrics.targetAchievement)} ${t("dashboard.percentAchieved")}`,
         action: () => onViewPerformance("targets"),
         actionLabel: t("dashboard.salesTargets"),
       });

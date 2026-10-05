@@ -2,6 +2,9 @@ import React from "react";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import Icon from "../../../components/AppIcon";
 import { useLanguage } from "../../../i18n";
+// Percentages that cannot crash a render: a figure that has not arrived shows
+// "—" instead of taking the page down. See utils/formatPct.js.
+import { fmtPct, fmtPctValue } from "utils/formatPct";
 
 const ManagerActionableMetrics = ({
   metrics,
@@ -102,7 +105,7 @@ const ManagerActionableMetrics = ({
       alerts.push({
         type: "warning",
         title: t("dashboard.teamTargetBelowExpectation"),
-        description: `${t("dashboard.onlyPercentAchieved").replace("{percent}", teamMetrics.targetAchievement.toFixed(1))}`,
+        description: `${t("dashboard.onlyPercentAchieved").replace("{percent}", fmtPctValue(teamMetrics.targetAchievement))}`,
         action: () => onViewPerformance("targets"),
         actionLabel: t("dashboard.viewDetailsAction"),
       });
@@ -135,7 +138,7 @@ const ManagerActionableMetrics = ({
             <div>
               <p className="text-green-100 text-sm">{t("dashboard.targetAchievement")}</p>
               <p className="text-2xl font-bold">
-                {teamMetrics.targetAchievement.toFixed(1)}%
+                {fmtPct(teamMetrics.targetAchievement)}
               </p>
               <p className="text-green-100 text-xs mt-1">
                 {formatCurrency(teamMetrics.totalProgressAmount)} /{" "}
@@ -164,7 +167,7 @@ const ManagerActionableMetrics = ({
             <div>
               <p className="text-orange-100 text-sm">{t("dashboard.avgConversion")}</p>
               <p className="text-2xl font-bold">
-                {teamMetrics.avgConversion.toFixed(1)}%
+                {fmtPct(teamMetrics.avgConversion)}
               </p>
               <p className="text-orange-100 text-xs mt-1">{t("dashboard.teamAverageLabel")}</p>
             </div>

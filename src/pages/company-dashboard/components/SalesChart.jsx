@@ -7,6 +7,9 @@ import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
 import { useDateRange } from "../../../contexts/DateRangeContext";
+// Percentages that cannot crash a render: a figure that has not arrived shows
+// "—" instead of taking the page down. See utils/formatPct.js.
+import { fmtPct } from "utils/formatPct";
 
 const STAGE_ORDER = [
   "lead",
@@ -576,7 +579,7 @@ const FunnelChart = ({ data, reverse, formatCurrency }) => {
             </p>
           )}
           <p className="text-xs text-gray-500 mt-1">
-            {part?.data?.pctOfTop?.toFixed(1)}% of top stage
+            {fmtPct(part?.data?.pctOfTop)} of top stage
           </p>
         </div>
       )}

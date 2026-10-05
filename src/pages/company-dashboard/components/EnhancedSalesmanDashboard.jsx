@@ -64,6 +64,9 @@ import {
   rangeYear,
 } from "../../../utils/achievedSeries";
 import LogActivityModal from '../../../components/LogActivityModal';
+// Percentages that cannot crash a render: a figure that has not arrived shows
+// "—" instead of taking the page down. See utils/formatPct.js.
+import { fmtPct } from "utils/formatPct";
 
 const EnhancedSalesmanDashboard = ({
   viewAsUser = null,
@@ -1336,7 +1339,7 @@ const EnhancedSalesmanDashboard = ({
               <div className="text-center p-4 bg-purple-50 rounded-lg min-w-0 overflow-hidden">
                 <div className="text-xl font-bold tabular-nums truncate leading-tight text-purple-600">
                   {targetMetrics?.hasActiveTarget
-                    ? `${targetMetrics.progressPercent.toFixed(1)}%`
+                    ? fmtPct(targetMetrics.progressPercent)
                     : "—"}
                 </div>
                 <div className="text-sm text-gray-600 mt-1">{t("common.progress")}</div>
@@ -1491,7 +1494,7 @@ const EnhancedSalesmanDashboard = ({
                   <div className="flex items-baseline gap-3">
                     <div>
                       <span className="text-lg font-bold text-purple-600 tabular-nums">
-                        {executiveMetrics.winRate.toFixed(1)}%
+                        {fmtPct(executiveMetrics.winRate)}
                       </span>
                       <span className="ml-1 text-[11px] font-medium text-purple-400">
                         {t("dashboard.thisMonth") || "This Month"}
