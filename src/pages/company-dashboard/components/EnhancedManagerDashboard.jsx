@@ -62,6 +62,12 @@ import {
 } from "../../../utils/dashboardDateUtils";
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { fetchTeamHierarchy } from '../../../utils/teamHierarchy';
+import {
+  yearOptions as generatedYearOptions,
+  achievedForBuckets,
+  bucketsFor,
+  rangeYear,
+} from '../../../utils/achievedSeries';
 import { ownAllocation, isSelfAssignedTarget, sumTargetAmount } from '../../../utils/selfTarget';
 import {
   targetRowProgress,
@@ -184,7 +190,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
   // Data states
   const [metrics, setMetrics] = useState(null);
-  const [salesData, setSalesData] = useState([]);
   const [activities, setActivities] = useState([]);
   const [teamData, setTeamData] = useState([]);
   const [showTargetAssignment, setShowTargetAssignment] = useState(false);
@@ -322,11 +327,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   }, [selectedMonth]);
 
   const yearOptions = useMemo(() => {
-    const years = [
-      { value: 2025, label: "2025", year: 2025 },
-      { value: 2026, label: "2026", year: 2026 },
-    ];
-    return years;
+    // Generated from 2025 to next year (utils/achievedSeries.js). It was a
+    // hard-coded [2025, 2026], so on 1 January 2027 there would have been no
+    // way to look at the year people were working in.
+    return generatedYearOptions();
   }, []);
 
   // Check if a date falls within activeDateRange
@@ -347,7 +351,89 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     );
   }, [allDeals, activeDateRange.from, activeDateRange.to]);
 
-  // Team Achieved — the one shared rule (utils/planningCalculations.js), the same
+  // Deal value in the currency the page is showing. The RULE is unchanged —
+  // only the unit (see targetRowProgress's amountOf).
+  const convertedAchievedAmount = useCallback((deal) => {
+    const amount = achievedAmount(deal);
+    const dealCurrency = deal.currency || preferredCurrency;
+    if (dealCurrency === preferredCurrency) return amount;
+    return convertCurrency(amount, dealCurrency, preferredCurrency);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferredCurrency]);  // The year the charts are about: the SELECTED range's, never new Date().
+  const trendYear = useMemo(
+    () => (selectedYear !== null ? selectedYear : rangeYear(activeDateRange.from)),
+    [selectedYear, activeDateRange.from],
+  );
+
+  // Whose revenue this page is about: himself plus his downline, through the
+  // achiever scope — the same set teamAchieved uses.
+  const revenueScope = useMemo(
+    () => achieverIdsFrom([effectiveUserProfile, ...(allSubordinates || [])]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [effectiveUserProfile, allSubordinates],
+  );
+
+  // ONE returns read for every revenue figure here — the trend chart (which
+  // can look back several years), the comparison, and the team card.
+  // computeAchieved narrows them per figure by its own window.
+  const [revenueReturns, setRevenueReturns] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    if (!company?.id || !revenueScope.length) { setRevenueReturns([]); return undefined; }
+    fetchReturns({
+      companyId: company.id,
+      ownerIds: revenueScope,
+      start: `${trendYear - 4}-01-01`,
+      end: `${trendYear + 1}-12-31`,
+      // A failed read degrades to gross (fetchReturns logs and returns []).
+    }).then((rows) => { if (alive) setRevenueReturns(rows || []); });
+    return () => { alive = false; };
+  }, [company?.id, revenueScope, trendYear]);
+
+  /** Achieved for this page's scope over any window, net of returns. */
+  const achievedIn = useCallback((start, end) => computeAchieved({
+    deals: allDeals,
+    contributorIds: revenueScope,
+    start,
+    end,
+    amountOf: convertedAchievedAmount,
+    returns: revenueReturns,
+  }), [allDeals, revenueScope, convertedAchievedAmount, revenueReturns]);
+
+  // Percentage change vs the previous equivalent period.
+  //
+  // BOTH sides are Achieved by the shared rule, for the same scope and each
+  // period's own window, net of that period's returns. It used to compare won
+  // deals at `amount` by closed_at on both sides — a different number from the
+  // Achieved shown beside it.
+  const changes = useMemo(() => {
+    if (!allDeals.length || !activeDateRange?.from) {
+      return { revenue: null, activeDeals: null, wonDeals: null };
+    }
+    const prev = getPreviousPeriod(activeDateRange.from, activeDateRange.to);
+    const currRevenue = achievedIn(activeDateRange.from, activeDateRange.to).total;
+    const prevRevenue = achievedIn(prev.from, prev.to).total;
+
+    // Deal COUNTS stay deal-shaped: won deals by close date, open deals by
+    // creation date, which is what those two counts mean.
+    const pFrom = new Date(prev.from + 'T00:00:00');
+    const pTo   = new Date(prev.to   + 'T23:59:59');
+    const inPrev = (dt) => {
+      if (!dt) return false;
+      const d = new Date(dt);
+      return d >= pFrom && d <= pTo;
+    };
+    const prevWon    = allDeals.filter(d => d.stage === 'won' && inPrev(d.closed_at));
+    const prevActive = allDeals.filter(d => !['won', 'lost'].includes(d.stage) && inPrev(d.created_at));
+    const currWon    = filteredDeals.filter(d => d.stage === 'won');
+    const currActive = filteredDeals.filter(d => !['won', 'lost'].includes(d.stage));
+
+    return {
+      revenue:     calcChange(currRevenue,      prevRevenue),
+      activeDeals: calcChange(currActive.length, prevActive.length),
+      wonDeals:    calcChange(currWon.length,    prevWon.length),
+    };
+  }, [allDeals, filteredDeals, activeDateRange?.from, activeDateRange?.to, achievedIn]);  // Team Achieved — the one shared rule (utils/planningCalculations.js), the same
   // figure as this dashboard's KPI "Achieved (invoiced)" card: won AND invoiced, by
   // invoice_date in the selected period, final value, active salesmen + supervisors
   // in this team. A manager's own deals count only when he is flagged
@@ -367,42 +453,31 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       start: activeDateRange.from,
       end: activeDateRange.to,
       amountOf: convertedAchievedAmount,
+      // Net, like the KPI strip: without this the team tile read gross while
+      // the strip beside it read net.
+      returns: revenueReturns,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allDeals, allSubordinates, effectiveUserProfile?.id, effectiveUserProfile?.role, effectiveUserProfile?.is_active, effectiveUserProfile?.is_contributor, activeDateRange.from, activeDateRange.to, preferredCurrency]);
 
-  // Percentage change vs previous equivalent period
-  const changes = useMemo(() => {
-    if (!allDeals.length || !activeDateRange?.from) {
-      return { revenue: null, activeDeals: null, wonDeals: null };
-    }
-    const prev  = getPreviousPeriod(activeDateRange.from, activeDateRange.to);
-    const pFrom = new Date(prev.from + 'T00:00:00');
-    const pTo   = new Date(prev.to   + 'T23:59:59');
 
-    const prevFiltered = allDeals.filter(deal => {
-      const dt = deal.stage === 'won' ? deal.closed_at : deal.created_at;
-      if (!dt) return false;
-      const d = new Date(dt);
-      return d >= pFrom && d <= pTo;
-    });
 
-    const prevWon      = prevFiltered.filter(d => d.stage === 'won');
-    const prevRevenue  = prevWon.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
-    const prevActive   = prevFiltered.filter(d => !['won', 'lost'].includes(d.stage));
-
-    const currWon      = filteredDeals.filter(d => d.stage === 'won');
-    const currRevenue  = currWon.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
-    const currActive   = filteredDeals.filter(d => !['won', 'lost'].includes(d.stage));
-
-    return {
-      revenue:     calcChange(currRevenue,      prevRevenue),
-      activeDeals: calcChange(currActive.length, prevActive.length),
-      wonDeals:    calcChange(currWon.length,    prevWon.length),
-    };
-  }, [allDeals, filteredDeals, activeDateRange?.from, activeDateRange?.to]);
-
-  // Origin classification: new pipeline vs carry-forward
+  // The revenue trend chart: Achieved per month / quarter / year of the
+  // SELECTED year, by the shared rule and net of returns
+  // (utils/achievedSeries.js).
+  //
+  // It was `stage === 'won'` bucketed by new Date(closed_at || created_at) at
+  // `amount` for EVERY owner in the list, against new Date().getFullYear() —
+  // so won-but-uninvoiced deals showed as revenue, credit notes were ignored,
+  // a deal invoiced in October but closed in September landed in September, and
+  // selecting 2025 still drew 2026's months.
+  const performanceTrendData = useMemo(() => achievedForBuckets({
+    deals: allDeals,
+    contributorIds: revenueScope,
+    buckets: bucketsFor(trendPeriod, trendYear, 3),
+    returns: revenueReturns,
+    amountOf: convertedAchievedAmount,
+  }), [allDeals, revenueScope, trendPeriod, trendYear, revenueReturns, convertedAchievedAmount]);  // Origin classification: new pipeline vs carry-forward
   const originMetrics = useMemo(() => {
     if (!filteredDeals?.length || !activeDateRange?.from) return null;
     return classifyDealsByOrigin(filteredDeals, activeDateRange.from);
@@ -535,15 +610,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [company?.id, myTargetsWindow?.start, myTargetsWindow?.end, myTargetScopes, filteredAssignedTargets, targetPeople]);
 
-  // Deal value in the currency the page is showing. The RULE is unchanged —
-  // only the unit (see targetRowProgress's amountOf).
-  const convertedAchievedAmount = useCallback((deal) => {
-    const amount = achievedAmount(deal);
-    const dealCurrency = deal.currency || preferredCurrency;
-    if (dealCurrency === preferredCurrency) return amount;
-    return convertCurrency(amount, dealCurrency, preferredCurrency);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preferredCurrency]);
+
 
   /** target row id -> Achieved over that row's own period, net of returns. */
   //
@@ -820,99 +887,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   ]);
 
   // Calculate performance trend based on active filters
-  // Calculate performance trend based on trendPeriod toggle (NOT affected by main filters)
-  const performanceTrendData = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const wonDeals = allDeals?.filter((d) => d.stage === "won") || [];
 
-    if (trendPeriod === "month") {
-      // Show monthly trend for current year
-      const months = [
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
-      ];
-
-      return months.map((month, index) => {
-        const monthDeals = wonDeals.filter((d) => {
-          const dealDate = new Date(
-            d.closed_at || d.created_at,
-          );
-          return (
-            dealDate.getFullYear() === currentYear &&
-            dealDate.getMonth() === index
-          );
-        });
-        const revenue = monthDeals.reduce(
-          (sum, d) => sum + getConvertedAmount(d),
-          0,
-        );
-        return {
-          period: month,
-          revenue,
-          deals: monthDeals.length,
-        };
-      });
-    } else if (trendPeriod === "quarter") {
-      // Show quarterly trend for current year
-      const quarters = ["Q1", "Q2", "Q3", "Q4"];
-
-      return quarters.map((quarter, index) => {
-        const startMonth = index * 3;
-        const endMonth = startMonth + 2;
-        const quarterDeals = wonDeals.filter((d) => {
-          const dealDate = new Date(
-            d.closed_at || d.created_at,
-          );
-          const dealMonth = dealDate.getMonth();
-          return (
-            dealDate.getFullYear() === currentYear &&
-            dealMonth >= startMonth &&
-            dealMonth <= endMonth
-          );
-        });
-        const revenue = quarterDeals.reduce(
-          (sum, d) => sum + getConvertedAmount(d),
-          0,
-        );
-        return {
-          period: quarter,
-          revenue,
-          deals: quarterDeals.length,
-        };
-      });
-    } else {
-      // Show yearly trend for last 3 years
-      const years = [currentYear - 2, currentYear - 1, currentYear];
-
-      return years.map((year) => {
-        const yearDeals = wonDeals.filter((d) => {
-          const dealDate = new Date(
-            d.closed_at || d.created_at,
-          );
-          return dealDate.getFullYear() === year;
-        });
-        const revenue = yearDeals.reduce(
-          (sum, d) => sum + getConvertedAmount(d),
-          0,
-        );
-        return {
-          period: year.toString(),
-          revenue,
-          deals: yearDeals.length,
-        };
-      });
-    }
-  }, [allDeals, trendPeriod, preferredCurrency]);
 
   const loadManagerData = async () => {
     setIsLoading(true);
@@ -949,12 +924,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
       const results = await Promise.allSettled([
         companyService.getCompanyMetrics(company.id, effectiveUser.id, false),
-        companyService.getSalesData(
-          company.id,
-          "monthly",
-          effectiveUser.id,
-          false,
-        ),
         activityService.getUserActivities(company.id, effectiveUser.id, 20),
         userService.getCompanyUsers(company.id),
         dealService.getDeals(company.id, { viewAll: true }, effectiveUser.id),
@@ -966,7 +935,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
       const [
         metricsResult,
-        salesResult,
         activitiesResult,
         usersResult,
         dealsResult,
@@ -977,9 +945,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       if (metricsResult.status === "fulfilled") {
         setMetrics(metricsResult.value.data);
       }
-      if (salesResult.status === "fulfilled") {
-        setSalesData(salesResult.value.data);
-      }
+      // companyService.getSalesData's per-month series used to land in
+      // setSalesData, which fed <SalesChart data={...}> — a prop that component
+      // does not accept. Both are gone; performanceTrendData is the series that
+      // is drawn, and it is on the shared rule.
       if (activitiesResult.status === "fulfilled") {
         setActivities(activitiesResult.value.data);
       }
@@ -1062,6 +1031,12 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     });
   };
 
+  // Only ONE key of executiveMetrics is read anywhere on this page:
+  // totalTarget, which <ForecastAISummary> is given — and this function never
+  // set it, so that card has always been given 0. The revenue, pipeline-value
+  // and win-rate keys it did set are rendered nowhere (the cards they were
+  // written for were replaced by the KPI strip), so rather than port a dead
+  // `stage === 'won'` sum onto the shared rule they are gone.
   const loadExecutiveMetrics = async (allTeamIds = []) => {
     try {
       const { data: deals } = await dealService.getDeals(
@@ -1069,69 +1044,23 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         { viewAll: true },
         effectiveUser.id,
       );
-
-      if (deals) {
-        setAllDeals(deals);
-        const teamIds = allTeamIds.length ? allTeamIds : [effectiveUser.id];
-        const teamDeals = deals.filter((d) => teamIds.includes(d.owner_id));
-        const wonDeals = teamDeals.filter((d) => d.stage === "won");
-        const lostDeals = teamDeals.filter((d) => d.stage === "lost");
-        const closedCount = wonDeals.length + lostDeals.length;
-        const totalRevenue = wonDeals.reduce(
-          (sum, d) => sum + getConvertedAmount(d),
-          0,
-        );
-        const activePipeline = teamDeals
-          .filter((d) => !["won", "lost"].includes(d.stage))
-          .reduce((sum, d) => sum + getConvertedAmount(d), 0);
-        const winRate =
-          closedCount > 0 ? (wonDeals.length / closedCount) * 100 : 0;
-
-        setExecutiveMetrics({
-          totalRevenue,
-          activePipeline,
-          winRate,
-          totalDeals: teamDeals.length,
-          wonDeals: wonDeals.length,
-        });
-      }
+      if (deals) setAllDeals(deals);
     } catch (error) {
-      console.error("Error loading executive metrics:", error);
+      console.error("Error loading deals:", error);
     }
   };
-
   // Recalculate all metrics when filtered data changes
   useEffect(() => {
     if (!allDeals.length) return;
 
-    // Recalculate executive metrics from filtered deals (all team members)
+    // executiveMetrics is not written here any more: every key it set
+    // (totalRevenue, activePipeline, winRate, counts) is rendered nowhere on
+    // this page, and the one key that IS read — totalTarget — comes from the
+    // shared target rule below.
     const teamIds = [effectiveUser.id, ...allSubordinates.map((s) => s.id)];
     const teamFilteredDeals = filteredDeals.filter((d) =>
       teamIds.includes(d.owner_id),
     );
-    const wonDeals = teamFilteredDeals.filter((d) => d.stage === "won");
-    const lostFilteredDeals = teamFilteredDeals.filter((d) => d.stage === "lost");
-    const closedFilteredCount = wonDeals.length + lostFilteredDeals.length;
-    const totalRevenue = wonDeals.reduce(
-      (sum, d) => sum + getConvertedAmount(d),
-      0,
-    );
-    const activePipeline = teamFilteredDeals
-      .filter((d) => !["won", "lost"].includes(d.stage))
-      .reduce((sum, d) => sum + getConvertedAmount(d), 0);
-    const winRate =
-      closedFilteredCount > 0
-        ? (wonDeals.length / closedFilteredCount) * 100
-        : 0;
-
-    setExecutiveMetrics((prev) => ({
-      ...prev,
-      totalRevenue,
-      activePipeline,
-      winRate,
-      totalDeals: teamFilteredDeals.length,
-      wonDeals: wonDeals.length,
-    }));
 
     // Recalculate pipeline data from filtered deals
     const stages = [
@@ -1155,12 +1084,14 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     });
     setPipelineData(pipelineStats);
 
-    // Recalculate metrics (totalRevenue, totalDeals, totalContacts, totalTasks) from filtered data
+    // Achieved for the selected period, net of returns — the shared rule, the
+    // same figure as the KPI strip. It was every won deal at `amount` by
+    // closed_at.
     setMetrics((prev) => {
       const baseMetrics = prev || {};
       return {
         ...baseMetrics,
-        totalRevenue: totalRevenue,
+        totalRevenue: achievedIn(activeDateRange.from, activeDateRange.to).total,
         totalDeals: teamFilteredDeals.length,
         totalContacts: filteredContacts.length,
         totalTasks: filteredTasks.length,
@@ -1177,46 +1108,10 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       setTeamData(teamPerformance);
     }
 
-    // Recalculate salesData from filtered deals (for charts)
-    const salesDataByPeriod = filteredDeals.reduce((acc, deal) => {
-      const dateToUse =
-        deal.stage === "won" ? deal.closed_at || deal.created_at : deal.created_at;
-      const dealDate = new Date(dateToUse);
-      let periodKey;
-
-      // Determine period based on active filter
-      if (selectedMonth) {
-        periodKey = `${dealDate.getFullYear()}-${dealDate.getMonth()}`;
-      } else if (selectedQuarter) {
-        const quarter = Math.floor(dealDate.getMonth() / 3) + 1;
-        periodKey = `${dealDate.getFullYear()}-Q${quarter}`;
-      } else {
-        periodKey = `${dealDate.getFullYear()}`;
-      }
-
-      if (!acc[periodKey]) {
-        acc[periodKey] = {
-          period: periodKey,
-          revenue: 0,
-          deals: 0,
-        };
-      }
-
-      const amount = parseFloat(deal.amount) || 0;
-      const dealCurrency = deal.currency || preferredCurrency;
-      const convertedAmount =
-        dealCurrency !== preferredCurrency
-          ? convertCurrency(amount, dealCurrency, preferredCurrency)
-          : amount;
-
-      if (deal.stage === "won") {
-        acc[periodKey].revenue += convertedAmount;
-      }
-      acc[periodKey].deals += 1;
-      return acc;
-    }, {});
-
-    setSalesData(Object.values(salesDataByPeriod));
+    // The old per-month "salesData" series is gone: it summed won deals at
+    // `amount` by closed_at and was handed to <SalesChart data={salesData}>,
+    // which does not accept a `data` prop — computed on every filter change,
+    // rendered nowhere. performanceTrendData is the series that is drawn.
   }, [
     filteredDeals,
     filteredContacts,
@@ -2414,7 +2309,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
                 <div className="bg-white rounded-lg shadow p-6 h-full">
                   <SalesChart
-                    data={salesData}
                     pipelineData={pipelineData}
                     allDeals={allDeals}
                     title={t("dashboard.salesPerformance")}

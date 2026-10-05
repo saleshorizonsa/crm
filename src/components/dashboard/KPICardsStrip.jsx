@@ -513,22 +513,37 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
               {totals.isHealthy ? '✅ Status: Healthy' : '⚠️ Status: At Risk'}
             </span>
             <span className="text-xs text-muted-foreground ml-3">
-              {totals.isHealthy
-                ? 'Coverage and pacing on track'
-                : totals.coverageHealthy
-                  ? 'Achievement is behind schedule'
-                  : totals.pacingHealthy
-                    ? 'Pipeline coverage insufficient to hit target'
-                    : 'Coverage and pacing both at risk'}
+              {/* Pacing divides by TODAY's date, so it says nothing about a
+                  past month or a multi-month range: September read
+                  "Pacing 103% / 16%" in mid-October. For those ranges the
+                  verdict is coverage alone and the pacing figure is not
+                  shown (totals.pacingApplies, utils/kpiStripData.js). */}
+              {!totals.pacingApplies
+                ? (totals.coverageHealthy
+                    ? 'Pipeline coverage on track for the current month'
+                    : 'Pipeline coverage insufficient to hit target')
+                : totals.isHealthy
+                  ? 'Coverage and pacing on track'
+                  : totals.coverageHealthy
+                    ? 'Achievement is behind schedule'
+                    : totals.pacingHealthy
+                      ? 'Pipeline coverage insufficient to hit target'
+                      : 'Coverage and pacing both at risk'}
             </span>
           </div>
           <div className="text-xs flex gap-4 flex-shrink-0">
             <span className={totals.coverageHealthy ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-              Coverage: {(totals.coveragePct || 0).toFixed(0)}% {totals.coverageHealthy ? '✓' : '✗'}
+              {/* The funnel and planning halves of Coverage are read for the
+                  CURRENT month whatever range is selected, so the label says
+                  which month it is about. */}
+              Coverage{totals.coverageIsCurrentMonth ? ' (current month)' : ''}:{' '}
+              {(totals.coveragePct || 0).toFixed(0)}% {totals.coverageHealthy ? '✓' : '✗'}
             </span>
-            <span className={totals.pacingHealthy ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-              Pacing: {(totals.attainmentPct || 0).toFixed(0)}% / {(totals.pacingPct || 0).toFixed(0)}% {totals.pacingHealthy ? '✓' : '✗'}
-            </span>
+            {totals.pacingApplies && (
+              <span className={totals.pacingHealthy ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                Pacing: {(totals.attainmentPct || 0).toFixed(0)}% / {(totals.pacingPct || 0).toFixed(0)}% {totals.pacingHealthy ? '✓' : '✗'}
+              </span>
+            )}
           </div>
           <Icon name="ChevronRight" size={14} className="text-muted-foreground flex-shrink-0" />
         </button>
@@ -598,7 +613,18 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                   </div>
                 </div>
 
-                {/* B. Pacing Check */}
+                {/* B. Pacing Check — current month only; see the bar above. */}
+                {!totals.pacingApplies ? (
+                  <div className="p-4 rounded-xl border border-border bg-muted/30">
+                    <h3 className="font-semibold text-sm text-foreground mb-1">B. Pacing Check</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Not shown for this period. Pacing compares attainment with how much
+                      of the CURRENT month has elapsed, so it means nothing for a past
+                      month, a future one, or a range longer than a month. Select the
+                      current month to see it.
+                    </p>
+                  </div>
+                ) : (
                 <div className={`p-4 rounded-xl border ${totals.pacingHealthy ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="font-semibold text-sm text-foreground">B. Pacing Check</h3>
@@ -636,6 +662,7 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                     </div>
                   </div>
                 </div>
+                )}
               </div>
             </div>
           </div>

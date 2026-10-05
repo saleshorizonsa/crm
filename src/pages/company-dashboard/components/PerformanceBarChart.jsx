@@ -13,7 +13,13 @@ import {
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
-import { computeAchieved, achievedAmount, achieverIdsFrom } from "../../../utils/planningCalculations";
+import {
+  computeAchieved,
+  achievedAmount,
+  achieverIdsFrom,
+  targetPerPerson,
+} from "../../../utils/planningCalculations";
+import { bucketsFor } from "../../../utils/achievedSeries";
 
 const PerformanceBarChart = ({
   dealsData = [],
@@ -28,6 +34,7 @@ const PerformanceBarChart = ({
   annual = null, // director annual view: { target, achieved, deficit, dealCount } → YTD summary tiles
   achievedRange = null, // { start, end } yyyy-MM-dd — the dashboard's selected period
   contributorIds = null, // whose deals count as Achieved (active salesmen + supervisors)
+  returns = [], // credit notes, so revenue is NET like the KPI strip
 }) => {
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { t } = useLanguage();
@@ -63,7 +70,10 @@ const PerformanceBarChart = ({
   // selected period, final value, contributors only. It used to start from the
   // dashboard's close-date-filtered deal list, which dropped deals invoiced in
   // the period but closed earlier (and vice versa) and counted every owner.
-  const achievedDeals = useMemo(
+  // The selected period's Achieved, net of returns — the same figure the KPI
+  // strip shows. Without `returns` this card read gross while the strip
+  // beside it read net, for the same period and the same people.
+  const achieved = useMemo(
     () =>
       computeAchieved({
         deals: allDeals,
@@ -71,144 +81,100 @@ const PerformanceBarChart = ({
         start: achievedRange?.start || null,
         end: achievedRange?.end || null,
         amountOf: getConvertedAmount,
-      }).deals,
+        returns,
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allDeals, contributorIds, achievedRange?.start, achievedRange?.end, preferredCurrency],
+    [allDeals, contributorIds, achievedRange?.start, achievedRange?.end, preferredCurrency, returns],
   );
 
-  // An achieved deal's month and year, from its invoice_date string (no timezone shift).
-  const invoiceYear = (deal) => Number(String(deal.invoice_date).slice(0, 4));
-  const invoiceMonth = (deal) => Number(String(deal.invoice_date).slice(5, 7)) - 1;
 
-  // Generate time period labels
-  const getTimePeriodLabels = () => {
-    if (timePeriod === "month") {
-      return [
-        { key: "Jan", label: "Jan", month: 0 },
-        { key: "Feb", label: "Feb", month: 1 },
-        { key: "Mar", label: "Mar", month: 2 },
-        { key: "Apr", label: "Apr", month: 3 },
-        { key: "May", label: "May", month: 4 },
-        { key: "Jun", label: "Jun", month: 5 },
-        { key: "Jul", label: "Jul", month: 6 },
-        { key: "Aug", label: "Aug", month: 7 },
-        { key: "Sep", label: "Sep", month: 8 },
-        { key: "Oct", label: "Oct", month: 9 },
-        { key: "Nov", label: "Nov", month: 10 },
-        { key: "Dec", label: "Dec", month: 11 },
-      ];
-    } else if (timePeriod === "quarter") {
-      return [
-        { key: "Q1", label: "Q1", quarters: [0, 1, 2] },
-        { key: "Q2", label: "Q2", quarters: [3, 4, 5] },
-        { key: "Q3", label: "Q3", quarters: [6, 7, 8] },
-        { key: "Q4", label: "Q4", quarters: [9, 10, 11] },
-      ];
-    } else {
-      // Year view - show last 5 years
-      const currentYear = new Date().getFullYear();
-      return Array.from({ length: 5 }, (_, i) => ({
-        key: `${currentYear - 4 + i}`,
-        label: `${currentYear - 4 + i}`,
-        year: currentYear - 4 + i,
-      }));
-    }
-  };
+  // Whose target counts: exactly whose Achieved counts. `contributorIds` is
+  // the dashboard's achiever scope, already narrowed to one person when
+  // "View dashboard as" picks one — so the target narrows with the revenue
+  // instead of staying at the whole company's.
+  const targetScopeIds = useMemo(
+    () => (Array.isArray(contributorIds) ? new Set(contributorIds) : null),
+    [contributorIds],
+  );
 
-  // Process data based on time period
-  const chartData = useMemo(() => {
-    const periods = getTimePeriodLabels();
+  // One bucket per month / quarter / year of the SELECTED year
+  // (utils/achievedSeries.js). The year view ends at that year rather than at
+  // today's, so picking 2025 no longer draws 2026.
+  const periods = useMemo(() => bucketsFor(timePeriod, year, 5), [timePeriod, year]);
 
-    return periods.map((period) => {
-      let revenue = 0;
-      let target = 0;
-      let deals = 0;
-      // Unique salesmen who won a deal in THIS period — used as the avg divisor
-      const activeOwners = new Set();
-
-      // Revenue = Achieved deals (shared rule above), bucketed by invoice month.
-      achievedDeals.forEach((deal) => {
-        const dealYear = invoiceYear(deal);
-        const dealMonth = invoiceMonth(deal);
-
-        const countDeal = () => {
-          revenue += getConvertedAmount(deal);
-          deals += 1;
-          if (deal.owner_id) activeOwners.add(deal.owner_id);
-        };
-
-        if (timePeriod === "month" && dealYear === year && dealMonth === period.month) {
-          countDeal();
-        } else if (
-          timePeriod === "quarter" &&
-          dealYear === year &&
-          period.quarters.includes(dealMonth)
-        ) {
-          countDeal();
-        } else if (timePeriod === "year" && dealYear === period.year) {
-          countDeal();
-        }
-      });
-
-      // Calculate targets - only consider monthly targets
-      targetsData
-        .filter((t) => (t.period_type || "monthly") === "monthly")
-        .forEach((t) => {
-          const targetStart = new Date(t.period_start);
-          const targetYear = targetStart.getFullYear();
-          const targetMonth = targetStart.getMonth();
-
-          if (
-            timePeriod === "month" &&
-            targetYear === year &&
-            targetMonth === period.month
-          ) {
-            target += parseFloat(t.target_amount) || 0;
-          } else if (
-            timePeriod === "quarter" &&
-            targetYear === year &&
-            period.quarters.includes(targetMonth)
-          ) {
-            target += parseFloat(t.target_amount) || 0;
-          } else if (timePeriod === "year" && targetYear === period.year) {
-            target += parseFloat(t.target_amount) || 0;
-          }
-        });
-
-      return {
-        name: period.label,
-        revenue,
-        target,
-        deals,
-        // Avg for THIS period based on who was actually active that period
-        avg: activeOwners.size > 0 ? revenue / activeOwners.size : 0,
-        achievement: target > 0 ? Math.round((revenue / target) * 100) : 0,
-      };
+  const chartData = useMemo(() => periods.map((period) => {
+    // Revenue = Achieved over the BUCKET's own window, net of the returns
+    // dated in it — one rule, applied per bar. It was a loop over won deals
+    // bucketed by invoice month with no returns at all, so a credit note
+    // never reduced a bar and the bars did not add up to the net headline.
+    const bucket = computeAchieved({
+      deals: allDeals,
+      contributorIds,
+      start: period.start,
+      end: period.end,
+      amountOf: getConvertedAmount,
+      returns,
     });
-  }, [achievedDeals, targetsData, timePeriod, year]);
+    // Unique owners who actually invoiced in THIS bucket — the avg divisor.
+    const activeOwners = new Set(bucket.deals.map((d) => d.owner_id).filter(Boolean));
+
+    // Target — the shared rule (targetPerPerson / targetRowValue) over the
+    // rows that fall in this bucket. It was a raw sum of every monthly row's
+    // target_amount, which added a by_products row on top of the same month's
+    // total_value, counted a header row's own amount instead of its client
+    // breakdown, and counted rows belonging to people whose revenue is not in
+    // Achieved at all — an inactive salesman, a plain manager.
+    //
+    // The row's month is SLICED from its yyyy-MM-dd string, never parsed:
+    // new Date('2026-01-01') is UTC midnight, which in any zone behind UTC is
+    // 31 December — the wrong bucket, and in January the wrong year.
+    const bucketRows = (targetsData || []).filter((t) => {
+      if ((t.period_type || "monthly") !== "monthly") return false;
+      if ((t.status || "active") !== "active") return false;
+      if (targetScopeIds && !targetScopeIds.has(t.assigned_to)) return false;
+      const ymd = String(t.period_start || "");
+      const rowYear = Number(ymd.slice(0, 4));
+      const rowMonth = Number(ymd.slice(5, 7)) - 1;
+      if (timePeriod === "month") return rowYear === period.year && rowMonth === period.month;
+      if (timePeriod === "quarter") return rowYear === period.year && period.months.includes(rowMonth);
+      return rowYear === period.year;
+    });
+    const target = Object.values(targetPerPerson(bucketRows)).reduce((s, v) => s + v, 0);
+
+    return {
+      name: period.label,
+      revenue: bucket.total,
+      target,
+      deals: bucket.count,
+      avg: activeOwners.size > 0 ? bucket.total / activeOwners.size : 0,
+      achievement: target > 0 ? Math.round((bucket.total / target) * 100) : 0,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [periods, allDeals, contributorIds, returns, targetsData, timePeriod, targetScopeIds, preferredCurrency]);
 
   // Per-salesman revenue breakdown for the displayed range.
   // Includes every active salesman (zeros for non-performers) and counts
   // only the salesmen who actually won a deal as "active".
   const { salesmenBreakdown, activeSalesmenCount } = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const inRange = (deal) => {
-      const dealYear = invoiceYear(deal);
-      if (timePeriod === "year") {
-        return dealYear >= currentYear - 4 && dealYear <= currentYear;
-      }
-      return dealYear === year;
-    };
+    // Exactly the window the bars cover — the first and last bucket — so the
+    // breakdown always adds up to the headline. It used to span
+    // new Date().getFullYear() - 4 .. this year for the year view, which did
+    // not follow the selected year.
+    const first = periods[0];
+    const last = periods[periods.length - 1];
+    const span = computeAchieved({
+      deals: allDeals,
+      contributorIds,
+      start: first?.start || null,
+      end: last?.end || null,
+      amountOf: getConvertedAmount,
+      returns,
+    });
 
-    const revenueMap = {};
     const dealCountMap = {};
     const activeIds = new Set();
-
-    // Achieved deals only (shared rule), so the breakdown adds up to Total Revenue.
-    achievedDeals.forEach((deal) => {
-      if (!deal.owner_id || !inRange(deal)) return;
-      const val = getConvertedAmount(deal);
-      revenueMap[deal.owner_id] = (revenueMap[deal.owner_id] || 0) + val;
+    span.deals.forEach((deal) => {
+      if (!deal.owner_id) return;
       dealCountMap[deal.owner_id] = (dealCountMap[deal.owner_id] || 0) + 1;
       activeIds.add(deal.owner_id);
     });
@@ -217,13 +183,15 @@ const PerformanceBarChart = ({
       .map((s) => ({
         id: s.id,
         name: s.full_name || s.email,
-        revenue: revenueMap[s.id] || 0,
+        // perPerson is NET: a person's credit notes reduce his own row.
+        revenue: span.perPerson[s.id] || 0,
         dealCount: dealCountMap[s.id] || 0,
       }))
       .sort((a, b) => b.revenue - a.revenue);
 
     return { salesmenBreakdown: breakdown, activeSalesmenCount: activeIds.size };
-  }, [achievedDeals, salesmenList, timePeriod, year, preferredCurrency]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periods, allDeals, contributorIds, returns, salesmenList, preferredCurrency]);
 
   // Calculate summary stats
   const summaryStats = useMemo(() => {

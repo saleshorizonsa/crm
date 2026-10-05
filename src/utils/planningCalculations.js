@@ -138,8 +138,11 @@ export async function fetchMonthlyTargets({ companyId, contributorIds, start, en
  * year-to-date monthly sum when nobody in scope holds one — NOT monthlySum x 12,
  * which invented targets for months that have not happened.
  */
-export async function computeAnnualTarget({ companyId, ownerIds, monthlyTotal }) {
-  const y = new Date().getFullYear();
+export async function computeAnnualTarget({ companyId, ownerIds, monthlyTotal, year = null }) {
+  // The year the caller is LOOKING at, not the year it happens to be. With
+  // `new Date().getFullYear()` hard-coded, the Director's "Last Year" view
+  // showed 2025's achievement against 2026's annual target.
+  const y = Number(year) > 1970 ? Number(year) : new Date().getFullYear();
 
   // The scope is resolved to ACTIVE users FIRST, always — including the
   // whole-company path. This previously applied `.in('assigned_to', ownerIds)`
