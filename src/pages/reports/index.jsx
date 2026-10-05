@@ -660,7 +660,13 @@ const ReportsPage = () => {
             <p className="text-sm font-medium text-red-600">{error}</p>
             <button onClick={fetchDeals} className="mt-3 text-xs text-blue-500 hover:underline">{t("reportsPage.tryAgain")}</button>
           </div>
-        ) : deals.length === 0 ? (
+        ) : (deals.length === 0 && activeTab !== "returns") ? (
+          // "No deals" hides every tab, which is right for eight of the nine:
+          // they are all breakdowns OF deals. Sales Returns is not — its rows
+          // are credit notes, with their own period filter — so a month with no
+          // deals must not lock somebody out of the returns register. A salesman
+          // with a quiet month is exactly the person who needs to see a credit
+          // note raised against one of his older invoices.
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <span className="text-5xl mb-3">📊</span>
             <h3 className="text-base font-medium text-gray-700 mb-1">{t("reportsPage.noDeals")}</h3>
