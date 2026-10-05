@@ -90,7 +90,14 @@ const ForecastPage = () => {
   const { dateRange, setRange } = useDateRange();
   // closedLost.count starts null — "not read yet", which the win rate reports as
   // no figure rather than as a 0 denominator.
-  const [rawData, setRawData] = useState({ deals: [], target: null, closedLost: { count: null } });
+  // Every key getForecastData returns, so a first render before the fetch
+  // resolves reads a real value rather than undefined.
+  const [rawData, setRawData] = useState({
+    deals: [], target: null,
+    achieved: 0, achievedGross: 0, returnsTotal: 0, invoiceCount: 0,
+    wonNotInvoiced: { total: 0, count: 0 },
+    closedLost: { count: null },
+  });
   const [groupBreakdown, setGroupBreakdown] = useState([]);
   const [isLoading, setIsLoading]     = useState(false);
   const [fetchError, setFetchError]   = useState(null);
@@ -163,6 +170,12 @@ const ForecastPage = () => {
         setRawData({
           deals: forecastResult.deals || [],
           target: forecastResult.target,
+          // The shared Achieved and won-not-invoiced for this scope and period.
+          achieved: forecastResult.achieved || 0,
+          achievedGross: forecastResult.achievedGross || 0,
+          returnsTotal: forecastResult.returnsTotal || 0,
+          invoiceCount: forecastResult.invoiceCount || 0,
+          wonNotInvoiced: forecastResult.wonNotInvoiced || { total: 0, count: 0 },
           closedLost: forecastResult.closedLost || { count: null },
         });
       }
@@ -224,7 +237,16 @@ const ForecastPage = () => {
     return () => { cancelled = true; };
   }, [company?.id, selectedSalesman]);
 
-  const forecast   = useMemo(() => buildForecast(rawData.deals, rawData.target?.target_amount ?? 0), [rawData]);
+  // The 5th argument is what stops this page having its own idea of revenue:
+  // Committed becomes the shared Achieved and won-not-invoiced is carried as
+  // its own term (utils/forecastEngine.js).
+  const forecast   = useMemo(() => buildForecast(
+    rawData.deals,
+    rawData.target?.target_amount ?? 0,
+    null,
+    null,
+    { achieved: rawData.achieved, wonNotInvoiced: rawData.wonNotInvoiced?.total || 0 },
+  ), [rawData]);
   const insights   = useMemo(() => generateInsights(forecast, rawData.deals, rawData.target?.target_amount ?? 0, rawData.closedLost), [forecast, rawData]);
   const prediction = useMemo(
     () => generatePrediction(forecast, rawData.deals, rawData.target?.target_amount ?? 0, winRate),
@@ -255,16 +277,27 @@ const ForecastPage = () => {
     return () => { cancelled = true; };
   }, [company?.id, isDirectorView, dateRange?.from, dateRange?.to]);
 
-  const kpiTarget = isDirectorView && kpiTotals ? kpiTotals.target : targetAmount;
-  const kpiForecast = useMemo(() => {
-    if (!isDirectorView || !kpiTotals) return forecast;
-    return {
-      ...forecast,
-      committed: kpiTotals.achieved,                              // invoiced won, invoice_date in period
-      attainment: Math.round((kpiTotals.attainmentPct || 0) * 10) / 10,
-      gap: kpiTotals.deficit,                                     // max(0, target − achieved)
-    };
-  }, [isDirectorView, forecast, kpiTotals]);
+  // One target for every role: the service's, which is now the shared rule.
+  const kpiTarget = targetAmount;
+  // A visible disagreement rather than a silent override. The two are computed
+  // by the same shared helpers over the same scope and period, so they should
+  // be equal; if they are not, the page says so instead of picking one.
+  const targetDisagreement = (isDirectorView && kpiTotals
+    && Math.abs((kpiTotals.target || 0) - targetAmount) > 1)
+    ? { strip: kpiTotals.target, service: targetAmount }
+    : null;
+  // The director override that used to live here is GONE. It existed because
+  // this page computed its own Committed, Target, Attainment and Gap and only
+  // the director view was patched to the shared figures; every other role saw
+  // the page's own. getForecastData now returns the shared Achieved and the
+  // shared Target for EVERY role, so the override would be overwriting
+  // correct numbers with the same correct numbers — and silently hiding any
+  // future disagreement between the two.
+  //
+  // computeKpiStripData is still read (above) for one purpose: kpiTotals.target
+  // is compared against the service's target below, and a mismatch is shown
+  // rather than papered over.
+  const kpiForecast = forecast;
 
   // Per-salesman share of the weighted OPEN pipeline. Derived from the deals
   // already loaded (they carry owner info), so no extra fetch is needed and the
@@ -418,6 +451,7 @@ const ForecastPage = () => {
             <ForecastKPIBar
               forecast={kpiForecast}
               targetAmount={kpiTarget}
+              targetDisagreement={targetDisagreement}
               salesmanName={selectedSalesmanName}
               deals={rawData.deals}
               periodLabel={PERIOD_PRESETS.find((p) => p.id === activePeriod)?.label || "Custom range"}

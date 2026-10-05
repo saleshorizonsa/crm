@@ -695,6 +695,11 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
   // nobody has taken; what matters is that the difference is visible and
   // explained rather than discovered by someone comparing two tabs.
   const knownRows = [];
+  // Rows that USED to be in the known-to-differ group and now agree. Kept as
+  // their own group so the history is visible: each note says what the figure
+  // was before it was unified, which is the only way a reader can tell a row
+  // that has always agreed from one that was fixed.
+  const forecastRows = [];
   const viewerId = viewer?.id || null;
   const viewerRole = viewer?.role || 'admin';
   if (viewerId) {
@@ -711,23 +716,36 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       periodEnd: end,
       ownerId: fcOwnerId,
     });
-    const forecast = buildForecast(fc?.deals || [], fc?.target?.target_amount ?? 0);
-    knownRows.push(
+    // The page passes the shared Achieved and won-not-invoiced in as the 5th
+      // argument; so does this row, with the service's own figures.
+    const forecast = buildForecast(
+      fc?.deals || [], fc?.target?.target_amount ?? 0, null, null,
+      { achieved: fc?.achieved, wonNotInvoiced: fc?.wonNotInvoiced?.total || 0 },
+    );
+    forecastRows.push(
       row({
-        label: 'Forecast page — Committed (projection view)',
+        label: 'Forecast page — Committed',
         value: forecast?.committed,
         expected: reference.achieved,
-        knownToDiffer: true,
-        note: 'won deals at `amount`: no invoice test, no final_amount, no returns'
-          + ' subtracted. The DIRECTOR view of that same page already reads'
-          + ' computeKpiStripData and agrees with the reference.',
+        note: 'the shared Achieved since 2026-10-05. It was won deals at `amount`'
+          + ' with no invoice test, no final_amount and no returns — 802,823 for'
+          + ' a month whose Achieved was 0.',
       }),
       row({
         label: 'Forecast page — Target',
         value: fc?.target?.target_amount ?? 0,
         expected: reference.target,
-        knownToDiffer: true,
-        note: 'one sales_targets row at face value, not the shared per-person rule',
+        note: 'the shared per-person rule since 2026-10-05, monthly rows only'
+          + ' (the annual allocation on an annual view). It was a MAX over the'
+          + ' rows of every assignee, of any period_type — 43,861,779 for'
+          + ' October, because a manager yearly roll-up was summed into a month.',
+      }),
+      row({
+        label: 'Forecast page — Won, not yet invoiced',
+        value: forecast?.wonNotInvoiced,
+        expected: reference.wniTotal,
+        note: 'carried as its own term: counted in Weighted and Best Case,'
+          + ' never inside Committed',
       }),
     );
 
@@ -760,12 +778,21 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       note: 'not checked: both scope themselves from the signed-in user, and no viewer was passed',
     }));
   }
-  groups.push({
-    screen: 'Known to differ — not yet unified',
-    fn: 'forecastService.getForecastData + buildForecast / reportService.getReportDeals + reportWonTotal',
-    knownToDiffer: true,
-    rows: knownRows,
-  });
+  if (forecastRows.length) {
+    groups.push({
+      screen: 'Forecast page (unified 2026-10-05)',
+      fn: 'forecastService.getForecastData + buildForecast',
+      rows: forecastRows,
+    });
+  }
+  if (knownRows.length) {
+    groups.push({
+      screen: 'Known to differ — not yet unified',
+      fn: 'reportService.getReportDeals + reportWonTotal',
+      knownToDiffer: true,
+      rows: knownRows,
+    });
+  }
 
   const allRows = groups.flatMap((g) => g.rows);
   return {
