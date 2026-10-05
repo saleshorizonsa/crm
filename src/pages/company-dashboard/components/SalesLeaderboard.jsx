@@ -64,52 +64,90 @@ const SalesLeaderboard = ({
   employees = [],
   targets = [],
   isLoading = false,
+  /**
+   * Achieved per person for the selected period, by the shared rule
+   * (utils/planningCalculations.js computeAchieved: won AND invoiced, by
+   * invoice_date, final value, net of returns) — owner_id -> amount.
+   *
+   * Revenue here used to be summed from `deals`: stage = 'won' at
+   * `amount`, so the board ranked people on deals that were never
+   * invoiced, at the pre-invoice value, ignoring credit notes — and
+   * disagreed with the KPI strip on the same screen.
+   */
+  achievedByPerson = null,
+  /**
+   * Target per person for the selected period, by the shared rule
+   * (targetPerPerson: every applicable monthly row, client breakdowns
+   * collapsed) — owner_id -> amount. It was the single LARGEST row per
+   * person, which dropped a second commitment in the same month.
+   */
+  targetByPerson = null,
+  /**
+   * Whose revenue counts at all (achieverIdsFrom: active salesmen and
+   * supervisors, plus any manager flagged is_contributor). The old row
+   * filter was "role in SALES_ROLES and not inactive", which listed every
+   * manager whether or not his deals count as Achieved.
+   */
+  achieverIds = null,
 }) => {
   const { formatCurrency } = useCurrency();
   const { t, isRTL } = useLanguage();
 
   const leaderboard = useMemo(() => {
-    // Build per-person stats
+    // Deal COUNTS stay deal-shaped: won / lost / active and the win rate are
+    // about how many deals closed, not about money, so they are counted from
+    // the list the dashboard already filtered.
     const statsMap = {};
     deals.forEach((deal) => {
       const id = deal.owner_id;
-      if (!statsMap[id]) statsMap[id] = { wonAmount: 0, wonDeals: 0, lostDeals: 0, activeDeals: 0 };
-      if (deal.stage === "won") {
-        statsMap[id].wonAmount += parseFloat(deal.amount) || 0;
-        statsMap[id].wonDeals++;
-      } else if (deal.stage === "lost") {
-        statsMap[id].lostDeals++;
-      } else {
-        statsMap[id].activeDeals++;
-      }
+      if (!statsMap[id]) statsMap[id] = { wonDeals: 0, lostDeals: 0, activeDeals: 0 };
+      if (deal.stage === "won") statsMap[id].wonDeals++;
+      else if (deal.stage === "lost") statsMap[id].lostDeals++;
+      else statsMap[id].activeDeals++;
     });
 
-    // Best target per person (highest amount among active targets)
-    const targetMap = {};
-    (targets || []).forEach((tgt) => {
-      const uid = tgt.assigned_to;
-      if (!targetMap[uid] || (tgt.target_amount || 0) > (targetMap[uid].target_amount || 0)) {
-        targetMap[uid] = tgt;
-      }
-    });
+    // Fallback only for a caller that has not been wired up: the largest
+    // active row per person, which is what this did for everyone.
+    const fallbackTargetMap = {};
+    if (!targetByPerson) {
+      (targets || []).forEach((tgt) => {
+        const uid = tgt.assigned_to;
+        if (!fallbackTargetMap[uid] || (tgt.target_amount || 0) > (fallbackTargetMap[uid] || 0)) {
+          fallbackTargetMap[uid] = parseFloat(tgt.target_amount) || 0;
+        }
+      });
+    }
+
+    const inScope = (e) => (achieverIds
+      ? achieverIds.includes(e.id)
+      : SALES_ROLES.includes(e.role) && e.is_active !== false);
 
     return employees
-      .filter((e) => SALES_ROLES.includes(e.role) && e.is_active !== false)
+      .filter(inScope)
       .map((emp) => {
-        const s = statsMap[emp.id] || { wonAmount: 0, wonDeals: 0, lostDeals: 0, activeDeals: 0 };
-        const tgt = targetMap[emp.id];
-        const targetAmount = tgt?.target_amount || 0;
-        const targetProgress = targetAmount > 0 ? Math.min((s.wonAmount / targetAmount) * 100, 100) : null;
+        const s = statsMap[emp.id] || { wonDeals: 0, lostDeals: 0, activeDeals: 0 };
+        // Money comes from the shared rule when the parent supplies it.
+        const wonAmount = achievedByPerson
+          ? (achievedByPerson[emp.id] || 0)
+          : (deals || []).filter((d) => d.owner_id === emp.id && d.stage === "won")
+              .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+        const targetAmount = targetByPerson
+          ? (targetByPerson[emp.id] || 0)
+          : (fallbackTargetMap[emp.id] || 0);
+        // NOT capped at 100: a person who beat his target by half should
+        // read 150%, which is the point of a leaderboard. The bar itself is
+        // clamped where it is drawn.
+        const targetProgress = targetAmount > 0 ? (wonAmount / targetAmount) * 100 : null;
         const closed = s.wonDeals + s.lostDeals;
         const winRate = closed > 0 ? Math.round((s.wonDeals / closed) * 100) : null;
-        return { ...emp, ...s, targetAmount, targetProgress, winRate };
+        return { ...emp, ...s, wonAmount, targetAmount, targetProgress, winRate };
       })
       .sort((a, b) => b.wonAmount - a.wonAmount);
-  }, [deals, employees, targets]);
+  }, [deals, employees, targets, achievedByPerson, targetByPerson, achieverIds]);
 
   const totalWon = leaderboard.reduce((s, e) => s + e.wonAmount, 0);
   const totalTarget = leaderboard.reduce((s, e) => s + e.targetAmount, 0);
-  const overallProgress = totalTarget > 0 ? Math.min((totalWon / totalTarget) * 100, 100) : null;
+  const overallProgress = totalTarget > 0 ? (totalWon / totalTarget) * 100 : null;
 
   if (isLoading) {
     return (
@@ -158,7 +196,7 @@ const SalesLeaderboard = ({
               <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${progressBarColor(overallProgress)}`}
-                  style={{ width: `${overallProgress}%` }}
+                  style={{ width: `${Math.min(overallProgress, 100)}%` }}
                 />
               </div>
               <span className="text-xs font-semibold text-foreground">
@@ -223,7 +261,7 @@ const SalesLeaderboard = ({
                       <div className="w-20 h-1 bg-muted rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full ${progressBarColor(person.targetProgress)}`}
-                          style={{ width: `${person.targetProgress}%` }}
+                          style={{ width: `${Math.min(person.targetProgress, 100)}%` }}
                         />
                       </div>
                       <span className="text-[10px] text-muted-foreground">

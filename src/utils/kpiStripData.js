@@ -13,6 +13,8 @@ import {
   summarizeWonNotInvoiced,
 } from 'utils/planningCalculations';
 import { fetchOpenFunnel, funnelInWindow } from 'utils/openFunnel';
+// Pacing is only meaningful for the current month — see where it is computed.
+import { isCurrentMonthRange } from 'utils/dashboardDateUtils';
 
 // TEMP: set true to re-enable the KPI diagnostic logs (see end of the function).
 const KPI_DEBUG = false;
@@ -28,6 +30,8 @@ const EMPTY_TOTALS = {
   winRate3m: 0, winRateIsDefault: true,
   planned: 0, required: 0, requiredRaw: 0, futureCarryover: 0, plannedGap: 0,
   wonNotInvoiced: EMPTY_WON_NOT_INVOICED,
+  pacingApplies: false, coverageIsCurrentMonth: true,
+  hasTarget: false,
 };
 
 function monthBounds() {
@@ -123,6 +127,11 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
       companyId,
       ownerIds,
       monthlyTotal: Object.values(targetPer).reduce((sum, v) => sum + v, 0),
+      // The year the WINDOW is about. Without this, computeAnnualTarget fell
+      // back to new Date().getFullYear(), so an annual range over 2025 was
+      // measured against 2026's 40,660,779 yearly row — 2025's achievement
+      // against next year's target.
+      year: Number(String(winStart).slice(0, 4)) || undefined,
     });
   }
   // 3. Achieved — the one shared rule (utils/planningCalculations.js): INVOICED won
@@ -364,19 +373,38 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
 
   // Pacing check (linear): attainment% should keep up with the % of the month elapsed
   // (within a 15-point tolerance).
+  //
+  // ONLY MEANINGFUL FOR THE CURRENT MONTH. It divides by today's date, so for
+  // a past month it compares a finished month's attainment against a fraction
+  // of a month that is not the one on screen, and for a multi-month or annual
+  // range it is simply the wrong denominator. September read "Pacing 103% /
+  // 16%" in the middle of October. The verdict is still computed, and
+  // `pacingApplies` tells the strip whether it may be shown; isHealthy falls
+  // back to coverage alone when it does not apply, rather than inheriting a
+  // meaningless pass.
+  const pacingApplies = isCurrentMonthRange(winStart, winEnd);
   const nowD = new Date();
   const totalDaysInMonth = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0).getDate();
   const daysElapsed = nowD.getDate();
   const pacingPct = totalDaysInMonth > 0 ? (daysElapsed / totalDaysInMonth) * 100 : 0;
   const pacingHealthy = attainmentPct >= pacingPct - 15;
-  const isHealthy = coverageHealthy && pacingHealthy;
+  const isHealthy = pacingApplies ? (coverageHealthy && pacingHealthy) : coverageHealthy;
 
   const totals = {
+    // Whether a target EXISTS for this scope and window, which is not the
+    // same question as whether it has been met. With no target row at all,
+    // deficit is 0 and attainment is 0 — so the strip used to report "Target
+    // met ✓" and "0.0% of target" for a period nobody had set a target for.
+    hasTarget: target > 0,
     target, achieved, deficit, winRate3m, winRateIsDefault,
     planned, monthFunnel: monthFunnelTotal, required, requiredRaw, futureCarryover, plannedGap,
     attainmentPct, funnelValue,
     coverageValue, coverageHealthy, coveragePct,
     pacingPct, pacingHealthy, daysElapsed, totalDaysInMonth, isHealthy,
+    // Coverage's funnel and planning halves are read for the CURRENT month
+    // whatever range is selected (see the reads above), so the strip has to
+    // say so rather than implying the selected period.
+    pacingApplies, coverageIsCurrentMonth: true,
     wonNotInvoiced,
   };
 
@@ -402,16 +430,35 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
 // Director annual view: the company's YEARLY target from management vs the
 // year-to-date invoiced achievement. Directors track the full-year number;
 // managers/supervisors/salesmen keep the monthly figures from computeKpiStripData.
-export async function computeDirectorAnnual({ companyId }) {
+export async function computeDirectorAnnual({ companyId, year: yearArg = null }) {
+  // The year the director is LOOKING at. Hard-coding the current year made
+  // "Last Year" show 2025's achievement against 2026's annual target.
+  const year = Number(yearArg) > 1970 ? Number(yearArg) : new Date().getFullYear();
   const empty = {
     target: 0, achieved: 0, deficit: 0, dealCount: 0,
-    attainmentPct: 0, year: new Date().getFullYear(), yearStart: null, yearEnd: null,
+    attainmentPct: 0, year, yearStart: null, yearEnd: null,
   };
   if (!companyId) return empty;
 
-  const year = new Date().getFullYear();
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
+
+  // The scope every figure here uses: contributors plus flagged
+  // achieved-only users — the same scope as the KPI strip's annual Achieved.
+  const contributors = await fetchContributors({ companyId });
+  const achievedOnlyUsers = await fetchAchievedOnlyUsers({ companyId });
+  const scopeIds = [...contributors, ...achievedOnlyUsers].map((c) => c.id);
+
+  // The MONTHLY fallback: that year's monthly rows, by the shared per-person
+  // rule. Without it a year with no yearly row — 2025 in this database —
+  // showed its achievement against a target of 0, so "Last Year" read as
+  // infinite attainment against nothing. computeAnnualTarget returns this
+  // when it finds no yearly total_value row for the year.
+  const monthlyRows = await fetchMonthlyTargets({
+    companyId, contributorIds: scopeIds, start: yearStart, end: yearEnd,
+  });
+  const monthlyTotal = Object.values(targetPerPerson(monthlyRows))
+    .reduce((sum, v) => sum + v, 0);
 
   // Annual target = the company's yearly targets for this year (the management
   // target the director is measured against, e.g. 40,660,779 SAR).
@@ -424,22 +471,26 @@ export async function computeDirectorAnnual({ companyId }) {
   const target = await computeAnnualTarget({
     companyId,
     ownerIds: null,
-    monthlyTotal: 0,
+    monthlyTotal,
+    year,
   });
 
   // YTD achieved — the one shared rule (utils/planningCalculations.js): invoiced
-  // won deals this calendar year, final value, contributors plus flagged
-  // achieved-only users — the same scope as the KPI strip's annual Achieved.
-  const contributors = await fetchContributors({ companyId });
-  const achievedOnlyUsers = await fetchAchievedOnlyUsers({ companyId });
+  // won deals in that calendar year, at final value.
   const { total: achieved, count: dealCount } = await fetchAchieved({
     companyId,
-    contributorIds: [...contributors, ...achievedOnlyUsers].map((c) => c.id),
+    contributorIds: scopeIds,
     start: yearStart,
     end: yearEnd,
   });
 
   const deficit = Math.max(0, target - achieved);
   const attainmentPct = target > 0 ? (achieved / target) * 100 : 0;
-  return { target, achieved, deficit, dealCount, attainmentPct, year, yearStart, yearEnd };
+  // hasTarget: 2025 has no yearly row and no monthly rows in this database,
+  // so its target is 0 while its Achieved is real. The card has to say "no
+  // target set" rather than imply 0% of something.
+  return {
+    target, achieved, deficit, dealCount, attainmentPct,
+    hasTarget: target > 0, year, yearStart, yearEnd,
+  };
 }

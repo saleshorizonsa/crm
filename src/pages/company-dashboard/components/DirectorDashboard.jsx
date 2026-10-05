@@ -35,6 +35,12 @@ import {
   fetchReturns,
 } from "../../../utils/planningCalculations";
 import {
+  achievedForBuckets,
+  bucketsFor,
+  rangeYear,
+  yearOptions as generatedYearOptions,
+} from "../../../utils/achievedSeries";
+import {
   withTargetRowProgress,
   targetRowsWindow,
   distinctPeopleScope,
@@ -225,7 +231,6 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
   // Data states
   const [metrics, setMetrics] = useState(null);
-  const [salesData, setSalesData] = useState([]);
   const [activities, setActivities] = useState([]);
   const [teamData, setTeamData] = useState([]);
   const [crossCompanyMetrics, setCrossCompanyMetrics] = useState(null);
@@ -279,17 +284,23 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   // Director annual figures (full-year target + YTD invoiced achievement) for the
   // selected company. Refetched on company switch so the KPI strip stays scoped
   // to the one selected company.
+  // The year the annual card is about: the selected range's, sliced from the
+  // string so no timezone can move it (utils/achievedSeries.js rangeYear).
+  const annualYear = rangeYear(activeDateRange.from);
   const [annualData, setAnnualData] = useState(null);
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const companyId = selectedCompany?.id;
       if (!companyId) { setAnnualData(null); return; }
-      const res = await computeDirectorAnnual({ companyId });
+      // The year the director is LOOKING at. "Last Year" used to show 2025's
+      // achievement against 2026's annual target, because both the target and
+      // the YTD window were hard-coded to new Date().getFullYear().
+      const res = await computeDirectorAnnual({ companyId, year: annualYear });
       if (!cancelled) setAnnualData(res);
     })();
     return () => { cancelled = true; };
-  }, [selectedCompany?.id]);
+  }, [selectedCompany?.id, annualYear]);
 
   // Monthly target state
   const [directorMonthlyTarget, setDirectorMonthlyTarget] = useState(null);
@@ -461,35 +472,88 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     return selectedEmployee?.id ? ids.filter((id) => id === selectedEmployee.id) : ids;
   }, [allEmployees, selectedEmployee?.id]);
 
-  // Percentage change vs previous equivalent period
+  // The year every chart on this page is about: the SELECTED range's year,
+  // never new Date(). Picking 2025 used to still draw 2026's months.
+  const trendYear = useMemo(
+    () => (selectedYear !== null ? selectedYear : rangeYear(activeDateRange.from)),
+    [selectedYear, activeDateRange.from],
+  );
+
+  // ONE returns read for every revenue figure on this page — the trend chart
+  // (which can look back five years), the performance bars, the leaderboard,
+  // the team card and the period-over-period comparison. computeAchieved
+  // narrows them per figure by the window it counts invoices over, so a credit
+  // note only ever reduces the month it was raised in.
+  const [revenueReturns, setRevenueReturns] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    const companyId = selectedCompany?.id;
+    if (!companyId || !achievedContributorIds.length) { setRevenueReturns([]); return undefined; }
+    fetchReturns({
+      companyId,
+      ownerIds: achievedContributorIds,
+      start: `${trendYear - 4}-01-01`,
+      end: `${trendYear + 1}-12-31`,
+      // A failed read degrades to gross Achieved (fetchReturns logs and
+      // returns []), which is what these figures showed before returns existed.
+    }).then((rows) => { if (alive) setRevenueReturns(rows || []); });
+    return () => { alive = false; };
+  }, [selectedCompany?.id, achievedContributorIds, trendYear]);
+
+  const convertedAchieved = useCallback((deal) => {
+    const amount = achievedAmount(deal);
+    const dealCurrency = deal.currency || preferredCurrency;
+    if (dealCurrency === preferredCurrency) return amount;
+    return convertCurrency(amount, dealCurrency, preferredCurrency);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferredCurrency]);
+
+  /** Achieved for this page's scope over any window, net of returns. */
+  const achievedIn = useCallback((start, end) => computeAchieved({
+    deals: allDealsData,
+    contributorIds: achievedContributorIds,
+    start,
+    end,
+    amountOf: convertedAchieved,
+    returns: revenueReturns,
+  }), [allDealsData, achievedContributorIds, convertedAchieved, revenueReturns]);
+
+  // Percentage change vs the previous equivalent period.
+  //
+  // BOTH sides are Achieved by the shared rule now, for the same scope and
+  // each period's own window, net of that period's returns. It used to compare
+  // "won deals at `amount` by closed_at" on both sides — a different number
+  // from the Achieved shown beside it, so the % described a figure nobody saw.
   const changes = useMemo(() => {
     if (!allDealsData.length || !activeDateRange?.from) {
       return { revenue: null, activeDeals: null };
     }
-    const prev  = getPreviousPeriod(activeDateRange.from, activeDateRange.to);
+    // getPreviousPeriod is the one "previous period" rule (local midnight, so
+    // the window cannot overlap the current one in UTC+3).
+    const prev = getPreviousPeriod(activeDateRange.from, activeDateRange.to);
+    const currRevenue = achievedIn(activeDateRange.from, activeDateRange.to).total;
+    const prevRevenue = achievedIn(prev.from, prev.to).total;
+
+    // Deal COUNTS stay deal-shaped: open deals are counted by when they were
+    // created, which is what "active deals" means.
     const pFrom = new Date(prev.from + 'T00:00:00');
     const pTo   = new Date(prev.to   + 'T23:59:59');
-
-    const prevFiltered = allDealsData.filter(deal => {
-      const dt = deal.stage === 'won' ? deal.closed_at : deal.created_at;
+    const prevActive = allDealsData.filter(deal => {
+      if (['won', 'lost'].includes(deal.stage)) return false;
+      const dt = deal.created_at;
       if (!dt) return false;
       const d = new Date(dt);
       return d >= pFrom && d <= pTo;
     });
-
-    const prevWon     = prevFiltered.filter(d => d.stage === 'won');
-    const prevRevenue = prevWon.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
-    const prevActive  = prevFiltered.filter(d => !['won', 'lost'].includes(d.stage));
-
-    const currWon     = filteredDeals.filter(d => d.stage === 'won');
-    const currRevenue = currWon.reduce((s, d) => s + parseFloat(d.amount || 0), 0);
-    const currActive  = filteredDeals.filter(d => !['won', 'lost'].includes(d.stage));
+    const currActive = filteredDeals.filter(d => !['won', 'lost'].includes(d.stage));
 
     return {
-      revenue:     calcChange(currRevenue,       prevRevenue),
-      activeDeals: calcChange(currActive.length,  prevActive.length),
+      revenue:     calcChange(currRevenue,      prevRevenue),
+      activeDeals: calcChange(currActive.length, prevActive.length),
     };
-  }, [allDealsData, filteredDeals, activeDateRange?.from, activeDateRange?.to]);
+  }, [allDealsData, filteredDeals, activeDateRange?.from, activeDateRange?.to, achievedIn]);
+
+
 
   // Origin classification: new pipeline vs carry-forward
   const originMetrics = useMemo(() => {
@@ -531,7 +595,20 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     });
   }, [assignedTargets, activeDateRange.from, activeDateRange.to]);
 
-  // ── Target-row progress ───────────────────────────────────────────────────
+  // Per-person Achieved and Target for the leaderboard, both for the selected
+  // period and both from the shared rules.
+  const leaderboardAchieved = useMemo(
+    () => achievedIn(activeDateRange.from, activeDateRange.to).perPerson,
+    [achievedIn, activeDateRange.from, activeDateRange.to],
+  );
+  const leaderboardTargets = useMemo(
+    () => targetPerPerson((filteredAssignedTargets || []).filter((t) => {
+      if ((t.period_type || 'monthly') !== 'monthly') return false;
+      if ((t.status || 'active') !== 'active') return false;
+      return countableTargetOwnerIds.has(t.assigned_to);
+    })),
+    [filteredAssignedTargets, countableTargetOwnerIds],
+  );  // ── Target-row progress ───────────────────────────────────────────────────
   //
   // ONE rule, shared with the other three dashboards and with plan submission
   // (utils/targetProgress.js): a salesman's or supervisor's row is a PERSONAL
@@ -713,66 +790,17 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   useEffect(() => {
     if (!selectedCompany) return;
 
-    // Recalculate executive metrics from filtered deals
-    const wonDeals = filteredDeals.filter((d) => d.stage === "won");
-    const lostDeals = filteredDeals.filter((d) => d.stage === "lost");
-    const totalRevenue = wonDeals.reduce((sum, d) => {
-      const amount = parseFloat(d.amount) || 0;
-      const dealCurrency = d.currency || preferredCurrency;
-      const convertedAmount =
-        dealCurrency !== preferredCurrency
-          ? convertCurrency(amount, dealCurrency, preferredCurrency)
-          : amount;
-      return sum + convertedAmount;
-    }, 0);
-    const activePipeline = filteredDeals
-      .filter((d) => !["won", "lost"].includes(d.stage))
-      .reduce((sum, d) => {
-        const amount = parseFloat(d.amount) || 0;
-        const dealCurrency = d.currency || preferredCurrency;
-        const convertedAmount =
-          dealCurrency !== preferredCurrency
-            ? convertCurrency(amount, dealCurrency, preferredCurrency)
-            : amount;
-        return sum + convertedAmount;
-      }, 0);
-
-    // Win rate: won deals / (won + lost) to exclude active pipeline
-    const closedDeals = wonDeals.length + lostDeals.length;
-    const winRate = closedDeals > 0 ? (wonDeals.length / closedDeals) * 100 : 0;
-
-    // Close rate: closed (won + lost) / all deals — pipeline maturity metric
-    const conversionRate =
-      filteredDeals.length > 0
-        ? (closedDeals / filteredDeals.length) * 100
-        : 0;
-
-    // Team performance: count of active team members with deals
-    const activeTeamMembers = new Set();
-    filteredDeals.forEach((deal) => {
-      if (deal.owner_id) {
-        activeTeamMembers.add(deal.owner_id);
-      }
-    });
-    const teamPerformance = activeTeamMembers.size;
-
-    setExecutiveMetrics((prev) => ({
-      ...prev,
-      totalRevenue,
-      activePipeline,
-      winRate,
-      conversionRate,
-      totalDeals: filteredDeals.length,
-      dealsWon: wonDeals.length,
-      teamPerformance,
-      // Keep trend changes from initial load, or set to 0 if not available
-      revenueChange: prev?.revenueChange || 0,
-      pipelineChange: prev?.pipelineChange || 0,
-      winRateChange: prev?.winRateChange || 0,
-      dealsChange: prev?.dealsChange || 0,
-      conversionChange: prev?.conversionChange || 0,
-      performanceChange: prev?.performanceChange || 0,
-    }));
+    // The "Total Revenue" card: Achieved for the selected period, net of
+    // returns, for the people whose revenue counts — the same figure as the
+    // KPI strip's "Achieved (invoiced)" at the top of the same page. It was
+    // every won deal at `amount` by closed_at, so it counted deals that were
+    // never invoiced and ignored credit notes.
+    const totalRevenue = achievedIn(activeDateRange.from, activeDateRange.to).total;
+    // Active pipeline value, win rate, close rate and the active-member count
+    // used to be computed here for setExecutiveMetrics. That write is gone —
+    // the six cards those keys fed were removed when the KPI strip replaced
+    // them, and the only key still read anywhere is totalTarget — so the
+    // computations went with it rather than being left dangling.
 
     // Recalculate pipeline data from filtered deals
     const stages = [
@@ -813,46 +841,22 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       };
     });
 
-    // Recalculate team performance from filtered deals
+    // Team performance: counts from the filtered deals, money from Achieved
+    // for the selected period (net of returns), per person.
     if (allEmployees.length > 0) {
       const teamPerformance = processTeamPerformance(
         allEmployees,
         filteredDeals,
+        achievedIn(activeDateRange.from, activeDateRange.to).perPerson,
       );
       setTeamData(teamPerformance);
     }
 
-    // Recalculate salesData from filtered deals (for charts)
-    // Group filtered deals by month for sales chart
-    const salesDataByPeriod = filteredDeals.reduce((acc, deal) => {
-      const dateToUse =
-        deal.stage === "won" ? deal.closed_at || deal.created_at : deal.created_at;
-      const dealDate = new Date(dateToUse);
-      const periodKey = `${dealDate.getFullYear()}-${dealDate.getMonth()}`;
-
-      if (!acc[periodKey]) {
-        acc[periodKey] = {
-          period: periodKey,
-          revenue: 0,
-          deals: 0,
-        };
-      }
-
-      const amount = parseFloat(deal.amount) || 0;
-      const dealCurrency = deal.currency || preferredCurrency;
-      const convertedAmount =
-        dealCurrency !== preferredCurrency
-          ? convertCurrency(amount, dealCurrency, preferredCurrency)
-          : amount;
-
-      if (deal.stage === "won") {
-        acc[periodKey].revenue += convertedAmount;
-      }
-      acc[periodKey].deals += 1;
-      return acc;
-    }, {});
-
-    setSalesData(Object.values(salesDataByPeriod));
+    // The old per-month "salesData" series is gone. It summed won deals at
+    // `amount` by closed_at and was handed to <SalesChart data={salesData}>,
+    // which does not accept a `data` prop at all — so it was computed on every
+    // filter change and rendered nowhere. The revenue series that IS rendered
+    // is performanceTrendData, now on the shared rule.
   }, [
     filteredDeals,
     filteredContacts,
@@ -971,108 +975,30 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   }, [selectedMonth]);
 
   const yearOptions = useMemo(() => {
-    const years = [
-      { value: 2025, label: "2025", year: 2025 },
-      { value: 2026, label: "2026", year: 2026 },
-    ];
-    return years;
+    // Generated from 2025 to next year (utils/achievedSeries.js). It was a
+    // hard-coded [2025, 2026], so on 1 January 2027 there would have been no
+    // way to look at the year people were working in.
+    return generatedYearOptions();
   }, []);
 
-  // Calculate performance trend based on trendPeriod toggle (NOT affected by main filters)
-  const performanceTrendData = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const wonDeals = filteredDeals?.filter((d) => d.stage === "won") || [];
-
-    if (trendPeriod === "month") {
-      // Show monthly trend for selected year (or current year if no filter)
-      const displayYear = selectedYear !== null ? selectedYear : currentYear;
-      const months = [
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
-      ];
-
-      return months.map((month, index) => {
-        const monthDeals = wonDeals.filter((d) => {
-          const dealDate = new Date(
-            d.closed_at || d.created_at,
-          );
-          return (
-            dealDate.getFullYear() === displayYear &&
-            dealDate.getMonth() === index
-          );
-        });
-        const revenue = monthDeals.reduce(
-          (sum, d) => sum + getConvertedAmount(d),
-          0,
-        );
-        return {
-          period: month,
-          revenue,
-          deals: monthDeals.length,
-        };
-      });
-    } else if (trendPeriod === "quarter") {
-      // Show quarterly trend for selected year (or current year if no filter)
-      const displayYear = selectedYear !== null ? selectedYear : currentYear;
-      const quarters = ["Q1", "Q2", "Q3", "Q4"];
-
-      return quarters.map((quarter, index) => {
-        const startMonth = index * 3;
-        const endMonth = startMonth + 2;
-        const quarterDeals = wonDeals.filter((d) => {
-          const dealDate = new Date(
-            d.closed_at || d.created_at,
-          );
-          const dealMonth = dealDate.getMonth();
-          return (
-            dealDate.getFullYear() === displayYear &&
-            dealMonth >= startMonth &&
-            dealMonth <= endMonth
-          );
-        });
-        const revenue = quarterDeals.reduce(
-          (sum, d) => sum + getConvertedAmount(d),
-          0,
-        );
-        return {
-          period: quarter,
-          revenue,
-          deals: quarterDeals.length,
-        };
-      });
-    } else {
-      // Show yearly trend for last 3 years
-      const years = [currentYear - 2, currentYear - 1, currentYear];
-
-      return years.map((year) => {
-        const yearDeals = wonDeals.filter((d) => {
-          const dealDate = new Date(
-            d.closed_at || d.created_at,
-          );
-          return dealDate.getFullYear() === year;
-        });
-        const revenue = yearDeals.reduce(
-          (sum, d) => sum + getConvertedAmount(d),
-          0,
-        );
-        return {
-          period: year.toString(),
-          revenue,
-          deals: yearDeals.length,
-        };
-      });
-    }
-  }, [filteredDeals, trendPeriod, preferredCurrency, selectedYear, activeDateRange.from, activeDateRange.to]);
+  // The revenue trend chart: Achieved per month / quarter / year of the
+  // SELECTED year, by the shared rule and net of returns
+  // (utils/achievedSeries.js).
+  //
+  // It was `stage === 'won'` bucketed by new Date(closed_at || created_at) at
+  // `amount`, over the ALREADY date-filtered deal list, against
+  // new Date().getFullYear() — so every bucket outside the selected range was
+  // empty by construction, won-but-uninvoiced deals showed as revenue, credit
+  // notes were ignored, and the bars disagreed with the KPI strip above them.
+  // It reads the UNFILTERED deal list now, which is what the "not affected by
+  // the main filters" comment always claimed.
+  const performanceTrendData = useMemo(() => achievedForBuckets({
+    deals: allDealsData,
+    contributorIds: achievedContributorIds,
+    buckets: bucketsFor(trendPeriod, trendYear, 3),
+    returns: revenueReturns,
+    amountOf: convertedAchieved,
+  }), [allDealsData, achievedContributorIds, trendPeriod, trendYear, revenueReturns, convertedAchieved]);
 
   const loadAllCompanies = async () => {
     try {
@@ -1162,7 +1088,6 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
       const results = await Promise.allSettled([
         companyService.getCompanyMetrics(companyId),
-        companyService.getSalesData(companyId),
         targetUserId
           ? activityService.getUserActivities(companyId, targetUserId, 20)
           : activityService.getActivities(companyId, 20),
@@ -1176,7 +1101,6 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
       const [
         metricsResult,
-        salesResult,
         activitiesResult,
         usersResult,
         dealsResult,
@@ -1191,9 +1115,10 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       if (metricsResult.status === "fulfilled") {
         setMetrics(metricsResult.value.data);
       }
-      if (salesResult.status === "fulfilled") {
-        setSalesData(salesResult.value.data);
-      }
+      // companyService.getSalesData's per-month series used to land in
+      // setSalesData, which fed <SalesChart data={...}> — a prop that component
+      // does not accept. Both are gone; performanceTrendData is the series that
+      // is actually drawn, and it is on the shared rule.
       if (activitiesResult.status === "fulfilled") {
         setActivities(activitiesResult.value.data);
       }
@@ -1292,7 +1217,11 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     }
   };
 
-  const processTeamPerformance = (users, deals) => {
+  // Team Performance rows. Deal COUNTS are deal-shaped (won / lost / active
+  // and the win rate are about how many deals closed); the MONEY is Achieved
+  // for the selected period, net of returns, from the one shared rule — it was
+  // won deals at `amount` by closed_at, which disagreed with the KPI strip.
+  const processTeamPerformance = (users, deals, achievedPerPerson = {}) => {
     return users.map((user) => {
       const userDeals = deals.filter((deal) => deal.owner_id === user.id);
       const wonDeals = userDeals.filter((deal) => deal.stage === "won");
@@ -1300,10 +1229,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       const activeDeals = userDeals.filter(
         (deal) => !["won", "lost"].includes(deal.stage),
       );
-      const totalValue = wonDeals.reduce(
-        (sum, deal) => sum + getConvertedAmount(deal),
-        0,
-      );
+      const totalValue = achievedPerPerson[user.id] || 0;
 
       const closedUserDeals = wonDeals.length + lostDeals.length;
       return {
@@ -1358,165 +1284,47 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     }
   };
 
+  // The Executive Metrics block is down to the ONE figure that still reaches
+  // the screen: totalTarget, which <ForecastAISummary> is given. The six cards
+  // it was written for were removed when the KPI strip replaced them (see the
+  // comment where they used to render), so revenue, pipeline value, win rate,
+  // conversion, team count, three calculateTrendChange round trips and a
+  // sales-velocity call were all computed on every company load and rendered
+  // nowhere. Rather than port a dead `stage === 'won'` revenue sum onto the
+  // shared rule, they are gone.
+  //
+  // The target itself is the shared rule over the SELECTED period, not "the
+  // rows that bracket today": with the old `now` test, looking at September
+  // showed September's achievement against October's target.
   const loadExecutiveMetrics = async (companyId = null) => {
-    // Guard: Return early if companyId is not provided
-    if (!companyId) {
-      return;
-    }
-
+    if (!companyId) return;
     try {
-      // Use 30 days as default period for trend calculations
-      const periodDays = 30;
+      const { data: targets, error } = await salesTargetService.getAssignedTargets(companyId);
+      if (error) return;
 
-      // Determine which user's data to load based on selectedEmployee
-      // If null/undefined -> all consolidated (viewAll = true)
-      // If selectedEmployee -> that employee's data only
-      const targetUserId = selectedEmployee?.id || null;
-      const viewAll = !selectedEmployee; // View all if no employee selected
+      const from = activeDateRange.from;
+      const to = activeDateRange.to;
+      const activeTargets = (targets || []).filter((target) => {
+        if ((target.period_type || "monthly") !== "monthly") return false;
+        if ((target.status || "active") !== "active") return false;
+        // Contributors, plus any flagged manager who sells himself — the same
+        // people whose invoiced revenue counts. allEmployees carries
+        // is_contributor; the embedded assignee row does not.
+        if (!countableTargetOwnerIds.has(target.assigned_to)) return false;
+        // Sliced, not parsed: new Date('2026-09-01') is UTC midnight, which is
+        // the previous day in any zone behind UTC.
+        const start = String(target.period_start || "").slice(0, 10);
+        const end = String(target.period_end || "").slice(0, 10) || start;
+        return start <= to && end >= from;
+      });
 
-      // Load enhanced metrics for executive dashboard
-      const { data: deals, error: dealsError } = await dealService.getDeals(
-        companyId,
-        { viewAll }, // Pass viewAll flag
-        targetUserId, // Pass target user ID for filtering
-      );
-      const { data: targets, error: targetsError } =
-        await salesTargetService.getAssignedTargets(companyId);
+      // Shared rule, not a raw sum. The raw sum added a by_products row into
+      // this card and would double-count anyone holding both a total_value and
+      // a by_clients row for the same month.
+      const totalTarget = Object.values(targetPerPerson(activeTargets))
+        .reduce((sum, v) => sum + v, 0);
 
-      if (!dealsError && deals) {
-        // Restrict to the active date range (current month by default) so the KPI
-        // cards reflect the selected period instead of all-time. Won deals count
-        // by close date, everything else by creation date — same rule as filteredDeals.
-        const rangedDeals = deals.filter((d) =>
-          isInSelectedPeriod(d.stage === "won" ? d.closed_at : d.created_at),
-        );
-
-        // Calculate executive metrics - convert each deal to preferred currency
-        const wonDeals = rangedDeals.filter((d) => d.stage === "won");
-        const lostDeals = rangedDeals.filter((d) => d.stage === "lost");
-        const totalRevenue = wonDeals.reduce((sum, d) => {
-          const amount = parseFloat(d.amount) || 0;
-          const dealCurrency = d.currency || preferredCurrency;
-          // Convert to preferred currency if different
-          const convertedAmount =
-            dealCurrency !== preferredCurrency
-              ? convertCurrency(amount, dealCurrency, preferredCurrency)
-              : amount;
-          return sum + convertedAmount;
-        }, 0);
-        const activePipeline = rangedDeals
-          .filter((d) => !["won", "lost"].includes(d.stage))
-          .reduce((sum, d) => {
-            const amount = parseFloat(d.amount) || 0;
-            const dealCurrency = d.currency || preferredCurrency;
-            // Convert to preferred currency if different
-            const convertedAmount =
-              dealCurrency !== preferredCurrency
-                ? convertCurrency(amount, dealCurrency, preferredCurrency)
-                : amount;
-            return sum + convertedAmount;
-          }, 0);
-
-        // Win rate: won / (won + lost)
-        const closedDeals = wonDeals.length + lostDeals.length;
-        const winRate =
-          closedDeals > 0 ? (wonDeals.length / closedDeals) * 100 : 0;
-
-        // Team performance: count of active team members with deals
-        const activeTeamMembers = new Set();
-        rangedDeals.forEach((deal) => {
-          if (deal.owner_id) {
-            activeTeamMembers.add(deal.owner_id);
-          }
-        });
-        const teamPerformance = activeTeamMembers.size;
-
-        // Get trend data using selected period and target user
-        const [
-          revenueChangeResult,
-          dealsChangeResult,
-          winRateChangeResult,
-          velocityResult,
-        ] = await Promise.all([
-          companyService.calculateTrendChange(
-            selectedCompany?.id,
-            targetUserId,
-            "revenue",
-            periodDays,
-            viewAll,
-          ),
-          companyService.calculateTrendChange(
-            selectedCompany?.id,
-            targetUserId,
-            "deals",
-            periodDays,
-            viewAll,
-          ),
-          companyService.calculateTrendChange(
-            selectedCompany?.id,
-            targetUserId,
-            "winRate",
-            periodDays,
-            viewAll,
-          ),
-          companyService.calculateSalesVelocity(selectedCompany?.id),
-        ]);
-
-        // Calculate remaining revenue from targets
-        let totalTargetAmount = 0;
-        let remainingRevenue = 0;
-
-        if (targets && targets.length > 0) {
-          // Monthly target rows whose period brackets today, for contributors.
-          const now = new Date();
-          const activeTargets = targets.filter((target) => {
-            if ((target.period_type || "monthly") !== "monthly") return false;
-            if ((target.status || "active") !== "active") return false;
-            // Contributors, plus any flagged manager who sells himself — the
-            // same people whose invoiced revenue counts. allEmployees carries
-            // is_contributor; the embedded assignee row does not.
-            if (!countableTargetOwnerIds.has(target.assigned_to)) return false;
-            const start = new Date(target.period_start);
-            const end = new Date(target.period_end);
-            return start <= now && end >= now;
-          });
-
-          // Shared rule, not a raw sum. The raw sum added a by_products row into
-          // this card (750,000 too high) and would double-count anyone holding
-          // both a total_value and a by_clients row for the same month, since
-          // those are two views of ONE goal.
-          totalTargetAmount = Object.values(
-            targetPerPerson(activeTargets),
-          ).reduce((sum, v) => sum + v, 0);
-
-          remainingRevenue = Math.max(0, totalTargetAmount - totalRevenue);
-        }
-
-        const executiveData = {
-          totalRevenue,
-          revenueChange: revenueChangeResult.change || 0,
-          activePipeline,
-          pipelineChange: revenueChangeResult.change * 1.5 || 0, // Pipeline typically changes faster
-          winRate,
-          winRateChange: winRateChangeResult.change || 0,
-          teamPerformance,
-          performanceChange: 0, // Team count doesn't have meaningful trend yet
-          remainingRevenue,
-          totalTarget: totalTargetAmount,
-          dealsWon: wonDeals.length,
-          dealsChange: dealsChangeResult.change || 0,
-          conversionRate:
-            rangedDeals.length > 0 ? (closedDeals / rangedDeals.length) * 100 : 0,
-          conversionChange: winRateChangeResult.change || 0,
-          dealsThisMonth: rangedDeals.filter(
-            (d) => new Date(d.created_at).getMonth() === new Date().getMonth(),
-          ).length,
-          avgDealCycle: velocityResult.velocityDays || 0,
-          growthRate: revenueChangeResult.change || 0,
-        };
-
-        setExecutiveMetrics(executiveData);
-      }
+      setExecutiveMetrics({ totalTarget });
     } catch (error) {
       console.error("Error loading executive metrics:", error);
     }
@@ -1982,13 +1790,18 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       {/* key remounts the chart on company switch so its internal breakdown
           state resets cleanly; isLoading||summaryStale shows the skeleton
           instead of the previous company's data during the switch. */}
+      {/* targetsData is ALL target rows, not just the ones overlapping the
+          selected range: the chart draws twelve months and buckets the rows
+          itself, so the narrowed list left eleven bars with no target at all.
+          `year` follows the selected range, and `returns` makes Total Revenue
+          net — the same number as the KPI strip. */}
       <PerformanceBarChart
         key={selectedCompany?.id ?? "all"}
         dealsData={filteredDeals}
         allDeals={allDealsData}
-        targetsData={filteredAssignedTargets}
+        targetsData={assignedTargets}
         timePeriod={timePeriod}
-        year={new Date().getFullYear()}
+        year={trendYear}
         isLoading={isLoading || summaryStale}
         totalSalesmen={allEmployees.filter(e => e.role === 'salesman' && e.is_active !== false).length || 1}
         showAvg={!selectedEmployee}
@@ -1996,6 +1809,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         annual={!selectedEmployee && isAnnualView ? annualData : null}
         achievedRange={{ start: activeDateRange.from, end: activeDateRange.to }}
         contributorIds={achievedContributorIds}
+        returns={revenueReturns}
       />
 
       {/* Company Performance Grid */}
@@ -2015,11 +1829,17 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         {selectedCompany?.id && (
           <AtRiskDealsPanel companyId={selectedCompany.id} />
         )}
+        {/* Money and target come from the shared rules for the selected
+            period: revenue was won-at-`amount` and the target was each
+            person's single largest row. */}
         <SalesLeaderboard
           deals={filteredDeals}
           employees={allEmployees}
           targets={assignedTargetsWithProgress}
           isLoading={isLoading}
+          achievedByPerson={leaderboardAchieved}
+          targetByPerson={leaderboardTargets}
+          achieverIds={achievedContributorIds}
         />
       </div>
       <div className="flex justify-end gap-4 -mt-4">
@@ -2058,7 +1878,6 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         >
           <ArrowUpRight size={14} className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500" />
           <SalesChart
-            data={salesData}
             pipelineData={pipelineData}
             allDeals={allDealsData}
             title="Sales Performance"
@@ -2356,7 +2175,6 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8 items-stretch">
         <div className="bg-white rounded-lg shadow p-6 h-full">
           <SalesChart
-            data={salesData}
             allDeals={allDealsData}
             title={t("dashboard.salesOverview")}
             showTypeSelector={true}

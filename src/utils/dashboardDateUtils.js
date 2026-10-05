@@ -235,7 +235,84 @@ export function getQuickRanges() {
   ];
 }
 
+const pad2 = (n) => String(n).padStart(2, '0');
+const lastDayOf = (year, monthIndex) => new Date(year, monthIndex + 1, 0).getDate();
+const ymd = (year, monthIndex, day) => `${year}-${pad2(monthIndex + 1)}-${pad2(day)}`;
+
+/**
+ * Is [from, to] exactly a whole calendar month, quarter or year?
+ *
+ * Read off the yyyy-MM-dd STRINGS rather than parsed into Dates: a bare
+ * '2026-01-01' is UTC midnight, which is 31 December in any zone behind UTC,
+ * so parsing to ask "is this the 1st of a month?" can answer about the wrong
+ * month — and, in January, the wrong year.
+ *
+ * @returns {{kind: 'month'|'quarter'|'year', year: number, month?: number, quarter?: number}|null}
+ */
+export function wholePeriodOf(dateFrom, dateTo) {
+  const a = String(dateFrom || '');
+  const b = String(dateTo || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(a) || !/^\d{4}-\d{2}-\d{2}$/.test(b)) return null;
+  const [ay, am, ad] = a.split('-').map(Number);
+  const [by, bm, bd] = b.split('-').map(Number);
+  if (ad !== 1) return null;                       // must start on the 1st
+
+  // A whole year: Jan 1 .. Dec 31 of the same year.
+  if (ay === by && am === 1 && bm === 12 && bd === 31) {
+    return { kind: 'year', year: ay };
+  }
+  // A whole quarter: starts on the first month of a quarter and ends on the
+  // last day of its third month.
+  if (ay === by && (am - 1) % 3 === 0 && bm === am + 2 && bd === lastDayOf(by, bm - 1)) {
+    return { kind: 'quarter', year: ay, quarter: Math.floor((am - 1) / 3) };
+  }
+  // A whole month: same month, ending on its last day.
+  if (ay === by && am === bm && bd === lastDayOf(by, bm - 1)) {
+    return { kind: 'month', year: ay, month: am - 1 };
+  }
+  return null;
+}
+
+/**
+ * The period to compare against.
+ *
+ * A whole calendar month, quarter or year compares with the PREVIOUS WHOLE
+ * one: September 2026 against 1–31 August, Q4 against Q3, 2026 against 2025.
+ * The equal-length window this used for everything gave September
+ * "2 August – 31 August" — 30 days ending the day before, which is not a
+ * month anyone reports on, and which silently dropped 1 August's invoices
+ * from the comparison.
+ *
+ * Any other range — a custom span, a part-month, "all time" — keeps the
+ * equal-length window immediately before it, which is the only sensible
+ * comparison for a span that is not a calendar period.
+ */
 export function getPreviousPeriod(dateFrom, dateTo) {
+  const whole = wholePeriodOf(dateFrom, dateTo);
+  if (whole) {
+    if (whole.kind === 'year') {
+      return { from: `${whole.year - 1}-01-01`, to: `${whole.year - 1}-12-31` };
+    }
+    if (whole.kind === 'quarter') {
+      const q = whole.quarter - 1;
+      const year = q < 0 ? whole.year - 1 : whole.year;
+      const quarter = q < 0 ? 3 : q;
+      const firstMonth = quarter * 3;
+      const lastMonth = firstMonth + 2;
+      return {
+        from: ymd(year, firstMonth, 1),
+        to: ymd(year, lastMonth, lastDayOf(year, lastMonth)),
+      };
+    }
+    const m = whole.month - 1;
+    const year = m < 0 ? whole.year - 1 : whole.year;
+    const month = m < 0 ? 11 : m;
+    return {
+      from: ymd(year, month, 1),
+      to: ymd(year, month, lastDayOf(year, month)),
+    };
+  }
+
   // Parsed as LOCAL midnight. `new Date('2026-10-01')` is UTC midnight, which in
   // Riyadh (UTC+3) is 03:00 the same day — so `from - 1ms` landed at 02:59 on
   // 1 October rather than late on 30 September, and format() then returned
@@ -273,6 +350,12 @@ export function isPositiveChange(changeStr) {
 
 export function getComparisonLabel(dateFrom, dateTo) {
   if (!dateFrom || !dateTo) return 'vs previous period';
+  // A whole calendar period is compared with the previous whole one, so the
+  // label can be exact rather than approximate.
+  const whole = wholePeriodOf(dateFrom, dateTo);
+  if (whole?.kind === 'month') return 'vs last month';
+  if (whole?.kind === 'quarter') return 'vs last quarter';
+  if (whole?.kind === 'year') return 'vs last year';
   const days = Math.round(
     (new Date(dateTo) - new Date(dateFrom)) / 86400000
   );

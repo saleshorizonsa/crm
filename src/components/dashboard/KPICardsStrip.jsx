@@ -29,8 +29,16 @@ function cardDefs(totals, opts = {}) {
   const t = totals || {};
   const { period } = opts;
   const onTrack = (t.plannedGap || 0) <= 0;
-  const targetMet = (t.deficit || 0) <= 0;
+  // A target EXISTS for this window. `hasTarget` is computed where the
+  // totals are (utils/kpiStripData.js); the fallback keeps an older caller
+  // that passes its own totals object working.
+  const hasTarget = t.hasTarget !== undefined ? t.hasTarget : (t.target || 0) > 0;
+  // "Met" only means anything when there was something to meet: with no
+  // target row the deficit is 0, which read as "Target met ✓" for a period
+  // nobody had set a target for.
+  const targetMet = hasTarget && (t.deficit || 0) <= 0;
   const pct = (num, den) => (den > 0 ? ((num / den) * 100).toFixed(1) : '0');
+  const NO_TARGET = 'No target set';
 
   // Win Rate + Planned Gap are always monthly / 3-month, for every role.
   const winRateCard = {
@@ -51,26 +59,34 @@ function cardDefs(totals, opts = {}) {
     const isAnnual = period.isAnnual;
     const year = new Date().getFullYear();
     const curMonth = new Date().toLocaleDateString('en-GB', { month: 'short' });
-    const met = (t.deficit || 0) <= 0;
+    const met = targetMet;
     const achievedWindow = isAnnual ? `Jan–${curMonth} ${year}` : period.label;
     return [
       {
         key: 'target', label: isAnnual ? 'Annual Target' : 'Target', strip: 'bg-blue-600',
-        value: `${fmtSAR(t.target)} SAR`, valueClass: 'text-foreground',
+        value: hasTarget ? `${fmtSAR(t.target)} SAR` : NO_TARGET,
+        valueClass: hasTarget ? 'text-foreground' : 'text-muted-foreground',
         sub: isAnnual ? `${year}` : period.label,
       },
       {
         key: 'achieved', label: 'Achieved (invoiced)', strip: 'bg-green-500',
         value: `${fmtSAR(t.achieved)} SAR`, valueClass: 'text-green-600',
-        sub: `${achievedWindow} · ${(t.attainmentPct || 0).toFixed(1)}% of target`,
+        // No attainment figure without a target: "0.0% of target" for a
+        // period with no target row describes nothing.
+        sub: hasTarget
+          ? `${achievedWindow} · ${(t.attainmentPct || 0).toFixed(1)}% of target`
+          : `${achievedWindow} · no target set`,
       },
       {
-        key: 'deficit', label: isAnnual ? 'Annual gap to target' : 'Gap to target', strip: met ? 'bg-green-500' : 'bg-red-500',
-        value: met ? 'Target met ✓' : `${fmtSAR(t.deficit)} SAR`,
-        valueClass: met ? 'text-green-600' : 'text-red-600',
-        sub: met
-          ? (isAnnual ? 'Annual target met' : 'Target met')
-          : `${pct(t.deficit, t.target)}% of ${isAnnual ? 'annual target' : 'target'} remaining`,
+        key: 'deficit', label: isAnnual ? 'Annual gap to target' : 'Gap to target',
+        strip: !hasTarget ? 'bg-muted' : met ? 'bg-green-500' : 'bg-red-500',
+        value: !hasTarget ? NO_TARGET : met ? 'Target met ✓' : `${fmtSAR(t.deficit)} SAR`,
+        valueClass: !hasTarget ? 'text-muted-foreground' : met ? 'text-green-600' : 'text-red-600',
+        sub: !hasTarget
+          ? `Nothing set for ${isAnnual ? String(year) : period.label}`
+          : met
+            ? (isAnnual ? 'Annual target met' : 'Target met')
+            : `${pct(t.deficit, t.target)}% of ${isAnnual ? 'annual target' : 'target'} remaining`,
       },
       winRateCard,
       plannedGapCard,
@@ -80,19 +96,23 @@ function cardDefs(totals, opts = {}) {
   return [
     {
       key: 'target', label: 'Target', strip: 'bg-blue-600',
-      value: `${fmtSAR(t.target)} SAR`, valueClass: 'text-foreground',
+      value: hasTarget ? `${fmtSAR(t.target)} SAR` : NO_TARGET,
+      valueClass: hasTarget ? 'text-foreground' : 'text-muted-foreground',
       sub: MONTH_LABEL(),
     },
     {
       key: 'achieved', label: 'Achieved (invoiced)', strip: 'bg-green-500',
       value: `${fmtSAR(t.achieved)} SAR`, valueClass: 'text-green-600',
-      sub: `${(t.attainmentPct || 0).toFixed(1)}% of target`,
+      sub: hasTarget ? `${(t.attainmentPct || 0).toFixed(1)}% of target` : 'No target set',
     },
     {
-      key: 'deficit', label: 'Gap to target', strip: targetMet ? 'bg-green-500' : 'bg-red-500',
-      value: targetMet ? 'Target met ✓' : `${fmtSAR(t.deficit)} SAR`,
-      valueClass: targetMet ? 'text-green-600' : 'text-red-600',
-      sub: targetMet ? 'Target met' : `${pct(t.deficit, t.target)}% of target remaining`,
+      key: 'deficit', label: 'Gap to target',
+      strip: !hasTarget ? 'bg-muted' : targetMet ? 'bg-green-500' : 'bg-red-500',
+      value: !hasTarget ? NO_TARGET : targetMet ? 'Target met ✓' : `${fmtSAR(t.deficit)} SAR`,
+      valueClass: !hasTarget ? 'text-muted-foreground' : targetMet ? 'text-green-600' : 'text-red-600',
+      sub: !hasTarget
+        ? 'Nothing set for this period'
+        : targetMet ? 'Target met' : `${pct(t.deficit, t.target)}% of target remaining`,
     },
     winRateCard,
     plannedGapCard,
@@ -513,22 +533,37 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
               {totals.isHealthy ? '✅ Status: Healthy' : '⚠️ Status: At Risk'}
             </span>
             <span className="text-xs text-muted-foreground ml-3">
-              {totals.isHealthy
-                ? 'Coverage and pacing on track'
-                : totals.coverageHealthy
-                  ? 'Achievement is behind schedule'
-                  : totals.pacingHealthy
-                    ? 'Pipeline coverage insufficient to hit target'
-                    : 'Coverage and pacing both at risk'}
+              {/* Pacing divides by TODAY's date, so it says nothing about a
+                  past month or a multi-month range: September read
+                  "Pacing 103% / 16%" in mid-October. For those ranges the
+                  verdict is coverage alone and the pacing figure is not
+                  shown (totals.pacingApplies, utils/kpiStripData.js). */}
+              {!totals.pacingApplies
+                ? (totals.coverageHealthy
+                    ? 'Pipeline coverage on track for the current month'
+                    : 'Pipeline coverage insufficient to hit target')
+                : totals.isHealthy
+                  ? 'Coverage and pacing on track'
+                  : totals.coverageHealthy
+                    ? 'Achievement is behind schedule'
+                    : totals.pacingHealthy
+                      ? 'Pipeline coverage insufficient to hit target'
+                      : 'Coverage and pacing both at risk'}
             </span>
           </div>
           <div className="text-xs flex gap-4 flex-shrink-0">
             <span className={totals.coverageHealthy ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-              Coverage: {(totals.coveragePct || 0).toFixed(0)}% {totals.coverageHealthy ? '✓' : '✗'}
+              {/* The funnel and planning halves of Coverage are read for the
+                  CURRENT month whatever range is selected, so the label says
+                  which month it is about. */}
+              Coverage{totals.coverageIsCurrentMonth ? ' (current month)' : ''}:{' '}
+              {(totals.coveragePct || 0).toFixed(0)}% {totals.coverageHealthy ? '✓' : '✗'}
             </span>
-            <span className={totals.pacingHealthy ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-              Pacing: {(totals.attainmentPct || 0).toFixed(0)}% / {(totals.pacingPct || 0).toFixed(0)}% {totals.pacingHealthy ? '✓' : '✗'}
-            </span>
+            {totals.pacingApplies && (
+              <span className={totals.pacingHealthy ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                Pacing: {(totals.attainmentPct || 0).toFixed(0)}% / {(totals.pacingPct || 0).toFixed(0)}% {totals.pacingHealthy ? '✓' : '✗'}
+              </span>
+            )}
           </div>
           <Icon name="ChevronRight" size={14} className="text-muted-foreground flex-shrink-0" />
         </button>
@@ -598,7 +633,18 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                   </div>
                 </div>
 
-                {/* B. Pacing Check */}
+                {/* B. Pacing Check — current month only; see the bar above. */}
+                {!totals.pacingApplies ? (
+                  <div className="p-4 rounded-xl border border-border bg-muted/30">
+                    <h3 className="font-semibold text-sm text-foreground mb-1">B. Pacing Check</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Not shown for this period. Pacing compares attainment with how much
+                      of the CURRENT month has elapsed, so it means nothing for a past
+                      month, a future one, or a range longer than a month. Select the
+                      current month to see it.
+                    </p>
+                  </div>
+                ) : (
                 <div className={`p-4 rounded-xl border ${totals.pacingHealthy ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="font-semibold text-sm text-foreground">B. Pacing Check</h3>
@@ -636,6 +682,7 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                     </div>
                   </div>
                 </div>
+                )}
               </div>
             </div>
           </div>
