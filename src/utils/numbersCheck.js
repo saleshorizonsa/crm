@@ -664,20 +664,19 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
         label: 'Coverage (computeCoverage)',
         value: ins.coverage,
         expected: refCoverage.coverage,
-        note: 'KNOWN DEFECT, found by this page on 2026-10-05 and NOT yet fixed:'
-          + ' calcDivisionMetrics weights EVERY open deal (its `openDeals`, any'
-          + ' date) while the Coverage Console and the KPI strip weight only the'
-          + ' funnel dated INTO the period (partitionOpenFunnel). Same company,'
-          + ' same month, same people, two coverage figures. The fix is one'
-          + ' argument — pass funnelSplit.rows instead of openDeals at'
-          + ' utils/salesDivisionMetrics.js:351 — and it changes a director-facing'
-          + ' number, so it is reported rather than slipped into this branch.',
+        note: 'this page found this row disagreeing on 2026-10-05 —'
+          + ' calcDivisionMetrics weighted EVERY open deal while the Coverage'
+          + ' Console and the KPI strip weighted only the funnel dated INTO the'
+          + ' period, reading 2,812,660 against 1,548,955 for JASCO PVC in'
+          + ' September on the same people. Fixed the same day: all three now'
+          + ' weight funnelSplit.rows.',
       }),
       row({
-        label: 'Whole open pipeline, any date (the input Insights weights)',
+        label: 'Whole open pipeline, any date (info only)',
         value: ins.pipeline,
-        note: 'against the funnel dated into this period above — the difference'
-          + ' between the two is what the coverage figures differ by, weighted',
+        note: 'every open deal regardless of date. This feeds the coverage RAIL,'
+          + ' which is about the whole book; it is deliberately NOT what the'
+          + ' Coverage row above weights.',
       }),
     ],
   });

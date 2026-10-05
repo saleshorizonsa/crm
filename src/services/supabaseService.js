@@ -6157,17 +6157,6 @@ export const forecastService = {
       });
       const totalTarget = Object.values(perGroup).reduce((sum, v) => sum + v, 0);
 
-      const _from = periodStart ? new Date(periodStart) : new Date();
-      console.log("[forecast] Total target:", {
-        totalTarget,
-        ownerId: ownerId ?? null,        // null = company total (all salesmen)
-        ownerIds,                        // resolved scope actually queried
-        rows: (targetRows || []).length, // # of target rows summed
-        month: _from.getMonth() + 1,
-        year: _from.getFullYear(),
-        companyId,
-      });
-
       return {
         deals:  deals || [],
         // Preserve the "no target" state (null) so cards fall back gracefully.
