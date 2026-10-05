@@ -13,6 +13,9 @@ import {
   wonNotInvoicedList,
   summarizeWonNotInvoiced,
 } from "../utils/planningCalculations";
+// The returns importer's own matcher, so correcting an invoice number re-matches
+// returns by exactly the rule that matched them on import.
+import { indexDealsByInvoice, dealsForInvoice } from "../utils/salesReturnsImport";
 
 // ========================================
 // AUTH SERVICES
@@ -1347,6 +1350,128 @@ export const dealService = {
       }
 
       return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  /**
+   * Re-match UNMATCHED sales returns against one deal's invoice numbers.
+   *
+   * Why this exists: a credit note can only find a deal BY its invoice number.
+   * When a deal was invoiced under "11" or "INVOICE: 93002807", every return
+   * against it landed in deal_returns with deal_id NULL and reduced nobody's
+   * Achieved. Once the number is corrected, those rows can be attributed — but
+   * only by re-running the match, because a re-import will not do it: the
+   * importer upserts with ignoreDuplicates on (company, credit note, invoice,
+   * item), so an already-stored row is skipped, deal_id and all.
+   *
+   * THE RULE IS THE IMPORTER'S, not a second copy: indexDealsByInvoice and
+   * dealsForInvoice are the same two functions buildReturnRows matches with.
+   * A return is linked only when it resolves to EXACTLY this deal. If another
+   * invoiced deal carries the same number the row is left alone and counted as
+   * ambiguous — attributing it would charge the credit note to an arbitrary
+   * owner, which is the one thing the importer refuses to do.
+   *
+   * Never re-points a return that is already matched: only deal_id IS NULL rows
+   * are considered.
+   *
+   * PERMISSION: in PRODUCTION the deal_returns UPDATE policy allows
+   * role = 'admin' ONLY — not director, not head, whatever
+   * migrations/create_deal_returns.sql proposed. For everyone else the UPDATE
+   * matches no rows and reports no error, so the rows actually written are read
+   * back and the difference is returned as `blocked` rather than reported as
+   * success. The RPC closes that gap SECURITY DEFINER-side once applied; until
+   * then `blocked` is the honest answer and the UI says so.
+   *
+   * @returns {{data: {candidates, linked, blocked, ambiguous, via}, error}}
+   */
+  async relinkReturnsForDeal({ companyId, dealId }) {
+    if (!companyId || !dealId) {
+      return { data: { candidates: 0, linked: 0, blocked: 0, ambiguous: 0, via: "none" }, error: null };
+    }
+
+    // Preferred path: the same match, run server-side, so the deal's owner and
+    // his supervisor can link their own returns too.
+    // migrations/relink_returns_on_invoice_correction.sql — NOT APPLIED yet.
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc(
+        "relink_returns_for_deal",
+        { p_deal_id: dealId },
+      );
+      if (!rpcError) {
+        const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+        const linked = Number(row?.linked ?? 0);
+        const ambiguous = Number(row?.ambiguous ?? 0);
+        return {
+          data: { candidates: linked, linked, blocked: 0, ambiguous, via: "rpc" },
+          error: null,
+        };
+      }
+      // Only a MISSING function falls through to the client path. A function
+      // that exists and failed is a real error, and silently doing the work
+      // another way would hide it.
+      const missing =
+        rpcError.code === "PGRST202" ||
+        /could not find the function|does not exist/i.test(rpcError.message || "");
+      if (!missing) return { data: null, error: rpcError };
+    } catch {
+      /* fall through to the client path */
+    }
+
+    try {
+      const [{ data: orphans, error: rErr }, { data: invoiced, error: dErr }] = await Promise.all([
+        supabase
+          .from("deal_returns")
+          .select("id, invoice_no")
+          .eq("company_id", companyId)
+          .is("deal_id", null),
+        // Every invoiced deal in the company, because the ambiguity check needs
+        // to see the OTHER deals that might carry the same number.
+        supabase
+          .from("deals")
+          .select("id, invoice_number")
+          .eq("company_id", companyId)
+          .eq("stage", "won")
+          .eq("is_invoiced", true),
+      ]);
+      if (rErr) return { data: null, error: rErr };
+      if (dErr) return { data: null, error: dErr };
+
+      const byInvoice = indexDealsByInvoice(invoiced || []);
+      const toLink = [];
+      let ambiguous = 0;
+      (orphans || []).forEach((r) => {
+        const hits = dealsForInvoice(byInvoice, r.invoice_no);
+        if (hits.length === 1 && hits[0].id === dealId) toLink.push(r.id);
+        else if (hits.length > 1 && hits.some((h) => h.id === dealId)) ambiguous += 1;
+      });
+
+      if (!toLink.length) {
+        return {
+          data: { candidates: 0, linked: 0, blocked: 0, ambiguous, via: "client" },
+          error: null,
+        };
+      }
+
+      const { data: written, error: upErr } = await supabase
+        .from("deal_returns")
+        .update({ deal_id: dealId })
+        .in("id", toLink)
+        .select("id");
+      if (upErr) return { data: null, error: upErr };
+
+      const linked = (written || []).length;
+      return {
+        data: {
+          candidates: toLink.length,
+          linked,
+          blocked: toLink.length - linked,
+          ambiguous,
+          via: "client",
+        },
+        error: null,
+      };
     } catch (error) {
       return { data: null, error };
     }

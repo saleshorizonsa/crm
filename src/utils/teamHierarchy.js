@@ -67,3 +67,59 @@ export async function fetchTeamHierarchy({ companyId, userId, role }) {
   team.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
   return team;
 }
+
+// ── Pure helpers, for deciding permission from an already-loaded users list ──
+// No queries: the pages that need this (the pipeline) already hold every company
+// user with `supervisor_id` from userService.getCompanyUsers, so asking the
+// database again would only add a round trip and a second answer to the same
+// question.
+
+/**
+ * Is `ancestorId` anywhere ABOVE `descendantId` in the supervisor_id chain?
+ *
+ * Walks upward from the descendant, which is the cheap direction: one step per
+ * level rather than a scan per level. Guarded against a cyclic chain the same
+ * way fetchTeamHierarchy guards the downward walk — a bad supervisor_id must not
+ * hang the UI.
+ */
+export function isAboveInChain({ users, ancestorId, descendantId }) {
+  if (!ancestorId || !descendantId || ancestorId === descendantId) return false;
+  const byId = new Map((users || []).filter((u) => u?.id).map((u) => [u.id, u]));
+  const seen = new Set([descendantId]);
+  let current = byId.get(descendantId);
+  while (current?.supervisor_id) {
+    if (current.supervisor_id === ancestorId) return true;
+    if (seen.has(current.supervisor_id)) return false;   // cycle
+    seen.add(current.supervisor_id);
+    current = byId.get(current.supervisor_id);
+  }
+  return false;
+}
+
+/**
+ * Roles that may correct any deal's invoice number, wherever it sits.
+ *
+ * The same three the rest of the app treats as company-wide (DIRECTOR_ROLES
+ * above, fetchOpenFunnel's isDirector, the deal_returns import gate), so a head
+ * is not the one role that can see every deal and fix none of them.
+ */
+const INVOICE_CORRECTION_ROLES = ['admin', 'director', 'head'];
+
+/**
+ * May this user correct the invoice number on this deal?
+ *
+ * The deal owner, anyone above the owner in the supervisor_id chain, and
+ * admin/director/head. A PEER salesman must not: an invoice number is what a
+ * credit note is matched by, so changing someone else's moves real money
+ * between two people's Achieved.
+ *
+ * `users` is the company's user list; without it only the owner and
+ * admin/director checks can be answered, which is the safe direction to fail.
+ */
+export function canCorrectInvoice({ users, viewer, deal }) {
+  const viewerId = viewer?.id;
+  if (!viewerId || !deal) return false;
+  if (INVOICE_CORRECTION_ROLES.includes(viewer?.role)) return true;
+  if (deal.owner_id && deal.owner_id === viewerId) return true;
+  return isAboveInChain({ users, ancestorId: viewerId, descendantId: deal.owner_id });
+}

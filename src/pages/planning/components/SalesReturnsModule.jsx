@@ -24,6 +24,11 @@ const SAR = (n) => (Number(n) || 0).toLocaleString('en-US', {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
 });
 
+// Why an unmatched return is worth acting on rather than just recording: it
+// reduces nobody's Achieved until it finds a deal, and it can only find one
+// BY invoice number. The fix is on the deal, not here.
+const UNMATCHED_HINT = 'Fix the invoice number on the deal, and this return will match.';
+
 const dealLabel = (deal) => {
   const c = deal?.contacts;
   const name = c?.company_name || [c?.first_name, c?.last_name].filter(Boolean).join(' ');
@@ -42,6 +47,10 @@ export default function SalesReturnsModule({ adminCompany }) {
   const [result, setResult] = useState(null);
   const [recent, setRecent] = useState([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
+  // Returns already stored with no deal: the ones a corrected invoice number
+  // would rescue. They are not visible in `recent` once 20 newer rows exist,
+  // which is exactly when somebody needs to find them.
+  const [orphans, setOrphans] = useState([]);
 
   const loadRecent = useCallback(async () => {
     if (!company?.id) return;
@@ -53,6 +62,16 @@ export default function SalesReturnsModule({ adminCompany }) {
       .order('created_at', { ascending: false })
       .limit(20);
     if (!e) setRecent(data || []);
+
+    const { data: unlinked, error: uErr } = await supabase
+      .from('deal_returns')
+      .select('id, return_date, invoice_no, credit_note_no, return_amount, customer_name')
+      .eq('company_id', company.id)
+      .is('deal_id', null)
+      .order('return_date', { ascending: false })
+      .limit(100);
+    if (!uErr) setOrphans(unlinked || []);
+
     setLoadingRecent(false);
   }, [company?.id]);
 
@@ -256,6 +275,7 @@ export default function SalesReturnsModule({ adminCompany }) {
               tone="amber"
               rows={parsed.unmatched}
               render={(r) => `row ${r.sheetRow} · invoice ${r.invoice_no || '(blank)'} · ${r.customer_name || '—'} · ${SAR(r.return_amount)} SAR`}
+              note={UNMATCHED_HINT}
             />
           )}
           {parsed.ambiguous.length > 0 && (
@@ -318,6 +338,30 @@ export default function SalesReturnsModule({ adminCompany }) {
           <button onClick={reset} className="px-4 py-2 border border-border rounded-md text-sm">
             Import another file
           </button>
+        </div>
+      )}
+
+      {orphans.length > 0 && (
+        <div className="border border-amber-200 bg-amber-50 text-amber-900 rounded-lg overflow-hidden">
+          <div className="px-4 py-2 border-b border-amber-200">
+            <h4 className="text-sm font-semibold">
+              Unmatched returns ({orphans.length}) — reducing nobody's Achieved
+            </h4>
+            <p className="text-xs mt-0.5 opacity-90">{UNMATCHED_HINT}</p>
+          </div>
+          <div className="max-h-72 overflow-y-auto divide-y divide-amber-200">
+            {orphans.map((r) => (
+              <div key={r.id} className="px-4 py-2 text-sm flex items-baseline justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="truncate">{r.customer_name || '—'}</p>
+                  <p className="text-xs font-mono opacity-80">
+                    {r.return_date} · invoice {r.invoice_no || '(blank)'} · CN {r.credit_note_no || '—'}
+                  </p>
+                </div>
+                <p className="font-mono whitespace-nowrap">{SAR(r.return_amount)} SAR</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

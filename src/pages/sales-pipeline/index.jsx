@@ -24,16 +24,13 @@ import {
 import { exportToExcel } from "../../utils/exportUtils";
 import { now } from "d3";
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import {
-  parseInvoiceNumbers,
-  formatInvoiceNumbers,
-  isPlaceholderInvoice,
-} from '../../utils/invoiceNumber';
+import { parseInvoiceNumbers, formatInvoiceNumbers } from '../../utils/invoiceNumber';
+import InvoiceModal, { validateInvoiceForm } from "./components/InvoiceModal";
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { resolveDateRange } from "../../components/ui/DateRangePicker";
 import { getDealOrigin } from "../../utils/dealGroupUtils";
 import { fetchOpenFunnel, currentMonthBounds } from "../../utils/openFunnel";
-import { fetchTeamHierarchy } from "../../utils/teamHierarchy";
+import { fetchTeamHierarchy, canCorrectInvoice } from "../../utils/teamHierarchy";
 
 const SalesPipeline = () => {
   const { t } = useLanguage();
@@ -70,67 +67,165 @@ const SalesPipeline = () => {
   const [sharedFunnel, setSharedFunnel] = useState({ total: 0, dealCount: 0, loaded: false });
   const [contacts, setContacts] = useState([]);
 
-  // ── Mark-as-invoiced (Won deals) — Achievement counts only once invoiced ──
+  // ── The invoice form (Won deals) — Achievement counts only once invoiced ──
+  // One modal, two jobs: recording the invoice, and CORRECTING the number
+  // afterwards. There was no second job at all — the card printed "Invoiced #11"
+  // and nothing in the app could change it — so 42 invoiced JASCO PVC deals
+  // since 1 August 2026 hold a number no credit note can ever match.
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [invoiceMode, setInvoiceMode] = useState("mark");   // 'mark' | 'correct'
   const [invoicingDeal, setInvoicingDeal] = useState(null);
-  const [invoiceForm, setInvoiceForm] = useState({ invoice_number: "", invoice_date: "" });
+  const [invoiceForm, setInvoiceForm] = useState({ invoice_number: "", invoice_date: "", reason: "" });
   const [invoiceErrors, setInvoiceErrors] = useState({});
   const [savingInvoice, setSavingInvoice] = useState(false);
+  const [correctionResult, setCorrectionResult] = useState(null);
+
+  const closeInvoiceModal = () => {
+    setShowInvoiceModal(false);
+    setInvoicingDeal(null);
+    setCorrectionResult(null);
+  };
 
   const handleMarkInvoiced = (deal) => {
+    setInvoiceMode("mark");
     setInvoicingDeal(deal);
     // Today in the user's own zone. toISOString() gives yesterday between
     // midnight and 03:00 in Riyadh, and this value is saved as the deal's
     // invoice_date — the date Achieved is counted by.
-    setInvoiceForm({ invoice_number: "", invoice_date: format(new Date(), "yyyy-MM-dd") });
+    setInvoiceForm({ invoice_number: "", invoice_date: format(new Date(), "yyyy-MM-dd"), reason: "" });
     setInvoiceErrors({});
+    setCorrectionResult(null);
     setShowInvoiceModal(true);
   };
 
-  // What the typed text normalises to, recomputed as they type so the modal can
-  // show it before anything is saved.
-  const parsedInvoiceNumbers = parseInvoiceNumbers(invoiceForm.invoice_number);
+  const handleCorrectInvoice = (deal) => {
+    setInvoiceMode("correct");
+    setInvoicingDeal(deal);
+    setInvoiceForm({
+      invoice_number: deal?.invoice_number || "",
+      // invoice_date is a DATE column, so Postgres hands back 'yyyy-mm-dd'
+      // already: slicing it keeps the stored day. Parsing it into a Date and
+      // formatting it back is what shifts an early-morning Riyadh date by one.
+      invoice_date: String(deal?.invoice_date || "").slice(0, 10),
+      reason: "",
+    });
+    setInvoiceErrors({});
+    setCorrectionResult(null);
+    setShowInvoiceModal(true);
+  };
 
   const confirmInvoice = async () => {
-    const errors = {};
-    // A real ERP number, not just "something". This accepted "1", "gg" and
-    // "J5412" — 12 deals carry one of those today, and a credit note can only
-    // find a deal BY its invoice number, so each of them is permanently
-    // unmatchable. Several numbers are fine: one deal can cover several
-    // invoices.
-    if (!invoiceForm.invoice_number.trim()) {
-      errors.invoice_number = "Invoice number is required";
-    } else if (isPlaceholderInvoice(invoiceForm.invoice_number)) {
-      errors.invoice_number = "PRE-CRM placeholders are history only. Enter the ERP invoice number, e.g. 93002906";
-    } else if (!parsedInvoiceNumbers.length) {
-      errors.invoice_number = "Enter the ERP invoice number, e.g. 93002906";
-    }
-    if (!invoiceForm.invoice_date) errors.invoice_date = "Invoice date is required";
+    const correcting = invoiceMode === "correct";
+    // One validator for both modes (components/InvoiceModal.jsx), so a
+    // correction cannot accept a number that marking would have refused.
+    const errors = validateInvoiceForm(invoiceForm, { requireReason: correcting });
     if (Object.keys(errors).length) { setInvoiceErrors(errors); return; }
+
+    // Normalised — 10 digits, comma-separated for several — so the returns
+    // file's 0093002906 and a typed 93002906 are the same value.
+    const stored = formatInvoiceNumbers(parseInvoiceNumbers(invoiceForm.invoice_number));
 
     setSavingInvoice(true);
     try {
-      const now = new Date().toISOString();
+      const nowIso = new Date().toISOString();
+      const previousNumber = invoicingDeal?.invoice_number || "";
+      const previousDate = String(invoicingDeal?.invoice_date || "").slice(0, 10);
+
+      // A correction changes the NUMBER, and the date that sits in the same
+      // form. It must not touch is_invoiced, invoiced_at/by, the stage, the
+      // amounts or the owner: the deal was already invoiced, by whoever
+      // invoiced it, and Achieved must not move because a typo was fixed.
+      const patch = correcting
+        ? {
+            invoice_number: stored,
+            invoice_date: invoiceForm.invoice_date,
+            updated_at: nowIso,
+          }
+        : {
+            is_invoiced: true,
+            invoice_number: stored,
+            invoice_date: invoiceForm.invoice_date,
+            invoiced_at: nowIso,
+            invoiced_by: user?.id,
+            updated_at: nowIso,
+          };
+
       const { data, error } = await supabase
         .from("deals")
-        .update({
-          is_invoiced: true,
-          // Stored normalised — 10 digits, comma-separated for several — so the
-          // returns file's 0093002906 and a typed 93002906 are the same value.
-          invoice_number: formatInvoiceNumbers(parsedInvoiceNumbers),
-          invoice_date: invoiceForm.invoice_date,
-          invoiced_at: now,
-          invoiced_by: user?.id,
-          updated_at: now,
-        })
+        .update(patch)
         .eq("id", invoicingDeal.id)
         .select("*, contact:contacts!contact_id(id, first_name, last_name, company_name), owner:users!owner_id(id, full_name, email)")
         .single();
       if (error) throw error;
-      // Update in place so the card flips to "Invoiced" without a full reload.
+      // Update in place so the card shows the new value without a full reload.
       setDeals((prev) => prev.map((d) => (d.id === data.id ? { ...d, ...data } : d)));
-      setShowInvoiceModal(false);
-      setInvoicingDeal(null);
+
+      if (!correcting) {
+        closeInvoiceModal();
+        return;
+      }
+
+      // The deal's history. `activities` is what this app already uses for it —
+      // DealModal's "Activity Log" reads that table by deal_id, and the
+      // lost-deal note is written the same way — so a correction shows up where
+      // people already look. Best-effort: an audit entry must never fail a save
+      // that has already happened, and createActivity RETURNS { error } rather
+      // than throwing, so it is checked explicitly.
+      const numberChanged = previousNumber !== stored;
+      const dateChanged = Boolean(invoiceForm.invoice_date) && previousDate !== invoiceForm.invoice_date;
+      // The date is its own sentence, not a clause tacked onto the number.
+      // Achieved is counted by invoice_date, so moving it moves this deal's
+      // value out of one month and into another — a bigger change than the
+      // number, and the one nobody would think to look for.
+      const sentences = [
+        numberChanged
+          ? `Invoice number corrected from "${previousNumber || "(blank)"}" to "${stored}".`
+          : `Invoice number unchanged ("${stored}").`,
+        dateChanged
+          ? `Invoice date changed from ${previousDate || "(blank)"} to ${invoiceForm.invoice_date} `
+            + `— this deal's Achieved moves to the new month.`
+          : null,
+        // Ends the sentence without doubling a full stop the user already typed.
+        `Reason: ${invoiceForm.reason.trim().replace(/[.;,\s]+$/, "")}.`,
+        `By ${userProfile?.full_name || "a user"}${userProfile?.role ? ` (${userProfile.role})` : ""}.`,
+      ].filter(Boolean);
+      try {
+        const { error: auditErr } = await activityService.createActivity({
+          type: "note",
+          title: numberChanged && dateChanged
+            ? "Invoice number and date corrected"
+            : dateChanged ? "Invoice date corrected" : "Invoice number corrected",
+          description: sentences.join(" "),
+          company_id: company.id,
+          deal_id: data.id,
+          contact_id: data.contact_id,
+          owner_id: userProfile?.id,
+        });
+        if (auditErr) {
+          console.error("Invoice correction note failed (non-fatal):",
+            auditErr.code, auditErr.message, auditErr.details, auditErr.hint);
+        }
+      } catch (auditThrown) {
+        console.error("Invoice correction note threw (non-fatal):", auditThrown);
+      }
+
+      // Re-run the importer's own match for this deal, so a credit note left
+      // unmatched by the wrong number attaches now. A re-import would NOT do
+      // it: the importer skips rows it has already stored, deal_id and all.
+      let relink = { linked: 0, blocked: 0, ambiguous: 0 };
+      let relinkError = null;
+      try {
+        const { data: res, error: relErr } = await dealService.relinkReturnsForDeal({
+          companyId: company.id,
+          dealId: data.id,
+        });
+        if (relErr) relinkError = relErr.message || "unknown error";
+        else if (res) relink = res;
+      } catch (relThrown) {
+        relinkError = relThrown?.message || "unknown error";
+      }
+
+      setCorrectionResult({ stored, ...relink, relinkError });
     } catch (err) {
       console.error("Invoice:", err);
       setInvoiceErrors({ invoice_number: err.message || "Could not save invoice" });
@@ -139,6 +234,13 @@ const SalesPipeline = () => {
     }
   };
   const [users, setUsers] = useState([]);
+
+  // Who may correct a number: the owner, anyone above him in the supervisor_id
+  // chain, and admin/director (utils/teamHierarchy.js). A PEER salesman may not
+  // — the invoice number decides which owner a credit note is charged to.
+  const canCorrectThisInvoice = (deal) =>
+    canCorrectInvoice({ users, viewer: userProfile, deal });
+
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [showDealModal, setShowDealModal] = useState(false);
   const [showLostModal, setShowLostModal] = useState(false);
@@ -943,6 +1045,8 @@ const SalesPipeline = () => {
                     onDealUpdate={handleEditDeal}
                     onDealClick={handleEditDeal}
                     onMarkInvoiced={handleMarkInvoiced}
+                    onCorrectInvoice={handleCorrectInvoice}
+                    canCorrectInvoice={canCorrectThisInvoice}
                     onMoveToFuture={handleMoveToFutureFromCard}
                     onStageUpdate={(stageId) =>
                       console.log("Stage settings:", stageId)
@@ -1065,117 +1169,21 @@ const SalesPipeline = () => {
         />
       )}
 
-      {/* Mark as Invoiced modal */}
+      {/* The invoice form: recording an invoice, and correcting the number
+          afterwards. One component, one validator, one normaliser — so the two
+          flows cannot drift apart (components/InvoiceModal.jsx). */}
       {showInvoiceModal && invoicingDeal && (
-        <>
-          <div
-            className="fixed inset-0 z-[700] bg-black/40 backdrop-blur-sm"
-            onClick={() => setShowInvoiceModal(false)}
-          />
-          <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 pointer-events-none">
-            <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md overflow-hidden pointer-events-auto border border-border">
-              <div className="px-6 py-4 border-b border-border bg-green-50">
-                <h2 className="text-base font-semibold text-green-800 flex items-center gap-2">
-                  <Icon name="Receipt" size={16} /> Mark as Invoiced
-                </h2>
-                <p className="text-xs text-green-600 mt-0.5 font-medium truncate">
-                  {invoicingDeal.title || invoicingDeal.contact?.company_name || "Deal"}
-                </p>
-              </div>
-
-              <div className="px-6 py-5 space-y-4">
-                <div className="p-3 bg-green-50 border border-green-100 rounded-xl flex items-center gap-3">
-                  <Icon name="CheckCircle" size={16} className="text-green-600 flex-shrink-0" />
-                  <div>
-                    <p className="text-xs font-medium text-green-800">
-                      Won Amount:{" "}
-                      {new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(
-                        invoicingDeal.final_amount || invoicingDeal.amount || 0,
-                      )}{" "}
-                      SAR
-                    </p>
-                    <p className="text-xs text-green-600">
-                      This deal counts as Achievement once invoiced.
-                    </p>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                    ERP Invoice Number *
-                  </label>
-                  <input
-                    type="text"
-                    value={invoiceForm.invoice_number}
-                    onChange={(e) => setInvoiceForm((f) => ({ ...f, invoice_number: e.target.value }))}
-                    /* The old placeholder read "e.g. INV-2026-001", a format the
-                       ERP has never used — it taught the shape this field is now
-                       full of. */
-                    placeholder="e.g. 93002906"
-                    className={`w-full border rounded-xl px-3 py-2.5 text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500/20 ${
-                      invoiceErrors.invoice_number ? "border-destructive" : "border-border"
-                    }`}
-                  />
-                  {invoiceErrors.invoice_number ? (
-                    <p className="text-xs text-destructive mt-1">{invoiceErrors.invoice_number}</p>
-                  ) : parsedInvoiceNumbers.length > 0 ? (
-                    /* What will actually be stored, before saving: the ERP's own
-                       10-digit form, which is how the returns file writes it. */
-                    <p data-testid="invoice-preview" className="text-xs text-green-700 mt-1">
-                      {parsedInvoiceNumbers.length === 1 ? "Will be saved as" : `Will be saved as ${parsedInvoiceNumbers.length} invoices:`}{" "}
-                      <span className="font-mono font-medium">
-                        {formatInvoiceNumbers(parsedInvoiceNumbers)}
-                      </span>
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      8–10 digits. Several invoices on one deal: separate them with
-                      {" "}<span className="font-mono">/</span> or <span className="font-mono">,</span>
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                    Invoice Date *
-                  </label>
-                  <input
-                    type="date"
-                    value={invoiceForm.invoice_date}
-                    onChange={(e) => setInvoiceForm((f) => ({ ...f, invoice_date: e.target.value }))}
-                    className={`w-full border rounded-xl px-3 py-2.5 text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500/20 ${
-                      invoiceErrors.invoice_date ? "border-destructive" : "border-border"
-                    }`}
-                  />
-                  {invoiceErrors.invoice_date && (
-                    <p className="text-xs text-destructive mt-1">{invoiceErrors.invoice_date}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="px-6 py-4 border-t border-border flex gap-3 justify-end">
-                <button
-                  onClick={() => setShowInvoiceModal(false)}
-                  className="px-4 py-2 text-sm border border-border rounded-xl text-muted-foreground hover:bg-muted transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmInvoice}
-                  disabled={savingInvoice}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white font-medium rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
-                >
-                  {savingInvoice ? (
-                    <Icon name="Loader2" size={14} className="animate-spin" />
-                  ) : (
-                    <Icon name="Receipt" size={14} />
-                  )}
-                  Confirm Invoice
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
+        <InvoiceModal
+          deal={invoicingDeal}
+          mode={invoiceMode}
+          form={invoiceForm}
+          errors={invoiceErrors}
+          saving={savingInvoice}
+          result={correctionResult}
+          onChange={(patch) => setInvoiceForm((f) => ({ ...f, ...patch }))}
+          onCancel={closeInvoiceModal}
+          onConfirm={confirmInvoice}
+        />
       )}
 
       {/* Deal Modal */}
