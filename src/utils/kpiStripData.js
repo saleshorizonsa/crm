@@ -98,21 +98,28 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   const { data: users } = await uq;
   const userList = users || [];
   const scopeIds = userList.map((u) => u.id);
-  if (scopeIds.length === 0) return empty;
 
-  const mb = monthBounds();
-  const w3 = threeMonthWindow();
-  // Achieved + target window: the selected range, or the current month by default.
-  const winStart = range?.start || mb.startDate;
-  const winEnd = range?.end || mb.endDate;
-
-  // Flagged achieved-only users (users.is_contributor) are resolved FIRST now,
+  // Flagged achieved-only users (users.is_contributor) are resolved FIRST,
   // because Target uses the same scope as Achieved: a flagged manager's own
   // monthly target counts exactly like a salesman's. Only MONTHLY rows are ever
   // read (fetchMonthlyTargets filters period_type), so his yearly allocation
   // cannot leak into a monthly sum.
   const achievedOnlyUsers = await fetchAchievedOnlyUsers({ companyId, ownerIds });
   const achievedScopeIds = [...scopeIds, ...achievedOnlyUsers.map((u) => u.id)];
+
+  // "Nobody in scope" is the ACHIEVER set being empty, not the contributor set.
+  // This tested scopeIds, so narrowing to a flagged manager alone — "View
+  // dashboard as" him, or /numbers-check on one person — returned the empty
+  // strip and reported 0 for his Target, his Achieved and his conversion, for a
+  // man with 92.3%. Moved below the achieved-only lookup so the two scopes it
+  // has to consider both exist by the time it runs.
+  if (achievedScopeIds.length === 0) return empty;
+
+  const mb = monthBounds();
+  const w3 = threeMonthWindow();
+  // Achieved + target window: the selected range, or the current month by default.
+  const winStart = range?.start || mb.startDate;
+  const winEnd = range?.end || mb.endDate;
 
   // 2a. Per-contributor MONTHLY targets overlapping the window. A person can hold
   //     a `total_value` (overall) target and/or `by_clients` targets — the overall
@@ -214,11 +221,17 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   // IMPORTED history is excluded, exactly as fetchWinRate3m excludes it:
   // loaded-in invoices can only be "won", so they inflated every per-person
   // rate and so understated every per-person Required Plan.
+  //
+  // achievedScopeIds, NOT scopeIds (decision D4, 2026-10-05 — see utils/winRate3m.js): conversion is measured over the same
+  // people as Achieved and Target, so a flagged manager's own deals count here
+  // too. With contributor roles alone, a flagged manager viewed on his own gave
+  // this block an empty scope and the strip reported 0.0% for a man with a
+  // 92.3% rate.
   const { data: deals3Raw } = await queryDealsWithImportFlag((select) => supabase
     .from('deals')
     .select(select)
     .eq('company_id', companyId)
-    .in('owner_id', scopeIds)
+    .in('owner_id', achievedScopeIds)
     .gte('created_at', w3.startISO)
     .lte('created_at', w3.endISO), 'owner_id, stage, created_at, closed_at, invoice_number');
   const deals3 = (deals3Raw || []).filter((d) => !isImportedDeal(d));
@@ -252,7 +265,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   // ACTUAL win rate over all their history — however few deals (1 won of 2 = 50%,
   // 0 of 1 = 0%). Only a salesman with zero deals ever falls back to the company
   // average. Fetch all-history once for just those salesmen (usually new joiners).
-  const noWindowIds = scopeIds.filter((id) => !wrPer[id] || wrPer[id].total === 0);
+  const noWindowIds = achievedScopeIds.filter((id) => !wrPer[id] || wrPer[id].total === 0);
   const allWrPer = {};
   if (noWindowIds.length) {
     const { data: allDealsRaw } = await queryDealsWithImportFlag((select) => supabase
@@ -350,17 +363,22 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     })
     // A flagged achieved-only user gets a row too, so the rows still add up to the
     // Achieved total. It carries Achieved only: no quota, and Win Rate / Planned
-    // are not measured for him (null win rate, shown as "—").
-    // A flagged user's row now carries Target and Deficit as well as Achieved —
-    // the whole point of this parity pass. Win Rate and Planned Gap stay blank
-    // for him ("—"), since those remain contributor-only measures.
+    // are not measured for him.
+    // A flagged user's row carries Target and Deficit as well as Achieved, and
+    // since decision D4, 2026-10-05 — see utils/winRate3m.js a MEASURED CONVERSION too. That was null,
+    // shown as "—", on the reasoning that no rate is measured for someone
+    // without a quota — but he does have a quota (Target counts for him) and he
+    // does close deals, so the one figure saying how much of what he starts he
+    // finishes was the only thing missing from his row. PLANNED GAP stays blank:
+    // he carries no monthly plan, and that has not changed.
     .concat(achievedOnlyUsers.map((u) => {
       const target = targetPer[u.id] || 0;
       const achieved = achievedPer[u.id] || 0;
+      const wr = resolveWinRate(u.id);
       return {
         id: u.id, full_name: u.full_name, role: u.role, achievedOnly: true,
         target, achieved, deficit: Math.max(0, target - achieved),
-        winRate3m: null, winRateIsDefault: false,
+        winRate3m: wr.rate, winRateIsDefault: wr.isDefault,
         planned: 0, required: 0, requiredRaw: 0, futureCarryover: 0, plannedGap: 0,
       };
     }))

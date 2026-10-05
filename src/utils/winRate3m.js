@@ -1,4 +1,5 @@
 import { supabase } from 'lib/supabase';
+import { fetchAchieverIds } from 'utils/achieverScope';
 import {
   isImportedDeal,
   isSameDayOrder,
@@ -26,14 +27,40 @@ import {
 // (manager/supervisor) or to a single salesman (`[userId]`); omit / pass null
 // for the whole company (director). An empty ownerIds array means "nobody in
 // scope" and returns zeros rather than silently widening to the whole company.
-export async function fetchWinRate3m({ companyId, ownerIds = null }) {
+//
+// CEO DECISION D4, 2026-10-05: CONVERSION USES THE SAME SCOPE AS ACHIEVED.
+// Conversion (3m) and the information-only pipeline conversion are measured
+// over the ACHIEVERS — active contributor roles plus anyone individually
+// flagged users.is_contributor — exactly the people whose revenue and monthly
+// target count. Before this, conversion was contributor-roles-only while
+// Achieved and Target already included the flagged managers, and a flagged
+// manager viewed on his own produced FOUR different rates on four screens:
+// the KPI strip 0.0% (no contributors in his scope), Planning 92.3% (its
+// fallback widened to the raw scope), the Coverage Console and Insights 65.4%
+// (the borrowed company rate) and his own strip row "—" (null by design).
+// For JASCO PVC the company figures move from 65.4%/53.6% to 67.8%/55.3%.
+//
+// THE NARROWING HAPPENS HERE, in the one function every screen goes through —
+// the KPI strip, Planning, the Coverage Console, Insights, all four dashboards,
+// the Forecast page, the target-change notifier and /numbers-check. It used to
+// be each caller's job, and they disagreed: the four dashboards passed the raw
+// hierarchy (so the Director dashboard read 62.7% beside its own KPI strip's
+// 65.4% on the same screen), while Planning and the Console narrowed to
+// contributor roles. A caller that has already resolved the scope passes
+// `scopeIds` to skip the lookup, the same contract as fetchOpenFunnel.
+export async function fetchWinRate3m({ companyId, ownerIds = null, scopeIds = null }) {
   const empty = {
     winRate3m: 0, won3m: 0, total3m: 0,
     pipelineConversion3m: 0, pipelineWon3m: 0, pipelineTotal3m: 0,
-    importedExcluded: 0,
+    importedExcluded: 0, scopeIds: [],
   };
   if (!companyId) return empty;
   if (Array.isArray(ownerIds) && ownerIds.length === 0) return empty;
+
+  // The achiever scope (decision D4). An empty result means nobody in scope
+  // measures a rate — zeros, not the whole company.
+  const ids = scopeIds || await fetchAchieverIds({ companyId, ownerIds });
+  if (!ids.length) return empty;
 
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth() - 3, 1);        // first day, 3 months ago
@@ -49,8 +76,7 @@ export async function fetchWinRate3m({ companyId, ownerIds = null }) {
       .eq('company_id', companyId)
       .gte('created_at', start.toISOString())
       .lte('created_at', end.toISOString());
-    if (Array.isArray(ownerIds)) query = query.in('owner_id', ownerIds);
-    return query;
+    return query.in('owner_id', ids);
   }, 'id, stage, created_at, closed_at, owner_id, invoice_number');
 
   if (error) {
@@ -85,5 +111,8 @@ export async function fetchWinRate3m({ companyId, ownerIds = null }) {
     // So a screen can say how much history was set aside rather than leaving
     // the drop in the rate unexplained.
     importedExcluded: all.length - worked.length,
+    // The scope actually measured, so a caller can report WHO the rate is over
+    // instead of assuming it got what it asked for.
+    scopeIds: ids,
   };
 }

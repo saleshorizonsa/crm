@@ -15,6 +15,7 @@
 import {
   CONTRIBUTOR_ROLES,
   isAchievedOnly,
+  achieverIdsFrom,
   computeAchieved,
   targetPerPerson,
   winRateFromDeals,
@@ -72,7 +73,10 @@ export function calcCoverageMetrics(userIds, data) {
   // flagged manager — so a flagged manager's own monthly target is not missing
   // from the target his invoiced revenue is measured against. Only monthly rows
   // are fetched, so a yearly allocation cannot enter this sum.
-  const achieverIdsForTarget = [
+  // ONE achiever set for this node, declared before the first thing that needs
+  // it. There were two identical copies of this list — one here for Target and
+  // one further down for Achieved — and the conversion rate below used neither.
+  const achieverIds = [
     ...contributorIds,
     ...userIds.filter((id) => isAchievedOnly((users || []).find((x) => x.id === id))),
   ];
@@ -83,31 +87,27 @@ export function calcCoverageMetrics(userIds, data) {
     (t) => t.period_type !== "yearly"
   );
   const targetPer = targetPerPerson(
-    monthlyTargetRows.filter((t) => achieverIdsForTarget.includes(t.assigned_to))
+    monthlyTargetRows.filter((t) => achieverIds.includes(t.assigned_to))
   );
   const target = Object.values(targetPer).reduce((sum, v) => sum + v, 0);
 
   // ── WIN RATE ── trailing 3 months over contributors; a node with no deals
   // in the window borrows the company's contributor rate rather than the
   // hardcoded 0.472 that used to sit here.
-  const companyContributorIds = (users || [])
-    .filter((u) => CONTRIBUTOR_ROLES.includes(u.role))
-    .map((u) => u.id);
-  const mine = winRateFromDeals({ deals: deals3m, ownerIds: contributorIds });
+  // Over the ACHIEVERS, not contributor roles (decision D4, 2026-10-05 — see utils/winRate3m.js) — the same people whose
+  // Target and Achieved are counted just above. achieverIdsFrom() for the
+  // company list rather than a local role filter, which also drops INACTIVE
+  // users from the borrowed rate; every other scope in the app is active-only.
+  const companyAchieverIds = achieverIdsFrom(users);
+  const mine = winRateFromDeals({ deals: deals3m, ownerIds: achieverIds });
   const companyWide = winRateFromDeals({
     deals: deals3m,
-    ownerIds: companyContributorIds,
+    ownerIds: companyAchieverIds,
   });
   const winRatePct = mine.total > 0 ? mine.winRatePct : companyWide.winRatePct;
   const winRate = winRatePct / 100; // this file weights in fractions
 
-  // ── INVOICED (achieved) ── the one exception to the contributor rule above:
-  // a manager flagged users.is_contributor counts toward Achieved (only), the
-  // same scope as utils/planningCalculations.js achieverIdsFrom.
-  const achieverIds = [
-    ...contributorIds,
-    ...userIds.filter((id) => isAchievedOnly((users || []).find((x) => x.id === id))),
-  ];
+  // ── INVOICED (achieved) ── over achieverIds, declared once near the top.
   // The shared rule rather than a local copy, so Achieved here nets off sales
   // returns like everywhere else. invoicedDeals stays the GROSS list, because
   // the drill-downs below list actual invoices; only the total is net.

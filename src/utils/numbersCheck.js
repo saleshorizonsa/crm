@@ -130,8 +130,11 @@ function row({ label, value, expected = null, kind = 'money', note = null, known
  *   ownerIds       the raw scope a screen is handed (null = whole company)
  *   achieverIds    whose revenue and monthly target count — contributors plus
  *                  anyone individually flagged users.is_contributor
- *   contributorIds whose CONVERSION counts — contributor roles only, never a
- *                  flagged manager's handful of deals
+ *   contributorIds contributor roles only. Kept because Planned and Carry-In
+ *                  are still measured over it — a flagged manager carries no
+ *                  monthly plan. CONVERSION no longer uses it: it moved to the
+ *                  achiever scope on 2026-10-05 (decision D4), so Achieved,
+ *                  Target and Conversion are now one scope.
  */
 export function resolveScope({ users, scope }) {
   const all = users || [];
@@ -293,9 +296,11 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     fetchOpenFunnel({ companyId, scopeIds: achieverIds }),
     // The same function over the SELECTED period, for the screens that window it.
     fetchOpenFunnel({ companyId, scopeIds: achieverIds, start, end }),
-    // Conversion is a CONTRIBUTOR measure (see resolveScope) — the scope the KPI
-    // strip, Planning and the Coverage Console all put it on.
-    fetchWinRate3m({ companyId, ownerIds: contributorIds }),
+    // The ACHIEVER scope (decision D4): the same people as Achieved and Target.
+    // fetchWinRate3m narrows to it internally now, so passing ownerIds would give
+    // the same answer — the achievers are passed explicitly so this row states
+    // the scope it is asserting rather than relying on the helper to pick it.
+    fetchWinRate3m({ companyId, scopeIds: achieverIds }),
   ]);
 
   const refTarget = sum(targetPerPerson(refTargetRows));
@@ -360,7 +365,9 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
           ? Math.max(0, n(reference.annualTarget) - reference.achieved)
           : reference.gap,
       }),
-      row({ label: 'Conversion (3m)', value: strip.winRate3m, expected: reference.conversion3m, kind: 'pct' }),
+      row({ label: 'Conversion (3m)', value: strip.winRate3m, expected: reference.conversion3m, kind: 'pct',
+        note: 'measured over the ACHIEVERS since 2026-10-05 — the same people as'
+          + ' Achieved and Target (decision D4)' }),
       row({ label: 'Pipeline conversion (info only)', value: strip.pipelineConversion3m, expected: reference.pipelineConversion3m, kind: 'pct' }),
       row({
         label: 'Funnel card',
@@ -643,8 +650,8 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
         expected: reference.conversion3m,
         kind: 'pct',
         note: 'this screen computes every node of the tree from one read'
-          + ' (winRateFromDeals) — the same window, formula and imported-history'
-          + ' exclusion as fetchWinRate3m',
+          + ' (winRateFromDeals) — the same window, formula, scope and'
+          + ' imported-history exclusion as fetchWinRate3m',
       }),
       row({ label: 'Planned (open plan)', value: cc.planning, expected: planning.plannedOpen }),
       row({ label: 'Coverage (computeCoverage)', value: cc.coverage, expected: refCoverage.coverage }),
