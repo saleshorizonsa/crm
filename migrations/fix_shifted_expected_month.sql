@@ -1,5 +1,5 @@
 -- ============================================================================
--- NOT APPLIED — this file has NOT been run against any database.
+-- APPLIED to production 2026-10-05 (SQL editor)
 -- ============================================================================
 --
 -- Repairs plan rows whose expected_month is the LAST day of a month instead of
