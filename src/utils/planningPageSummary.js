@@ -282,7 +282,12 @@ export async function computePlanningPageSummary({
     pipelineConversion3m = null, pipelineTotal3m = 0, importedExcluded = 0,
   } = await computeWinRate({
     companyId, ownerIds, withFallback: true,
-    contributorIds: contributorIds.length ? contributorIds : scopeIds,
+    // scopeIds, always: it is contributors PLUS flagged users, which is exactly
+    // the achiever scope conversion is now measured over (decision D4, 2026-10-05 — see utils/winRate3m.js). The old
+    // `contributorIds.length ? contributorIds : scopeIds` meant a flagged
+    // manager viewed on his own got the achiever scope (92.3%) while the same
+    // man inside a team got a rate his deals were excluded from.
+    contributorIds: scopeIds,
   });
 
   // ── ANNUAL VIEW (CEO decision D3, 2026-10-05) ────────────────────────────

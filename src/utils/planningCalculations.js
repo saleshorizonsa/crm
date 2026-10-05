@@ -1,6 +1,15 @@
 import { supabase } from 'lib/supabase';
 import { fetchWinRate3m } from 'utils/winRate3m';
 import { isImportedDeal, queryDealsWithImportFlag } from 'utils/importedDeals';
+// IMPORTED as well as re-exported below, because `export { x } from '...'` does
+// NOT bind x in this module's own scope — computeWinRate calls fetchAchieverIds,
+// and the re-export alone left it undefined at runtime.
+import {
+  CONTRIBUTOR_ROLES,
+  isAchievedOnly,
+  achieverIdsFrom,
+  fetchAchieverIds,
+} from 'utils/achieverScope';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The single definition of the five planning numbers.
@@ -15,13 +24,6 @@ import { isImportedDeal, queryDealsWithImportFlag } from 'utils/importedDeals';
 // Every consumer now calls these functions instead of restating the rule.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// The KPI numbers aggregate over individual contributors. Managers are excluded
-// on purpose: they carry a YEARLY team roll-up, not a monthly total_value quota,
-// so including them would dwarf and double-count the monthly numbers — and their
-// future orders must not offset a target they never contributed to.
-// One exception, for Achieved only: a manager flagged users.is_contributor = true
-// has his own deals counted there (see isAchievedOnly / achieverIdsFrom).
-export const CONTRIBUTOR_ROLES = ['salesman', 'supervisor'];
 
 /** Active contributors in scope. `ownerIds = null` means the whole company. */
 export async function fetchContributors({ companyId, ownerIds = null }) {
@@ -200,28 +202,31 @@ export async function computeAnnualTarget({ companyId, ownerIds, monthlyTotal, y
  * the 3 completed months -> this scope's whole history -> the company average.
  * Only the last step counts as a "default".
  *
- * ALWAYS narrowed to CONTRIBUTOR_ROLES, whatever `ownerIds` the caller passes.
- * You cannot count someone's target but ignore their sales -- and the mirror
- * holds: a manager carries no monthly target, so his own deals must not move
- * the team's monthly win rate either. Planning passed the raw scope (which for
- * a director meant every deal in the company), reading 65.06% where the
- * dashboards read 65.15% off the contributor set. The narrowing lives HERE so
- * no caller can reintroduce the leak by passing a wider scope.
+ * ALWAYS narrowed to the ACHIEVER scope, whatever `ownerIds` the caller passes:
+ * you cannot count someone's revenue and target but ignore how much of what he
+ * starts he finishes. The narrowing now lives in fetchWinRate3m, so no caller
+ * can reintroduce a leak by passing a wider scope and no caller has to remember
+ * to narrow one.
  *
- * winRate3m.js stays the primitive for the windowed figure (11 other consumers
- * rely on it); this adds the contributor narrowing and the fallback chain.
+ * It was CONTRIBUTOR_ROLES only until 2026-10-05; see fetchWinRate3m for the
+ * decision and what it changed.
  *
- * @param {string[]} [p.contributorIds] already-resolved contributors, to skip
- *        the extra users lookup. Resolved internally when omitted.
+ * winRate3m.js stays the primitive for the windowed figure; this adds the
+ * fallback chain on top of it.
+ *
+ * @param {string[]} [p.contributorIds] an already-resolved scope, to skip the
+ *        extra users lookup. Resolved internally when omitted. Named for what
+ *        it used to hold; it is now the achiever scope.
  */
 export async function computeWinRate({
   companyId, ownerIds = null, withFallback = false, contributorIds = null,
 }) {
-  const scopeIds = contributorIds
-    || (await fetchContributors({ companyId, ownerIds })).map((c) => c.id);
+  const scopeIds = contributorIds || await fetchAchieverIds({ companyId, ownerIds });
   if (!scopeIds.length) return { winRatePct: 0, isDefault: true };
 
-  const rate3m = await fetchWinRate3m({ companyId, ownerIds: scopeIds });
+  // scopeIds, not ownerIds: already resolved, so fetchWinRate3m skips its own
+  // lookup rather than resolving the same set twice.
+  const rate3m = await fetchWinRate3m({ companyId, scopeIds });
   const { winRate3m, total3m } = rate3m;
   if (total3m > 0) {
     return {
@@ -240,7 +245,7 @@ export async function computeWinRate({
   // fallback chain instead. Same rule, two documented policies -- opt in.
   if (!withFallback) return { winRatePct: 0, isDefault: true };
 
-  // Step 2 - this scope's whole history, contributors only, and with
+  // Step 2 - this scope's whole history, achievers only, and with
   // IMPORTED history excluded like every other rate (utils/importedDeals.js).
   // This fallback is the one most exposed to it: a salesman whose only rows
   // are loaded-in invoices would have read 100%, and 100% makes Required
@@ -256,11 +261,11 @@ export async function computeWinRate({
     return { winRatePct: (won / worked.length) * 100, isDefault: false };
   }
 
-  // Step 3 - the company average, also over contributors only.
-  const companyContributors = (await fetchContributors({ companyId })).map((c) => c.id);
-  if (!companyContributors.length) return { winRatePct: 0, isDefault: true };
+  // Step 3 - the company average, also over the achiever scope.
+  const companyAchievers = await fetchAchieverIds({ companyId });
+  if (!companyAchievers.length) return { winRatePct: 0, isDefault: true };
   const { winRate3m: companyAvg } = await fetchWinRate3m({
-    companyId, ownerIds: companyContributors,
+    companyId, scopeIds: companyAchievers,
   });
   return { winRatePct: companyAvg, isDefault: true };
 }
@@ -510,56 +515,23 @@ export async function fetchReturns({ companyId, ownerIds = null, start = null, e
   }));
 }
 
-/** Ids of the ACTIVE contributors in a list of user rows (needs role + is_active). */
-export function contributorIdsFrom(users) {
-  return (users || [])
-    .filter((u) => u && u.is_active === true && CONTRIBUTOR_ROLES.includes(u.role))
-    .map((u) => u.id);
-}
 
-/**
- * An active user OUTSIDE CONTRIBUTOR_ROLES who is individually flagged
- * users.is_contributor = true: a manager who sells himself.
- *
- * Their own invoiced deals count toward ACHIEVED, and so toward every team and
- * company Achieved total that contains them. Nothing else widens: Target, Win
- * Rate, Planned and Carry-In stay on CONTRIBUTOR_ROLES, because a flagged
- * manager still carries no monthly quota. Counting him in those would skew them
- * rather than fix Achieved.
- */
-export function isAchievedOnly(user) {
-  return !!user
-    && user.is_active === true
-    && user.is_contributor === true
-    && !CONTRIBUTOR_ROLES.includes(user.role);
-}
-
-/**
- * Ids whose deals count toward ACHIEVED in a list of user rows: the contributors
- * plus the flagged achieved-only users. Rows need role, is_active, is_contributor.
- * Use this ONLY for Achieved — every other KPI keeps contributorIdsFrom.
- */
-export function achieverIdsFrom(users) {
-  return [...contributorIdsFrom(users), ...(users || []).filter(isAchievedOnly).map((u) => u.id)];
-}
-
-/**
- * Whose monthly TARGET counts — now exactly whose Achieved counts.
- *
- * Achieved was widened for flagged managers first, and Target was deliberately
- * left on roles alone. That asymmetry flattered a flagged manager: his invoiced
- * revenue counted everywhere while the target he set himself counted almost
- * nowhere, so his attainment read high and the company's target read low. The
- * two scopes are one thing now, under two names so each call site still says
- * which side of the equation it is on.
- *
- * A plain manager is still excluded: only CONTRIBUTOR_ROLES plus individually
- * flagged users. And only MONTHLY rows are ever summed (fetchMonthlyTargets and
- * every caller filter period_type = 'monthly'), so a manager's yearly
- * allocation — 40,660,779 for the manager this was built for — can never be
- * pulled into a monthly total.
- */
-export const targetOwnerIdsFrom = achieverIdsFrom;
+// ── WHO COUNTS ──────────────────────────────────────────────────────────────
+// CONTRIBUTOR_ROLES and the three predicates below now live in
+// utils/achieverScope.js, a LEAF module. They moved because utils/winRate3m.js
+// has to narrow a conversion rate to the achiever scope and this file imports
+// fetchWinRate3m from it — importing back would make the two most-depended-on
+// modules in the app mutually recursive. Nothing else changed: every name is
+// re-exported here, so every existing `from 'utils/planningCalculations'`
+// import keeps working and there is still exactly ONE definition of each rule.
+export {
+  CONTRIBUTOR_ROLES,
+  contributorIdsFrom,
+  isAchievedOnly,
+  achieverIdsFrom,
+  targetOwnerIdsFrom,
+  fetchAchieverIds,
+} from 'utils/achieverScope';
 
 /** Active flagged achieved-only users in scope (see isAchievedOnly). `ownerIds = null` = whole company. */
 export async function fetchAchievedOnlyUsers({ companyId, ownerIds = null }) {

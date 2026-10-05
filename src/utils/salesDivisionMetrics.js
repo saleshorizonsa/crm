@@ -9,6 +9,7 @@ import {
   computeRequiredRaw,
   computeCoverage,
   computeAchieved,
+  achieverIdsFrom,
   wonNotInvoicedExceptions,
 } from 'utils/planningCalculations';
 
@@ -268,16 +269,19 @@ export function calcDivisionMetrics(userIds, data) {
     targetPerPerson(monthlyTargetRows.filter((t) => isAchiever.has(t.assigned_to))),
   ).reduce((sum, v) => sum + v, 0);
 
-  // A group with no deals in the window borrows the company contributors' rate,
-  // as the Coverage Console does, rather than reading 0%.
+  // A group with no deals in the window borrows the company rate, as the
+  // Coverage Console does, rather than reading 0%.
+  //
+  // Over the ACHIEVERS (decision D4, 2026-10-05 — see utils/winRate3m.js): the same people as Target and Achieved above, so
+  // a division carried by a flagged manager no longer has to borrow a rate it
+  // could measure from his own deals. achieverIdsFrom() for the company list
+  // also drops inactive users, which a bare role filter did not.
   const divisionDeals3m = (deals3m || []).filter(inThisDivision);
-  const mine = winRateFromDeals({ deals: divisionDeals3m, ownerIds: contributorIds });
-  const companyContributorIds = (users || [])
-    .filter((u) => CONTRIBUTOR_ROLES.includes(u.role))
-    .map((u) => u.id);
+  const mine = winRateFromDeals({ deals: divisionDeals3m, ownerIds: [...isAchiever] });
+  const companyAchieverIds = achieverIdsFrom(users);
   const winRateBorrowed = mine.total === 0;
   const winRatePct = winRateBorrowed
-    ? winRateFromDeals({ deals: divisionDeals3m, ownerIds: companyContributorIds }).winRatePct
+    ? winRateFromDeals({ deals: divisionDeals3m, ownerIds: companyAchieverIds }).winRatePct
     : mine.winRatePct;
 
   // The shared rule (utils/planningCalculations.js) rather than a local copy of
