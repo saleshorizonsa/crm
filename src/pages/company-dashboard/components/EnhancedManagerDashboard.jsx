@@ -18,6 +18,7 @@ import {
   salesTargetService,
   contactService,
   getMonthlyTarget,
+  getScopeMonthlyTotals,
 } from "../../../services/supabaseService";
 import MonthlyTargetCard from "../../../components/MonthlyTargetCard";
 import ManagerSalesTargetAssignment from "../../../components/ManagerSalesTargetAssignment";
@@ -60,6 +61,7 @@ import {
   isAnnualRange,
 } from "../../../utils/dashboardDateUtils";
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
+import { fetchTeamHierarchy } from '../../../utils/teamHierarchy';
 import { ownAllocation, isSelfAssignedTarget, sumTargetAmount } from '../../../utils/selfTarget';
 import { Edit2 } from "lucide-react";
 import SalesTargetTable from "../../../components/SalesTargetTable";
@@ -1410,19 +1412,30 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       });
       setManagerMonthlyTarget(managerResult);
 
-      if (allSubordinates.length > 0) {
-        const results = await Promise.all(
-          allSubordinates.map(m => getMonthlyTarget({
-            userId:    m.id,
-            companyId: company.id,
-            dateFrom:  activeDateRange.from,
-            dateTo:    activeDateRange.to,
-          }))
-        );
-        const total = results.reduce((s, r) => s + (r?.amount || 0), 0);
-        const achieved = results.reduce((s, r) => s + (r?.achieved || 0), 0);
-        setTeamMonthlyTotal(total);
-        setTeamMonthlyAchieved(achieved);
+      // The team tile covers the manager's downline and NOT the manager: his own
+      // figures are on his own card beside it, so own card + team tile is the
+      // KPI strip's total for this team, with nothing counted twice.
+      //
+      // The subtree comes from fetchTeamHierarchy — recursive through
+      // supervisor_id, active users, same company — rather than the two levels
+      // of getUserSubordinates this used to sum over with no company or active
+      // filter. Each person's figures then come from the shared rules in one
+      // call instead of one query per subordinate.
+      const team = await fetchTeamHierarchy({
+        companyId: company.id,
+        userId:    effectiveUser.id,
+        role:      effectiveUserProfile?.role || 'manager',
+      });
+      const teamIds = team.map((m) => m.id).filter((id) => id !== effectiveUser.id);
+      if (teamIds.length > 0) {
+        const scope = await getScopeMonthlyTotals({
+          companyId: company.id,
+          ownerIds:  teamIds,
+          start:     activeDateRange.from,
+          end:       activeDateRange.to,
+        });
+        setTeamMonthlyTotal(scope.target);
+        setTeamMonthlyAchieved(scope.achieved);
       } else {
         setTeamMonthlyTotal(0);
         setTeamMonthlyAchieved(0);

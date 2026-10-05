@@ -21,6 +21,7 @@ import {
   salesTargetService,
   contactService,
   getMonthlyTarget,
+  getScopeMonthlyTotals,
 } from "../../../services/supabaseService";
 import MonthlyTargetCard from "../../../components/MonthlyTargetCard";
 import SalesTargetAssignment from "../../../components/SalesTargetAssignment";
@@ -365,26 +366,23 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
       });
       setDirectorMonthlyTarget(directorResult);
 
-      // Company-level: sum monthly targets across all managers in the company
-      if (allEmployees.length > 0) {
-        const results = await Promise.all(
-          allEmployees
-            .filter(e => e.role === 'manager')
-            .map(m => getMonthlyTarget({
-              userId:    m.id,
-              companyId: selectedCompany.id,
-              dateFrom:  activeDateRange.from,
-              dateTo:    activeDateRange.to,
-            }))
-        );
-        const total   = results.reduce((s, r) => s + (r?.amount   || 0), 0);
-        const achieved = results.reduce((s, r) => s + (r?.achieved || 0), 0);
-        setCompanyMonthlyTotal(total);
-        setCompanyMonthlyAchieved(achieved);
-      } else {
-        setCompanyMonthlyTotal(0);
-        setCompanyMonthlyAchieved(0);
-      }
+      // Company-level: the whole achiever set, in one call, on the same scope
+      // and rules as the KPI strip — so these two tiles and the strip above
+      // them cannot disagree.
+      //
+      // This used to sum getMonthlyTarget over users whose role is 'manager'.
+      // Managers carry a yearly roll-up rather than monthly quotas, so the
+      // company's monthly target came out as whatever the two managers happened
+      // to hold (0 for September), and Achieved counted only their own deals —
+      // every salesman's and supervisor's invoices were missing.
+      const scope = await getScopeMonthlyTotals({
+        companyId: selectedCompany.id,
+        ownerIds:  null,                 // null = the whole company
+        start:     activeDateRange.from,
+        end:       activeDateRange.to,
+      });
+      setCompanyMonthlyTotal(scope.target);
+      setCompanyMonthlyAchieved(scope.achieved);
     } catch (err) {
       console.error('Error fetching director monthly targets:', err);
       setDirectorMonthlyTarget(null);
