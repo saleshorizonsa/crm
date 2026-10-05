@@ -31,6 +31,7 @@ const EMPTY_TOTALS = {
   planned: 0, required: 0, requiredRaw: 0, futureCarryover: 0, plannedGap: 0,
   wonNotInvoiced: EMPTY_WON_NOT_INVOICED,
   pacingApplies: false, coverageIsCurrentMonth: true,
+  hasTarget: false,
 };
 
 function monthBounds() {
@@ -126,6 +127,11 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
       companyId,
       ownerIds,
       monthlyTotal: Object.values(targetPer).reduce((sum, v) => sum + v, 0),
+      // The year the WINDOW is about. Without this, computeAnnualTarget fell
+      // back to new Date().getFullYear(), so an annual range over 2025 was
+      // measured against 2026's 40,660,779 yearly row — 2025's achievement
+      // against next year's target.
+      year: Number(String(winStart).slice(0, 4)) || undefined,
     });
   }
   // 3. Achieved — the one shared rule (utils/planningCalculations.js): INVOICED won
@@ -385,6 +391,11 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   const isHealthy = pacingApplies ? (coverageHealthy && pacingHealthy) : coverageHealthy;
 
   const totals = {
+    // Whether a target EXISTS for this scope and window, which is not the
+    // same question as whether it has been met. With no target row at all,
+    // deficit is 0 and attainment is 0 — so the strip used to report "Target
+    // met ✓" and "0.0% of target" for a period nobody had set a target for.
+    hasTarget: target > 0,
     target, achieved, deficit, winRate3m, winRateIsDefault,
     planned, monthFunnel: monthFunnelTotal, required, requiredRaw, futureCarryover, plannedGap,
     attainmentPct, funnelValue,
@@ -475,5 +486,11 @@ export async function computeDirectorAnnual({ companyId, year: yearArg = null })
 
   const deficit = Math.max(0, target - achieved);
   const attainmentPct = target > 0 ? (achieved / target) * 100 : 0;
-  return { target, achieved, deficit, dealCount, attainmentPct, year, yearStart, yearEnd };
+  // hasTarget: 2025 has no yearly row and no monthly rows in this database,
+  // so its target is 0 while its Achieved is real. The card has to say "no
+  // target set" rather than imply 0% of something.
+  return {
+    target, achieved, deficit, dealCount, attainmentPct,
+    hasTarget: target > 0, year, yearStart, yearEnd,
+  };
 }

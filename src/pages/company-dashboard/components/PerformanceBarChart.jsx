@@ -225,6 +225,15 @@ const PerformanceBarChart = ({
     };
   }, [chartData, activeSalesmenCount, allDeals]);
 
+  // Does a target exist for what is on screen? A period can have real revenue
+  // and no target at all — 2025 in this database has neither a yearly row nor
+  // monthly rows — and "0%" then reads as total failure rather than as "nobody
+  // set one". The annual card asks computeDirectorAnnual, which knows the same
+  // thing (annual.hasTarget).
+  const hasTargetInPeriod = annual
+    ? (annual.hasTarget !== undefined ? annual.hasTarget : (annual.target || 0) > 0)
+    : summaryStats.totalTarget > 0;
+
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
@@ -327,8 +336,10 @@ const PerformanceBarChart = ({
           <div className="text-xs text-blue-600 mb-1">
             {annual ? "Annual Target" : (t("common.target") || "Total Target")}
           </div>
-          <div className="text-lg font-bold text-blue-700">
-            {formatCurrency(annual ? annual.target : summaryStats.totalTarget)}
+          <div className={`text-lg font-bold ${hasTargetInPeriod ? "text-blue-700" : "text-gray-400"}`}>
+            {hasTargetInPeriod
+              ? formatCurrency(annual ? annual.target : summaryStats.totalTarget)
+              : "No target set"}
           </div>
         </div>
         <div className="bg-purple-50 rounded-lg p-3 text-center">
@@ -562,28 +573,36 @@ const PerformanceBarChart = ({
         </ResponsiveContainer>
       </div>
 
-      {/* Achievement Indicator */}
+      {/* Achievement Indicator. With no target in the period there is nothing
+          to be a percentage OF: 0% read as total failure where the truth is
+          that nobody set a target. */}
       <div className="mt-4 pt-4 border-t border-gray-200">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-gray-700">
             {t("dashboard.targetAchievement") || "Overall Achievement"}
           </span>
-          <span
-            className={`text-sm font-bold ${summaryStats.avgAchievement >= 100 ? "text-green-600" : summaryStats.avgAchievement >= 80 ? "text-orange-600" : "text-red-600"}`}
-          >
-            {summaryStats.avgAchievement}%
-          </span>
+          {hasTargetInPeriod ? (
+            <span
+              className={`text-sm font-bold ${summaryStats.avgAchievement >= 100 ? "text-green-600" : summaryStats.avgAchievement >= 80 ? "text-orange-600" : "text-red-600"}`}
+            >
+              {summaryStats.avgAchievement}%
+            </span>
+          ) : (
+            <span className="text-sm font-medium text-gray-400">No target set</span>
+          )}
         </div>
         <div className="w-full bg-gray-200 rounded-full h-2.5">
           <div
             className={`h-2.5 rounded-full transition-all duration-500 ${
-              summaryStats.avgAchievement >= 100
-                ? "bg-green-500"
-                : summaryStats.avgAchievement >= 80
-                  ? "bg-orange-500"
-                  : "bg-red-500"
+              !hasTargetInPeriod
+                ? "bg-gray-300"
+                : summaryStats.avgAchievement >= 100
+                  ? "bg-green-500"
+                  : summaryStats.avgAchievement >= 80
+                    ? "bg-orange-500"
+                    : "bg-red-500"
             }`}
-            style={{ width: `${Math.min(summaryStats.avgAchievement, 100)}%` }}
+            style={{ width: hasTargetInPeriod ? `${Math.min(summaryStats.avgAchievement, 100)}%` : '0%' }}
           ></div>
         </div>
         <div className="flex justify-between mt-1 text-xs text-gray-500">
@@ -599,26 +618,32 @@ const PerformanceBarChart = ({
           <span className="text-sm font-medium text-gray-700">
             Avg Achievement per Salesman
           </span>
-          <span
-            className="text-sm font-bold"
-            style={{
-              color:
-                summaryStats.avgSalesmanAchievement >= 100
-                  ? "#059669"
-                  : summaryStats.avgSalesmanAchievement >= 50
-                    ? "#D97706"
-                    : "#DC2626",
-            }}
-          >
-            {summaryStats.avgSalesmanAchievement.toFixed(1)}%
-          </span>
+          {hasTargetInPeriod ? (
+            <span
+              className="text-sm font-bold"
+              style={{
+                color:
+                  summaryStats.avgSalesmanAchievement >= 100
+                    ? "#059669"
+                    : summaryStats.avgSalesmanAchievement >= 50
+                      ? "#D97706"
+                      : "#DC2626",
+              }}
+            >
+              {summaryStats.avgSalesmanAchievement.toFixed(1)}%
+            </span>
+          ) : (
+            <span className="text-sm font-medium text-gray-400">No target set</span>
+          )}
         </div>
         <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
           <div
             className="h-full rounded-full transition-all duration-500"
             style={{
-              width: `${Math.min(summaryStats.avgSalesmanAchievement, 100)}%`,
-              background: "#0D9488",
+              width: hasTargetInPeriod
+                ? `${Math.min(summaryStats.avgSalesmanAchievement, 100)}%`
+                : '0%',
+              background: hasTargetInPeriod ? "#0D9488" : "#D1D5DB",
             }}
           />
         </div>
