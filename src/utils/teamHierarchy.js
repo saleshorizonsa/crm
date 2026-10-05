@@ -51,21 +51,56 @@ export async function fetchTeamHierarchy({ companyId, userId, role }) {
 
   if (!allUsers?.length) return [];
 
-  const seen = new Set(); // guards against a cyclic supervisor_id chain
-  const team = [];
-  const walk = (managerId) => {
-    for (const u of allUsers) {
-      if (u.supervisor_id === managerId && !seen.has(u.id)) {
-        seen.add(u.id);
-        team.push({ id: u.id, full_name: u.full_name, role: u.role });
-        walk(u.id);
-      }
-    }
-  };
-  walk(userId);
+  // The walk itself is subtreeIdsOf below — one copy, shared with the pure
+  // callers (utils/targetProgress.js) that already hold their users.
+  const byId = new Map(allUsers.map((u) => [u.id, u]));
+  const team = subtreeIdsOf({ users: allUsers, rootId: userId })
+    .map((id) => byId.get(id))
+    .filter(Boolean)
+    .map((u) => ({ id: u.id, full_name: u.full_name, role: u.role }));
 
   team.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
   return team;
+}
+
+/**
+ * Every id BELOW `rootId` in the supervisor_id tree, from a list of users
+ * already in hand: direct reports, their reports, and so on. The root itself is
+ * NOT included — callers decide whether the person counts alongside his team
+ * (a manager does only when users.is_contributor flags him; see
+ * achieverIdsFrom).
+ *
+ * Only ACTIVE users are walked, matching fetchTeamHierarchy's own query: an
+ * inactive supervisor does not pass his subtree through, which is deliberate —
+ * his reports are re-parented when he leaves, and until they are, counting
+ * through him would credit a team nobody manages.
+ *
+ * Breadth-first with a seen-set, so a cyclic supervisor_id terminates instead
+ * of recursing forever.
+ */
+export function subtreeIdsOf({ users, rootId }) {
+  if (!rootId || !Array.isArray(users) || !users.length) return [];
+  const childrenOf = new Map();
+  users.forEach((u) => {
+    if (!u?.id || !u.supervisor_id) return;
+    if (u.is_active === false) return;
+    if (!childrenOf.has(u.supervisor_id)) childrenOf.set(u.supervisor_id, []);
+    childrenOf.get(u.supervisor_id).push(u.id);
+  });
+
+  const seen = new Set([rootId]);
+  const out = [];
+  const queue = [rootId];
+  while (queue.length) {
+    const next = queue.shift();
+    (childrenOf.get(next) || []).forEach((id) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      out.push(id);
+      queue.push(id);
+    });
+  }
+  return out;
 }
 
 // ── Pure helpers, for deciding permission from an already-loaded users list ──

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import MetricsCard from "./MetricsCard";
 import SalesChart from "./SalesChart";
@@ -63,6 +63,13 @@ import {
 import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { fetchTeamHierarchy } from '../../../utils/teamHierarchy';
 import { ownAllocation, isSelfAssignedTarget, sumTargetAmount } from '../../../utils/selfTarget';
+import {
+  targetRowProgress,
+  withTargetRowProgress,
+  targetRowsWindow,
+  distinctPeopleScope,
+  achievedForRows,
+} from '../../../utils/targetProgress';
 import { Edit2 } from "lucide-react";
 import SalesTargetTable from "../../../components/SalesTargetTable";
 import { aggregateProductPerformance } from "../../../utils/productTargetUtils";
@@ -476,13 +483,31 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   // per card. computeAchieved narrows them per row by the same scope and window
   // it counts invoices over (computeReturns), so a January credit note cannot
   // reduce an October card.
-  const myTargetsWindow = useMemo(() => {
-    const days = (myTargets || [])
-      .flatMap((row) => [ymd(row?.period_start), ymd(row?.period_end)])
-      .filter(Boolean)
-      .sort();
-    return days.length ? { start: days[0], end: days[days.length - 1] } : null;
-  }, [myTargets]);
+  // Filter assigned targets whose period overlaps with activeDateRange
+  const filteredAssignedTargets = useMemo(() => {
+    if (!assignedTargets) return assignedTargets;
+    const from = new Date(activeDateRange.from + 'T00:00:00');
+    const to   = new Date(activeDateRange.to   + 'T23:59:59');
+    return assignedTargets.filter((target) => {
+      const targetStart = new Date(target.period_start);
+      const targetEnd   = new Date(target.period_end);
+      return targetStart <= to && targetEnd >= from;
+    });
+  }, [assignedTargets, activeDateRange.from, activeDateRange.to]);
+
+  // Widest window over BOTH sets of rows, because one read serves both.
+  const myTargetsWindow = useMemo(
+    () => targetRowsWindow([...(myTargets || []), ...(filteredAssignedTargets || [])]),
+    [myTargets, filteredAssignedTargets],
+  );
+
+  // The user rows the progress rule needs: role, is_active, is_contributor and
+  // supervisor_id, for him and everyone under him. getUserSubordinates returns
+  // full rows, so the subtree walk and achieverIdsFrom both have what they need.
+  const targetPeople = useMemo(
+    () => [effectiveUserProfile, ...(allSubordinates || [])].filter(Boolean),
+    [effectiveUserProfile, allSubordinates],
+  );
 
   const [myTargetReturns, setMyTargetReturns] = useState([]);
   useEffect(() => {
@@ -493,7 +518,11 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     }
     fetchReturns({
       companyId: company.id,
-      ownerIds: myTargetScopes.union,
+      // Everyone either set of rows can count, each once.
+      ownerIds: Array.from(new Set([
+        ...myTargetScopes.union,
+        ...distinctPeopleScope(filteredAssignedTargets || [], { users: targetPeople }),
+      ])),
       start: myTargetsWindow.start,
       end: myTargetsWindow.end,
     }).then((rows) => {
@@ -503,33 +532,38 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [company?.id, myTargetsWindow?.start, myTargetsWindow?.end, myTargetScopes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company?.id, myTargetsWindow?.start, myTargetsWindow?.end, myTargetScopes, filteredAssignedTargets, targetPeople]);
+
+  // Deal value in the currency the page is showing. The RULE is unchanged —
+  // only the unit (see targetRowProgress's amountOf).
+  const convertedAchievedAmount = useCallback((deal) => {
+    const amount = achievedAmount(deal);
+    const dealCurrency = deal.currency || preferredCurrency;
+    if (dealCurrency === preferredCurrency) return amount;
+    return convertCurrency(amount, dealCurrency, preferredCurrency);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferredCurrency]);
 
   /** target row id -> Achieved over that row's own period, net of returns. */
+  //
+  // This block WAS the one correct copy of the rule; it now calls the shared
+  // helper (utils/targetProgress.js) so the three other dashboards cannot
+  // drift from it again. Same scopes, same numbers: a Director-assigned row
+  // counts his subtree's achievers, a self-target counts only him.
   const myTargetsProgress = useMemo(() => {
-    const convertedAchievedAmount = (deal) => {
-      const amount = achievedAmount(deal);
-      const dealCurrency = deal.currency || preferredCurrency;
-      if (dealCurrency === preferredCurrency) return amount;
-      return convertCurrency(amount, dealCurrency, preferredCurrency);
-    };
     const byRow = {};
     (myTargets || []).forEach((row) => {
-      const start = ymd(row?.period_start);
-      const end = ymd(row?.period_end) || start;
-      if (!row?.id || !start) return;
-      byRow[row.id] = computeAchieved({
+      if (!row?.id) return;
+      byRow[row.id] = targetRowProgress(row, {
         deals: allDeals,
-        contributorIds: isSelfAssignedTarget(row) ? myTargetScopes.self : myTargetScopes.team,
-        start,
-        end,
-        amountOf: convertedAchievedAmount,
         returns: myTargetReturns,
-      }).total;
+        users: targetPeople,
+        amountOf: convertedAchievedAmount,
+      });
     });
     return byRow;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myTargets, allDeals, myTargetReturns, myTargetScopes, preferredCurrency]);
+  }, [myTargets, allDeals, myTargetReturns, targetPeople, convertedAchievedAmount]);
 
   // Achieved for one row — 0 while the deals are still loading. The stored
   // progress_amount column is deliberately NOT a fallback: it is stale, and it
@@ -618,18 +652,6 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     [clientTargetRows, clientAchievedByRow],
   );
 
-  // Filter assigned targets whose period overlaps with activeDateRange
-  const filteredAssignedTargets = useMemo(() => {
-    if (!assignedTargets) return assignedTargets;
-    const from = new Date(activeDateRange.from + 'T00:00:00');
-    const to   = new Date(activeDateRange.to   + 'T23:59:59');
-    return assignedTargets.filter((target) => {
-      const targetStart = new Date(target.period_start);
-      const targetEnd   = new Date(target.period_end);
-      return targetStart <= to && targetEnd >= from;
-    });
-  }, [assignedTargets, activeDateRange.from, activeDateRange.to]);
-
   // The three summary figures, each from ONE period-filtered set, so they
   // reconcile: Allocated − Assigned = Available. Total Allocated used to sum
   // every row of myTargets — every period, yearly AND monthly, self-targets
@@ -647,60 +669,36 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
   //   progress = sum of won-deal amounts owned by the assignee (and, if the
   //   assignee is a manager/supervisor/head, by their subordinates too)
   //   that close inside that target's period_start..period_end window.
+  // "Total Achieved" under a selection in the table: Achieved over the
+  // DISTINCT people those rows cover, for their own window — not a sum of
+  // row progress, which counted one person's revenue once per row.
+  const totalAchievedForRows = useCallback(
+    (rows) => achievedForRows(rows, {
+      deals: allDeals || [],
+      returns: myTargetReturns,
+      users: targetPeople,
+      amountOf: convertedAchievedAmount,
+      ...(targetRowsWindow(rows) || {}),
+    }),
+    [allDeals, myTargetReturns, targetPeople, convertedAchievedAmount],
+  );
+
+  // Progress on the rows this manager ASSIGNED, by the one shared rule
+  // (utils/targetProgress.js). It was: stage = 'won' by closed_at at
+  // `amount`, for the assignee plus his DIRECT children — uninvoiced deals
+  // counted, credit notes ignored, and a supervisor's personal quota inflated
+  // by his whole team.
   const assignedTargetsWithProgress = useMemo(() => {
     if (!filteredAssignedTargets || filteredAssignedTargets.length === 0) {
       return filteredAssignedTargets || [];
     }
-    const deals = allDeals || [];
-    const subs = allSubordinates || [];
-
-    // Map: assigneeId -> [direct subordinate ids]
-    const childIdsByParent = subs.reduce((acc, s) => {
-      if (s.supervisor_id) {
-        if (!acc[s.supervisor_id]) acc[s.supervisor_id] = [];
-        acc[s.supervisor_id].push(s.id);
-      }
-      return acc;
-    }, {});
-
-    return filteredAssignedTargets.map((target) => {
-      const periodStart = new Date(target.period_start);
-      const periodEnd = new Date(target.period_end);
-      periodEnd.setHours(23, 59, 59, 999);
-
-      const isInPeriod = (deal) => {
-        const dateStr =
-          deal.stage === "won" ? deal.closed_at : deal.created_at;
-        if (!dateStr) return false;
-        const d = new Date(dateStr);
-        return d >= periodStart && d <= periodEnd;
-      };
-
-      // Determine which user ids contribute to this target
-      const assignee = subs.find((s) => s.id === target.assigned_to);
-      const assigneeRole = assignee?.role || target.assignee?.role;
-      const includeSubordinates =
-        assigneeRole === "manager" ||
-        assigneeRole === "supervisor" ||
-        assigneeRole === "head";
-
-      const ownerIds = new Set([target.assigned_to]);
-      if (includeSubordinates) {
-        (childIdsByParent[target.assigned_to] || []).forEach((id) =>
-          ownerIds.add(id),
-        );
-      }
-
-      const calculated_progress = deals
-        .filter(
-          (d) =>
-            d.stage === "won" && ownerIds.has(d.owner_id) && isInPeriod(d),
-        )
-        .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-
-      return { ...target, calculated_progress };
+    return withTargetRowProgress(filteredAssignedTargets, {
+      deals: allDeals || [],
+      returns: myTargetReturns,
+      users: targetPeople,
+      amountOf: convertedAchievedAmount,
     });
-  }, [filteredAssignedTargets, allDeals, allSubordinates]);
+  }, [filteredAssignedTargets, allDeals, myTargetReturns, targetPeople, convertedAchievedAmount]);
 
   const periodFilteredProductTargets = useMemo(() => {
     const visibleTargetIds = new Set(
@@ -3438,6 +3436,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                     return true;
                   })}
                   role="manager"
+                  totalAchievedFor={totalAchievedForRows}
                   onEdit={handleEditTarget}
                   onDelete={handleDeleteTargetDirect}
                   headerControls={

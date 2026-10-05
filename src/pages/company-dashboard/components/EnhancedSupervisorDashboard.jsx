@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import MetricsCard from "./MetricsCard";
 import SalesChart from "./SalesChart";
@@ -22,6 +22,19 @@ import {
 import MonthlyTargetCard from "../../../components/MonthlyTargetCard";
 import SupervisorSalesTargetAssignment from "../../../components/SupervisorSalesTargetAssignment";
 import SalesTargetTable from "../../../components/SalesTargetTable";
+import {
+  achievedAmount,
+  computeAchieved,
+  fetchReturns,
+  targetPerPerson,
+  achieverIdsFrom,
+} from "../../../utils/planningCalculations";
+import {
+  withTargetRowProgress,
+  targetRowsWindow,
+  distinctPeopleScope,
+  achievedForRows,
+} from "../../../utils/targetProgress";
 import PipelineChart from "./PipelineChart";
 import ActionableDashboard from "./ActionableDashboard";
 import HotLeadsWidget from "./HotLeadsWidget";
@@ -84,6 +97,16 @@ const EnhancedSupervisorDashboard = ({
     if (dealCurrency === preferredCurrency) return amount;
     return convertCurrency(amount, dealCurrency, preferredCurrency);
   };
+  // The same conversion around the ACHIEVED value (final_amount ?? amount):
+  // once a deal is invoiced, final_amount is what was invoiced. The RULE is
+  // untouched — only the unit.
+  const convertedAchievedAmount = useCallback((deal) => {
+    const amount = achievedAmount(deal);
+    const dealCurrency = deal.currency || preferredCurrency;
+    if (dealCurrency === preferredCurrency) return amount;
+    return convertCurrency(amount, dealCurrency, preferredCurrency);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferredCurrency]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeView, setActiveView] = useState("overview");
 
@@ -579,6 +602,85 @@ const EnhancedSupervisorDashboard = ({
     return t("dashboard.currentPeriod");
   };
 
+  // ── Target-row progress ───────────────────────────────────────────────────
+  //
+  // ONE rule, shared with the other three dashboards and with plan submission
+  // (utils/targetProgress.js). A row assigned to this supervisor is a PERSONAL
+  // quota: his OWN Achieved in the row's own period — NOT his team's. A row he
+  // assigned to a salesman is that salesman's own Achieved.
+  //
+  // Achieved is the shared rule: won AND invoiced, by invoice_date, at
+  // final_amount ?? amount, net of returns. It used to be stage = 'won' by
+  // closed_at at `amount`, with the whole team's revenue added to every one of
+  // his own rows — so Amer's September card read his team's number against a
+  // quota that is his alone.
+  const targetPeople = useMemo(
+    () => [effectiveUserProfile, ...(allSubordinates || [])].filter(Boolean),
+    [effectiveUserProfile, allSubordinates],
+  );
+
+  // Returns read ONCE over the widest window every row covers, for everyone
+  // those rows can count; computeAchieved narrows them per row afterwards.
+  const targetReturnsWindow = useMemo(
+    () => targetRowsWindow([...(myTargets || []), ...(assignedTargets || [])]),
+    [myTargets, assignedTargets],
+  );
+  const targetReturnPeople = useMemo(() => Array.from(new Set([
+    ...(effectiveUser?.id ? [effectiveUser.id] : []),
+    ...distinctPeopleScope([...(myTargets || []), ...(assignedTargets || [])], { users: targetPeople }),
+  ])), [myTargets, assignedTargets, targetPeople, effectiveUser?.id]);
+
+  const [targetRowReturns, setTargetRowReturns] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    if (!company?.id || !targetReturnsWindow || !targetReturnPeople.length) {
+      setTargetRowReturns([]);
+      return undefined;
+    }
+    fetchReturns({
+      companyId: company.id,
+      ownerIds: targetReturnPeople,
+      start: targetReturnsWindow.start,
+      end: targetReturnsWindow.end,
+      // A failed read degrades to gross Achieved (fetchReturns logs and
+      // returns []), which is what these cards showed before returns existed.
+    }).then((rows) => { if (alive) setTargetRowReturns(rows || []); });
+    return () => { alive = false; };
+  }, [company?.id, targetReturnsWindow, targetReturnPeople]);
+
+  const targetProgressCtx = useMemo(() => ({
+    deals: allDeals || [],
+    returns: targetRowReturns,
+    users: targetPeople,
+    amountOf: convertedAchievedAmount,
+  }), [allDeals, targetRowReturns, targetPeople, convertedAchievedAmount]);
+
+  /** His own rows, each with Achieved over its own period. */
+  const myTargetsWithProgress = useMemo(
+    () => withTargetRowProgress(myTargets || [], targetProgressCtx),
+    [myTargets, targetProgressCtx],
+  );
+
+  /** His OWN Achieved over the selected period — what his quota is measured by. */
+  const myAchievedInPeriod = useMemo(() => computeAchieved({
+    deals: allDeals || [],
+    contributorIds: effectiveUser?.id ? [effectiveUser.id] : [],
+    start: activeDateRange.from,
+    end: activeDateRange.to,
+    amountOf: convertedAchievedAmount,
+    returns: targetRowReturns,
+  }).total, [allDeals, effectiveUser?.id, activeDateRange.from, activeDateRange.to, convertedAchievedAmount, targetRowReturns]);
+
+  /** His team's Achieved over the same period — context, NOT part of his quota. */
+  const teamAchievedInPeriod = useMemo(() => computeAchieved({
+    deals: allDeals || [],
+    contributorIds: achieverIdsFrom(allSubordinates || []),
+    start: activeDateRange.from,
+    end: activeDateRange.to,
+    amountOf: convertedAchievedAmount,
+    returns: targetRowReturns,
+  }).total, [allDeals, allSubordinates, activeDateRange.from, activeDateRange.to, convertedAchievedAmount, targetRowReturns]);
+
   // Filter targets whose period overlaps with activeDateRange
   const filteredMyTargets = useMemo(() => {
     if (!myTargets) return myTargets;
@@ -591,95 +693,48 @@ const EnhancedSupervisorDashboard = ({
     });
   }, [myTargets, activeDateRange.from, activeDateRange.to]);
 
-  // Recalculate target progress based on filtered deals for the selected filters
+  /** His own target for the selected period, by the shared per-person rule. */
+  const myTargetInPeriod = useMemo(() => Object.values(
+    targetPerPerson((filteredMyTargets || []).filter((t) => (t.status || 'active') === 'active')),
+  ).reduce((sum, v) => sum + v, 0), [filteredMyTargets]);
+
+  // His own rows for the selected period, each with Achieved over its OWN
+  // period (the shared helper), plus the two figures the card shows beside it:
+  //   supervisor_revenue        his own Achieved — what the quota is measured by
+  //   subordinates_contribution his team's Achieved in the same window, shown
+  //                             as context and NOT added to his progress
+  // The old version added the team to every row, so one person's quota was
+  // reported against the whole team's revenue, once per row.
   const targetsWithRecalculatedProgress = useMemo(() => {
-    // If no deals at all, return targets as-is
-    if (!allDeals?.length) {
-      return filteredMyTargets;
+    const rows = (myTargetsWithProgress || []).filter((row) =>
+      (filteredMyTargets || []).some((f) => f.id === row.id));
+
+    // No target for this period: one synthetic card, so the period's own
+    // numbers are still visible. Target 0, so attainment is not implied.
+    if (!rows.length) {
+      return [{
+        id: "synthetic-period-target",
+        target_amount: 0,
+        calculated_progress: myAchievedInPeriod,
+        supervisor_revenue: myAchievedInPeriod,
+        subordinates_contribution: teamAchievedInPeriod,
+        period_type: selectedMonth !== null ? "month" : selectedQuarter !== null ? "quarter" : "year",
+        is_synthetic: true,
+      }];
     }
 
-    // Get subordinate IDs from allSubordinates (includes all team members)
-    const teamSubordinateIds = allSubordinates?.map((s) => s.id) || [];
-
-    // All won deals across the company (unfiltered by time — each target filters its own window)
-    const allWonDeals = allDeals.filter((d) => d.stage === "won");
-
-    // Helper: is a deal date inside a target's period_start … period_end?
-    const isInTargetPeriod = (deal, target) => {
-      const date = new Date(dealDate(deal));
-      const start = new Date(target.period_start);
-      const end = new Date(target.period_end);
-      // Normalise end to end-of-day
-      end.setHours(23, 59, 59, 999);
-      return date >= start && date <= end;
-    };
-
-    // Determine period type based on which filter is active
-    const periodType =
-      selectedMonth !== null
-        ? "month"
-        : selectedQuarter !== null
-          ? "quarter"
-          : "year";
-
-    // If there are no targets for this period, use the global filter to build a synthetic card
-    if (!filteredMyTargets.length) {
-      const dealsInPeriod = allWonDeals.filter((d) =>
-        isInSelectedPeriod(dealDate(d)),
-      );
-      const supervisorRevenue =
-        dealsInPeriod
-          .filter((d) => d.owner_id === effectiveUser?.id)
-          .reduce((sum, d) => sum + getConvertedAmount(d), 0) || 0;
-      const subordinatesRevenue =
-        dealsInPeriod
-          .filter((d) => teamSubordinateIds.includes(d.owner_id))
-          .reduce((sum, d) => sum + getConvertedAmount(d), 0) || 0;
-
-      return [
-        {
-          id: "synthetic-period-target",
-          target_amount: 0,
-          calculated_progress: supervisorRevenue + subordinatesRevenue,
-          supervisor_revenue: supervisorRevenue,
-          subordinates_contribution: subordinatesRevenue,
-          period_type: periodType,
-          is_synthetic: true, // Flag to indicate this is not a real target
-        },
-      ];
-    }
-
-    // For each target, compute revenue only for that target's own period window
-    return filteredMyTargets.map((target) => {
-      const dealsInTargetPeriod = allWonDeals.filter((d) =>
-        isInTargetPeriod(d, target),
-      );
-
-      const supervisorRevenue =
-        dealsInTargetPeriod
-          .filter((d) => d.owner_id === effectiveUser?.id)
-          .reduce((sum, d) => sum + getConvertedAmount(d), 0) || 0;
-
-      const subordinatesRevenue =
-        dealsInTargetPeriod
-          .filter((d) => teamSubordinateIds.includes(d.owner_id))
-          .reduce((sum, d) => sum + getConvertedAmount(d), 0) || 0;
-
-      return {
-        ...target,
-        calculated_progress: supervisorRevenue + subordinatesRevenue,
-        supervisor_revenue: supervisorRevenue,
-        subordinates_contribution: subordinatesRevenue,
-      };
-    });
+    return rows.map((row) => ({
+      ...row,
+      supervisor_revenue: row.calculated_progress,
+      subordinates_contribution: teamAchievedInPeriod,
+    }));
   }, [
+    myTargetsWithProgress,
     filteredMyTargets,
-    allDeals,
-    activeDateRange.from,
-    activeDateRange.to,
-    effectiveUser?.id,
-    allSubordinates,
-    preferredCurrency,
+    myAchievedInPeriod,
+    teamAchievedInPeriod,
+    selectedMonth,
+    selectedQuarter,
   ]);
 
   // Filter assigned targets whose period overlaps with activeDateRange
@@ -694,64 +749,26 @@ const EnhancedSupervisorDashboard = ({
     });
   }, [assignedTargets, activeDateRange.from, activeDateRange.to]);
 
-  // Recalculate per-subordinate target progress from deals.
-  // The DB column `progress_amount` is not auto-updated when deals close,
-  // so we derive it on the client. For each target:
-  //   progress = sum of won-deal amounts owned by the assignee (and, if the
-  //   assignee is a manager/supervisor/head, by their subordinates too)
-  //   that close inside that target's period_start..period_end window.
+  // "Total Achieved" under a selection in the table: Achieved over the
+  // DISTINCT people those rows cover, for their own window — not a sum of
+  // row progress, which counted one person's revenue once per row.
+  const totalAchievedForRows = useCallback(
+    (rows) => achievedForRows(rows, {
+      ...targetProgressCtx,
+      ...(targetRowsWindow(rows) || {}),
+    }),
+    [targetProgressCtx],
+  );
+
+  // Progress on the rows he ASSIGNED, by the one shared rule
+  // (utils/targetProgress.js). It was: stage = 'won' by closed_at at
+  // `amount`, for the assignee plus his DIRECT children.
   const assignedTargetsWithProgress = useMemo(() => {
     if (!filteredAssignedTargets || filteredAssignedTargets.length === 0) {
       return filteredAssignedTargets || [];
     }
-    const deals = allDeals || [];
-    const subs = allSubordinates || [];
-
-    const childIdsByParent = subs.reduce((acc, s) => {
-      if (s.supervisor_id) {
-        if (!acc[s.supervisor_id]) acc[s.supervisor_id] = [];
-        acc[s.supervisor_id].push(s.id);
-      }
-      return acc;
-    }, {});
-
-    return filteredAssignedTargets.map((target) => {
-      const periodStart = new Date(target.period_start);
-      const periodEnd = new Date(target.period_end);
-      periodEnd.setHours(23, 59, 59, 999);
-
-      const isInPeriod = (deal) => {
-        const dateStr =
-          deal.stage === "won" ? deal.closed_at : deal.created_at;
-        if (!dateStr) return false;
-        const d = new Date(dateStr);
-        return d >= periodStart && d <= periodEnd;
-      };
-
-      const assignee = subs.find((s) => s.id === target.assigned_to);
-      const assigneeRole = assignee?.role || target.assignee?.role;
-      const includeSubordinates =
-        assigneeRole === "manager" ||
-        assigneeRole === "supervisor" ||
-        assigneeRole === "head";
-
-      const ownerIds = new Set([target.assigned_to]);
-      if (includeSubordinates) {
-        (childIdsByParent[target.assigned_to] || []).forEach((id) =>
-          ownerIds.add(id),
-        );
-      }
-
-      const calculated_progress = deals
-        .filter(
-          (d) =>
-            d.stage === "won" && ownerIds.has(d.owner_id) && isInPeriod(d),
-        )
-        .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-
-      return { ...target, calculated_progress };
-    });
-  }, [filteredAssignedTargets, allDeals, allSubordinates]);
+    return withTargetRowProgress(filteredAssignedTargets, targetProgressCtx);
+  }, [filteredAssignedTargets, targetProgressCtx]);
 
   const periodFilteredProductTargets = useMemo(() => {
     const visibleTargetIds = new Set(
@@ -1287,102 +1304,14 @@ const EnhancedSupervisorDashboard = ({
         effectiveUser.id,
       );
 
-      // Calculate progress including supervisor's own revenue + subordinates' revenue
+      // Progress is NOT computed here any more. myTargetsWithProgress does it
+      // with the one shared rule, over each row's own period and net of
+      // returns — none of which this block could do: it had no returns, it
+      // counted won-but-uninvoiced deals by closed_at at `amount`, and it
+      // added the whole team to a quota that belongs to one person.
       if (myTargetsData && myTargetsData.length > 0) {
         const deals = scopedDeals;
-
-        console.log("🎯 Deals loaded for target calculation:", deals?.length);
-        console.log(
-          "🎯 Won deals:",
-          deals
-            ?.filter((d) => d.stage === "won")
-            .map((d) => ({
-              title: d.title,
-              owner_id: d.owner_id,
-              amount: d.amount,
-            })),
-        );
-
-        // Get supervisor's own won deals revenue
-        const supervisorRevenue =
-          deals
-            ?.filter(
-              (d) => d.stage === "won" && d.owner_id === effectiveUser.id,
-            )
-            ?.reduce((sum, d) => sum + getConvertedAmount(d), 0) || 0;
-
-        // Get subordinates' won deals revenue (using fresh subordinate IDs)
-        const subordinatesRevenue =
-          deals
-            ?.filter(
-              (d) =>
-                d.stage === "won" && freshSubordinateIds.includes(d.owner_id),
-            )
-            ?.reduce((sum, d) => sum + getConvertedAmount(d), 0) || 0;
-
-        console.log("🎯 Target Progress Calculation:");
-        console.log("  - Total deals loaded:", deals?.length);
-        console.log("  - Fresh Subordinate IDs:", freshSubordinateIds);
-        console.log("  - Supervisor revenue:", supervisorRevenue);
-        console.log("  - Subordinates revenue:", subordinatesRevenue);
-        console.log(
-          "  - Subordinates won deals:",
-          deals?.filter(
-            (d) =>
-              d.stage === "won" && freshSubordinateIds.includes(d.owner_id),
-          ),
-        );
-
-        // Update targets with calculated progress PER TARGET (filter by period)
-        const targetsWithProgress = myTargetsData.map((target) => {
-          // Filter deals that closed within this target's period
-          const periodStart = new Date(target.period_start);
-          const periodEnd = new Date(target.period_end);
-          periodEnd.setHours(23, 59, 59, 999); // Include the entire end date
-
-          const dealsInPeriod =
-            deals?.filter((d) => {
-              if (d.stage !== "won") return false;
-
-              // Use closed_at if available, otherwise fall back to created_at
-              const dealDate = d.closed_at
-                ? new Date(d.closed_at)
-                : new Date(d.created_at);
-              return dealDate >= periodStart && dealDate <= periodEnd;
-            }) || [];
-
-          // Calculate supervisor revenue for this period
-          const supervisorRevenueForPeriod = dealsInPeriod
-            .filter((d) => d.owner_id === effectiveUser.id)
-            .reduce((sum, d) => sum + getConvertedAmount(d), 0);
-
-          // Calculate subordinates revenue for this period
-          const subordinatesRevenueForPeriod = dealsInPeriod
-            .filter((d) => freshSubordinateIds.includes(d.owner_id))
-            .reduce((sum, d) => sum + getConvertedAmount(d), 0);
-
-          const totalProgressForPeriod =
-            supervisorRevenueForPeriod + subordinatesRevenueForPeriod;
-
-          console.log(
-            `🎯 Target ${target.period_start} to ${target.period_end}:`,
-          );
-          console.log(`  - Deals in period: ${dealsInPeriod.length}`);
-          console.log(`  - Supervisor revenue: ${supervisorRevenueForPeriod}`);
-          console.log(
-            `  - Subordinates revenue: ${subordinatesRevenueForPeriod}`,
-          );
-          console.log(`  - Total progress: ${totalProgressForPeriod}`);
-
-          return {
-            ...target,
-            calculated_progress: totalProgressForPeriod,
-            supervisor_revenue: supervisorRevenueForPeriod,
-            subordinates_contribution: subordinatesRevenueForPeriod,
-          };
-        });
-
-        setMyTargets(targetsWithProgress);
+        setMyTargets(myTargetsData);
 
         // Load client targets for client-based targets
         const clientBasedTargetIds = myTargetsData
@@ -1613,19 +1542,12 @@ const EnhancedSupervisorDashboard = ({
                 </h3>
                 <div className="flex items-center gap-4">
                   {(() => {
-                    const totalTarget = targetsWithRecalculatedProgress.reduce(
-                      (sum, t) => sum + parseFloat(t.target_amount || 0),
-                      0,
-                    );
-                    const totalAchieved =
-                      targetsWithRecalculatedProgress.reduce(
-                        (sum, t) =>
-                          sum +
-                          parseFloat(
-                            t.calculated_progress || t.progress_amount || 0,
-                          ),
-                        0,
-                      );
+                    // Target: the shared per-person rule for the selected
+                    // period (targetPerPerson), not a raw sum of rows.
+                    // Achieved: his OWN Achieved for that period, ONCE —
+                    // this used to add the whole team once per target row.
+                    const totalTarget = myTargetInPeriod;
+                    const totalAchieved = myAchievedInPeriod;
                     const overallProgress =
                       totalTarget > 0 ? (totalAchieved / totalTarget) * 100 : 0;
                     return (
@@ -1652,49 +1574,36 @@ const EnhancedSupervisorDashboard = ({
 
               {/* Summary Stats - Fixed calculations */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {/* Four figures, each for the SELECTED period and each read
+                    once. Total Achieved was row[0]'s own revenue plus its
+                    team contribution — one row's number labelled as the
+                    total — and Remaining went negative past target. */}
                 <div className="bg-blue-50 rounded-lg p-4 text-center min-w-0 overflow-hidden">
                   <div className="text-lg font-bold tabular-nums text-blue-700">
-                    {formatCurrency(
-                      targetsWithRecalculatedProgress.reduce(
-                        (sum, t) => sum + parseFloat(t.target_amount || 0),
-                        0,
-                      ),
-                    )}
+                    {formatCurrency(myTargetInPeriod)}
                   </div>
                   <div className="text-sm text-blue-600">{t("dashboard.totalTarget")}</div>
                 </div>
                 <div className="bg-green-50 rounded-lg p-4 text-center min-w-0 overflow-hidden">
                   <div className="text-lg font-bold tabular-nums text-green-700">
-                    {formatCurrency(
-                      (targetsWithRecalculatedProgress[0]?.supervisor_revenue ||
-                        0) +
-                        (targetsWithRecalculatedProgress[0]
-                          ?.subordinates_contribution || 0),
-                    )}
+                    {formatCurrency(myAchievedInPeriod)}
                   </div>
                   <div className="text-sm text-green-600">{t("dashboard.totalAchieved")}</div>
                 </div>
+                {/* His team's Achieved, for context. A row assigned to him is
+                    a PERSONAL quota, so this is deliberately NOT added to
+                    the two figures above. */}
                 <div className="bg-purple-50 rounded-lg p-4 text-center min-w-0 overflow-hidden">
                   <div className="text-lg font-bold tabular-nums text-purple-700">
-                    {formatCurrency(
-                      targetsWithRecalculatedProgress[0]?.supervisor_revenue ||
-                        0,
-                    )}
+                    {formatCurrency(teamAchievedInPeriod)}
                   </div>
-                  <div className="text-sm text-purple-600">{t("dashboard.yourRevenue")}</div>
+                  <div className="text-sm text-purple-600">{t("dashboard.teamRevenue")}</div>
                 </div>
                 <div className="bg-red-500 rounded-lg p-4 text-center min-w-0 overflow-hidden">
                   <div className="text-lg font-bold tabular-nums text-white">
-                    {formatCurrency(
-                      targetsWithRecalculatedProgress.reduce(
-                        (sum, t) => sum + parseFloat(t.target_amount || 0),
-                        0,
-                      ) -
-                        ((targetsWithRecalculatedProgress[0]
-                          ?.supervisor_revenue || 0) +
-                          (targetsWithRecalculatedProgress[0]
-                            ?.subordinates_contribution || 0)),
-                    )}
+                    {/* Floored: past target there is nothing left to sell, and
+                        a negative "Remaining" read as a deficit. */}
+                    {formatCurrency(Math.max(0, myTargetInPeriod - myAchievedInPeriod))}
                   </div>
                   <div className="text-sm text-white">{t("dashboard.remainingRevenue")}</div>
                 </div>
@@ -1706,7 +1615,9 @@ const EnhancedSupervisorDashboard = ({
                   {targetsWithRecalculatedProgress.map((target) => {
                     const supervisorRev = target.supervisor_revenue || 0;
                     const teamRev = target.subordinates_contribution || 0;
-                    const progressAmount = supervisorRev + teamRev;
+                    // His own Achieved for THIS row's period. The team figure
+                    // is shown beside it but is not part of a personal quota.
+                    const progressAmount = target.calculated_progress || 0;
                     const progress =
                       (parseFloat(progressAmount) /
                         parseFloat(target.target_amount || 1)) *
@@ -2496,7 +2407,7 @@ const EnhancedSupervisorDashboard = ({
               </div>
             </div>
 
-            {myTargets.length > 0 ? (
+            {myTargetsWithProgress.length > 0 ? (
               <div className="space-y-6">
                 {/* Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2506,7 +2417,7 @@ const EnhancedSupervisorDashboard = ({
                     </p>
                     <p className="text-lg font-bold tabular-nums text-green-700">
                       {formatCurrency(
-                        myTargets.reduce(
+                        myTargetsWithProgress.reduce(
                           (sum, t) => sum + (parseFloat(t.target_amount) || 0),
                           0,
                         ),
@@ -2552,7 +2463,7 @@ const EnhancedSupervisorDashboard = ({
 
                 {/* Target Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {myTargets.map((target) => {
+                  {myTargetsWithProgress.map((target) => {
                     const progress =
                       parseFloat(target.target_amount) > 0
                         ? (parseFloat(
@@ -3358,6 +3269,7 @@ const EnhancedSupervisorDashboard = ({
                 return true;
               })}
               role="supervisor"
+              totalAchievedFor={totalAchievedForRows}
               onEdit={handleEditTarget}
               onDelete={handleDeleteTargetDirect}
               headerControls={

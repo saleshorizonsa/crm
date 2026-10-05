@@ -36,6 +36,19 @@ const SalesTargetTable = ({
   loading = false,
   title = "Active Sales Targets",
   headerControls = null,
+  /**
+   * Achieved over the DISTINCT people a set of rows covers, for the selected
+   * period — (rows) => number.
+   *
+   * The table cannot compute this: it holds no deals, and summing the rows'
+   * own progress is wrong, because a person with three rows in a month (a
+   * total_value, a by_products and a by_clients commitment) has ONE set of
+   * invoices and would have his revenue counted three times. The parent
+   * supplies it from the one shared rule (utils/targetProgress.js
+   * achievedForRows). Without the prop the old per-row sum is kept, so a
+   * caller that has not been wired up behaves exactly as before.
+   */
+  totalAchievedFor = null,
 }) => {
   const { formatCurrency } = useCurrency();
   const [view, setView] = useState("value");
@@ -90,12 +103,17 @@ const SalesTargetTable = ({
       0,
     );
 
-    const totalAchieved = selected.reduce(
-      (s, t) =>
-        s + parseFloat(t.calculated_progress ?? t.progress_amount ?? 0),
-      0,
-    );
+    // Over the distinct PEOPLE, not over the rows — see totalAchievedFor.
+    const totalAchieved = totalAchievedFor
+      ? totalAchievedFor(selected)
+      : selected.reduce(
+          (s, t) => s + parseFloat(t.calculated_progress ?? t.progress_amount ?? 0),
+          0,
+        );
 
+    // Per ROW, and deliberately so: each row carries its own commitment and its
+    // own period, so a person with three rows has three gaps to close. Only the
+    // Achieved total above would double-count him.
     const totalRemaining = selected.reduce((s, t) => {
       const tgt = parseFloat(t.target_amount || 0);
       const ach = parseFloat(t.calculated_progress ?? t.progress_amount ?? 0);
@@ -132,7 +150,7 @@ const SalesTargetTable = ({
       avgAttainment,
       byType,
     };
-  }, [selectedTargets, targets]);
+  }, [selectedTargets, targets, totalAchievedFor]);
 
   const getInitial = (name) => (name || "?")[0].toUpperCase();
 

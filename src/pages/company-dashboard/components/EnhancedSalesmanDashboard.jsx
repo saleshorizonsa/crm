@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import MetricsCard from "./MetricsCard";
 import SalesChart from "./SalesChart";
 import ActivityFeed from "./ActivityFeed";
@@ -49,7 +49,13 @@ import { classifyDealsByOrigin } from '../../../utils/dealGroupUtils';
 import { fetchWinRate3m } from "../../../utils/winRate3m";
 import KPICardsStrip from "../../../components/dashboard/KPICardsStrip";
 import { computeKpiStripData } from "../../../utils/kpiStripData";
-import { targetPerPerson } from "../../../utils/planningCalculations";
+import {
+  targetPerPerson,
+  achievedAmount,
+  computeAchieved,
+  fetchReturns,
+} from "../../../utils/planningCalculations";
+import { withTargetRowProgress, targetRowsWindow, achievedForRows } from "../../../utils/targetProgress";
 import TargetChangeBanner from "../../../components/dashboard/TargetChangeBanner";
 import LogActivityModal from '../../../components/LogActivityModal';
 
@@ -334,42 +340,89 @@ const EnhancedSalesmanDashboard = ({
     });
   }, [myTargets, activeDateRange.from, activeDateRange.to]);
 
-  // Recalculate per-target progress from this salesman's won deals.
-  // The DB column `progress_amount` is not auto-updated when deals close,
-  // so we derive it on the client (mirrors Manager/Supervisor dashboards).
-  // Each target's progress = sum of won-deal amounts whose close date falls
-  // inside that target's own period_start..period_end window.
+  // ── Target-row progress ───────────────────────────────────────────────────
+  //
+  // ONE rule, shared with the other three dashboards and with plan submission
+  // (utils/targetProgress.js): a salesman's row is a PERSONAL quota, so
+  // progress is his own Achieved inside the row's own period — won AND
+  // invoiced, by invoice_date, at final_amount ?? amount, net of returns.
+  //
+  // It was stage = 'won' by closed_at at `amount`: deals that were won but
+  // never invoiced counted, the value was the pre-invoice one, the date was
+  // the day the deal closed rather than the day it was invoiced, and credit
+  // notes were ignored. For Mohamed Hussein's September row that read 89,634
+  // against an Achieved of 94,279.
+  //
+  // Deal value in the currency the page is showing; the RULE is unchanged.
+  const convertedAchievedAmount = useCallback((deal) => {
+    const amount = achievedAmount(deal);
+    const dealCurrency = deal.currency || preferredCurrency;
+    if (dealCurrency === preferredCurrency) return amount;
+    return convertCurrency(amount, dealCurrency, preferredCurrency);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferredCurrency]);
+
+  // Returns read ONCE over the widest window his rows cover plus the selected
+  // period, which is what the Total Revenue card is measured over.
+  const myReturnsWindow = useMemo(() => {
+    const rows = targetRowsWindow(myTargets || []);
+    const days = [rows?.start, rows?.end, activeDateRange.from, activeDateRange.to]
+      .filter(Boolean).sort();
+    return days.length ? { start: days[0], end: days[days.length - 1] } : null;
+  }, [myTargets, activeDateRange.from, activeDateRange.to]);
+
+  const [myReturns, setMyReturns] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    if (!company?.id || !effectiveUser?.id || !myReturnsWindow) {
+      setMyReturns([]);
+      return undefined;
+    }
+    fetchReturns({
+      companyId: company.id,
+      ownerIds: [effectiveUser.id],
+      start: myReturnsWindow.start,
+      end: myReturnsWindow.end,
+      // A failed read degrades to gross Achieved (fetchReturns logs and
+      // returns []), which is what these figures showed before returns existed.
+    }).then((rows) => { if (alive) setMyReturns(rows || []); });
+    return () => { alive = false; };
+  }, [company?.id, effectiveUser?.id, myReturnsWindow]);
+
+  // The one user row the rule needs: himself. role/is_active come from the
+  // profile, so an inactive salesman's rows read 0 rather than his history.
+  const targetPeople = useMemo(
+    () => (effectiveUserProfile?.id
+      ? [effectiveUserProfile]
+      : effectiveUser?.id ? [{ id: effectiveUser.id, role: 'salesman', is_active: true }] : []),
+    [effectiveUserProfile, effectiveUser?.id],
+  );
+
+  // "Total Achieved" under a selection in the table: his Achieved over the
+  // rows' own window, read once — not a sum of row progress, which counted
+  // his revenue once per row he holds in the same month.
+  const totalAchievedForRows = useCallback(
+    (rows) => achievedForRows(rows, {
+      deals: allDeals || [],
+      returns: myReturns,
+      users: targetPeople,
+      amountOf: convertedAchievedAmount,
+      ...(targetRowsWindow(rows) || {}),
+    }),
+    [allDeals, myReturns, targetPeople, convertedAchievedAmount],
+  );
+
   const targetsWithCalculatedProgress = useMemo(() => {
     if (!filteredMyTargets || filteredMyTargets.length === 0) {
       return filteredMyTargets || [];
     }
-
-    const wonDeals = (allDeals || []).filter((d) => d.stage === "won");
-
-    return filteredMyTargets.map((target) => {
-      const periodStart = new Date(target.period_start);
-      const periodEnd = new Date(target.period_end);
-      // Include the entire end day
-      periodEnd.setHours(23, 59, 59, 999);
-
-      const calculated_progress = wonDeals.reduce((sum, deal) => {
-        const dateStr =
-          deal.stage === "won" ? deal.closed_at : deal.created_at;
-        if (!dateStr) return sum;
-        const dealDate = new Date(dateStr);
-        if (dealDate >= periodStart && dealDate <= periodEnd) {
-          return sum + convertDealAmount(deal);
-        }
-        return sum;
-      }, 0);
-
-      return {
-        ...target,
-        calculated_progress,
-      };
+    return withTargetRowProgress(filteredMyTargets, {
+      deals: allDeals || [],
+      returns: myReturns,
+      users: targetPeople,
+      amountOf: convertedAchievedAmount,
     });
-    // convertDealAmount depends on preferredCurrency, so include it in deps
-  }, [filteredMyTargets, allDeals, preferredCurrency]);
+  }, [filteredMyTargets, allDeals, myReturns, targetPeople, convertedAchievedAmount]);
 
   const productTargetsWithProgress = useMemo(() => {
     return salesTargetService.calculateProductTargetProgress(
@@ -540,13 +593,21 @@ const EnhancedSalesmanDashboard = ({
       selectedQuarter !== null ||
       selectedYear !== null;
 
-    // Calculate progress from filtered won deals
-    const wonDealsInPeriod =
-      filteredDeals?.filter((d) => d.stage === "won") || [];
-    const progressAmount = wonDealsInPeriod.reduce(
-      (sum, d) => sum + convertDealAmount(d),
-      0,
-    );
+    // His Achieved for the selected period, by the shared rule — so this card
+    // equals the KPI strip's "Achieved (invoiced)" above it for the same
+    // person and period. It used to be every won deal in the filtered list at
+    // `amount` by closed_at, which counted deals that were never invoiced and
+    // disagreed with the strip on the same screen.
+    const achieved = computeAchieved({
+      deals: allDeals || [],
+      contributorIds: effectiveUser?.id ? [effectiveUser.id] : [],
+      start: activeDateRange.from,
+      end: activeDateRange.to,
+      amountOf: convertedAchievedAmount,
+      returns: myReturns,
+    });
+    const progressAmount = achieved.total;
+    const wonDealsInPeriod = achieved.deals;
 
     // Calculate target amount using the one shared rule: per month, this
     // salesman's total_value target when present, else his by_clients rows,
@@ -2195,6 +2256,7 @@ const EnhancedSalesmanDashboard = ({
                 title="Your Assigned Targets"
                 targets={targetsWithCalculatedProgress}
                 role="salesman"
+                totalAchievedFor={totalAchievedForRows}
               />
 
               <div className="mt-6">
