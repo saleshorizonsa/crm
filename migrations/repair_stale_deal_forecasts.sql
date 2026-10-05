@@ -31,6 +31,13 @@
 -- (b) a missing 'lost' row is treated as 0, because that is what "lost" means —
 -- otherwise the very rows this is meant to clear would be skipped.
 --
+-- TYPES: deals.stage is the enum deal_stage and stage_probabilities.stage is
+-- text, and Postgres has no implicit cast between them — joining them raw fails
+-- with "operator does not exist: text = deal_stage". Every comparison and every
+-- value written into the text backup column therefore casts d.stage::text.
+-- Comparisons against bare literals ('won', 'lost') need no cast: an untyped
+-- literal is resolved to whichever side's type it is compared with.
+--
 -- ORDER OF OPERATIONS
 --   1. Run PREVIEW. It changes nothing and lists old vs new per deal.
 --   2. Run REPAIR. It stores every old value in deal_forecast_repair_backup
@@ -38,10 +45,13 @@
 --   3. Run VERIFY.
 --   4. ROLLBACK only if needed.
 --
--- Expected preview for JASCO PVC: 6 open deals — of which only two have a
--- non-zero amount, ALSEHLY PLASTIC FACTORY 155,000 -> 15,500.00 and
--- "Ali alghamdi Est." 45,598 -> 34,198.50 — and 7 lost deals carrying
--- 297,407 SAR between them, all going to 0.
+-- Preview for JASCO PVC, run read-only against production after the cast —
+-- 7 open rows and 7 lost rows:
+--   ALSEHLY PLASTIC FACTORY   amount 155,000, no forecast stored -> 15,500.00
+--   "Ali alghamdi Est."       forecast 11,399.38 -> 34,198.13 (negotiation, 75%)
+--   four rows with amount 0   -> 0.00 (they carry no forecast today)
+--   Mawridi                   a 0.01 rounding correction
+--   7 lost rows               297,407.16 between them -> 0
 --
 -- EDIT THE COMPANY ID in all four sections before running. JASCO PVC is
 -- 'adf8ee78-cf78-4f02-932c-989a214bdd78'.
@@ -58,7 +68,7 @@ calc AS (
   SELECT
     d.id,
     d.title,
-    d.stage,
+    d.stage::text                                              AS stage,
     d.amount,
     d.expected_close_date,
     d.forecast_probability                                     AS old_probability,
@@ -69,7 +79,7 @@ calc AS (
           * CASE WHEN d.stage = 'lost' THEN COALESCE(p.probability, 0)
                  ELSE p.probability END / 100.0, 2)            AS new_forecast
   FROM deals d
-  LEFT JOIN p ON p.stage = d.stage
+  LEFT JOIN p ON p.stage = d.stage::text
   WHERE d.company_id = 'adf8ee78-cf78-4f02-932c-989a214bdd78'
 )
 SELECT
@@ -111,7 +121,9 @@ WITH p AS (
 ),
 calc AS (
   SELECT
-    d.id, d.company_id, d.stage, d.amount,
+    -- ::text because deal_forecast_repair_backup.stage is text; an enum value
+    -- cannot be assigned to a text column without it.
+    d.id, d.company_id, d.stage::text AS stage, d.amount,
     d.forecast_probability AS old_probability,
     d.forecast_amount      AS old_forecast,
     CASE WHEN d.stage = 'lost' THEN COALESCE(p.probability, 0)
@@ -120,7 +132,7 @@ calc AS (
           * CASE WHEN d.stage = 'lost' THEN COALESCE(p.probability, 0)
                  ELSE p.probability END / 100.0, 2)      AS new_forecast
   FROM deals d
-  LEFT JOIN p ON p.stage = d.stage
+  LEFT JOIN p ON p.stage = d.stage::text
   WHERE d.company_id = 'adf8ee78-cf78-4f02-932c-989a214bdd78'
 ),
 stale AS (
@@ -171,7 +183,7 @@ SELECT
   (SELECT count(*)
      FROM deals d
      JOIN stage_probabilities sp
-       ON sp.company_id = d.company_id AND sp.stage = d.stage
+       ON sp.company_id = d.company_id AND sp.stage = d.stage::text
     WHERE d.company_id = 'adf8ee78-cf78-4f02-932c-989a214bdd78'
       AND d.stage NOT IN ('won', 'lost')
       AND (d.forecast_probability IS DISTINCT FROM sp.probability
