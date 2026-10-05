@@ -38,7 +38,11 @@ function monthBounds() {
     startISO: startD.toISOString(),
     endISO: endD.toISOString(),
     startDate: `${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, '0')}-01`,
-    endDate: new Date(n.getFullYear(), n.getMonth() + 1, 0).toISOString().split('T')[0],
+    // From local parts, like startDate. Via toISOString() the local midnight of
+    // the month's last day becomes 21:00 the day before in Riyadh (UTC+3), so
+    // October ended on the 30th and every window built from this dropped the
+    // month's final day.
+    endDate: `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}-${String(endD.getDate()).padStart(2, '0')}`,
   };
 }
 

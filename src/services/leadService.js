@@ -1,4 +1,11 @@
 import { supabase } from '../lib/supabase';
+import { format } from 'date-fns';
+
+// Today in the user's own zone. Every date-only value written by this file â€”
+// creation_date and the stage_dates map â€” used `new Date().toISOString()`, which
+// in Riyadh (UTC+3) returns YESTERDAY between midnight and 03:00: a lead created
+// at 01:00 was dated the previous day, and so was the stage it entered.
+const todayLocal = () => format(new Date(), 'yyyy-MM-dd');
 
 const TITLE_MAP = {
   steel: [
@@ -176,7 +183,7 @@ export const leadService = {
         if (owner) assignedTo = owner;
       }
 
-      const today = new Date().toISOString().split('T')[0];
+      const today = todayLocal();
 
       const { data: inserted, error: insertErr } = await supabase
         .from('leads')
@@ -250,7 +257,7 @@ export const leadService = {
     // Auto-record stage entry date (first time only)
     let mergedUpdates = { ...updates };
     if (updates.status && before) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = todayLocal();
       const currentStageDates = before.stage_dates || {};
       if (!currentStageDates[updates.status]) {
         mergedUpdates.stage_dates = { ...currentStageDates, [updates.status]: today };
@@ -303,7 +310,7 @@ export const leadService = {
   },
 
   async createLead(leadData, userId) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayLocal();
     const insertData = {
       ...leadData,
       creation_date: leadData.creation_date || today,
@@ -369,7 +376,7 @@ export const leadService = {
     if (contactErr) return { contact: null, error: contactErr };
 
     const convertedAt = new Date().toISOString();
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayLocal();
 
     // Update stage_dates for converted stage
     const currentStageDates = lead.stage_dates || {};

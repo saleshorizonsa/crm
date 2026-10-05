@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { format } from "date-fns";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
@@ -371,7 +372,9 @@ const DealModal = ({
     amount: deal?.amount || 0,
     stage: deal?.stage || "lead",
     expected_close_date: deal?.expected_close_date || "",
-    creation_date: deal?.creation_date || new Date().toISOString().split('T')[0],
+    // Local today: toISOString() dates a deal created before 03:00 Riyadh to
+    // the previous day, and creation_date drives the new-vs-carry-forward split.
+    creation_date: deal?.creation_date || format(new Date(), 'yyyy-MM-dd'),
     contact_id: deal?.contact_id || null,
     priority: deal?.priority || "medium",
     lost_reason: deal?.lost_reason || "",
@@ -575,7 +578,9 @@ const DealModal = ({
         amount: deal?.amount || 0,
         stage: deal?.stage || "lead",
         expected_close_date: deal?.expected_close_date || "",
-        creation_date: deal?.creation_date || new Date().toISOString().split('T')[0],
+        // Local today: toISOString() dates a deal created before 03:00 Riyadh to
+    // the previous day, and creation_date drives the new-vs-carry-forward split.
+    creation_date: deal?.creation_date || format(new Date(), 'yyyy-MM-dd'),
         contact_id: deal?.contact_id || null,
         priority: deal?.priority || "medium",
         lost_reason: deal?.lost_reason || "",

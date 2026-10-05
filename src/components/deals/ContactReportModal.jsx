@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { format } from 'date-fns';
 import { supabase } from '../../lib/supabase';
 import { dealService } from '../../services/supabaseService';
 import { useAuth } from '../../contexts/AuthContext';
@@ -26,7 +27,11 @@ const NEXT_ACTIONS = [
   'Escalate to Manager', 'Other',
 ];
 
-const today = () => new Date().toISOString().split('T')[0];
+// Today in the user's own zone: this is the default AND the max of contact_date,
+// which is saved on the report. toISOString() returns yesterday between midnight
+// and 03:00 in Riyadh, so an early-morning call was filed against the day before
+// and the picker refused to accept the real today.
+const today = () => format(new Date(), 'yyyy-MM-dd');
 const titleCase = (s) => (s || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 // Mandatory contact report. When `nextStage` is set the deal is advanced to that
