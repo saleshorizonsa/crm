@@ -129,7 +129,8 @@ export default function InvoiceModal({
                 {result.blocked > 0 && (
                   <li className="text-amber-700">
                     {result.blocked} matching return{result.blocked === 1 ? "" : "s"} found, but your
-                    role cannot link returns — ask an admin or director to re-run the match.
+                    role cannot link returns — ask an admin to re-run the match. (Production's
+                    deal_returns UPDATE policy allows role = 'admin' only.)
                   </li>
                 )}
                 {result.ambiguous > 0 && (

@@ -1376,13 +1376,13 @@ export const dealService = {
    * Never re-points a return that is already matched: only deal_id IS NULL rows
    * are considered.
    *
-   * PERMISSION: deal_returns UPDATE is restricted by RLS to admin/director/head
-   * (migrations/create_deal_returns.sql). For anyone else — the deal's own
-   * salesman, his supervisor — the UPDATE matches no rows and reports no error,
-   * so the count of rows actually written is read back and the difference is
-   * returned as `blocked` rather than reported as success. The RPC below closes
-   * that gap SECURITY DEFINER-side once applied; until then `blocked` is the
-   * honest answer and the UI says so.
+   * PERMISSION: in PRODUCTION the deal_returns UPDATE policy allows
+   * role = 'admin' ONLY — not director, not head, whatever
+   * migrations/create_deal_returns.sql proposed. For everyone else the UPDATE
+   * matches no rows and reports no error, so the rows actually written are read
+   * back and the difference is returned as `blocked` rather than reported as
+   * success. The RPC closes that gap SECURITY DEFINER-side once applied; until
+   * then `blocked` is the honest answer and the UI says so.
    *
    * @returns {{data: {candidates, linked, blocked, ambiguous, via}, error}}
    */

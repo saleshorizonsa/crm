@@ -171,17 +171,31 @@ const SalesPipeline = () => {
       // people already look. Best-effort: an audit entry must never fail a save
       // that has already happened, and createActivity RETURNS { error } rather
       // than throwing, so it is checked explicitly.
+      const numberChanged = previousNumber !== stored;
       const dateChanged = Boolean(invoiceForm.invoice_date) && previousDate !== invoiceForm.invoice_date;
+      // The date is its own sentence, not a clause tacked onto the number.
+      // Achieved is counted by invoice_date, so moving it moves this deal's
+      // value out of one month and into another — a bigger change than the
+      // number, and the one nobody would think to look for.
+      const sentences = [
+        numberChanged
+          ? `Invoice number corrected from "${previousNumber || "(blank)"}" to "${stored}".`
+          : `Invoice number unchanged ("${stored}").`,
+        dateChanged
+          ? `Invoice date changed from ${previousDate || "(blank)"} to ${invoiceForm.invoice_date} `
+            + `— this deal's Achieved moves to the new month.`
+          : null,
+        // Ends the sentence without doubling a full stop the user already typed.
+        `Reason: ${invoiceForm.reason.trim().replace(/[.;,\s]+$/, "")}.`,
+        `By ${userProfile?.full_name || "a user"}${userProfile?.role ? ` (${userProfile.role})` : ""}.`,
+      ].filter(Boolean);
       try {
         const { error: auditErr } = await activityService.createActivity({
           type: "note",
-          title: "Invoice number corrected",
-          description:
-            `Invoice number corrected from "${previousNumber || "(blank)"}" to "${stored}"`
-            + (dateChanged ? `; invoice date ${previousDate || "(blank)"} to ${invoiceForm.invoice_date}` : "")
-            + `. Reason: ${invoiceForm.reason.trim()}`
-            + ` — by ${userProfile?.full_name || "a user"}`
-            + `${userProfile?.role ? ` (${userProfile.role})` : ""}.`,
+          title: numberChanged && dateChanged
+            ? "Invoice number and date corrected"
+            : dateChanged ? "Invoice date corrected" : "Invoice number corrected",
+          description: sentences.join(" "),
           company_id: company.id,
           deal_id: data.id,
           contact_id: data.contact_id,

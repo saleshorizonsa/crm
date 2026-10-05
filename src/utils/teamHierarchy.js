@@ -96,16 +96,22 @@ export function isAboveInChain({ users, ancestorId, descendantId }) {
   return false;
 }
 
-/** Roles that may correct any deal's invoice number, wherever it sits. */
-const INVOICE_CORRECTION_ROLES = ['admin', 'director'];
+/**
+ * Roles that may correct any deal's invoice number, wherever it sits.
+ *
+ * The same three the rest of the app treats as company-wide (DIRECTOR_ROLES
+ * above, fetchOpenFunnel's isDirector, the deal_returns import gate), so a head
+ * is not the one role that can see every deal and fix none of them.
+ */
+const INVOICE_CORRECTION_ROLES = ['admin', 'director', 'head'];
 
 /**
  * May this user correct the invoice number on this deal?
  *
  * The deal owner, anyone above the owner in the supervisor_id chain, and
- * admin/director. A PEER salesman must not: an invoice number is what a credit
- * note is matched by, so changing someone else's moves real money between two
- * people's Achieved.
+ * admin/director/head. A PEER salesman must not: an invoice number is what a
+ * credit note is matched by, so changing someone else's moves real money
+ * between two people's Achieved.
  *
  * `users` is the company's user list; without it only the owner and
  * admin/director checks can be answered, which is the safe direction to fail.
