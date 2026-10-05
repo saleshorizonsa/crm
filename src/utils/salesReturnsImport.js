@@ -94,6 +94,57 @@ const cell = (row, headerMap, col) => {
 const text = (row, headerMap, col) => String(cell(row, headerMap, col) ?? '').trim();
 
 /**
+ * NORMALISED invoice number -> every invoiced deal carrying it.
+ *
+ * A Map rather than a plain object, and a LIST per key rather than one deal, so
+ * duplicates stay visible instead of being collapsed by a last-one-wins write.
+ *
+ * Both sides of a match go through parseInvoiceNumbers (utils/invoiceNumber.js),
+ * which is what makes matching work at all: the CRM holds 8-digit numbers as
+ * people type them (93002906) and the ERP export brings the 10-digit form
+ * (0093002906). Compared as raw strings they are simply different numbers.
+ * A deal covering several invoices is reachable by any one of them, and junk
+ * like "1" or "gg" is not a key at all.
+ *
+ * @param {object[]} deals invoiced deals, each with at least { id, invoice_number }
+ */
+export function indexDealsByInvoice(deals) {
+  const byInvoice = new Map();
+  (deals || []).forEach((d) => {
+    parseInvoiceNumbers(d?.invoice_number).forEach((key) => {
+      if (!byInvoice.has(key)) byInvoice.set(key, []);
+      byInvoice.get(key).push(d);
+    });
+  });
+  return byInvoice;
+}
+
+/**
+ * Which deals does this invoice text reach? Zero, one, or several — the caller
+ * decides what each count means, because the decision differs: the importer
+ * calls several "ambiguous", the invoice-number correction calls it "leave it
+ * alone". Neither ever guesses one.
+ *
+ * Deduped by deal id, so a return naming two invoices that both sit on the same
+ * deal counts as one hit rather than looking ambiguous.
+ *
+ * @param {Map<string, object[]>} byInvoice from indexDealsByInvoice
+ * @param {string} invoiceText the return's own invoice field, as written
+ */
+export function dealsForInvoice(byInvoice, invoiceText) {
+  const seen = new Set();
+  const hits = [];
+  parseInvoiceNumbers(invoiceText).forEach((n) => {
+    (byInvoice?.get(n) || []).forEach((d) => {
+      if (seen.has(d.id)) return;
+      seen.add(d.id);
+      hits.push(d);
+    });
+  });
+  return hits;
+}
+
+/**
  * Turn sheet rows into return records, matched against invoiced deals.
  *
  * Three outcomes per row, and none of them is "silently dropped":
@@ -116,24 +167,10 @@ const text = (row, headerMap, col) => String(cell(row, headerMap, col) ?? '').tr
  * @param {object}  XLSX        the xlsx module, for date serials
  */
 export function buildReturnRows({ rows, headerMap, deals, XLSX = null }) {
-  // NORMALISED invoice number -> every deal carrying it, so duplicates are
-  // visible rather than being collapsed by a last-one-wins map.
-  //
-  // Both sides go through parseInvoiceNumbers (utils/invoiceNumber.js), which is
-  // what makes the match work at all: the CRM holds 8-digit numbers as people
-  // type them (93002906) and this file brings the ERP's 10-digit form
-  // (0093002906). Compared as raw strings — which is what this did — they are
-  // simply different numbers, so a correctly recorded invoice went unmatched.
-  // A deal covering several invoices is now reachable by any one of them, and
-  // junk like "1" or "gg" is not a key at all: it cannot match, and it cannot
-  // be offered as an ambiguous choice between owners either.
-  const byInvoice = new Map();
-  (deals || []).forEach((d) => {
-    parseInvoiceNumbers(d.invoice_number).forEach((key) => {
-      if (!byInvoice.has(key)) byInvoice.set(key, []);
-      byInvoice.get(key).push(d);
-    });
-  });
+  // The index and the lookup live in indexDealsByInvoice / dealsForInvoice
+  // above, so the invoice-number correction in the pipeline re-matches returns
+  // through this exact code rather than a second copy of the rule.
+  const byInvoice = indexDealsByInvoice(deals);
 
   const matched = [];
   const unmatched = [];
@@ -175,15 +212,7 @@ export function buildReturnRows({ rows, headerMap, deals, XLSX = null }) {
 
     // The return's own invoice, normalised the same way. A blank or unreadable
     // one finds nothing, which is `unmatched` — never a guess.
-    const seenDeals = new Set();
-    const hits = [];
-    parseInvoiceNumbers(invoiceNo).forEach((n) => {
-      (byInvoice.get(n) || []).forEach((d) => {
-        if (seenDeals.has(d.id)) return;
-        seenDeals.add(d.id);
-        hits.push(d);
-      });
-    });
+    const hits = dealsForInvoice(byInvoice, invoiceNo);
     if (hits.length === 1) {
       matched.push({ ...record, deal: hits[0], deal_id: hits[0].id });
     } else if (hits.length > 1) {

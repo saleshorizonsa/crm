@@ -8,7 +8,7 @@ import { groupDealsByMaterialGroup, getDealOrigin } from "../../../utils/dealGro
 
 // ─── Grouped view component ───────────────────────────────────────────────────
 
-function GroupedDealsList({ deals, onDealClick, onDealUpdate, onMarkInvoiced, onMoveToFuture, activePeriodFrom }) {
+function GroupedDealsList({ deals, onDealClick, onDealUpdate, onMarkInvoiced, onCorrectInvoice, canCorrectInvoice, onMoveToFuture, activePeriodFrom }) {
   const grouped = groupDealsByMaterialGroup(deals);
   const groups  = Object.keys(grouped).sort((a, b) => {
     if (a === 'No Products') return 1;
@@ -74,6 +74,8 @@ function GroupedDealsList({ deals, onDealClick, onDealUpdate, onMarkInvoiced, on
                       onDealClick={onDealClick}
                       onDealUpdate={onDealUpdate}
                       onMarkInvoiced={onMarkInvoiced}
+                      onCorrectInvoice={onCorrectInvoice}
+                      canCorrectInvoice={canCorrectInvoice}
                       onMoveToFuture={onMoveToFuture}
                       showProductSummary={true}
                       periodFrom={activePeriodFrom}
@@ -97,6 +99,8 @@ const PipelineStage = ({
   onDealUpdate,
   onDealClick,
   onMarkInvoiced,
+  onCorrectInvoice,
+  canCorrectInvoice,
   onMoveToFuture,
   onStageUpdate,
   onDragOver,
@@ -284,6 +288,8 @@ const PipelineStage = ({
               onDealClick={onDealClick}
               onDealUpdate={onDealUpdate}
               onMarkInvoiced={onMarkInvoiced}
+              onCorrectInvoice={onCorrectInvoice}
+              canCorrectInvoice={canCorrectInvoice}
               onMoveToFuture={onMoveToFuture}
               activePeriodFrom={activePeriodFrom}
             />
@@ -302,6 +308,8 @@ const PipelineStage = ({
                   onDealClick={onDealClick}
                   onDealUpdate={onDealUpdate}
                   onMarkInvoiced={onMarkInvoiced}
+                  onCorrectInvoice={onCorrectInvoice}
+                  canCorrectInvoice={canCorrectInvoice}
                   onMoveToFuture={onMoveToFuture}
                   periodFrom={activePeriodFrom}
                 />

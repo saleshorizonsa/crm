@@ -52,7 +52,7 @@ const leadDaysLeft = (deal) => {
 // card no longer calls it: the inline amount editor it drove is gone (amounts are
 // changed in the deal modal, behind the reason-gated product-line panel). The prop
 // stays so the interface with PipelineStage / DealsList is unchanged.
-const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onMoveToFuture, showProductSummary = false, periodFrom }) => {
+const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onCorrectInvoice, canCorrectInvoice, onMoveToFuture, showProductSummary = false, periodFrom }) => {
   const isLeadStage = deal?.stage === 'lead';
   const daysUntilExpiry = isLeadStage ? leadDaysLeft(deal) : null;
   const [productCount, setProductCount] = useState(0);
@@ -328,9 +328,28 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onMoveToFut
       {/* --- Invoice (Won deals only) — Achievement counts only once invoiced --- */}
       {deal?.stage === "won" && (
         deal?.is_invoiced ? (
-          <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-green-700 font-medium mt-2">
-            <Icon name="CheckCircle" size={12} />
-            Invoiced #{deal.invoice_number}
+          <div className="mt-2 space-y-1.5">
+            <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-green-700 font-medium">
+              <Icon name="CheckCircle" size={12} className="flex-shrink-0" />
+              <span className="truncate">Invoiced #{deal.invoice_number}</span>
+            </div>
+            {/* The invoice number is what a credit note is matched BY, so a
+                wrong one silently costs the owner his Achieved — and once
+                saved it was unreachable: this chip only printed it, the
+                Mark-invoiced form is for uninvoiced deals, and the deal modal
+                has no invoice field. Shown to the owner, anyone above him in
+                the supervisor_id chain, and admin/director; the page decides
+                (utils/teamHierarchy.js canCorrectInvoice). */}
+            {onCorrectInvoice && canCorrectInvoice?.(deal) && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onCorrectInvoice(deal); }}
+                className="flex items-center justify-center gap-1.5 text-xs px-3 py-1.5 w-full text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
+              >
+                <Icon name="PencilLine" size={11} />
+                Correct invoice no.
+              </button>
+            )}
           </div>
         ) : (
           <button
