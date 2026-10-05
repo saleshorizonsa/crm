@@ -8,6 +8,11 @@ import AddCustomerModal from './AddCustomerModal';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
+// monthKeyOf / monthBoundsOf build yyyy-MM-dd from LOCAL date parts. Everything
+// here used `new Date(y, m, 1).toISOString().split('T')[0]`, which converts a
+// local midnight to UTC first: in Riyadh (UTC+3) that is 21:00 the day BEFORE,
+// so the "first of this month" came out as the last day of the PREVIOUS one.
+import { monthKeyOf, monthBoundsOf } from 'utils/planMonths';
 
 function StatusBadge({ type }) {
   const map = {
@@ -141,9 +146,11 @@ export default function CustomerMaster({
   // the list can flag them and block a duplicate plan.
   const fetchExistingOpps = useCallback(async () => {
     if (!adminCompany?.id) { setExistingOppIds(new Set()); return; }
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+    // The same month the insert below plans into, read the same way. Both ends
+    // used to shift back a day in Riyadh, so this asked about the previous
+    // month's last day through to this month's second-to-last — it flagged the
+    // wrong customers as "already planned" and missed the real ones.
+    const { start: monthStart, end: monthEnd } = monthBoundsOf(monthKeyOf(new Date()));
     const { data } = await supabase
       .from('opportunities')
       .select('contact_id')
@@ -474,9 +481,13 @@ export default function CustomerMaster({
     // the rows it was approved with; it does not close the month.
     setSavingId(customer.id);
     try {
-      const now = new Date();
-      const expectedMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-        .toISOString().split('T')[0];
+      // The first of the month this customer is being planned into, from LOCAL
+      // date parts. Built through toISOString(), a local midnight becomes 21:00
+      // the previous day in Riyadh, so every row added here was stamped with the
+      // PREVIOUS month's last day — 1 October saved 2026-09-30. Every October
+      // screen then missed it: the plan total, the submit gate, Planned Gap and
+      // the KPI strip's Planned all window on the month's own first-to-last day.
+      const expectedMonth = monthKeyOf(new Date());
       const { error } = await supabase.from('opportunities').insert({
         company_id:     adminCompany?.id,
         // Opportunity belongs to the customer's assigned salesman (falls back to

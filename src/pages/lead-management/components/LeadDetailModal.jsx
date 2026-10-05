@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { format } from "date-fns";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
@@ -130,10 +131,10 @@ const LeadDetailModal = ({
         source:           lead.source           || "manual",
         notes:            lead.notes            || "",
         lead_score:       lead.lead_score       || 0,
-        creation_date:    lead.creation_date    || new Date().toISOString().split('T')[0],
+        creation_date:    lead.creation_date    || format(new Date(), 'yyyy-MM-dd'),
       });
     } else {
-      setForm({ ...EMPTY, creation_date: new Date().toISOString().split('T')[0] });
+      setForm({ ...EMPTY, creation_date: format(new Date(), 'yyyy-MM-dd') });
     }
     setTab(initialTab || "person");
     setError("");

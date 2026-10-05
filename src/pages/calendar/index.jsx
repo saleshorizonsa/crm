@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useLocation } from "react-router-dom";
+import { format } from "date-fns";
 import Icon from "../../components/AppIcon";
 import Button from "../../components/ui/Button";
 import Header from "../../components/ui/Header";
@@ -229,7 +230,9 @@ const CalendarPage = () => {
 
   const handleToday = () => {
     setCurrentDate(new Date());
-    setSelectedDate(new Date().toISOString().split("T")[0]);
+    // Local today. toISOString() jumps to yesterday between midnight and 03:00
+    // in Riyadh, so "Today" selected the wrong day and listed its meetings.
+    setSelectedDate(format(new Date(), "yyyy-MM-dd"));
   };
 
   const handleDateSelect = (dateStr) => {

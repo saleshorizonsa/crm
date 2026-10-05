@@ -18,6 +18,15 @@ const STAGE_CONFIG = {
 const UOM_LABEL = { qty: "pcs", m: "m", ton: "ton" };
 
 const fmtDate    = (d)   => format(d, "yyyy-MM-dd");
+// The day after a yyyy-MM-dd, for an exclusive upper bound. Advanced in UTC off
+// the bare date so no local zone can move it, then formatted back as a plain
+// date — never through toISOString() on a LOCAL date, which is the shift this
+// file was suffering from in the first place.
+const nextLocalDay = (day) => {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+};
 const fmtDisplay = (iso) => { try { return format(new Date(iso), "d MMM yyyy"); } catch { return "—"; } };
 
 function initials(name = "") {
@@ -199,8 +208,14 @@ const PipelineView = () => {
       `)
       .eq("company_id", company.id)
       .in("stage", VIEWER_STAGES)
-      .gte("created_at", from)
-      .lte("created_at", to + "T23:59:59")
+      // created_at is a timestamptz, and `from` / `to` are the Riyadh calendar
+      // days the viewer picked. Sent bare, Postgres reads them at the session
+      // zone (UTC) — the window then ran from 03:00 Riyadh on the first day to
+      // 02:59 on the day AFTER the last, dropping the first morning and taking
+      // three hours of the next day. Riyadh is UTC+3 all year, so the offset is
+      // stated outright; the end is exclusive at the next local midnight.
+      .gte("created_at", `${from}T00:00:00+03:00`)
+      .lt("created_at", `${nextLocalDay(to)}T00:00:00+03:00`)
       .order("stage",               { ascending: false })
       .order("expected_close_date", { ascending: true });
 

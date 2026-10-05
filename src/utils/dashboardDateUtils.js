@@ -236,8 +236,15 @@ export function getQuickRanges() {
 }
 
 export function getPreviousPeriod(dateFrom, dateTo) {
-  const from   = new Date(dateFrom);
-  const to     = new Date(dateTo);
+  // Parsed as LOCAL midnight. `new Date('2026-10-01')` is UTC midnight, which in
+  // Riyadh (UTC+3) is 03:00 the same day — so `from - 1ms` landed at 02:59 on
+  // 1 October rather than late on 30 September, and format() then returned
+  // 2026-10-01 as the PREVIOUS period's end: the comparison window overlapped
+  // the current one by a day at both ends. A bare yyyy-MM-dd with the time
+  // appended is parsed in the local zone, which is what these two dates mean.
+  const asLocal = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? new Date(`${v}T00:00:00`) : new Date(v));
+  const from   = asLocal(dateFrom);
+  const to     = asLocal(dateTo);
   const diffMs = to.getTime() - from.getTime();
   const prevTo   = new Date(from.getTime() - 1);
   const prevFrom = new Date(prevTo.getTime() - diffMs);

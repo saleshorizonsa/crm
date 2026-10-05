@@ -74,7 +74,10 @@ const SalesPipeline = () => {
 
   const handleMarkInvoiced = (deal) => {
     setInvoicingDeal(deal);
-    setInvoiceForm({ invoice_number: "", invoice_date: new Date().toISOString().split("T")[0] });
+    // Today in the user's own zone. toISOString() gives yesterday between
+    // midnight and 03:00 in Riyadh, and this value is saved as the deal's
+    // invoice_date — the date Achieved is counted by.
+    setInvoiceForm({ invoice_number: "", invoice_date: format(new Date(), "yyyy-MM-dd") });
     setInvoiceErrors({});
     setShowInvoiceModal(true);
   };
