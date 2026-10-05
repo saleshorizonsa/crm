@@ -47,6 +47,10 @@ export default function CustomerMaster({
   adminCompany,
   onCompanyChange,
   onGoToOpportunities,
+  // Called after a row is added to the Current Sales Plan from here. The page
+  // owns what reads the plan — the summary tiles and the submit gate's own
+  // figures — and this screen used to add a plan row and tell it nothing.
+  onPlanChange,
   // The salesman filter is owned by the Planning page: this is the tab the page
   // OPENS on, so its selector is the first one a user meets, and the summary
   // cards above have to follow it. While each tab kept its own copy, filtering
@@ -495,6 +499,7 @@ export default function CustomerMaster({
       setExistingOppIds((prev) => new Set([...prev, customer.id]));
       setActiveRow(null);
       setInlineAmount('');
+      onPlanChange?.();
     } catch (err) {
       console.error('Save opp:', err);
       alert(`Could not create sales plan item: ${err.message || err}`);

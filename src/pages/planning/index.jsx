@@ -127,6 +127,10 @@ const PlanningPage = () => {
   // submit failure parked there would be wiped by the next period or filter
   // change — the user would see the message vanish without having fixed anything.
   const [submitError, setSubmitError] = useState(null);
+  // True when the message in submitError is the GATE refusing, not a failure.
+  // Same banner, but it must not end by telling someone to call their
+  // administrator about a rule that is working correctly.
+  const [submitRefused, setSubmitRefused] = useState(false);
   // Monotonic request id — see fetchPlanningSummary. useRef so it survives
   // re-renders without causing one.
   const summaryReq = useRef(0);
@@ -336,6 +340,45 @@ const PlanningPage = () => {
   // against a real pipeline. `failed` is kept apart from a true zero for the same
   // reason.
   const [ownPlan, setOwnPlan] = useState({ target: 0, plannedOpen: 0, loaded: false, failed: false });
+
+  // Bumped by refreshPlanData() whenever this user's plan rows change — see
+  // there for the full list of writers. The read below depends on it, so the
+  // gate is re-measured after every add, edit, delete, convert and move.
+  //
+  // Without it the fetch ran once per month key and never again: on 5 October
+  // Amer opened October at 410,951 against a 406,000 target, deleted and reduced
+  // rows down to 389,451, and the button stayed enabled all the way through
+  // because planComplete was still answering a question about the figures the
+  // page had loaded with. He submitted, and the row recorded 389,451 — below
+  // target, in the current month, which the gate exists to prevent.
+  const [planVersion, setPlanVersion] = useState(0);
+
+  // One definition of "this person's own figures for ONE month": the monthly
+  // target rows assigned to him, and his own OPEN plan rows dated in that month.
+  // The gate below and the pre-submit re-check in handleSubmitPlan both call
+  // this, so they cannot measure the same thing two different ways.
+  //
+  // Deliberately NOT computePlanningPageSummary: that narrows the scope to
+  // CONTRIBUTOR_ROLES, so a manager filing his own plan would be judged against
+  // a target of 0.
+  const readOwnPlanFor = useCallback(async (monthKey) => {
+    const bounds = monthBoundsOf(monthKey);
+    const [rows, planned] = await Promise.all([
+      fetchMonthlyTargets({
+        companyId, contributorIds: [user.id], start: bounds.start, end: bounds.end,
+      }),
+      fetchPlannedOpen({
+        companyId, ownerIds: [user.id], start: bounds.start, end: bounds.end, productGroup: null,
+      }),
+    ]);
+    return {
+      target: Object.values(targetPerPerson(rows)).reduce((sum, v) => sum + v, 0),
+      plannedOpen: planned.total,
+      loaded: true,
+      failed: !!planned.failed,
+    };
+  }, [companyId, user?.id]);
+
   useEffect(() => {
     if (!companyId || !user?.id || !activeMonthKey) {
       setOwnPlan({ target: 0, plannedOpen: 0, loaded: false, failed: false });
@@ -343,25 +386,13 @@ const PlanningPage = () => {
     }
     let alive = true;
     (async () => {
-      const bounds = monthBoundsOf(activeMonthKey);
-      const [rows, planned] = await Promise.all([
-        fetchMonthlyTargets({
-          companyId, contributorIds: [user.id], start: bounds.start, end: bounds.end,
-        }),
-        fetchPlannedOpen({
-          companyId, ownerIds: [user.id], start: bounds.start, end: bounds.end, productGroup: null,
-        }),
-      ]);
+      const next = await readOwnPlanFor(activeMonthKey);
       if (!alive) return;
-      setOwnPlan({
-        target: Object.values(targetPerPerson(rows)).reduce((sum, v) => sum + v, 0),
-        plannedOpen: planned.total,
-        loaded: true,
-        failed: !!planned.failed,
-      });
+      setOwnPlan(next);
     })();
     return () => { alive = false; };
-  }, [companyId, user?.id, activeMonthKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, user?.id, activeMonthKey, planVersion, readOwnPlanFor]);
 
   // Complete when the owner has planned at least his own target. Deliberately NOT
   // target ÷ win rate: that is a coverage estimate, and gating on it meant the
@@ -569,8 +600,41 @@ const PlanningPage = () => {
     // Clear any previous failure, so a retry that succeeds does not leave the old
     // error standing next to a plan that is now filed.
     setSubmitError(null);
+    setSubmitRefused(false);
     const stamp = new Date();
     try {
+      // ── The gate, re-measured against the database, before anything is written
+      //
+      // canSubmit was decided when the page last read these figures, and a plan
+      // can change between that read and this click — by the person's own edits
+      // (the refresh below covers those), by a second tab, or by a manager
+      // editing a row during review. The write that follows records the plan's
+      // CURRENT value, so without this an under-target plan could be filed
+      // against a button that was enabled for figures that no longer existed.
+      //
+      // Only the current month is gated, exactly as planComplete gates it: next
+      // month and the grace window may be filed under target by design, and
+      // their shortfall is recorded on the row for the approver to see.
+      const atClick = await readOwnPlanFor(planMonth);
+      setOwnPlan(atClick);          // so the bar and the button follow reality
+      const gatedMonth = !planningNextMonth && !planningPrevMonth;
+      if (gatedMonth && atClick.loaded && !atClick.failed
+          && atClick.plannedOpen < atClick.target) {
+        const short = atClick.target - atClick.plannedOpen;
+        setSubmitRefused(true);
+        setSubmitError(
+          `Your plan changed — it is now ${fmtSAR(atClick.plannedOpen)} SAR, below your target of ${fmtSAR(atClick.target)} SAR. `
+          + `Add ${fmtSAR(short)} SAR more to submit.`,
+        );
+        return;
+      }
+      if (gatedMonth && (!atClick.loaded || atClick.failed)) {
+        setSubmitError(
+          "Your figures could not be re-read just now, so the plan was not submitted. Please reload and try again.",
+        );
+        return;
+      }
+
       // Recomputed HERE rather than read from state. Trusting whatever was in
       // state is what recorded a plan of zero, and state can be wrong for more
       // reasons than the load race: it follows the shared period selector, so a
@@ -835,6 +899,25 @@ const PlanningPage = () => {
 
   useEffect(() => { fetchPrevMonthSummary(); }, [fetchPrevMonthSummary]);
 
+  // ── "This user's plan rows changed" — ONE callback, every writer calls it ────
+  //
+  // Everything that reads the plan hangs off this: the tiles for the month on
+  // screen, next month's and last month's tiles, and — the reason it exists —
+  // ownPlan, which is what the submit gate and the submit bar's shortfall are
+  // measured from.
+  //
+  // It replaces three different arrangements: OpportunitiesModule refreshed the
+  // current and next-month summaries, FutureOrdersModule only the current one,
+  // and Customer Master's "add to plan" notified nothing at all — so adding a
+  // row there left every figure on the page, including the gate, describing a
+  // plan that no longer existed.
+  const refreshPlanData = useCallback(() => {
+    fetchPlanningSummary();
+    fetchNextMonthSummary();
+    fetchPrevMonthSummary();
+    setPlanVersion((v) => v + 1);
+  }, [fetchPlanningSummary, fetchNextMonthSummary, fetchPrevMonthSummary]);
+
   // Product-group options, scoped the same way the cards are.
   useEffect(() => {
     let cancelled = false;
@@ -1048,7 +1131,9 @@ const PlanningPage = () => {
                 {monthNameOf(activeMonthKey)} plan was NOT submitted
               </p>
               <p className="text-xs text-red-600 mt-0.5">
-                {submitError} — nothing was saved. Try again, and tell your administrator if it keeps failing.
+                {submitRefused
+                  ? `${submitError} Nothing was saved.`
+                  : `${submitError} — nothing was saved. Try again, and tell your administrator if it keeps failing.`}
               </p>
             </div>
             <button
@@ -1310,6 +1395,9 @@ const PlanningPage = () => {
               adminCompany={adminCompany}
               onCompanyChange={setAdminCompany}
               onGoToOpportunities={() => setActiveTab("opportunities")}
+              // "Add to plan" here writes an opportunity like any other plan
+              // row, so it has to refresh what reads the plan.
+              onPlanChange={refreshPlanData}
               filterOwner={filterOwner}
               onFilterOwnerChange={setFilterOwner}
             />
@@ -1371,7 +1459,7 @@ const PlanningPage = () => {
             )}
             <OpportunitiesModule
               adminCompany={adminCompany}
-              onOpportunityChange={() => { fetchPlanningSummary(); fetchNextMonthSummary(); }}
+              onOpportunityChange={refreshPlanData}
               // Scoped to next month while that is what is being planned. The
               // SHARED period selector is deliberately not touched — it is the
               // dashboards' period too, and moving it would drag every other
@@ -1401,7 +1489,7 @@ const PlanningPage = () => {
             <FutureOrdersModule
               adminCompany={adminCompany}
               onGoToOpportunities={() => setActiveTab("opportunities")}
-              onOrderChange={fetchPlanningSummary}
+              onOrderChange={refreshPlanData}
               filterOwner={filterOwner}
               onFilterOwnerChange={setFilterOwner}
             />
