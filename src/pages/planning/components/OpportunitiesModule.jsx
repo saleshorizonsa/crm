@@ -543,7 +543,19 @@ export default function OpportunitiesModule({
   }, [company?.id, targetMonth.start, targetMonth.end]);
 
   // ── Derived totals ────────────────────────────────────────────────────────
-  const totalPlanned = opportunities.reduce(
+  //
+  // OPEN rows only, which is what every other figure in the app already means
+  // by "planned": the Plan card (planningPageSummary.js fetchPlannedOpen), the
+  // KPI strip's Planned, the submit check and plan_submissions.total_planned all
+  // filter status = 'open'. This total did not, so a converted opportunity was
+  // counted twice over — once here as plan, and again in the funnel as the deal
+  // it became — which made Total Planned read above the plan that was actually
+  // filed and made Remaining read lower than it is. 'moved_to_future' rows are
+  // next month's problem and were being counted into this month as well.
+  const openOpportunities = opportunities.filter(
+    (o) => (o.status || 'open') === 'open',
+  );
+  const totalPlanned = openOpportunities.reduce(
     (s, o) => s + (parseFloat(o.planned_amount) || 0), 0,
   );
   const planningPct   = monthlyTarget > 0 ? Math.min((totalPlanned / monthlyTarget) * 100, 100) : 0;

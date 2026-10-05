@@ -29,7 +29,13 @@ import {
   computeRequiredRaw,
   fetchAchieved,
   fetchAchievedOnlyUsers,
+  computeAnnualTarget,
 } from './planningCalculations';
+// THE funnel — one definition, undated open deals included.
+import { fetchOpenFunnel } from './openFunnel';
+// "Is the selected range a whole calendar year?" — the same detector the
+// dashboards compare periods with.
+import { wholePeriodOf } from './dashboardDateUtils';
 
 /**
  * Product groups are free text typed into the opportunity form, so the same
@@ -124,38 +130,36 @@ export async function fetchPlannedOpen({ companyId, ownerIds, start, end, produc
 }
 
 /**
- * Open funnel value for the selected period: deals still in play, summed RAW.
+ * Open funnel value for the selected period — THE shared definition.
  *
- * Dated by expected_close_date — the field the pipeline and the reports already
- * filter "this month" by. created_at would measure when the deal was typed in,
- * and stage_changed_at when it last moved, neither of which is the month the
- * business expects the money in.
+ * This file used to carry its own copy, and the copy bounded the query by
+ * expected_close_date, which silently dropped every open deal that has no
+ * expected close date: 13 deals worth 123,540.34 for JASCO PVC, about 6% of
+ * the funnel. utils/openFunnel.js counts those (INCLUDE_UNDATED) and reports
+ * them separately, and the KPI strip, the Coverage Console and Insights all
+ * read it — so Planning's funnel disagreed with every other screen's for the
+ * same person and the same month. The rule now lives in exactly one file.
  *
- * Product group: a deal carries no group of its own (there is no such column on
- * deals, and deal_products points at products.material_group, a disjoint SKU-code
- * vocabulary). The only group a deal can honestly be attributed to is the one on
- * the opportunity it came from. Deals with no such link are UNTAGGED: they are
- * counted when no group is selected and excluded when one is, and their value is
- * returned separately so the screen can say how much it is leaving out.
+ * Product group: a deal carries no group of its own (there is no such column
+ * on deals, and deal_products points at products.material_group, a disjoint
+ * SKU-code vocabulary). The only group a deal can honestly be attributed to is
+ * the one on the opportunity it came from. Deals with no such link are
+ * UNTAGGED: counted when no group is selected, excluded when one is, and
+ * their value is returned separately so the screen can say what it left out.
  */
-async function fetchOpenFunnel({ companyId, ownerIds, start, end, productGroup }) {
-  if (!companyId || !ownerIds?.length) return { total: 0, untagged: 0 };
-  const { data, error } = await supabase
-    .from('deals')
-    .select('id, owner_id, amount')
-    .eq('company_id', companyId)
-    .in('owner_id', ownerIds)
-    .not('stage', 'in', '("won","lost")')
-    .gte('expected_close_date', start)
-    .lte('expected_close_date', end);
-  if (error) { console.error('fetchOpenFunnel:', error); return { total: 0, untagged: 0, failed: true }; }
+async function fetchFunnelForPeriod({ companyId, scopeIds, start, end, productGroup }) {
+  if (!companyId || !scopeIds?.length) return { total: 0, untagged: 0 };
 
-  const rows = data || [];
+  const funnel = await fetchOpenFunnel({ companyId, scopeIds, start, end });
+  const rows = funnel.rows || [];
   const amountOf = (d) => parseFloat(d.amount) || 0;
 
-  // No group selected: every open deal counts, no lookup needed.
+  // No group selected: the shared total already is the answer.
   if (!productGroup) {
-    return { total: rows.reduce((s, d) => s + amountOf(d), 0), untagged: 0 };
+    return {
+      total: funnel.total, untagged: 0, failed: funnel.failed,
+      undated: funnel.undated, dealCount: funnel.dealCount,
+    };
   }
 
   const ids = rows.map((d) => d.id);
@@ -177,7 +181,10 @@ async function fetchOpenFunnel({ companyId, ownerIds, start, end, productGroup }
     if (!g) { untagged += amountOf(d); return; }
     if (matchesGroup(g, productGroup)) total += amountOf(d);
   });
-  return { total, untagged };
+  return {
+    total, untagged, failed: funnel.failed,
+    undated: funnel.undated, dealCount: rows.length,
+  };
 }
 
 /**
@@ -213,6 +220,8 @@ export async function computePlanningPageSummary({
     plannedOpen: 0, openFunnel: 0, availableCoverage: 0,
     plannedGap: 0, coveragePct: null,
     hasTargetRows: false, untaggedPlanned: 0, untaggedFunnel: 0,
+    annualTarget: null, unassignedAnnual: 0, annualYear: null,
+    pipelineConversion3m: null, pipelineTotal3m: 0, importedExcluded: 0,
     scopeIds: [], contributorIds: [],
   };
   if (!companyId || !start || !end) return empty;
@@ -248,10 +257,30 @@ export async function computePlanningPageSummary({
   // measuring him like any other flagged manager (business decision, 2026-09-28).
   const remainingTarget = Math.max(0, target - achieved);
 
-  const { winRatePct, isDefault } = await computeWinRate({
+  const {
+    winRatePct, isDefault,
+    pipelineConversion3m = null, pipelineTotal3m = 0, importedExcluded = 0,
+  } = await computeWinRate({
     companyId, ownerIds, withFallback: true,
     contributorIds: contributorIds.length ? contributorIds : scopeIds,
   });
+
+  // ── ANNUAL VIEW (CEO decision D3, 2026-10-05) ────────────────────────────
+  // A whole year gets THREE target figures side by side instead of one:
+  //   annualTarget      what management set for the year (the yearly rows)
+  //   target            the sum of the MONTHLY rows actually assigned
+  //   unassignedAnnual  the difference — allocation nobody is carrying yet
+  // Showing only the monthly sum hid 27.8M of unassigned allocation; showing
+  // only the annual figure measured people against a number they were never
+  // given. Required Plan stays on the MONTHLY basis (it is what the team is
+  // accountable for), and the screen labels it so.
+  const whole = wholePeriodOf(start, end);
+  const annualTarget = whole?.kind === 'year'
+    ? await computeAnnualTarget({
+        companyId, ownerIds: scopeIds, monthlyTotal: 0, year: whole.year,
+      })
+    : null;
+  const unassignedAnnual = annualTarget ? Math.max(0, annualTarget - target) : 0;
 
   // Required Plan over what is STILL missing, not over the whole target, and
   // with no Future Orders netting — both deliberate departures from the shared
@@ -262,7 +291,7 @@ export async function computePlanningPageSummary({
 
   const [planned, funnel] = await Promise.all([
     fetchPlannedOpen({ companyId, ownerIds: scopeIds, start, end, productGroup }),
-    fetchOpenFunnel({ companyId, ownerIds: scopeIds, start, end, productGroup }),
+    fetchFunnelForPeriod({ companyId, scopeIds, start, end, productGroup }),
   ]);
 
   const availableCoverage = planned.total + funnel.total;
@@ -287,6 +316,15 @@ export async function computePlanningPageSummary({
     hasTargetRows: targetRows.length > 0,
     untaggedPlanned: planned.untagged,
     untaggedFunnel: funnel.untagged,
+    // Annual view (null outside it), so the screen can show the allocation,
+    // what is assigned and what is not, side by side.
+    annualTarget,
+    unassignedAnnual,
+    annualYear: whole?.kind === 'year' ? whole.year : null,
+    // Information only — never used in a calculation here or anywhere.
+    pipelineConversion3m,
+    pipelineTotal3m,
+    importedExcluded,
     // True when any underlying read failed. The figures are still returned, so
     // the screen can show what it has, but a caller about to WRITE them — the
     // plan submission — must refuse: a partial failure looks exactly like an

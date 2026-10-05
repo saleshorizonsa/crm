@@ -10,6 +10,17 @@ import HistoricalDataModule from "./components/HistoricalDataModule";
 import SalesReturnsModule from "./components/SalesReturnsModule";
 import { computePlanningPageSummary, fetchProductGroups, fetchPlannedOpen } from "utils/planningPageSummary";
 import { fetchMonthlyTargets, targetPerPerson } from "utils/planningCalculations";
+
+// The two rate labels, written once so the page and the KPI strip say the
+// same thing. "Win rate" is deliberately NOT used for either: it means
+// won ÷ (won + lost), which is a different number.
+const CONVERSION_TOOLTIP =
+  "Won ÷ deals created in the last 3 completed months, excluding imported history. "
+  + "This is the rate Required Plan divides by.";
+const PIPELINE_CONVERSION_TOOLTIP =
+  "Information only — nothing is calculated from it. The same window and people as "
+  + "Conversion (3m), also excluding orders created and won within a day (logged after "
+  + "the fact), so it describes deals that actually passed through the pipeline.";
 import { fetchTeamHierarchy } from "utils/teamHierarchy";
 import { useDateRange } from "contexts/DateRangeContext";
 import { periodLabelFromRange, isAnnualRange } from "utils/dashboardDateUtils";
@@ -268,6 +279,8 @@ const PlanningPage = () => {
     winRate3m: 0, winRateIsDefault: false, requiredPlan: 0,
     plannedOpen: 0, openFunnel: 0, availableCoverage: 0,
     coveragePct: null, plannedGap: 0, hasTargetRows: false,
+    annualTarget: null, unassignedAnnual: 0, annualYear: null,
+    pipelineConversion3m: null, pipelineTotal3m: 0, importedExcluded: 0,
     untaggedPlanned: 0, untaggedFunnel: 0,
   };
 
@@ -1232,6 +1245,29 @@ const PlanningPage = () => {
                 </p>
               </div>
             )}
+            {/* ANNUAL VIEW — three figures side by side, not one
+                (CEO decision D3, 2026-10-05). The monthly sum alone hid
+                27.8M of allocation nobody is carrying yet; the annual figure
+                alone measured the team against a number it was never given. */}
+            {!summaryLoading && isAnnualView && summaryData.annualTarget !== null && (
+              <div className="mt-2 pt-2 border-t border-border space-y-0.5">
+                <p className="text-xs text-foreground">
+                  Annual allocation:{" "}
+                  <span className="tabular-nums font-medium">{fmtSAR(summaryData.annualTarget)} SAR</span>
+                </p>
+                <p className="text-xs text-foreground">
+                  Monthly targets assigned:{" "}
+                  <span className="tabular-nums font-medium">{fmtSAR(summaryData.target)} SAR</span>
+                </p>
+                <p
+                  className={`text-xs ${summaryData.unassignedAnnual > 0 ? "text-amber-600" : "text-muted-foreground"}`}
+                  title="Annual allocation minus the monthly targets assigned so far. Nobody is carrying this part yet, so no monthly plan is measured against it."
+                >
+                  Not yet assigned:{" "}
+                  <span className="tabular-nums font-medium">{fmtSAR(summaryData.unassignedAnnual)} SAR</span>
+                </p>
+              </div>
+            )}
             <p className="text-xs text-muted-foreground mt-1">
               {!summaryLoading && !summaryData.hasTargetRows ? "No target assigned" : tilePeriodLabel}
             </p>
@@ -1240,26 +1276,54 @@ const PlanningPage = () => {
           {/* Card 2 — WIN RATE */}
           <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-1 bg-purple-500" />
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              Win Rate
+            {/* "Conversion (3m)", not "Win rate": this is won ÷ deals CREATED
+                in the window, which is what Required Plan divides by. "Win
+                rate" is kept for won ÷ (won + lost) alone. */}
+            <p
+              className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2"
+              title={CONVERSION_TOOLTIP}
+            >
+              Conversion (3m)
             </p>
             {summaryLoading ? (
               <div className="h-7 w-16 bg-muted rounded animate-pulse" />
             ) : (
-              <p className="text-xl font-bold text-purple-600 tabular-nums">
+              <p className="text-xl font-bold text-purple-600 tabular-nums" title={CONVERSION_TOOLTIP}>
                 {summaryData.winRate3m.toFixed(1)}%
               </p>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              3-month average{summaryData.winRateIsDefault && " (default)"}
+              3 completed months{summaryData.winRateIsDefault && " (default)"}
             </p>
+            {/* INFORMATION ONLY (CEO decision D2) — drives nothing. */}
+            {!summaryLoading && summaryData.pipelineConversion3m !== null && (
+              <p
+                className="text-xs text-muted-foreground mt-1.5 pt-1.5 border-t border-border"
+                title={PIPELINE_CONVERSION_TOOLTIP}
+              >
+                Pipeline conversion:{" "}
+                <span className="tabular-nums">{summaryData.pipelineConversion3m.toFixed(1)}%</span>
+                <span className="ml-1">(info)</span>
+              </p>
+            )}
+            {!summaryLoading && summaryData.importedExcluded > 0 && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {summaryData.importedExcluded} imported{" "}
+                {summaryData.importedExcluded === 1 ? "invoice" : "invoices"} excluded
+              </p>
+            )}
           </div>
 
           {/* Card 3 — REQUIRED PLAN */}
           <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500" />
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              {isAnnualView ? "Annual Required Plan" : "Required Plan"}
+            <p
+              className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2"
+              title={isAnnualView
+                ? "On the MONTHLY targets assigned, not the annual allocation: the team is accountable for what it was actually given."
+                : undefined}
+            >
+              {isAnnualView ? "Annual Required Plan (assigned basis)" : "Required Plan"}
             </p>
             {summaryLoading ? (
               <div className="h-7 w-24 bg-muted rounded animate-pulse" />
@@ -1274,7 +1338,7 @@ const PlanningPage = () => {
                 ? summaryData.hasTargetRows
                   ? "Target already achieved"
                   : "Nothing to plan against"
-                : `Remaining Target ÷ ${summaryData.winRate3m.toFixed(0)}% win rate`}
+                : `Remaining Target ÷ ${summaryData.winRate3m.toFixed(0)}% conversion (3m)`}
             </p>
           </div>
 
