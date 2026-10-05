@@ -13,6 +13,7 @@ import BySalesman from "./components/BySalesman";
 import OriginReport   from "./OriginReport";
 import MarginReport   from "./MarginReport";
 import ActivityReport from "./ActivityReport";
+import SalesReturnsReport from "./components/SalesReturnsReport";
 import { useLanguage } from "../../i18n";
 import { exportReportToExcel } from "../../utils/reportExport";
 import { useMaterialGroups } from "../../hooks/useMaterialGroups";
@@ -66,6 +67,14 @@ const ReportsPage = () => {
     { id: "origin",   label: "Pipeline Origin",           icon: "🔄" },
     { id: "margin",   label: "Margin Analysis",           icon: "💹" },
     { id: "activity", label: "Deal Activity",             icon: "📋" },
+    // READ-ONLY. Credit notes are imported on Planning → Sales Returns; this
+    // is the register you read. It loads its own data because it is the one
+    // tab whose rows are not deals, and it carries its own scope: the
+    // deal_returns SELECT policy lets any user in the company read an
+    // UNMATCHED return, which is wider than the agreed visibility (see
+    // services/salesReturnsReportService.js and
+    // migrations/deal_returns_rls_visibility.sql).
+    { id: "returns",  label: "Sales Returns",             icon: "↩️" },
   ];
 
   const PRESETS = [
@@ -626,6 +635,10 @@ const ReportsPage = () => {
             {activeTab === "origin"   && <OriginReport   deals={filteredDeals} formatCurrency={formatCurrency} dateFrom={dateFrom} />}
             {activeTab === "margin"   && <MarginReport   deals={filteredDeals} formatCurrency={formatCurrency} />}
             {activeTab === "activity" && <ActivityReport deals={filteredDeals} formatCurrency={formatCurrency} />}
+            {/* Not given `deals`: its rows are credit notes, not deals, and the
+                page-level date and salesman filters are about deals. It has its
+                own month range, customer, salesman and status filters. */}
+            {activeTab === "returns"  && <SalesReturnsReport formatCurrency={formatCurrency} />}
           </>
         )}
       </div>
