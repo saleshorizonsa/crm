@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from "react";
+﻿import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import MetricsCard from "./MetricsCard";
 import SalesChart from "./SalesChart";
@@ -32,7 +32,14 @@ import {
   computeAchieved,
   achievedAmount,
   achieverIdsFrom,
+  fetchReturns,
 } from "../../../utils/planningCalculations";
+import {
+  withTargetRowProgress,
+  targetRowsWindow,
+  distinctPeopleScope,
+  achievedForRows,
+} from "../../../utils/targetProgress";
 
 // New enhanced components
 import PipelineChart from "./PipelineChart";
@@ -102,6 +109,17 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     if (dealCurrency === preferredCurrency) return amount;
     return convertCurrency(amount, dealCurrency, preferredCurrency);
   };
+
+  // The same conversion, around the ACHIEVED value (final_amount ?? amount)
+  // rather than around `amount`: once a deal is invoiced, final_amount is
+  // what was invoiced. The RULE is untouched — only the unit.
+  const convertedAchievedAmount = useCallback((deal) => {
+    const amount = achievedAmount(deal);
+    const dealCurrency = deal.currency || preferredCurrency;
+    if (dealCurrency === preferredCurrency) return amount;
+    return convertCurrency(amount, dealCurrency, preferredCurrency);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferredCurrency]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCompany, setSelectedCompany] = useState(propCompany || null);
@@ -513,107 +531,80 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
     });
   }, [assignedTargets, activeDateRange.from, activeDateRange.to]);
 
-  // Recalculate per-assignee target progress from deals.
-  // The DB column `progress_amount` is not auto-updated when deals close,
-  // so we derive it on the client. For each target:
-  //   progress = sum of won-deal amounts owned by the assignee (and, if the
-  //   assignee is a manager/supervisor/head, by their subordinates too)
-  //   that close inside that target's period_start..period_end window.
+  // ── Target-row progress ───────────────────────────────────────────────────
+  //
+  // ONE rule, shared with the other three dashboards and with plan submission
+  // (utils/targetProgress.js): a salesman's or supervisor's row is a PERSONAL
+  // quota — his own Achieved in the row's own period; a manager's row is his
+  // team allocation — the Achieved of his whole active subtree, restricted to
+  // the achiever scope. Achieved is the shared rule throughout: won AND
+  // invoiced, by invoice_date, at final_amount ?? amount, net of returns.
+  //
+  // It used to be: stage = 'won' by closed_at at `amount`, for the assignee
+  // plus his DIRECT supervisor_id children — so it counted deals that were won
+  // but never invoiced, dated them by the day they closed, ignored credit
+  // notes, charged a supervisor's personal quota with his whole team, and
+  // stopped one level down a manager's tree.
+  //
+  // Returns are read ONCE over the widest window every row covers, for
+  // everyone those rows can count; computeAchieved then narrows them per row
+  // by the same scope and window it counts invoices over.
+  const targetRowsReturnWindow = useMemo(
+    () => targetRowsWindow(assignedTargets || []),
+    [assignedTargets],
+  );
+  const targetRowsPeople = useMemo(
+    () => distinctPeopleScope(assignedTargets || [], { users: allEmployees }),
+    [assignedTargets, allEmployees],
+  );
+  const [targetRowReturns, setTargetRowReturns] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    const companyId = selectedCompany?.id;
+    if (!companyId || !targetRowsReturnWindow || !targetRowsPeople.length) {
+      setTargetRowReturns([]);
+      return undefined;
+    }
+    fetchReturns({
+      companyId,
+      ownerIds: targetRowsPeople,
+      start: targetRowsReturnWindow.start,
+      end: targetRowsReturnWindow.end,
+      // A failed read degrades to gross Achieved (fetchReturns logs and
+      // returns []), which is what these rows showed before returns existed.
+    }).then((rows) => { if (alive) setTargetRowReturns(rows || []); });
+    return () => { alive = false; };
+  }, [selectedCompany?.id, targetRowsReturnWindow, targetRowsPeople]);
+
+  const targetProgressCtx = useMemo(() => ({
+    deals: allDealsData || [],
+    returns: targetRowReturns,
+    users: allEmployees || [],
+    amountOf: convertedAchievedAmount,
+  }), [allDealsData, targetRowReturns, allEmployees, convertedAchievedAmount]);
+
+  // "Total Achieved" under a selection: Achieved over the DISTINCT people
+  // those rows cover, for their own window — not a sum of row progress,
+  // which counted one person's revenue once per row he holds.
+  const totalAchievedForRows = useCallback(
+    (rows) => achievedForRows(rows, {
+      ...targetProgressCtx,
+      ...(targetRowsWindow(rows) || {}),
+    }),
+    [targetProgressCtx],
+  );
   const assignedTargetsWithProgress = useMemo(() => {
     if (!filteredAssignedTargets || filteredAssignedTargets.length === 0) {
       return filteredAssignedTargets || [];
     }
-    const deals = allDealsData || [];
-    const employees = allEmployees || [];
-
-    const childIdsByParent = employees.reduce((acc, u) => {
-      if (u.supervisor_id) {
-        if (!acc[u.supervisor_id]) acc[u.supervisor_id] = [];
-        acc[u.supervisor_id].push(u.id);
-      }
-      return acc;
-    }, {});
-
-    return filteredAssignedTargets.map((target) => {
-      const periodStart = new Date(target.period_start);
-      const periodEnd = new Date(target.period_end);
-      periodEnd.setHours(23, 59, 59, 999);
-
-      const isInPeriod = (deal) => {
-        const dateStr =
-          deal.stage === "won" ? deal.closed_at : deal.created_at;
-        if (!dateStr) return false;
-        const d = new Date(dateStr);
-        return d >= periodStart && d <= periodEnd;
-      };
-
-      const assignee = employees.find((u) => u.id === target.assigned_to);
-      const assigneeRole = assignee?.role || target.assignee?.role;
-      const includeSubordinates =
-        assigneeRole === "manager" ||
-        assigneeRole === "supervisor" ||
-        assigneeRole === "head";
-
-      const ownerIds = new Set([target.assigned_to]);
-      if (includeSubordinates) {
-        (childIdsByParent[target.assigned_to] || []).forEach((id) =>
-          ownerIds.add(id),
-        );
-      }
-
-      const calculated_progress = deals
-        .filter(
-          (d) =>
-            d.stage === "won" && ownerIds.has(d.owner_id) && isInPeriod(d),
-        )
-        .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-
-      return { ...target, calculated_progress };
-    });
-  }, [filteredAssignedTargets, allDealsData, allEmployees]);
+    return withTargetRowProgress(filteredAssignedTargets, targetProgressCtx);
+  }, [filteredAssignedTargets, targetProgressCtx]);
 
   // All targets (unfiltered by dashboard time period) — used in the Targets tab so yearly targets remain visible
   const allTargetsWithProgress = useMemo(() => {
     if (!assignedTargets || assignedTargets.length === 0) return assignedTargets || [];
-    const deals = allDealsData || [];
-    const employees = allEmployees || [];
-
-    const childIdsByParent = employees.reduce((acc, u) => {
-      if (u.supervisor_id) {
-        if (!acc[u.supervisor_id]) acc[u.supervisor_id] = [];
-        acc[u.supervisor_id].push(u.id);
-      }
-      return acc;
-    }, {});
-
-    return assignedTargets.map((target) => {
-      const periodStart = new Date(target.period_start);
-      const periodEnd = new Date(target.period_end);
-      periodEnd.setHours(23, 59, 59, 999);
-
-      const isInPeriod = (deal) => {
-        const dateStr = deal.stage === "won" ? deal.closed_at : deal.created_at;
-        if (!dateStr) return false;
-        const d = new Date(dateStr);
-        return d >= periodStart && d <= periodEnd;
-      };
-
-      const assignee = employees.find((u) => u.id === target.assigned_to);
-      const assigneeRole = assignee?.role || target.assignee?.role;
-      const includeSubordinates = assigneeRole === "manager" || assigneeRole === "supervisor" || assigneeRole === "head";
-
-      const ownerIds = new Set([target.assigned_to]);
-      if (includeSubordinates) {
-        (childIdsByParent[target.assigned_to] || []).forEach((id) => ownerIds.add(id));
-      }
-
-      const calculated_progress = deals
-        .filter((d) => d.stage === "won" && ownerIds.has(d.owner_id) && isInPeriod(d))
-        .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-
-      return { ...target, calculated_progress };
-    });
-  }, [assignedTargets, allDealsData, allEmployees]);
+    return withTargetRowProgress(assignedTargets, targetProgressCtx);
+  }, [assignedTargets, targetProgressCtx]);
 
   const quantityTargetRows = useMemo(() => {
     const targetById = new Map(
@@ -2510,6 +2501,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         onEdit={handleEditTarget}
         onDelete={handleDeleteTarget}
         showAssignedBy={true}
+        totalAchievedFor={totalAchievedForRows}
       />
     </div>
   );
