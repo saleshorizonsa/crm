@@ -3,11 +3,16 @@ import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import ForecastFormulaModal from "./ForecastFormulaModal";
 
+// The three forecast cards, each saying in plain words WHICH definition it is.
+// Two of them are deliberately NOT the shared figures — a probability-weighted
+// pipeline and an everything-closes ceiling are forecasting concepts with no
+// equivalent anywhere else in the app — and a reader comparing this page with
+// a dashboard has to be able to see that without opening the code.
 const CARDS = [
   {
     key:       "committed",
     label:     "Committed",
-    subtitle:  "Won deals",
+    subtitle:  "Invoiced revenue — the same Achieved as every dashboard",
     icon:      "CheckCircle",
     iconBg:    "bg-emerald-100",
     iconColor: "text-emerald-600",
@@ -17,7 +22,7 @@ const CARDS = [
   {
     key:       "weighted",
     label:     "Weighted",
-    subtitle:  "Probability adjusted",
+    subtitle:  "Invoiced + unbilled + open deals × stage probability",
     icon:      "TrendingUp",
     iconBg:    "bg-blue-100",
     iconColor: "text-blue-600",
@@ -27,7 +32,7 @@ const CARDS = [
   {
     key:       "bestCase",
     label:     "Best Case",
-    subtitle:  "All open deals close",
+    subtitle:  "Invoiced + unbilled + every open deal at full value",
     icon:      "Star",
     iconBg:    "bg-amber-100",
     iconColor: "text-amber-600",
@@ -36,7 +41,7 @@ const CARDS = [
   },
 ];
 
-const ForecastKPIBar = ({ forecast, targetAmount = 0, salesmanName = "", deals = [], periodLabel = "This period" }) => {
+const ForecastKPIBar = ({ forecast, targetAmount = 0, salesmanName = "", deals = [], periodLabel = "This period", targetDisagreement = null }) => {
   const { formatCurrency } = useCurrency();
   const [formulaModal, setFormulaModal] = useState(null); // card key or null
 
@@ -75,6 +80,19 @@ const ForecastKPIBar = ({ forecast, targetAmount = 0, salesmanName = "", deals =
 
   return (
     <>
+    {/* Both figures come from the same shared helpers over the same scope and
+        period, so they should agree. If they ever do not, say so rather than
+        quietly showing one of them — a silent override is how this page came
+        to read 43,861,779 against the dashboards' 3,701,000 for months. */}
+    {targetDisagreement && (
+      <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+        <span className="font-semibold">The two target figures disagree.</span>{" "}
+        The KPI strip reads {formatCurrency(targetDisagreement.strip)} and this
+        page reads {formatCurrency(targetDisagreement.service)} for the same
+        people and period. Both use the shared rule, so one of them has a bug —
+        please report it.
+      </div>
+    )}
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
       {/* Committed / Weighted / Best Case */}
       {CARDS.map((c) => (
@@ -96,6 +114,22 @@ const ForecastKPIBar = ({ forecast, targetAmount = 0, salesmanName = "", deals =
             {formatCurrency(forecast[c.key])}
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">{c.subtitle}</p>
+          {/* Won but not yet billed. Shown under Committed because it is the
+              one figure a reader will otherwise assume is inside it — it is
+              not, and must not be: Achieved counts invoices, not promises. */}
+          {c.key === "committed" && forecast.wonNotInvoiced > 0 && (
+            <p className="text-xs text-amber-600 mt-1 pt-1 border-t border-border">
+              + {formatCurrency(forecast.wonNotInvoiced)} won, not yet invoiced
+              <span className="block text-muted-foreground">
+                counted in Weighted and Best Case, never in Committed
+              </span>
+            </p>
+          )}
+          {c.key === "committed" && forecast.committedIsAchieved === false && (
+            <p className="text-xs text-muted-foreground mt-1">
+              won deals at entered value — not the shared Achieved rule
+            </p>
+          )}
         </div>
       ))}
 
