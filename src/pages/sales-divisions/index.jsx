@@ -251,9 +251,19 @@ export default function SalesDivisions() {
             .eq("period_type", "monthly")
             .lte("period_start", monthEnd)
             .gte("period_end", monthStart),
+          // The 3-month conversion window. invoice_number and closed_at are read
+          // so winRateFromDeals can drop IMPORTED history (utils/importedDeals.js):
+          // loaded-in invoices can only be "won", so without them every division's
+          // rate reads high and its Required Plan reads low.
+          //
+          // is_imported is deliberately NOT selected: this read is one leg of a
+          // Promise.all with no room to retry, and asking for a column that does
+          // not exist yet would 400 the whole page. invoice_number carries the
+          // rule until migrations/add_deals_is_imported.sql is applied; add
+          // is_imported to this select afterwards.
           supabase
             .from("deals")
-            .select("id, stage, owner_id, division_id")
+            .select("id, stage, owner_id, division_id, created_at, closed_at, invoice_number")
             .eq("company_id", company.id)
             .gte("created_at", new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString())
             .lte("created_at", new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59).toISOString()),

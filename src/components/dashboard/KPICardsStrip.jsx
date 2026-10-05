@@ -21,6 +21,15 @@ const fmtWonDate = (d) => {
 const MONTH_LABEL = () =>
   new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 
+// The same words the Planning page uses for the same two figures.
+const CONVERSION_TOOLTIP =
+  'Won ÷ deals created in the last 3 completed months, excluding imported history. '
+  + 'This is the rate Required Plan divides by.';
+const PIPELINE_CONVERSION_TOOLTIP =
+  'Information only — nothing is calculated from it. The same window and people as '
+  + 'Conversion (3m), also excluding orders created and won within a day (logged after '
+  + 'the fact), so it describes deals that actually passed through the pipeline.';
+
 // The five KPI cards. `accent` drives the coloured top strip + value colour.
 // For the director a `period` ({ label, isAnnual }) relabels Target/Achieved/
 // Deficit to the selected date range (the totals are already windowed to it);
@@ -40,11 +49,23 @@ function cardDefs(totals, opts = {}) {
   const pct = (num, den) => (den > 0 ? ((num / den) * 100).toFixed(1) : '0');
   const NO_TARGET = 'No target set';
 
-  // Win Rate + Planned Gap are always monthly / 3-month, for every role.
+  // Conversion + Planned Gap are always monthly / 3-month, for every role.
+  //
+  // "Conversion (3m)", not "Win Rate": this is won ÷ deals CREATED in the
+  // window, which is the rate Required Plan divides by. "Win rate" is kept for
+  // won ÷ (won + lost) alone — a different number, and showing both under one
+  // name is why people read the strip as disagreeing with the pipeline.
   const winRateCard = {
-    key: 'winRate', label: 'Win Rate', strip: 'bg-purple-500',
+    key: 'winRate', label: 'Conversion (3m)', strip: 'bg-purple-500',
     value: `${(t.winRate3m || 0).toFixed(1)}%`, valueClass: 'text-purple-600',
-    sub: `3-month avg${t.winRateIsDefault ? ' (default)' : ''}`,
+    sub: `3 completed months${t.winRateIsDefault ? ' (default)' : ''}`,
+    tooltip: CONVERSION_TOOLTIP,
+    // INFORMATION ONLY (CEO decision D2, 2026-10-05): shown in grey beneath
+    // the rate, and used in no calculation anywhere.
+    info: Number.isFinite(t.pipelineConversion3m) && t.pipelineTotal3m > 0
+      ? `Pipeline conversion: ${t.pipelineConversion3m.toFixed(1)}% (info)`
+      : null,
+    infoTooltip: PIPELINE_CONVERSION_TOOLTIP,
   };
   const plannedGapCard = {
     key: 'plannedGap', label: 'New pipeline needed', strip: onTrack ? 'bg-green-500' : 'bg-red-500',
@@ -500,15 +521,30 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
             className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden text-left hover:shadow-md hover:border-blue-300 transition-all"
           >
             <div className={`absolute top-0 left-0 right-0 h-1 ${c.strip}`} />
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+            <p
+              className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2"
+              title={c.tooltip}
+            >
               {c.label}
             </p>
             {loading ? (
               <div className="h-7 w-24 bg-muted rounded animate-pulse" />
             ) : (
-              <p className={`text-xl font-bold tabular-nums ${c.valueClass}`}>{c.value}</p>
+              <p className={`text-xl font-bold tabular-nums ${c.valueClass}`} title={c.tooltip}>
+                {c.value}
+              </p>
             )}
             <p className="text-xs text-muted-foreground mt-1 truncate">{c.sub}</p>
+            {/* A small grey INFORMATION-ONLY line — today only the pipeline
+                conversion figure, which drives nothing (CEO decision D2). */}
+            {!loading && c.info && (
+              <p
+                className="text-xs text-muted-foreground mt-1.5 pt-1.5 border-t border-border truncate"
+                title={c.infoTooltip}
+              >
+                {c.info}
+              </p>
+            )}
           </button>
         ))}
       </div>

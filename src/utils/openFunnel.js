@@ -104,7 +104,11 @@ export async function fetchOpenFunnel({
   // caller take a different slice from the same read.
   const { data, error } = await supabase
     .from('deals')
-    .select('id, owner_id, amount, expected_close_date')
+    // forecast_amount travels with the rows so a caller that WEIGHTS the
+    // funnel (computeCoverage: forecast_amount when set, else amount × rate)
+    // can do it from this read instead of fetching its own open deals under
+    // a definition that could drift from this one.
+    .select('id, owner_id, amount, forecast_amount, expected_close_date')
     .eq('company_id', companyId)
     .in('owner_id', ids)
     .not('stage', 'in', CLOSED_STAGES_PG);
@@ -172,13 +176,33 @@ export function partitionOpenFunnel({ rows, start, end }) {
   };
 }
 
-/** Sum of the funnel rows whose expected_close_date falls inside [start, end]. */
+/**
+ * THE date decision, as one predicate — does this open deal count toward a
+ * funnel figure for [start, end]?
+ *
+ * partitionOpenFunnel and funnelInWindow below both ask it, so a screen that
+ * takes a per-owner slice cannot answer the undated question differently from
+ * a screen that takes the total. funnelInWindow used to drop undated deals
+ * while partitionOpenFunnel counted them, which is how the KPI strip's
+ * plan-gap slice came to disagree with its own funnel card.
+ */
+export function countsInWindow(deal, start, end) {
+  const due = deal?.expected_close_date;
+  if (!due) return INCLUDE_UNDATED;
+  return due >= start && due <= end;
+}
+
+/**
+ * Funnel rows for [start, end], summed and split per owner.
+ *
+ * Same rule as partitionOpenFunnel — including undated open deals — so the
+ * per-owner slice adds up to the same figure the cards show.
+ */
 export function funnelInWindow(rows, start, end) {
   const per = {};
   let total = 0;
   (rows || []).forEach((d) => {
-    const due = d.expected_close_date;
-    if (!due || due < start || due > end) return;
+    if (!countsInWindow(d, start, end)) return;
     const amt = parseFloat(d.amount) || 0;
     per[d.owner_id] = (per[d.owner_id] || 0) + amt;
     total += amt;

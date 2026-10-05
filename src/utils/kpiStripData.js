@@ -11,10 +11,13 @@ import {
   fetchAchievedOnlyUsers,
   wonNotInvoicedList,
   summarizeWonNotInvoiced,
+  computeCoverage,
 } from 'utils/planningCalculations';
 import { fetchOpenFunnel, funnelInWindow } from 'utils/openFunnel';
 // Pacing is only meaningful for the current month — see where it is computed.
 import { isCurrentMonthRange } from 'utils/dashboardDateUtils';
+// Imported history never counts in a rate (CEO decision, 2026-10-05).
+import { isImportedDeal, isSameDayOrder, queryDealsWithImportFlag } from 'utils/importedDeals';
 
 // TEMP: set true to re-enable the KPI diagnostic logs (see end of the function).
 const KPI_DEBUG = false;
@@ -32,6 +35,7 @@ const EMPTY_TOTALS = {
   wonNotInvoiced: EMPTY_WON_NOT_INVOICED,
   pacingApplies: false, coverageIsCurrentMonth: true,
   hasTarget: false,
+  pipelineConversion3m: 0, pipelineWon3m: 0, pipelineTotal3m: 0, importedExcluded3m: 0,
 };
 
 function monthBounds() {
@@ -206,13 +210,18 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   //    must use it rather than re-deriving the window here. This block keeps its
   //    own query only because it needs the raw rows to group per owner, which
   //    that helper does not return — the window and formula are identical.
-  const { data: deals3 } = await supabase
+  //
+  // IMPORTED history is excluded, exactly as fetchWinRate3m excludes it:
+  // loaded-in invoices can only be "won", so they inflated every per-person
+  // rate and so understated every per-person Required Plan.
+  const { data: deals3Raw } = await queryDealsWithImportFlag((select) => supabase
     .from('deals')
-    .select('owner_id, stage, created_at')
+    .select(select)
     .eq('company_id', companyId)
     .in('owner_id', scopeIds)
     .gte('created_at', w3.startISO)
-    .lte('created_at', w3.endISO);
+    .lte('created_at', w3.endISO), 'owner_id, stage, created_at, closed_at, invoice_number');
+  const deals3 = (deals3Raw || []).filter((d) => !isImportedDeal(d));
   const wrPer = {};
   (deals3 || []).forEach((d) => {
     if (!wrPer[d.owner_id]) wrPer[d.owner_id] = { won: 0, total: 0 };
@@ -220,10 +229,24 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     if (d.stage === 'won') wrPer[d.owner_id].won += 1;
   });
 
-  // Company-wide 3-month win rate — the fallback for salesmen with zero history.
+  // Company-wide 3-month conversion — the fallback for salesmen with zero
+  // history, and the scope figure shown on the strip.
   const total3 = (deals3 || []).length;
   const won3 = (deals3 || []).filter((d) => d.stage === 'won').length;
   const companyWinRate3m = total3 > 0 ? (won3 / total3) * 100 : 0;
+
+  // PIPELINE CONVERSION — INFORMATION ONLY (CEO decision D2, 2026-10-05).
+  // The same window and scope as the rate above, minus orders created and
+  // won inside a day: real sales, but logged after the fact, so counting
+  // them measures data entry rather than selling. Dropped from both halves
+  // of the ratio. NOTHING calculates with this — Required Plan, the deficit
+  // and every coverage figure stay on the rate above.
+  const pipeline3 = (deals3 || []).filter((d) => !isSameDayOrder(d));
+  const pipelineWon3 = pipeline3.filter((d) => d.stage === 'won').length;
+  const pipelineConversion3m = pipeline3.length
+    ? (pipelineWon3 / pipeline3.length) * 100
+    : 0;
+  const importedExcluded3m = (deals3Raw || []).length - (deals3 || []).length;
 
   // New-salesman exception: anyone with NO deals in the 90-day window uses their
   // ACTUAL win rate over all their history — however few deals (1 won of 2 = 50%,
@@ -232,11 +255,15 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   const noWindowIds = scopeIds.filter((id) => !wrPer[id] || wrPer[id].total === 0);
   const allWrPer = {};
   if (noWindowIds.length) {
-    const { data: allDeals } = await supabase
+    const { data: allDealsRaw } = await queryDealsWithImportFlag((select) => supabase
       .from('deals')
-      .select('owner_id, stage')
+      .select(select)
       .eq('company_id', companyId)
-      .in('owner_id', noWindowIds);
+      .in('owner_id', noWindowIds), 'owner_id, stage, invoice_number');
+    // Imported history excluded here as well: a salesman whose only rows are
+    // loaded-in invoices would otherwise read 100%, and 100% makes Required
+    // Plan equal to the target.
+    const allDeals = (allDealsRaw || []).filter((d) => !isImportedDeal(d));
     (allDeals || []).forEach((d) => {
       if (!allWrPer[d.owner_id]) allWrPer[d.owner_id] = { won: 0, total: 0 };
       allWrPer[d.owner_id].total += 1;
@@ -365,9 +392,22 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   const plannedGap = Math.max(0, requiredRaw - (planned + monthFunnelTotal));
   const attainmentPct = target > 0 ? (achieved / target) * 100 : 0;
 
-  // Coverage check: Achieved + (Funnel × WinRate) + (Planning × WinRate) ≥ Target.
-  const wrFrac = winRate3m / 100;
-  const coverageValue = achieved + funnelValue * wrFrac + planned * wrFrac;
+  // Coverage check: Achieved + weighted funnel + weighted planning ≥ Target,
+  // through the SHARED rule (planningCalculations.js computeCoverage) rather
+  // than a fourth local copy. The difference that rule makes: a deal with a
+  // stored forecast_amount is weighted at that amount instead of
+  // amount × rate, which is what the Coverage Console and Insights already
+  // did — so the three screens could disagree about the same funnel.
+  //
+  // The funnel half is the CURRENT MONTH's open deals from openFunnel
+  // (funnel.rows), the same rows the funnel card shows.
+  const coverageSplit = computeCoverage({
+    invoiced: achieved,
+    openDeals: funnel.rows,
+    planned,
+    winRatePct: winRate3m,
+  });
+  const coverageValue = coverageSplit.coverage;
   const coverageHealthy = target > 0 ? coverageValue >= target : true;
   const coveragePct = target > 0 ? (coverageValue / target) * 100 : 100;
 
@@ -397,6 +437,11 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     // met ✓" and "0.0% of target" for a period nobody had set a target for.
     hasTarget: target > 0,
     target, achieved, deficit, winRate3m, winRateIsDefault,
+    // Information only; see where it is computed.
+    pipelineConversion3m, pipelineWon3m: pipelineWon3, pipelineTotal3m: pipeline3.length,
+    // How many loaded-in history rows were set aside from the rate, so the
+    // screen can explain the number rather than leaving it unaccounted for.
+    importedExcluded3m,
     planned, monthFunnel: monthFunnelTotal, required, requiredRaw, futureCarryover, plannedGap,
     attainmentPct, funnelValue,
     coverageValue, coverageHealthy, coveragePct,

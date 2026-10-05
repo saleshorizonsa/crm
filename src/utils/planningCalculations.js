@@ -1,5 +1,6 @@
 import { supabase } from 'lib/supabase';
 import { fetchWinRate3m } from 'utils/winRate3m';
+import { isImportedDeal, queryDealsWithImportFlag } from 'utils/importedDeals';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The single definition of the five planning numbers.
@@ -220,22 +221,39 @@ export async function computeWinRate({
     || (await fetchContributors({ companyId, ownerIds })).map((c) => c.id);
   if (!scopeIds.length) return { winRatePct: 0, isDefault: true };
 
-  const { winRate3m, total3m } = await fetchWinRate3m({ companyId, ownerIds: scopeIds });
-  if (total3m > 0) return { winRatePct: winRate3m, isDefault: false };
+  const rate3m = await fetchWinRate3m({ companyId, ownerIds: scopeIds });
+  const { winRate3m, total3m } = rate3m;
+  if (total3m > 0) {
+    return {
+      winRatePct: winRate3m,
+      isDefault: false,
+      // Information only (CEO decision D2) — carried through so a screen can
+      // show it beside the rate without a second query. null on the fallback
+      // paths below, where there is no 3-month window to measure it over.
+      pipelineConversion3m: rate3m.pipelineConversion3m,
+      pipelineTotal3m: rate3m.pipelineTotal3m,
+      importedExcluded: rate3m.importedExcluded,
+    };
+  }
   // The KPI strip deliberately reports 0% for a scope with no deals in the
   // window rather than borrowing another scope's rate; Planning walks the
   // fallback chain instead. Same rule, two documented policies -- opt in.
   if (!withFallback) return { winRatePct: 0, isDefault: true };
 
-  // Step 2 - this scope's whole history, contributors only.
-  const { data: hist } = await supabase
+  // Step 2 - this scope's whole history, contributors only, and with
+  // IMPORTED history excluded like every other rate (utils/importedDeals.js).
+  // This fallback is the one most exposed to it: a salesman whose only rows
+  // are loaded-in invoices would have read 100%, and 100% makes Required
+  // Plan equal to the target — no new pipeline needed, ever.
+  const { data: hist } = await queryDealsWithImportFlag((select) => supabase
     .from('deals')
-    .select('stage')
+    .select(select)
     .eq('company_id', companyId)
-    .in('owner_id', scopeIds);
-  if (hist?.length) {
-    const won = hist.filter((d) => d.stage === 'won').length;
-    return { winRatePct: (won / hist.length) * 100, isDefault: false };
+    .in('owner_id', scopeIds), 'stage, invoice_number');
+  const worked = (hist || []).filter((d) => !isImportedDeal(d));
+  if (worked.length) {
+    const won = worked.filter((d) => d.stage === 'won').length;
+    return { winRatePct: (won / worked.length) * 100, isDefault: false };
   }
 
   // Step 3 - the company average, also over contributors only.
@@ -258,9 +276,15 @@ export async function computeWinRate({
  * @returns {{winRatePct:number, total:number}} percent, not a fraction.
  */
 export function winRateFromDeals({ deals, ownerIds = null }) {
-  const rows = Array.isArray(ownerIds)
+  // Imported history is dropped here too, so a screen that computes its own
+  // levels from one read (the Coverage Console, Insights) gets the same rate
+  // as fetchWinRate3m. The caller must have SELECTED invoice_number and, once
+  // the migration is applied, is_imported — without them every row looks
+  // worked and the rate goes back to being inflated.
+  const scoped = Array.isArray(ownerIds)
     ? (deals || []).filter((d) => ownerIds.includes(d.owner_id))
     : (deals || []);
+  const rows = scoped.filter((d) => !isImportedDeal(d));
   if (!rows.length) return { winRatePct: 0, total: 0 };
   const won = rows.filter((d) => d.stage === 'won').length;
   return { winRatePct: (won / rows.length) * 100, total: rows.length };

@@ -19,6 +19,7 @@ import {
   computeAchieved,
   targetPerPerson,
   winRateFromDeals,
+  computeCoverage,
   sumPlannedByOwner,
   computeRequiredRaw,
   computePlannedGap,
@@ -26,6 +27,9 @@ import {
   nextMonthBounds,
   wonNotInvoicedExceptions,
 } from "utils/planningCalculations";
+// One funnel definition, including the undated open deals this screen used to
+// drop (utils/openFunnel.js).
+import { partitionOpenFunnel } from "utils/openFunnel";
 
 // ── STATE ────────────────────────────────────────────────────────────────────
 // One object, four keys.
@@ -180,10 +184,20 @@ export default function CoverageConsole() {
           .lte("period_start", monthEnd)
           .gte("period_end", monthStart),
 
-        // Trailing 3-month deals, for win rate
+        // Trailing 3-month deals, for the conversion rate. invoice_number and
+        // closed_at are read so winRateFromDeals can drop IMPORTED history
+        // (utils/importedDeals.js) — without them every loaded-in invoice
+        // counts as a won deal and the rate reads ~12 points high, which
+        // understates Required Plan for every node on this screen.
+        //
+        // is_imported is NOT selected here: this read is part of a
+        // Promise.all with no room to retry, and selecting a column that does
+        // not exist yet would 400 the whole screen. invoice_number carries the
+        // rule until the migration lands; add is_imported to this select
+        // afterwards.
         supabase
           .from("deals")
-          .select("id, stage, owner_id")
+          .select("id, stage, owner_id, created_at, closed_at, invoice_number")
           .eq("company_id", company.id)
           .gte(
             "created_at",
@@ -458,10 +472,6 @@ export default function CoverageConsole() {
         !["won", "lost"].includes(d.stage)
     );
     const funnel = openDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
-    const weightedFunnel = openDeals.reduce(
-      (sum, d) => sum + (d.forecast_amount || d.amount * winRate || 0),
-      0
-    );
 
     // ── PLANNING ──
     // Over contributors PLUS any flagged achieved-only manager, the scope Target
@@ -473,23 +483,35 @@ export default function CoverageConsole() {
       ownerIds: achieverIds,
     });
     const planning = planningSum.total;
-    const weightedPlanning = planning * winRate;
 
-    // Open funnel for THIS MONTH only, raw and unweighted, over the same scope.
-    // Distinct from `funnel` above, which is every open deal regardless of date
-    // and feeds the coverage rail. This one nets off the pipeline requirement,
-    // exactly as planningPageSummary.js does, so the two screens can agree.
-    const monthFunnelDeals = (deals || []).filter(
-      (d) =>
-        achieverIds.includes(d.owner_id) &&
-        !["won", "lost"].includes(d.stage) &&
-        d.expected_close_date >= monthStart &&
-        d.expected_close_date <= monthEnd
+    // Open funnel for THIS MONTH, through the SHARED partition
+    // (utils/openFunnel.js partitionOpenFunnel) rather than a local date
+    // filter. The local filter dropped every deal with no
+    // expected_close_date — 13 deals worth 123,540.34 for JASCO PVC, about 6%
+    // of the funnel — so this screen's funnel disagreed with Planning's and
+    // the KPI strip's for the same person and month. INCLUDE_UNDATED is the
+    // one place that rule now lives.
+    const openInScope = (deals || []).filter(
+      (d) => achieverIds.includes(d.owner_id) && !["won", "lost"].includes(d.stage)
     );
-    const monthFunnel = monthFunnelDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
+    const monthSplit = partitionOpenFunnel({
+      rows: openInScope, start: monthStart, end: monthEnd,
+    });
+    const monthFunnelDeals = monthSplit.rows;
+    const monthFunnel = monthSplit.total;
 
-    // ── COVERAGE ──
-    const coverage = invoiced + weightedFunnel + weightedPlanning;
+    // ── COVERAGE ── the shared rule (planningCalculations.js computeCoverage),
+    // not a third local copy of the same arithmetic: achieved + weighted funnel
+    // (forecast_amount when set, else amount × rate) + planned × rate. The
+    // funnel half is the CURRENT MONTH's open deals from the shared partition
+    // above, which is what the KPI strip and Insights weight too.
+    const coverageSplit = computeCoverage({
+      invoiced,
+      openDeals: monthFunnelDeals,
+      planned: planning,
+      winRatePct,
+    });
+    const coverage = coverageSplit.coverage;
 
     // ── REQUIRED PLAN ── shared rule: with no win rate at all, assume 50%
     // (target x 2). This used to return 0, which reported "no plan needed"
@@ -528,9 +550,9 @@ export default function CoverageConsole() {
       returnsTotal,
       remainingTarget,
       funnel,
-      weightedFunnel,
+      weightedFunnel: coverageSplit.weightedFunnel,
       planning,
-      weightedPlanning,
+      weightedPlanning: coverageSplit.weightedPlanning,
       coverage,
       winRate,
       requiredPlan,
