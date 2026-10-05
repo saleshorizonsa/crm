@@ -1,6 +1,9 @@
 import React from "react";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+// The Revenue figure below, lifted out so the numbers-check page can call the
+// same function this card calls.
+import { reportWonTotal } from "../../../services/reportService";
 
 const delta = (curr, prev) => {
   if (!prev || prev === 0) return null;
@@ -40,12 +43,14 @@ const ReportKPIBar = ({ deals = [], prevDeals = [], role }) => {
   const open     = deals.filter((d) => !["won", "lost"].includes(d.stage));
   const closed   = won.length + lost.length;
   const winRate  = closed > 0 ? Math.round((won.length / closed) * 100) : 0;
-  const revenue  = won.reduce((s, d) => s + (d.amount || 0), 0);
+  // reportWonTotal (services/reportService.js) is the shared definition of
+  // this figure, so the numbers-check page reads what this card shows.
+  const revenue  = reportWonTotal(deals);
   const pipeline = open.reduce((s, d) => s + (d.amount || 0), 0);
   const avgDeal  = deals.length > 0 ? revenue / Math.max(won.length, 1) : 0;
 
   const pWon     = prevDeals.filter((d) => d.stage === "won");
-  const pRevenue = pWon.reduce((s, d) => s + (d.amount || 0), 0);
+  const pRevenue = reportWonTotal(prevDeals);
   const pClosed  = prevDeals.filter((d) => ["won", "lost"].includes(d.stage)).length;
   const pWinRate = pClosed > 0 ? Math.round((pWon.length / pClosed) * 100) : 0;
 

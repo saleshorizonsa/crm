@@ -326,7 +326,8 @@ export function calcDivisionMetrics(userIds, data) {
   // not work that does not exist; see INCLUDE_UNDATED.
   //
   // Distinct from `pipeline` above, which is every open deal regardless of date
-  // and feeds the coverage rail.
+  // and feeds the coverage rail. These rows — not `pipeline` — are what
+  // computeCoverage weights below.
   const funnelSplit = partitionOpenFunnel({ rows: openDeals, start: monthStart, end: monthEnd });
   const monthFunnel = funnelSplit.total;
   // Shown for visibility only — NOT netted off the requirement any more. It is
@@ -346,9 +347,21 @@ export function calcDivisionMetrics(userIds, data) {
   const required = requiredRaw;
   const plannedGap = Math.max(0, requiredRaw - monthCoverage);
 
+  // COVERAGE — the shared rule over the funnel dated INTO THE PERIOD
+  // (funnelSplit.rows), which is what the Coverage Console and the KPI strip
+  // weight. This used to pass `openDeals` — every open deal, any date — so
+  // Insights answered a different question from the other two screens and
+  // reported 2,812,660 where they reported 1,548,955 for JASCO PVC in
+  // September 2026, on the same company, month and people. Found by
+  // /numbers-check on 2026-10-05.
+  //
+  // Coverage asks "will THIS period's target be covered?", so weighting a deal
+  // due in another period was simply the wrong input. `pipeline` above is still
+  // every open deal — that figure feeds the coverage rail, which is about the
+  // whole book, not about this month's target.
   const { weightedFunnel, weightedPlanning, coverage } = computeCoverage({
     invoiced: achieved,
-    openDeals,
+    openDeals: funnelSplit.rows,
     planned,
     winRatePct,
   });

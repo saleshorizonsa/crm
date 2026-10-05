@@ -17,7 +17,7 @@ import {
   targetPerPerson,
   monthBounds,
 } from 'utils/planningCalculations';
-import { matchesGroup, fetchPlannedOpen } from 'utils/planningPageSummary';
+import { matchesGroup, fetchPlannedOpen, openPlanTotal } from 'utils/planningPageSummary';
 import { dealService } from 'services/supabaseService';
 
 const DIRECTOR_ROLES = ['director', 'head', 'admin'];
@@ -552,12 +552,9 @@ export default function OpportunitiesModule({
   // it became — which made Total Planned read above the plan that was actually
   // filed and made Remaining read lower than it is. 'moved_to_future' rows are
   // next month's problem and were being counted into this month as well.
-  const openOpportunities = opportunities.filter(
-    (o) => (o.status || 'open') === 'open',
-  );
-  const totalPlanned = openOpportunities.reduce(
-    (s, o) => s + (parseFloat(o.planned_amount) || 0), 0,
-  );
+  // openPlanTotal (utils/planningPageSummary.js) is the shared definition, so
+  // this tab and the numbers-check page cannot disagree about it.
+  const { total: totalPlanned, rows: openOpportunities } = openPlanTotal(opportunities);
   const planningPct   = monthlyTarget > 0 ? Math.min((totalPlanned / monthlyTarget) * 100, 100) : 0;
   const unplanned     = Math.max(0, monthlyTarget - totalPlanned);
   // Remaining = what the target still needs once THIS month's invoiced revenue,
