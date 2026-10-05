@@ -6177,10 +6177,15 @@ export const forecastService = {
         })
         : await fetchAchieved({ companyId, contributorIds: achieverIds });
       // Not windowed, exactly as the KPI strip treats it: a deal won in a past
-      // month and still not invoiced is outstanding now, not then.
-      const wni = summarizeWonNotInvoiced(
-        wonNotInvoicedList({ deals: deals || [], ownerIds: achieverIds }),
-      );
+      // month and still not invoiced is outstanding NOW, not then.
+      //
+      // Hence its OWN read — wonNotInvoicedFor, the same helper the monthly
+      // target cards use — and not the `deals` array above. That array is
+      // filtered to the selected period by closed_at, so deriving this from it
+      // gave 0 for September while reading 818,399 for October, purely because
+      // of which month the outstanding deals happened to be closed in. The
+      // figure is a STATUS; a status cannot be windowed.
+      const wni = await wonNotInvoicedFor({ companyId, ownerIds: achieverIds });
 
       return {
         deals:  deals || [],
