@@ -2,6 +2,17 @@ import { supabase } from "../lib/supabase";
 import { calculateLeadScore } from "../utils/leadScoring";
 import { handleTargetChange } from "../utils/targetChangeHandler";
 import { forecastFieldsFor } from "../utils/forecastCalc";
+// The shared definitions of Target and Achieved. getMonthlyTarget and
+// getScopeMonthlyTotals below are consumers of these, not second copies.
+import {
+  fetchMonthlyTargets,
+  targetPerPerson,
+  fetchAchieved,
+  fetchContributors,
+  fetchAchievedOnlyUsers,
+  wonNotInvoicedList,
+  summarizeWonNotInvoiced,
+} from "../utils/planningCalculations";
 
 // ========================================
 // AUTH SERVICES
@@ -4049,55 +4060,151 @@ export const salesTargetService = {
 // MONTHLY TARGET SERVICE
 // ========================================
 
-export async function getMonthlyTarget({ userId, companyId, dateFrom, dateTo }) {
-  const { data: target } = await supabase
-    .from('sales_targets')
-    .select(`
-      id, target_amount, period_type,
-      period_start, period_end, status,
-      target_type, assigned_to, assigned_by,
-      assigner:users!assigned_by(full_name)
-    `)
-    .eq('assigned_to', userId)
-    .eq('status', 'active')
-    .eq('period_type', 'monthly')
-    .lte('period_start', dateTo)
-    .gte('period_end', dateFrom)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+/** Whole months touched by a yyyy-MM-dd range, counted from the date parts. */
+function monthsSpanned(dateFrom, dateTo) {
+  const a = String(dateFrom || '').slice(0, 7);
+  const b = String(dateTo || '').slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(a) || !/^\d{4}-\d{2}$/.test(b)) return 1;
+  const [ay, am] = a.split('-').map(Number);
+  const [by, bm] = b.split('-').map(Number);
+  return Math.max(1, (by - ay) * 12 + (bm - am) + 1);
+}
 
-  if (!target) return null;
-
-  const { data: wonDeals } = await supabase
+/** Won-but-uninvoiced total for a scope — a status, so never windowed. */
+async function wonNotInvoicedFor({ companyId, ownerIds }) {
+  if (!companyId || !ownerIds?.length) return { count: 0, total: 0 };
+  const { data, error } = await supabase
     .from('deals')
-    .select('amount')
-    .eq('owner_id', userId)
+    .select('id, owner_id, stage, is_invoiced, amount, final_amount, closed_at, stage_changed_at, created_at')
     .eq('company_id', companyId)
     .eq('stage', 'won')
-    .gte('closed_at', dateFrom)
-    .lte('closed_at', dateTo);
-
-  const achieved = (wonDeals || []).reduce(
-    (s, d) => s + parseFloat(d.amount || 0), 0
+    .in('owner_id', ownerIds);
+  if (error) {
+    console.error('wonNotInvoicedFor:', error);
+    return { count: 0, total: 0 };
+  }
+  const { count, total } = summarizeWonNotInvoiced(
+    wonNotInvoicedList({ deals: data, ownerIds }),
   );
+  return { count, total };
+}
 
-  const targetAmount = parseFloat(target.target_amount || 0);
-  const remaining = Math.max(0, targetAmount - achieved);
-  const attainment = targetAmount > 0
-    ? Math.min(100, Math.round(achieved / targetAmount * 100))
-    : 0;
+/**
+ * ONE person's monthly target and what they have achieved against it — the
+ * figure behind MonthlyTargetCard on all four role dashboards.
+ *
+ * Both halves are now the shared rules in utils/planningCalculations.js:
+ *
+ *   TARGET   = targetPerPerson over EVERY active monthly row assigned to them
+ *              that overlaps the window. It used to be ONE row —
+ *              `.order(created_at desc).limit(1)` — so a person holding a
+ *              total_value and a by_clients commitment in the same month was
+ *              measured against whichever was entered last: Mohamed Kamal's
+ *              October card read 500,000 instead of 2,050,000. The row filter
+ *              also ignored companyId entirely.
+ *   ACHIEVED = fetchAchieved: won AND invoiced, by invoice_date in the window,
+ *              at final_amount ?? amount, net of returns. It used to be won by
+ *              closed_at at `amount`, counting deals that were never invoiced
+ *              and ignoring returns, with a bare-date upper bound that dropped
+ *              the window's last day.
+ *
+ * Always the person's OWN deals, whatever their role: this card is a self-view,
+ * sitting beside the team tiles that cover everyone else. That is why it does
+ * not go through achieverIdsFrom — a manager who is not flagged is_contributor
+ * still has his own card, and his own invoices belong on it.
+ *
+ * Returns null only when there is nothing to show at all: no target rows AND
+ * nothing achieved. A person with invoices but no target row still gets a card
+ * (amount 0), because "you billed 1,029,299 against no target" is information,
+ * not an empty state.
+ */
+export async function getMonthlyTarget({ userId, companyId, dateFrom, dateTo }) {
+  if (!userId || !companyId) return null;
+
+  const [targetRows, achievedResult, wni, meta] = await Promise.all([
+    fetchMonthlyTargets({ companyId, contributorIds: [userId], start: dateFrom, end: dateTo }),
+    fetchAchieved({ companyId, contributorIds: [userId], start: dateFrom, end: dateTo }),
+    wonNotInvoicedFor({ companyId, ownerIds: [userId] }),
+    // Labels only — who assigned it and which period it names. The AMOUNT never
+    // comes from here; the most recent row is just the one whose caption is
+    // shown when somebody holds several.
+    supabase
+      .from('sales_targets')
+      .select('id, period_start, period_end, target_type, assigner:users!assigned_by(full_name)')
+      .eq('company_id', companyId)
+      .eq('assigned_to', userId)
+      .eq('status', 'active')
+      .eq('period_type', 'monthly')
+      .lte('period_start', dateTo)
+      .gte('period_end', dateFrom)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const amount = Object.values(targetPerPerson(targetRows)).reduce((sum, v) => sum + v, 0);
+  const achieved = achievedResult.total;
+  if (!targetRows?.length && achieved === 0) return null;
+
+  const row = meta?.data || null;
+  return {
+    id:          row?.id || null,
+    amount,
+    achieved,
+    remaining:   Math.max(0, amount - achieved),
+    // Uncapped. Math.min(100, …) turned every over-performing month into a flat
+    // 100%, which is the one number a target card must never round off.
+    attainment:  amount > 0 ? Math.round((achieved / amount) * 100) : 0,
+    periodStart: row?.period_start || dateFrom,
+    periodEnd:   row?.period_end || dateTo,
+    assignedBy:  row?.assigner?.full_name || 'Manager',
+    targetType:  row?.target_type || null,
+    // Visibility, not achievement: won deals still waiting to be invoiced.
+    // Deliberately not windowed, exactly as the KPI strip treats it.
+    wonNotInvoiced: wni,
+    // So the card can stop calling itself "Monthly" when the selected range
+    // covers several months, which the target above then sums.
+    monthsInRange: monthsSpanned(dateFrom, dateTo),
+    targetRowCount: targetRows?.length || 0,
+  };
+}
+
+/**
+ * The same two figures for a SCOPE rather than one person, for the "Team
+ * Monthly" and "Company Monthly" tiles.
+ *
+ * Scope is the ACHIEVER set — active contributors plus anyone individually
+ * flagged users.is_contributor — narrowed to `ownerIds` when one is given. That
+ * is precisely the scope computeKpiStripData uses, so these tiles and the KPI
+ * strip cannot disagree.
+ *
+ * Both tiles used to sum getMonthlyTarget over a hand-rolled list instead: the
+ * Director's over MANAGERS ONLY (so the company target was whatever the two
+ * managers happened to hold, and every salesman's invoices were missing), and
+ * the Manager's over getUserSubordinates with no company or active filter.
+ */
+export async function getScopeMonthlyTotals({ companyId, ownerIds = null, start, end }) {
+  const empty = { target: 0, achieved: 0, wonNotInvoiced: { count: 0, total: 0 } };
+  if (!companyId) return empty;
+  if (Array.isArray(ownerIds) && ownerIds.length === 0) return empty;
+
+  const [contributors, flagged] = await Promise.all([
+    fetchContributors({ companyId, ownerIds }),
+    fetchAchievedOnlyUsers({ companyId, ownerIds }),
+  ]);
+  const scopeIds = [...contributors.map((c) => c.id), ...flagged.map((u) => u.id)];
+  if (!scopeIds.length) return empty;
+
+  const [targetRows, achievedResult, wni] = await Promise.all([
+    fetchMonthlyTargets({ companyId, contributorIds: scopeIds, start, end }),
+    fetchAchieved({ companyId, contributorIds: scopeIds, start, end }),
+    wonNotInvoicedFor({ companyId, ownerIds: scopeIds }),
+  ]);
 
   return {
-    id:          target.id,
-    amount:      targetAmount,
-    achieved,
-    remaining,
-    attainment,
-    periodStart: target.period_start,
-    periodEnd:   target.period_end,
-    assignedBy:  target.assigner?.full_name || 'Manager',
-    targetType:  target.target_type,
+    target: Object.values(targetPerPerson(targetRows)).reduce((sum, v) => sum + v, 0),
+    achieved: achievedResult.total,
+    wonNotInvoiced: wni,
   };
 }
 

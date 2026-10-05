@@ -43,7 +43,19 @@ export default function MonthlyTargetCard({
     );
   }
 
-  const { amount, achieved, remaining, attainment, assignedBy } = monthlyTarget;
+  const {
+    amount, achieved, remaining, attainment, assignedBy,
+    wonNotInvoiced, monthsInRange,
+  } = monthlyTarget;
+
+  // The chip said "Monthly" whatever the selected range, while the target below
+  // it sums every month the range covers — so a quarter read as a monthly
+  // target three times too big. It now names the period it is actually showing.
+  const spanLabel = (monthsInRange || 1) > 1 ? periodLabel : 'Monthly';
+  // The bar is capped; the percentage is not. Clamping the number itself is
+  // what made every over-performing month read a flat 100%.
+  const barWidth = Math.min(100, Math.max(0, attainment));
+  const pendingInvoices = wonNotInvoiced || { count: 0, total: 0 };
 
   const barColor =
     attainment >= 80 ? "bg-green-500" :
@@ -74,7 +86,7 @@ export default function MonthlyTargetCard({
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">
-            Monthly
+            {spanLabel}
           </span>
           <span className={`text-sm font-bold px-2.5 py-1 rounded-lg ${pctBg} ${pctColor}`}>
             {attainment}%
@@ -94,7 +106,7 @@ export default function MonthlyTargetCard({
       <div className="h-2 bg-background-secondary rounded-full overflow-hidden mb-3">
         <div
           className={`h-full rounded-full transition-all ${barColor}`}
-          style={{ width: `${attainment}%` }}
+          style={{ width: `${barWidth}%` }}
         />
       </div>
 
@@ -113,6 +125,27 @@ export default function MonthlyTargetCard({
           </p>
         </div>
       </div>
+
+      {/* Work that is won but not yet invoiced, so it is NOT in Achieved above.
+          Without it, a month showing 0 achieved beside a full funnel looks like
+          nothing happened — Mohamed Kamal's October reads 0 achieved with
+          790,000 sitting between winning and invoicing. */}
+      {pendingInvoices.total > 0 && (
+        <p
+          data-testid="won-not-invoiced"
+          className="text-xs text-text-tertiary mt-3"
+        >
+          Won, not yet invoiced:{' '}
+          <span className="font-medium text-text-primary">
+            {formatCurrency(pendingInvoices.total)}
+          </span>
+          {pendingInvoices.count > 0 && (
+            <span>
+              {' '}({pendingInvoices.count} {pendingInvoices.count === 1 ? 'deal' : 'deals'})
+            </span>
+          )}
+        </p>
+      )}
     </div>
   );
 }
