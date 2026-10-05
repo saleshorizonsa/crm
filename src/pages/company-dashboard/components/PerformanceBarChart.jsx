@@ -20,6 +20,9 @@ import {
   targetPerPerson,
 } from "../../../utils/planningCalculations";
 import { bucketsFor } from "../../../utils/achievedSeries";
+// The bars and the two headline totals, lifted out so the numbers-check page
+// can call the same functions with the same arguments.
+import { performanceBars, performanceTotals } from "../../../utils/performanceBarData";
 
 const PerformanceBarChart = ({
   dealsData = [],
@@ -88,69 +91,20 @@ const PerformanceBarChart = ({
   );
 
 
-  // Whose target counts: exactly whose Achieved counts. `contributorIds` is
-  // the dashboard's achiever scope, already narrowed to one person when
-  // "View dashboard as" picks one — so the target narrows with the revenue
-  // instead of staying at the whole company's.
-  const targetScopeIds = useMemo(
-    () => (Array.isArray(contributorIds) ? new Set(contributorIds) : null),
-    [contributorIds],
+  // The bars AND their periods come from utils/performanceBarData.js — the
+  // same function the numbers-check page calls. Revenue is Achieved over each
+  // bucket's own window net of that bucket's returns; the target is
+  // targetPerPerson over the active monthly rows in the bucket, narrowed to
+  // the people whose revenue counts (so "View dashboard as" narrows both).
+  const { periods, rows: chartData } = useMemo(
+    () => performanceBars({
+      allDeals, contributorIds, returns, targetsData, timePeriod, year,
+      amountOf: getConvertedAmount, yearsBack: 5,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allDeals, contributorIds, returns, targetsData, timePeriod, year, preferredCurrency],
   );
 
-  // One bucket per month / quarter / year of the SELECTED year
-  // (utils/achievedSeries.js). The year view ends at that year rather than at
-  // today's, so picking 2025 no longer draws 2026.
-  const periods = useMemo(() => bucketsFor(timePeriod, year, 5), [timePeriod, year]);
-
-  const chartData = useMemo(() => periods.map((period) => {
-    // Revenue = Achieved over the BUCKET's own window, net of the returns
-    // dated in it — one rule, applied per bar. It was a loop over won deals
-    // bucketed by invoice month with no returns at all, so a credit note
-    // never reduced a bar and the bars did not add up to the net headline.
-    const bucket = computeAchieved({
-      deals: allDeals,
-      contributorIds,
-      start: period.start,
-      end: period.end,
-      amountOf: getConvertedAmount,
-      returns,
-    });
-    // Unique owners who actually invoiced in THIS bucket — the avg divisor.
-    const activeOwners = new Set(bucket.deals.map((d) => d.owner_id).filter(Boolean));
-
-    // Target — the shared rule (targetPerPerson / targetRowValue) over the
-    // rows that fall in this bucket. It was a raw sum of every monthly row's
-    // target_amount, which added a by_products row on top of the same month's
-    // total_value, counted a header row's own amount instead of its client
-    // breakdown, and counted rows belonging to people whose revenue is not in
-    // Achieved at all — an inactive salesman, a plain manager.
-    //
-    // The row's month is SLICED from its yyyy-MM-dd string, never parsed:
-    // new Date('2026-01-01') is UTC midnight, which in any zone behind UTC is
-    // 31 December — the wrong bucket, and in January the wrong year.
-    const bucketRows = (targetsData || []).filter((t) => {
-      if ((t.period_type || "monthly") !== "monthly") return false;
-      if ((t.status || "active") !== "active") return false;
-      if (targetScopeIds && !targetScopeIds.has(t.assigned_to)) return false;
-      const ymd = String(t.period_start || "");
-      const rowYear = Number(ymd.slice(0, 4));
-      const rowMonth = Number(ymd.slice(5, 7)) - 1;
-      if (timePeriod === "month") return rowYear === period.year && rowMonth === period.month;
-      if (timePeriod === "quarter") return rowYear === period.year && period.months.includes(rowMonth);
-      return rowYear === period.year;
-    });
-    const target = Object.values(targetPerPerson(bucketRows)).reduce((s, v) => s + v, 0);
-
-    return {
-      name: period.label,
-      revenue: bucket.total,
-      target,
-      deals: bucket.count,
-      avg: activeOwners.size > 0 ? bucket.total / activeOwners.size : 0,
-      achievement: target > 0 ? Math.round((bucket.total / target) * 100) : 0,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [periods, allDeals, contributorIds, returns, targetsData, timePeriod, targetScopeIds, preferredCurrency]);
 
   // Per-salesman revenue breakdown for the displayed range.
   // Includes every active salesman (zeros for non-performers) and counts
@@ -195,11 +149,9 @@ const PerformanceBarChart = ({
 
   // Calculate summary stats
   const summaryStats = useMemo(() => {
-    const totalRevenue = chartData.reduce((sum, d) => sum + d.revenue, 0);
-    const totalTarget = chartData.reduce((sum, d) => sum + d.target, 0);
-    const totalDeals = chartData.reduce((sum, d) => sum + d.deals, 0);
-    const avgAchievement =
-      totalTarget > 0 ? Math.round((totalRevenue / totalTarget) * 100) : 0;
+    // The same three figures the numbers-check page reads.
+    const { totalRevenue, totalTarget, totalDeals, avgAchievement } =
+      performanceTotals(chartData);
     // Active pipeline value = sum of ALL open deals (not won/lost), no date filter.
     const remainingRevenue = (allDeals || [])
       .filter((d) => !["won", "lost"].includes(d.stage))

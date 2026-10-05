@@ -111,6 +111,29 @@ export function computeDateRange(period) {
   }
 }
 
+/**
+ * The Reports page's Revenue card: won deals at `amount`.
+ *
+ * Lifted out of ReportKPIBar so the numbers-check page can read the figure
+ * that screen actually shows instead of recomputing it. The arithmetic is
+ * unchanged.
+ *
+ * THIS IS DELIBERATELY NOT `Achieved`, and the two are known to differ:
+ *   - it counts every WON deal, invoiced or not;
+ *   - it values them at `amount`, not final_amount ?? amount;
+ *   - it does not subtract sales returns;
+ *   - the rows reaching it are dated by closed_at (getReportDeals above),
+ *     not by invoice_date.
+ * Reports is a historical pipeline view, not a revenue ledger, so unifying
+ * it is a business decision nobody has taken yet. The numbers-check page
+ * labels this row "known to differ" rather than calling it a bug.
+ */
+export function reportWonTotal(deals = []) {
+  return (deals || [])
+    .filter((d) => d?.stage === 'won')
+    .reduce((s, d) => s + (d.amount || 0), 0);
+}
+
 export const reportService = {
   async getReportDeals(companyId, userId, role, dateFrom, dateTo) {
     const teamIds = await getTeamUserIds(userId, role, companyId);

@@ -104,6 +104,26 @@ export async function fetchProductGroups({ companyId, ownerIds = null }) {
  * calls this rather than re-deriving the rule (status, month bounds, the
  * free-text group match) and drifting.
  */
+/**
+ * The Current Sales Plan tab's "Total Planned", from rows already in hand.
+ *
+ * OPEN rows only, which is what the rest of the app means by "planned":
+ * fetchPlannedOpen below, the KPI strip's Planned, the submit check and
+ * plan_submissions.total_planned all filter status = 'open'. A converted
+ * opportunity is already in the funnel as the deal it became, and a
+ * moved_to_future row belongs to a later month.
+ *
+ * Exported so the tab and the numbers-check page agree by construction.
+ */
+export function openPlanTotal(rows) {
+  const open = (rows || []).filter((o) => (o?.status || 'open') === 'open');
+  return {
+    total: open.reduce((s, o) => s + (parseFloat(o.planned_amount) || 0), 0),
+    count: open.length,
+    rows: open,
+  };
+}
+
 export async function fetchPlannedOpen({ companyId, ownerIds, start, end, productGroup }) {
   if (!companyId || !ownerIds?.length) return { total: 0, untagged: 0 };
   const { data, error } = await supabase

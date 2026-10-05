@@ -7,6 +7,9 @@ import CompanySwitcher from "../CompanySwitcher";
 import { capitalize } from "utils/helper";
 import { useLanguage } from "../../i18n";
 import { useNavigate } from "react-router-dom";
+// The same list the route guard uses, so hiding the entry and refusing the
+// route can never disagree.
+import { NUMBERS_CHECK_ROLES } from "utils/numbersCheck";
 
 const Header = ({
   isCollapsed = false,
@@ -86,6 +89,12 @@ const Header = ({
 
   const secondaryItems = [
     ...adminItems,
+    // A read-only audit page: every figure the app shows for one scope beside
+    // one reference figure. Admin and director only, and /numbers-check
+    // enforces the same list — hiding the entry is not a permission.
+    ...(NUMBERS_CHECK_ROLES.includes(userProfile?.role)
+      ? [{ label: "Numbers check", path: "/numbers-check", icon: "CheckCheck" }]
+      : []),
     // A standalone page rather than an Admin Dashboard tab: /admin-dashboard is
     // admin-only, and the people who reassign records are Sales Managers.
     ...(["manager", "director", "head", "admin"].includes(userProfile?.role)
