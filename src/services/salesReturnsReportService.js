@@ -17,7 +17,7 @@ import { fetchTeamHierarchy } from '../utils/teamHierarchy';
 // someone who queries the API directly, so the migration still matters.
 //
 // THE AGREED VISIBILITY:
-//   director / admin / head / ceo   every return in the company, matched or not
+//   director / admin / head         every return in the company, matched or not
 //   manager / supervisor            MATCHED returns on their own subtree's deals
 //   salesman                        MATCHED returns on their own deals
 //   anyone else                     nothing
@@ -25,7 +25,13 @@ import { fetchTeamHierarchy } from '../utils/teamHierarchy';
 // An unmatched return has no deal and therefore no owner, so there is no subtree
 // it could belong to — which is why only the company-wide roles see them.
 
-export const ALL_RETURNS_ROLES = ['director', 'admin', 'head', 'ceo'];
+// No 'ceo': there is no such value in the user_role enum
+// {admin, manager, agent, director, supervisor, salesman, head, viewer}. It was
+// inert here — a JavaScript comparison that never matched — but it was also
+// what made migrations/deal_returns_rls_visibility.sql fail to apply, where a
+// role that does not exist is fatal rather than merely useless. Keeping the two
+// lists identical is the point: this is the UI half of that policy.
+export const ALL_RETURNS_ROLES = ['director', 'admin', 'head'];
 export const TEAM_RETURNS_ROLES = ['manager', 'supervisor', 'sales_manager'];
 
 /** PostgREST caps a response at 1000 rows; this walks the pages. */
