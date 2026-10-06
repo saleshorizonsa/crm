@@ -1,9 +1,44 @@
 -- ============================================================================
--- NOT APPLIED. Read the PREVIEW, then run APPLY, then run VERIFY.
+-- APPLIED 2026-10-06 23:30 (Asia/Riyadh). The APPLY block was run ON ITS OWN,
+-- not as part of the whole file.
 --
 -- DIVISION ATTRIBUTION — attribute a multi-division person's TARGET and PLAN
 -- by division, the same way deals already are. (Business decision, option 2,
 -- 2026-10-06.)
+-- ============================================================================
+--
+-- RUN IT THE SAME WAY IF THIS IS EVER REPLAYED: the APPLY block alone. A first
+-- attempt that pasted the whole file left production completely untouched —
+-- every column, trigger and backfill absent, and no trigger left disabled, so
+-- the transaction had rolled back cleanly rather than half-applying. The
+-- PREVIEW and VERIFY blocks are meant to be run by hand, separately, on either
+-- side of it.
+--
+-- VERIFICATION, read-only, after applying:
+--   columns                 division_id present on deals, opportunities,
+--                           future_orders, sales_targets
+--   triggers                set_deals_division, set_opportunities_division,
+--                           set_future_orders_division,
+--                           set_sales_targets_division — all 4 present and
+--                           ENABLED ('O'); none of the five updated_at /
+--                           validator triggers left disabled
+--   functions               set_division_from_owner and
+--                           set_division_from_assignee, both with
+--                           search_path=public pinned
+--   Kamal's deals           PVC Compound 12 / Export 6   (decision 3)
+--   Kamal's plan + future   PVC Compound 20 / Export 13
+--   Oct 2026 targets        Pipes & Fittings    826,000
+--                           PVC Compound      1,550,000
+--                           PVC Sheet           825,000
+--                           Export              500,000
+--                           TOTAL             3,701,000 = the company target
+--   left NULL               deals 33, opportunities 7, future_orders 8,
+--                           sales_targets 12 — and VERIFY query 2's
+--                           `should_be_zero` column reads 0 on all four, i.e.
+--                           every remaining NULL belongs to someone with no
+--                           primary division: Shaikh Osman Shoukat (inactive,
+--                           all four tables) and Mueataz Mohammed Ahmed
+--                           (sales_targets only). Decision 4, as intended.
 -- ============================================================================
 --
 -- THE PROBLEM. deals carry deals.division_id, so a deal belongs to ONE
