@@ -1,4 +1,8 @@
-import { dealInDivision } from 'utils/divisionMembership';
+import {
+  dealInDivision,
+  rowInDivision,
+  primaryDivisionByUser,
+} from 'utils/divisionMembership';
 import { partitionOpenFunnel } from 'utils/openFunnel';
 import {
   CONTRIBUTOR_ROLES,
@@ -260,28 +264,62 @@ export function calcDivisionMetrics(userIds, data) {
     ...(users || []).filter((u) => scope.has(u.id) && isAchievedOnly(u)).map((u) => u.id),
   ]);
 
+  // ── ATTRIBUTION BY DIVISION, not per person ──────────────────────────────
+  //
+  // Deals have always been filtered by deals.division_id. Target rows, plan
+  // items and future orders were filtered only by WHOSE they were, so a person
+  // in two divisions had their whole target and whole plan counted in BOTH.
+  // Mohamed Kamal is in Export and PVC Compound, and the October panel summed
+  // to 5.75M of target against a company target of 3.70M. Business decision
+  // 2026-10-06 (option 2): attribute them by division, like deals.
+  //
+  // A row with no division_id falls back to its owner's PRIMARY division,
+  // which is exactly what per-person attribution meant for anyone in a single
+  // division — so no single-division figure moves, and a row created before
+  // migrations/division_attribution.sql is applied still lands somewhere
+  // instead of vanishing.
+  const primaryByUser = primaryDivisionByUser(users);
+  const targetInDivision = rowInDivision(data.divisionId, {
+    primaryByUser, ownerKey: 'assigned_to',
+  });
+  const planInDivision = rowInDivision(data.divisionId, { primaryByUser });
+
   // MONTHLY rows only. A yearly row is a whole year's allocation, so summing one
   // into a month would be wrong whoever holds it. Excludes explicit YEARLY rows
   // rather than requiring 'monthly', so a caller whose query omits period_type
   // still gets its target counted instead of silently receiving 0.
-  const monthlyTargetRows = (targets || []).filter((t) => t.period_type !== 'yearly');
+  const monthlyTargetRows = (targets || [])
+    .filter((t) => t.period_type !== 'yearly')
+    .filter(targetInDivision);
   const target = Object.values(
     targetPerPerson(monthlyTargetRows.filter((t) => isAchiever.has(t.assigned_to))),
   ).reduce((sum, v) => sum + v, 0);
 
-  // A group with no deals in the window borrows the company rate, as the
-  // Coverage Console does, rather than reading 0%.
+  // A group with no deals in the window borrows the COMPANY rate rather than
+  // reading 0%.
   //
-  // Over the ACHIEVERS (decision D4, 2026-10-05 — see utils/winRate3m.js): the same people as Target and Achieved above, so
-  // a division carried by a flagged manager no longer has to borrow a rate it
-  // could measure from his own deals. achieverIdsFrom() for the company list
-  // also drops inactive users, which a bare role filter did not.
+  // THE FALLBACK USED TO BORROW NOTHING. It re-ran winRateFromDeals over
+  // `divisionDeals3m` — the SAME division-filtered list that was empty in the
+  // first place — so a division with no deals got 0.0%, not a borrowed rate.
+  // Then two things compounded on that zero: computeRequiredRaw reads 0 as "no
+  // rate at all, assume 50%" and demanded target x 2 (2.92M of new pipeline for
+  // PVC Compound), while computeCoverage weighted the same funnel and plan by
+  // 0 and reported 0% coverage. One screen, two opposite readings of the same
+  // missing number. It now borrows the company achiever rate over ALL company
+  // deals in the window, and `winRateBorrowed` tells the panel to say
+  // "company rate" rather than presenting it as the division's own.
+  //
+  // Over the ACHIEVERS (decision D4, 2026-10-05 — see utils/winRate3m.js): the
+  // same people as Target and Achieved above, so a division carried by a
+  // flagged manager measures a rate from his own deals instead of borrowing.
+  // achieverIdsFrom() for the company list also drops inactive users, which a
+  // bare role filter did not.
   const divisionDeals3m = (deals3m || []).filter(inThisDivision);
   const mine = winRateFromDeals({ deals: divisionDeals3m, ownerIds: [...isAchiever] });
   const companyAchieverIds = achieverIdsFrom(users);
   const winRateBorrowed = mine.total === 0;
   const winRatePct = winRateBorrowed
-    ? winRateFromDeals({ deals: divisionDeals3m, ownerIds: companyAchieverIds }).winRatePct
+    ? winRateFromDeals({ deals: deals3m || [], ownerIds: companyAchieverIds }).winRatePct
     : mine.winRatePct;
 
   // The shared rule (utils/planningCalculations.js) rather than a local copy of
@@ -320,7 +358,13 @@ export function calcDivisionMetrics(userIds, data) {
   // contributors plus any flagged manager — so a flagged manager's own plan and
   // deals net off the requirement his own target created.
   const achieverIds = [...isAchiever];
-  const planned = sumPlannedByOwner({ rows: opps, ownerIds: achieverIds }).total;
+  // planInDivision as well as the owner scope: a plan item belongs to ONE
+  // division now (its own division_id, or its owner's primary), so a
+  // multi-division person's plan is no longer counted in every division they
+  // belong to. Kamal's October plan was 1,179,250 in BOTH Export and PVC
+  // Compound before this.
+  const divisionOpps = (opps || []).filter(planInDivision);
+  const planned = sumPlannedByOwner({ rows: divisionOpps, ownerIds: achieverIds }).total;
   // Open funnel for the window, raw — THE shared definition
   // (utils/openFunnel.js), not a local re-derivation. The inline version this
   // replaced required an expected_close_date and so silently dropped every
@@ -337,7 +381,12 @@ export function calcDivisionMetrics(userIds, data) {
   // Shown for visibility only — NOT netted off the requirement any more. It is
   // NEXT month's commitment, and subtracting it understated what still had to be
   // built this month. Planning never did it; Planning is the standard.
-  const carryIn = sumPlannedByOwner({ rows: futureOrders, ownerIds: achieverIds }).total;
+  // Same attribution. future_orders.division_id is added by
+  // migrations/division_attribution.sql; until that is applied every row falls
+  // back to its owner's primary division, which is what this screen already
+  // did for anyone in a single division.
+  const divisionFutureOrders = (futureOrders || []).filter(planInDivision);
+  const carryIn = sumPlannedByOwner({ rows: divisionFutureOrders, ownerIds: achieverIds }).total;
   // Required pipeline is measured over what is STILL MISSING (deficit), not over
   // the untouched target: once a month's target is achieved, "new pipeline
   // needed" must read zero rather than keep demanding pipeline against a number

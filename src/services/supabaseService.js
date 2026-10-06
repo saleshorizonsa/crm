@@ -3728,6 +3728,15 @@ export const salesTargetService = {
         notes: targetData.notes || "",
         status: targetData.status || "active",
         progress_amount: 0,
+        // The division this target belongs to (SESSION 6: a person in two
+        // divisions no longer has their whole target counted in both).
+        //
+        // OMITTED, not null, when the form did not offer a choice — the key is
+        // absent from the insert, so the BEFORE INSERT trigger in
+        // migrations/division_attribution.sql fills it from the assignee's
+        // primary division. An explicit null would defeat that trigger and
+        // leave the row attributed to nobody.
+        ...(targetData.divisionId ? { division_id: targetData.divisionId } : {}),
       };
 
       console.log("Inserting sales target:", insertData);
@@ -3830,6 +3839,10 @@ export const salesTargetService = {
           status: updateData.status,
           progress_amount: updateData.progressAmount,
           notes: updateData.notes,
+          // Only when the caller actually chose one, so an edit form that does
+          // not show the picker (a single-division assignee) cannot blank a
+          // division that is already set.
+          ...(updateData.divisionId ? { division_id: updateData.divisionId } : {}),
         })
         .eq("id", targetId);
 

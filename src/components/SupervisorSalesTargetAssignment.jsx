@@ -10,6 +10,7 @@ import { useCurrency } from "../contexts/CurrencyContext";
 import { capitalize } from "utils/helper";
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { supabase } from "../lib/supabase";
+import DivisionPicker from "./DivisionPicker";
 import {
   PRODUCT_TARGET_TYPE,
   calculateProductTargetValue,
@@ -99,6 +100,9 @@ const SupervisorSalesTargetAssignment = ({
   // Client-based target state
   const [clientTargets, setClientTargets] = useState([]);
   const [showCreateClient, setShowCreateClient] = useState(false);
+  // Which division this target belongs to (see DivisionPicker).
+  const [divisionId, setDivisionId] = useState(null);
+
   const [newClient, setNewClient] = useState({
     first_name: "",
     last_name: "",
@@ -397,6 +401,7 @@ const SupervisorSalesTargetAssignment = ({
       const targetData = {
         assignedTo: selectedSalesman,
         companyId: companyId,
+        divisionId,
         targetAmount: totalTarget,
         currency: preferredCurrency,
         periodType: formData.periodType,
@@ -593,6 +598,15 @@ const SupervisorSalesTargetAssignment = ({
           )}
         </div>
 
+        {/* Division — ONLY for someone who belongs to more than one. */}
+        {selectedSalesman && (
+          <DivisionPicker
+            companyId={companyId}
+            userId={selectedSalesman}
+            value={divisionId}
+            onChange={setDivisionId}
+          />
+        )}
         {/* Target Type Selection */}
         {selectedSalesman && (
           <div className="space-y-3">

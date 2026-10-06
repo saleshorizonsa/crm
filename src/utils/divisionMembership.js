@@ -87,3 +87,38 @@ export function dealInDivision(divisionId) {
   if (divisionId === UNASSIGNED) return (d) => !d?.division_id;
   return (d) => d?.division_id === divisionId;
 }
+
+/** { userId: primaryDivisionId } from user rows — the fallback for a NULL row. */
+export function primaryDivisionByUser(users) {
+  const out = {};
+  (users || []).forEach((u) => { if (u?.id) out[u.id] = u.sales_division_id || null; });
+  return out;
+}
+
+/**
+ * The same predicate for a TARGET ROW, a PLAN ITEM or a FUTURE ORDER.
+ *
+ * WHY THIS EXISTS. Deals were attributed by deals.division_id while targets and
+ * plan items were attributed PER PERSON — so a person in two divisions had
+ * their whole target and whole plan counted in BOTH. Mohamed Kamal is in Export
+ * and PVC Compound, and the panel's October targets summed to 5.75M against a
+ * company target of 3.70M. Business decision 2026-10-06 (option 2): attribute
+ * them by division, exactly the way deals already are.
+ *
+ * `row.division_id` wins. A row that has none falls back to its owner's PRIMARY
+ * division, which is what the old per-person attribution effectively meant for
+ * a single-division person — so nothing moves for anyone in one division, and a
+ * row inserted before migrations/division_attribution.sql is applied still
+ * lands somewhere rather than vanishing.
+ *
+ * @param {string|null} divisionId  null = no filter (the company-level view)
+ * @param {object} p
+ * @param {object} p.primaryByUser  from primaryDivisionByUser()
+ * @param {string} [p.ownerKey]     'owner_id', or 'assigned_to' for a target row
+ */
+export function rowInDivision(divisionId, { primaryByUser = {}, ownerKey = 'owner_id' } = {}) {
+  if (!divisionId) return () => true;
+  const effective = (row) => row?.division_id || primaryByUser[row?.[ownerKey]] || null;
+  if (divisionId === UNASSIGNED) return (row) => !effective(row);
+  return (row) => effective(row) === divisionId;
+}

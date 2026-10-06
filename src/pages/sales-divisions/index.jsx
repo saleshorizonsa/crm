@@ -72,7 +72,21 @@ const HEALTH = {
   none: { text: "No target", cls: "bg-gray-50 text-gray-500 border-gray-200" },
 };
 
-const COLUMNS = ["Name", "Target", "Achieved", "Gap to target", "Win rate", "New pipeline needed", "Coverage", "Status"];
+// "Conversion (3m)", not "Win rate": the figure is won over deals CREATED in
+// the 3 completed months, which is what Required Plan divides by. "Win rate"
+// means won / (won + lost) everywhere else, and the two are different numbers.
+//
+// "Weighted coverage", not "Coverage": it weights the funnel and the plan by
+// the conversion rate (see the tooltip). Planning's "Planning Coverage" is the
+// RAW sum of plan plus funnel and keeps its own name — two different measures
+// that were both called Coverage on two screens.
+const COLUMNS = ["Name", "Target", "Achieved", "Gap to target", "Conversion (3m)", "New pipeline needed", "Weighted coverage", "Status"];
+
+// Spelled out because nobody can be expected to infer it from a percentage.
+const WEIGHTED_COVERAGE_TOOLTIP =
+  "(achieved + plan x conversion + open deals at forecast) / target. "
+  + "Planning's \"Planning Coverage\" is a different figure: the raw plan plus "
+  + "funnel, unweighted.";
 
 function StatusChip({ m }) {
   const h = HEALTH[healthOf(m)];
@@ -121,7 +135,12 @@ function FigureTable({ rows, empty }) {
             {COLUMNS.map((h) => (
               <th
                 key={h}
-                className="text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 whitespace-nowrap"
+                /* The weighted-coverage formula on hover: the column is a ratio
+                   of four things and the name alone cannot say which four. */
+                title={h === "Weighted coverage" ? WEIGHTED_COVERAGE_TOOLTIP : undefined}
+                className={`text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 whitespace-nowrap${
+                  h === "Weighted coverage" ? " cursor-help underline decoration-dotted" : ""
+                }`}
               >
                 {h}
               </th>
@@ -166,7 +185,12 @@ function Figures({ m, small = false }) {
     ["Target", `${compact(m.target)} SAR`, "text-gray-900"],
     ["Achieved", `${compact(m.achieved)} SAR`, "text-emerald-700"],
     ["Gap to target", `${compact(m.deficit)} SAR`, "text-red-600"],
-    ["Win rate", pct(m.winRatePct), "text-gray-900"],
+    // Says so when it is not this division's own rate. A division with no
+    // deals in the window borrows the company achiever rate, and presenting a
+    // borrowed number as the division's own is how somebody ends up planning
+    // against a conversion nobody in that division achieved.
+    [m.winRateBorrowed ? 'Conversion (3m) — company rate' : 'Conversion (3m)',
+      pct(m.winRatePct), "text-gray-900"],
     ["New pipeline needed", `${compact(m.plannedGap)} SAR`, "text-blue-700"],
   ];
   return (

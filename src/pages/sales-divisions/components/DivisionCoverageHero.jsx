@@ -166,7 +166,7 @@ export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
       ? []
       : [["Gap to target", SAR(metrics.deficit) + " SAR", "", "neg"]]),
     [
-      "Win rate",
+      metrics.winRateBorrowed ? 'Conversion (3m) — company rate' : 'Conversion (3m)',
       fmtPct(metrics.winRatePct),
       metrics.winRateBorrowed ? "company rate (no deals in 3 months)" : "3-month average · to date",
     ],

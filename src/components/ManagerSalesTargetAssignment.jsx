@@ -11,6 +11,7 @@ import { capitalize } from "utils/helper";
 import { ownAllocation, sumTargetAmount } from "utils/selfTarget";
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { supabase } from "../lib/supabase";
+import DivisionPicker from "./DivisionPicker";
 import {
   fetchAdditionalDivisions, MAX_DIVISIONS_PER_USER,
 } from "utils/divisionMembership";
@@ -103,6 +104,9 @@ const ManagerSalesTargetAssignment = ({
   // Client-based target state
   const [clientTargets, setClientTargets] = useState([]);
   const [showCreateClient, setShowCreateClient] = useState(false);
+  // Which division this target belongs to (see DivisionPicker).
+  const [divisionId, setDivisionId] = useState(null);
+
   const [newClient, setNewClient] = useState({
     first_name: "",
     last_name: "",
@@ -612,6 +616,7 @@ const ManagerSalesTargetAssignment = ({
             periodStart: formData.periodStart,
             periodEnd: formData.periodEnd,
             notes: formData.notes,
+            divisionId,
           }
         );
 
@@ -632,6 +637,7 @@ const ManagerSalesTargetAssignment = ({
       const targetData = {
         assignedTo: selectedSubordinate,
         companyId: companyId,
+        divisionId,
         targetAmount: totalTarget,
         currency: preferredCurrency,
         periodType: formData.periodType,
@@ -1013,6 +1019,15 @@ const ManagerSalesTargetAssignment = ({
           )}
         </div>
 
+        {/* Division — ONLY for someone who belongs to more than one. */}
+        {selectedSubordinate && (
+          <DivisionPicker
+            companyId={companyId}
+            userId={selectedSubordinate}
+            value={divisionId}
+            onChange={setDivisionId}
+          />
+        )}
         {/* Target Type Selection */}
         {selectedSubordinate && (
           <div className="space-y-3">
