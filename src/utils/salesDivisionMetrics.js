@@ -90,6 +90,55 @@ export function targetSpanLabel(start, end) {
  * supervisor_id subtree including himself — the same rule as the Coverage Console.
  * `users` must be the company's ACTIVE users.
  */
+/**
+ * THE NAME OF THE covRatio FIGURE, and the formula spelled out.
+ *
+ * It was called "Coverage" on the Coverage Console and "Weighted coverage" on
+ * the divisions panel — two names for one number, neither of which said what
+ * the number means. "Expected % of target" does: it is a FORECAST of the share
+ * of the target that will be invoiced, where both old names read as though it
+ * measured how much pipeline exists. Exported from here, where covRatio is
+ * computed, and imported by every screen that shows it, so the two cannot
+ * drift apart again.
+ */
+export const EXPECTED_PCT_LABEL = 'Expected % of target';
+export const EXPECTED_PCT_TOOLTIP =
+  'If open deals close at their stage probability and plan items convert at the'
+  + " team's conversion rate, this is the share of the target expected to be"
+  + ' invoiced: (invoiced + open deals at forecast + plan × conversion) ÷ target.';
+
+/**
+ * A DIVISION needs this many deals in the 3-month window before its own
+ * conversion rate is used. Below it, the company achiever rate stands in.
+ *
+ * WHY. A division is a handful of people, and a conversion rate over six deals
+ * is noise presented as a measurement: Export reads 100% off six won Al BADAH
+ * deals, and computeRequiredRaw divides the remaining target by exactly that
+ * number. One loss would move the rate 17 points and the plan with it. The
+ * company rate over ~143 deals fits the division less well and estimates it far
+ * better, and the screen says which one it is showing, with the division's own
+ * sample size, so nobody plans against six deals without knowing.
+ *
+ * DIVISIONS ONLY. Person-level rates on Planning are untouched: they have their
+ * own documented fallback chain, and a salesman with four deals is a different
+ * question from a division with four.
+ */
+export const DIVISION_MIN_SAMPLE = 10;
+
+/** The Conversion (3m) label, saying so when the rate is not this group's own. */
+export function conversionLabel(m) {
+  if (!m?.winRateBorrowed) return 'Conversion (3m)';
+  return `Conversion (3m) — company rate (n=${m.winRateSampleN ?? 0})`;
+}
+
+/** The same thing at length, for a tooltip. */
+export function borrowedNote(m) {
+  const n = m?.winRateSampleN ?? 0;
+  return `This division closed ${n} deal${n === 1 ? '' : 's'} in the 3-month `
+    + `window — fewer than ${DIVISION_MIN_SAMPLE}, too few to measure a rate `
+    + 'from — so the company achiever rate is shown and used instead.';
+}
+
 export function scopeUserIds({ users, viewerId, role }) {
   const list = users || [];
   if (role === 'director') return list.map((u) => u.id);
@@ -317,7 +366,12 @@ export function calcDivisionMetrics(userIds, data) {
   const divisionDeals3m = (deals3m || []).filter(inThisDivision);
   const mine = winRateFromDeals({ deals: divisionDeals3m, ownerIds: [...isAchiever] });
   const companyAchieverIds = achieverIdsFrom(users);
-  const winRateBorrowed = mine.total === 0;
+  // DIVISION_MIN_SAMPLE applies only when a DIVISION is being measured. A
+  // company-level or team-level call keeps the old condition — borrow only with
+  // no deals at all — because the threshold was reasoned about for divisions and
+  // nothing else, and the company's own rate is what would be borrowed anyway.
+  const minSample = data.divisionId ? DIVISION_MIN_SAMPLE : 1;
+  const winRateBorrowed = mine.total < minSample;
   const winRatePct = winRateBorrowed
     ? winRateFromDeals({ deals: deals3m || [], ownerIds: companyAchieverIds }).winRatePct
     : mine.winRatePct;
@@ -448,6 +502,10 @@ export function calcDivisionMetrics(userIds, data) {
     pacingOk: isCurrentMonth ? pace >= elapsed - 0.15 : null,
     winRatePct,
     winRateBorrowed,
+    // The DIVISION's own deal count in the window — the n in "company rate
+    // (n=6)". Reported whether or not the rate was borrowed, so a reader can
+    // also see how thin a rate that WAS used is.
+    winRateSampleN: mine.total,
     planned,
     monthFunnel,
     // How much of monthFunnel carries no close date, so a screen can disclose it
