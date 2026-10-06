@@ -1,12 +1,28 @@
 -- ============================================================================
--- NOT APPLIED. Do not run any part of this without reading the PREVIEW first.
+-- APPLIED ON PRODUCTION 2026-10-06.
 --
 -- deal_returns SELECT visibility, brought in line with the agreed rule.
+--
+-- ONE CORRECTION WAS NEEDED TO APPLY IT, and it was a defect in this file:
+-- it listed 'ceo' as a company-wide role. There is no such value in the
+-- user_role enum, which is
+--     {admin, manager, agent, director, supervisor, salesman, head, viewer}
+-- and Postgres casts a bare string literal to user_role when comparing it to
+-- a user_role column, so BOTH the preview query and the CREATE POLICY would
+-- have failed outright with "invalid input value for enum user_role". 'ceo'
+-- has been removed from both blocks below; the three company-wide roles are
+-- 'admin', 'director' and 'head'.
+--
+-- Other role lists in the application still mention a ceo — reportService
+-- getTeamUserIds, the Reports role label, salesDivisionMetrics. They are
+-- harmless there, because they are JavaScript string comparisons that simply
+-- never match, and they are left alone. A SQL enum comparison is the one
+-- place where a role that does not exist is fatal rather than inert.
 -- ============================================================================
 --
--- WHAT IS THERE NOW (read from pg_policies on 2026-10-05 — read-only SELECT,
--- nothing was changed). One SELECT policy, "Users can view deal returns based
--- on role", which is an OR of two branches:
+-- WHAT WAS THERE BEFORE (read from pg_policies on 2026-10-05 — read-only
+-- SELECT, nothing was changed by the reading). One SELECT policy, "Users can
+-- view deal returns based on role", an OR of two branches:
 --
 --   BRANCH 1 — the return IS linked to a deal:
 --       the deal's owner, OR
@@ -21,28 +37,31 @@
 -- including unmatched; manager and supervisor see matched returns on their own
 -- subtree; salesman sees his own):
 --
---   GAP 1, the important one. Branch 2 lets EVERY user in the company read every
---   UNMATCHED credit note — a salesman included. Today that is all 5 returns in
---   production, 223,050.51. The agreed rule restricts unmatched rows to the
---   company-wide roles, because an unmatched return is linked to no deal and so
---   belongs to no team: there is no subtree it could be inside.
+--   GAP 1, the important one. Branch 2 let EVERY user in the company read every
+--   UNMATCHED credit note — a salesman included. At the time that was all 5
+--   returns in production, 223,050.51. The agreed rule restricts unmatched rows
+--   to the company-wide roles, because an unmatched return is linked to no deal
+--   and so belongs to no team: there is no subtree it could be inside.
+--   FIXED — a salesman now reads 0 of them (see VERIFY below).
 --
---   GAP 2. 'head' is NOT in the company-wide role list, only 'admin' and
---   'director'. A head therefore sees returns only on deals inside their own
---   two-level supervisor chain, which for this company is almost nothing.
+--   GAP 2. 'head' was NOT in the company-wide role list, only 'admin' and
+--   'director', so a head saw returns only on deals inside their own two-level
+--   supervisor chain — for this company, almost nothing. FIXED.
 --
---   GAP 3. The chain walk is hard-coded to TWO levels. Every other hierarchy
---   rule in the database recurses (get_user_subordinates), and the application
---   walks the full subtree (utils/teamHierarchy.js). For JASCO PVC's current
---   depth — Kamal -> Amer/Alseyed -> salesmen — two levels happens to cover the
---   whole tree, so this is latent rather than live. It becomes live the day a
---   fourth level is added.
+--   GAP 3. The chain walk was hard-coded to TWO levels, where every other
+--   hierarchy rule in the database recurses (get_user_subordinates) and the
+--   application walks the full subtree (utils/teamHierarchy.js). At JASCO PVC's
+--   depth — Kamal -> Amer/Alseyed -> salesmen — two levels happened to cover the
+--   whole tree, so it was latent rather than live; it would have become live the
+--   day a fourth level was added. FIXED: the policy now calls
+--   get_user_subordinates.
 --
--- UNTIL THIS IS APPLIED: the new Reports -> Sales Returns screen enforces the
--- agreed rule in its own query (services/salesReturnsReportService.js), so the
--- SCREEN is correct now. That is not a substitute. A UI filter cannot stop
--- someone reading the table directly through the API with their own token, and
--- RLS is the only thing that can. Apply this when you are ready.
+-- THE SCREEN AND THE POLICY NOW AGREE. Reports -> Sales Returns enforces the
+-- same rule in its own query (services/salesReturnsReportService.js, whose
+-- ALL_RETURNS_ROLES is the same three roles as the policy below). That was
+-- never a substitute for RLS — a UI filter cannot stop someone reading the
+-- table through the API with their own token — and it is now belt and braces
+-- rather than the only belt. Keep the two lists identical.
 --
 -- The app writes NOTHING to deal_returns from this screen, and the INSERT,
 -- UPDATE and DELETE policies are left exactly as they are (admin only).
@@ -97,7 +116,7 @@ SELECT
   -- AFTER: company-wide roles see everything; everyone else sees MATCHED rows
   -- on their own full subtree.
   (SELECT count(*) FROM ret
-    WHERE (u.role IN ('admin', 'director', 'head', 'ceo') AND ret.company_id = u.company_id)
+    WHERE (u.role IN ('admin', 'director', 'head') AND ret.company_id = u.company_id)
        OR (ret.deal_id IS NOT NULL
            AND EXISTS (SELECT 1 FROM subtree st WHERE st.root = u.id AND st.member = ret.owner_id))
   ) AS can_read_after
@@ -113,7 +132,9 @@ WHERE deal_id IS NULL;
 
 
 -- ============================================================================
--- APPLY — review the preview, then run this block.
+-- APPLY — ALREADY RUN ON PRODUCTION, 2026-10-06. Kept verbatim as the record of
+-- what was applied, and re-runnable: DROP IF EXISTS then CREATE is idempotent,
+-- so running it again replaces the policy with the identical one.
 -- ============================================================================
 --
 -- One statement, one policy. DROP then CREATE rather than ALTER, because an
@@ -130,13 +151,14 @@ CREATE POLICY "Users can view deal returns based on role"
   FOR SELECT
   USING (
     -- Company-wide roles: everything in their own company, matched or not.
-    -- 'head' and 'ceo' added; they were missing.
+    -- 'head' added; it was missing. 'ceo' is NOT here: no such enum value
+    -- exists (see the header).
     EXISTS (
       SELECT 1 FROM public.users u
       WHERE u.id = auth.uid()
         AND u.is_active IS TRUE
         AND u.role = ANY (ARRAY['admin'::user_role, 'director'::user_role,
-                                'head'::user_role, 'ceo'::user_role])
+                                'head'::user_role])
         AND (u.company_id = deal_returns.company_id OR u.company_id IS NULL)
     )
     OR
@@ -190,10 +212,15 @@ ORDER BY cmd;
 --    the two columns should agree with what you approved.
 
 -- 4. Click-through, which no query can replace: open Reports -> Sales Returns as
---    a director (expect all 5 returns, 223,050.51, all Unmatched), then as a
---    supervisor and a salesman (expect none today, because every return is
---    unmatched). If a salesman still sees unmatched rows, the policy did not
---    take effect.
+--    a director, then as a supervisor and a salesman.
+--
+--    OBSERVED AFTER APPLYING, 2026-10-06:
+--      director   5 rows, 223,050.51, all Unmatched
+--      salesman   0 rows
+--    Which is the agreed rule working: every credit note in production is
+--    unmatched (deal_id IS NULL), an unmatched return belongs to no team, and
+--    so only the company-wide roles can read one. Before this change a
+--    salesman could read all five.
 
 
 -- ============================================================================
