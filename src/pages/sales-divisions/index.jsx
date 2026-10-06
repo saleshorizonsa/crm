@@ -273,10 +273,17 @@ export default function SalesDivisions() {
             )
             .eq("company_id", company.id)
             .not("stage", "eq", "lost"),
+          // division_id, or every target row falls back to its assignee's PRIMARY
+          // division and Kamal's 1,550,000 total_value row lands on Export
+          // instead of PVC Compound. The divisions would still SUM to the
+          // company — misattribution moves a figure between two divisions
+          // without changing the total — which is exactly why the
+          // "Divisions sum = company" check cannot catch this and the split has
+          // to be read against PREVIEW 1 of the migration.
           supabase
             .from("sales_targets")
             .select(
-              "assigned_to, target_amount, period_type, target_type, period_start, period_end, product_group, client_targets(target_amount)"
+              "assigned_to, target_amount, period_type, target_type, period_start, period_end, product_group, division_id, client_targets(target_amount)"
             )
             .eq("company_id", company.id)
             .eq("status", "active")
@@ -299,9 +306,12 @@ export default function SalesDivisions() {
             .eq("company_id", company.id)
             .gte("created_at", new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString())
             .lte("created_at", new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59).toISOString()),
+          // division_id: Kamal's 15 PVC Compound plan items would otherwise be
+          // counted in Export, his primary — the double count this session
+          // exists to remove, reappearing one table at a time.
           supabase
             .from("opportunities")
-            .select("id, owner_id, planned_amount")
+            .select("id, owner_id, planned_amount, division_id")
             .eq("company_id", company.id)
             .eq("status", "open")
             .gte("expected_month", monthStart)
@@ -309,7 +319,7 @@ export default function SalesDivisions() {
           // Carry-in: next month's committed orders (same window as Planning).
           supabase
             .from("future_orders")
-            .select("id, owner_id, planned_amount")
+            .select("id, owner_id, planned_amount, division_id")
             .eq("company_id", company.id)
             .eq("status", "pending")
             .gte("expected_month", nextMonth.startDate)
