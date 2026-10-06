@@ -2,7 +2,12 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useCurrency } from "../../contexts/CurrencyContext";
-import { reportService, computeDateRange } from "../../services/reportService";
+import {
+  reportService,
+  computeDateRange,
+  getReportAchieved,
+  reportAchievedTotals,
+} from "../../services/reportService";
 import { computeKpiStripData } from "../../utils/kpiStripData";
 import { fetchTeamHierarchy } from "../../utils/teamHierarchy";
 import ByValue    from "./components/ByValue";
@@ -13,6 +18,7 @@ import BySalesman from "./components/BySalesman";
 import OriginReport   from "./OriginReport";
 import MarginReport   from "./MarginReport";
 import ActivityReport from "./ActivityReport";
+import SalesReturnsReport from "./components/SalesReturnsReport";
 import { useLanguage } from "../../i18n";
 import { exportReportToExcel } from "../../utils/reportExport";
 import { useMaterialGroups } from "../../hooks/useMaterialGroups";
@@ -66,6 +72,14 @@ const ReportsPage = () => {
     { id: "origin",   label: "Pipeline Origin",           icon: "🔄" },
     { id: "margin",   label: "Margin Analysis",           icon: "💹" },
     { id: "activity", label: "Deal Activity",             icon: "📋" },
+    // READ-ONLY. Credit notes are imported on Planning → Sales Returns; this
+    // is the register you read. It loads its own data because it is the one
+    // tab whose rows are not deals, and it carries its own scope: the
+    // deal_returns SELECT policy lets any user in the company read an
+    // UNMATCHED return, which is wider than the agreed visibility (see
+    // services/salesReturnsReportService.js and
+    // migrations/deal_returns_rls_visibility.sql).
+    { id: "returns",  label: "Sales Returns",             icon: "↩️" },
   ];
 
   const PRESETS = [
@@ -84,6 +98,11 @@ const ReportsPage = () => {
   const [customFrom, setCustomFrom] = useState(firstOfYear);
   const [customTo, setCustomTo]     = useState(today);
   const [deals, setDeals]           = useState([]);
+  // The REVENUE dataset, separate from `deals` on purpose: those are dated by
+  // closed_at (a pipeline view) and these by invoice_date (a revenue ledger).
+  // See reportService.getReportAchieved for why one array cannot be both.
+  const [achievedRaw, setAchievedRaw] = useState({ deals: [], returns: [], achieverIds: [] });
+  const [achievedError, setAchievedError] = useState(null);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState(null);
   const [exportLoading, setExportLoading] = useState(false);
@@ -154,6 +173,12 @@ const ReportsPage = () => {
   }, [period, customFrom, customTo]);
 
   const dateFrom = useMemo(() => getDateRange().from, [getDateRange]);
+  // The revenue figures need both ends of the window, and as plain yyyy-MM-dd:
+  // invoice_date is a DATE column, so an ISO instant would compare a date
+  // against a timestamp and shift the boundary by the Riyadh offset.
+  const dateTo = useMemo(() => getDateRange().to, [getDateRange]);
+  const revFrom = useMemo(() => (dateFrom ? String(dateFrom).slice(0, 10) : null), [dateFrom]);
+  const revTo = useMemo(() => (dateTo ? String(dateTo).slice(0, 10) : null), [dateTo]);
 
   const fetchDeals = useCallback(async () => {
     if (!userProfile || !company) return;
@@ -162,12 +187,35 @@ const ReportsPage = () => {
     clearAllFilters();
 
     const { from, to } = getDateRange();
-    const { data, error: err } = await reportService.getReportDeals(
-      company.id, userProfile.id, userProfile.role, from, to,
-    );
+    // BOTH datasets, in parallel: the pipeline rows (dated by closed_at) and
+    // the revenue rows (dated by invoice_date). See
+    // reportService.getReportAchieved for why one array cannot be both.
+    const [pipelineRes, achievedRes] = await Promise.all([
+      reportService.getReportDeals(
+        company.id, userProfile.id, userProfile.role, from, to,
+      ),
+      getReportAchieved({
+        companyId: company.id,
+        userId: userProfile.id,
+        role: userProfile.role,
+        dateFrom: String(from).slice(0, 10),
+        dateTo: String(to).slice(0, 10),
+      }),
+    ]);
+    const { data, error: err } = pipelineRes;
 
     if (err) setError(err.message || "Failed to load report data.");
     else setDeals(data);
+    // A failure in the REVENUE half gets its own message: the counts and the
+    // stage tables are still correct and still worth showing, but the money
+    // must not read 0 as though that were a measurement.
+    if (achievedRes.error) {
+      setAchievedError(achievedRes.error.message || "Revenue figures could not be loaded.");
+      setAchievedRaw({ deals: [], returns: [], achieverIds: [] });
+    } else {
+      setAchievedError(null);
+      setAchievedRaw(achievedRes);
+    }
     setLoading(false);
   }, [userProfile, company, getDateRange]);
 
@@ -272,6 +320,35 @@ const ReportsPage = () => {
 
     return result;
   }, [deals, filterSalesman, filterStage, filterGroup, filterOrigin, filterMinValue, filterMaxValue, filterContact, dateFrom]);
+
+  // The same filters over the REVENUE rows, so the figure on screen always
+  // describes the rows on screen. Two filters are deliberately not applied:
+  // `filterStage`, because every row here is already won, and `filterOrigin`,
+  // which asks when a deal was CREATED — a pipeline question, not a revenue one.
+  const filteredAchievedDeals = useMemo(() => {
+    let result = achievedRaw.deals || [];
+    if (filterSalesman !== 'all') result = result.filter((d) => d.owner?.id === filterSalesman);
+    if (filterGroup !== 'all') {
+      result = result.filter((d) => d.deal_products?.some((dp) => dp.product?.material_group === filterGroup));
+    }
+    if (filterMinValue) result = result.filter((d) => parseFloat(d.final_amount ?? d.amount ?? 0) >= parseFloat(filterMinValue));
+    if (filterMaxValue) result = result.filter((d) => parseFloat(d.final_amount ?? d.amount ?? 0) <= parseFloat(filterMaxValue));
+    if (filterContact) {
+      const term = filterContact.toLowerCase();
+      result = result.filter((d) => d.contact?.company_name?.toLowerCase().includes(term)
+        || d.title?.toLowerCase().includes(term));
+    }
+    return result;
+  }, [achievedRaw.deals, filterSalesman, filterGroup, filterMinValue, filterMaxValue, filterContact]);
+
+  // Invoiced / Returns / Net, through the shared rule.
+  const achieved = useMemo(() => reportAchievedTotals({
+    deals: filteredAchievedDeals,
+    returns: achievedRaw.returns,
+    achieverIds: achievedRaw.achieverIds,
+    start: revFrom,
+    end: revTo,
+  }), [filteredAchievedDeals, achievedRaw.returns, achievedRaw.achieverIds, revFrom, revTo]);
 
   const roleLabel = () => {
     const role = userProfile?.role;
@@ -583,7 +660,13 @@ const ReportsPage = () => {
             <p className="text-sm font-medium text-red-600">{error}</p>
             <button onClick={fetchDeals} className="mt-3 text-xs text-blue-500 hover:underline">{t("reportsPage.tryAgain")}</button>
           </div>
-        ) : deals.length === 0 ? (
+        ) : (deals.length === 0 && activeTab !== "returns") ? (
+          // "No deals" hides every tab, which is right for eight of the nine:
+          // they are all breakdowns OF deals. Sales Returns is not — its rows
+          // are credit notes, with their own period filter — so a month with no
+          // deals must not lock somebody out of the returns register. A salesman
+          // with a quiet month is exactly the person who needs to see a credit
+          // note raised against one of his older invoices.
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <span className="text-5xl mb-3">📊</span>
             <h3 className="text-base font-medium text-gray-700 mb-1">{t("reportsPage.noDeals")}</h3>
@@ -591,8 +674,8 @@ const ReportsPage = () => {
           </div>
         ) : (
           <>
-            {activeTab === "value"    && <ByValue    deals={filteredDeals} formatCurrency={formatCurrency} winRate3m={dashKpis.winRate3m} openPipeline={dashKpis.openPipeline} />}
-            {activeTab === "product"  && <ByProduct  deals={filteredDeals} formatCurrency={formatCurrency} />}
+            {activeTab === "value"    && <ByValue    deals={filteredDeals} achieved={achieved} formatCurrency={formatCurrency} winRate3m={dashKpis.winRate3m} openPipeline={dashKpis.openPipeline} />}
+            {activeTab === "product"  && <ByProduct  deals={filteredDeals} achievedDeals={filteredAchievedDeals} achieved={achieved} formatCurrency={formatCurrency} />}
             {activeTab === "client"   && <ByClient   deals={filteredDeals} formatCurrency={formatCurrency} />}
             {activeTab === "location" && <ByLocation deals={filteredDeals} formatCurrency={formatCurrency} />}
             {activeTab === "salesman" && (
@@ -620,12 +703,16 @@ const ReportsPage = () => {
                     </button>
                   </div>
                 )}
-                <BySalesman deals={filteredDeals} formatCurrency={formatCurrency} />
+                <BySalesman deals={filteredDeals} achieved={achieved} formatCurrency={formatCurrency} />
               </>
             )}
             {activeTab === "origin"   && <OriginReport   deals={filteredDeals} formatCurrency={formatCurrency} dateFrom={dateFrom} />}
             {activeTab === "margin"   && <MarginReport   deals={filteredDeals} formatCurrency={formatCurrency} />}
             {activeTab === "activity" && <ActivityReport deals={filteredDeals} formatCurrency={formatCurrency} />}
+            {/* Not given `deals`: its rows are credit notes, not deals, and the
+                page-level date and salesman filters are about deals. It has its
+                own month range, customer, salesman and status filters. */}
+            {activeTab === "returns"  && <SalesReturnsReport formatCurrency={formatCurrency} />}
           </>
         )}
       </div>

@@ -12,7 +12,13 @@ import {
   fetchAchievedOnlyUsers,
   wonNotInvoicedList,
   summarizeWonNotInvoiced,
+  computeAnnualTarget,
 } from "../utils/planningCalculations";
+// Whose revenue and target count. The Forecast service resolves it the same
+// way every other screen does rather than taking whatever assignees a
+// sales_targets query happens to return.
+import { fetchAchieverIds } from "../utils/achieverScope";
+import { wholePeriodOf } from "../utils/dashboardDateUtils";
 // The returns importer's own matcher, so correcting an invoice number re-matches
 // returns by exactly the rule that matched them on import.
 import { indexDealsByInvoice, dealsForInvoice } from "../utils/salesReturnsImport";
@@ -6108,65 +6114,108 @@ export const forecastService = {
         }
       }
 
-      // ── 3. Sum active revenue targets overlapping this period ──────────
-      // Managers/directors have no personal target — the period target is the
-      // SUM of every active target assigned to the salesmen in scope. Scoping
-      // mirrors the deals query (ownerIds), so:
-      //   salesman   → their own target
-      //   supervisor → their team's targets
-      //   manager+   → all company targets (ownerIds null → no assignee filter)
-      // Overlap: target.period_start <= periodEnd AND target.period_end >= periodStart.
+      // ── 3. TARGET — the shared per-person rule, not a local query ──────
       //
-      // BUSINESS RULE: attainment is always Won Revenue ÷ target_amount,
-      // regardless of how the target was assigned. A salesman may have their
-      // monthly goal recorded under any target_type (total_value, by_clients,
-      // or by_products) — these are different VIEWS of the SAME monthly goal,
-      // not additive separate targets. So we intentionally do NOT filter by
-      // target_type here (that filter is what made the Forecast page show
-      // "No target set" for by_clients / by_products salesmen).
+      // utils/planningCalculations.js owns this: fetchMonthlyTargets selects the
+      // ACTIVE MONTHLY rows overlapping the period for the ACHIEVERS, and
+      // targetPerPerson sums them by the agreed rule (rows are additive across
+      // target_types because each records a different commitment; a row and its
+      // own client_targets breakdown collapse to the greater of the two).
       //
-      // Because the unique constraint allows up to one row per target_type for
-      // the same (assigned_to, period_start, period_end), we de-duplicate by
-      // taking the MAX target_amount within each (salesman, period) group, then
-      // SUM across groups. That way multiple type-rows for the same month are
-      // not double-counted, while distinct monthly rows inside a selected
-      // quarter/year still add up correctly.
-      let targetQuery = supabase
-        .from("sales_targets")
-        .select("target_amount, assigned_to, period_start, period_end")
-        .eq("status", "active");
-
-      if (periodStart && periodEnd) {
-        targetQuery = targetQuery
-          .lte("period_start", periodEnd)
-          .gte("period_end", periodStart);
-      }
-
-      if (companyId) targetQuery = targetQuery.eq("company_id", companyId);
-      if (ownerIds)  targetQuery = targetQuery.in("assigned_to", ownerIds);
-
-      const { data: targetRows, error: targetError } = await targetQuery;
-      if (targetError) throw targetError;
-
-      // MAX per (salesman, period) → dedupes multiple target_type rows for the
-      // same goal; SUM across groups → totals distinct periods and salesmen.
-      const perGroup = {};
-      (targetRows || []).forEach((row) => {
-        const key = `${row.assigned_to || "all"}|${row.period_start || ""}|${row.period_end || ""}`;
-        perGroup[key] = Math.max(perGroup[key] || 0, parseFloat(row.target_amount) || 0);
+      // WHAT THIS REPLACED, and why it mattered. The local query here had three
+      // defects and they compounded:
+      //   1. no period_type filter, so a manager's YEARLY roll-up row was summed
+      //      into a monthly target — Mohamed Kamal's 40,660,778.80;
+      //   2. no achiever scope, so every assignee in the company counted;
+      //   3. MAX per (person, period) instead of the additive per-person rule,
+      //      and no client_targets embed, so a by_clients header row whose
+      //      children exceed it was under-counted.
+      // For JASCO PVC, October 2026, company-wide, it read 43,861,779 where the
+      // KPI strip, Planning, the Coverage Console and Insights all read
+      // 3,701,000. The Forecast page's DIRECTOR view already overrode it with
+      // computeKpiStripData, which is why only managers, supervisors, salesmen
+      // and the AI insight/prediction widgets ever saw the wrong figure.
+      //
+      // The ANNUAL view takes the yearly allocation instead (decision D3),
+      // exactly as the KPI strip does.
+      const achieverIds = await fetchAchieverIds({ companyId, ownerIds });
+      // No period means "All Time". Targets only exist per month, so the
+      // all-time figure is the sum of every monthly row ever assigned — the
+      // same thing the old query returned for that case, now by the shared rule.
+      const tStart = periodStart || "2000-01-01";
+      const tEnd = periodEnd || "2100-12-31";
+      const monthlyRows = await fetchMonthlyTargets({
+        companyId, contributorIds: achieverIds, start: tStart, end: tEnd,
       });
-      const totalTarget = Object.values(perGroup).reduce((sum, v) => sum + v, 0);
+      const monthlyTotal = Object.values(targetPerPerson(monthlyRows))
+        .reduce((sum, v) => sum + v, 0);
+
+      const whole = (periodStart && periodEnd) ? wholePeriodOf(periodStart, periodEnd) : null;
+      const totalTarget = whole?.kind === "year"
+        ? await computeAnnualTarget({
+          companyId, ownerIds: achieverIds, monthlyTotal, year: whole.year,
+        })
+        : monthlyTotal;
+
+      // ── 4. ACHIEVED and WON-NOT-INVOICED — the shared rules ───────────
+      //
+      // The page's "Committed" card used to be every won deal at `amount`,
+      // dated by closed_at. That is not what the rest of the app means by
+      // revenue: Achieved is won AND is_invoiced, dated by INVOICE_DATE, valued
+      // at final_amount ?? amount, net of credit notes, over the achievers.
+      // Those are not small differences — for one month they were 802,823
+      // against 0, because October's won deals are not invoiced yet.
+      //
+      // Won-but-not-yet-invoiced comes back as its OWN figure rather than being
+      // folded in. It is real committed revenue that has not been billed, so a
+      // forecast must account for it, but it is not achievement and must never
+      // be added to Achieved. The page shows the two side by side and says
+      // which is which.
+      const achievedSplit = (periodStart && periodEnd)
+        ? await fetchAchieved({
+          companyId, contributorIds: achieverIds, start: periodStart, end: periodEnd,
+        })
+        : await fetchAchieved({ companyId, contributorIds: achieverIds });
+      // Not windowed, exactly as the KPI strip treats it: a deal won in a past
+      // month and still not invoiced is outstanding NOW, not then.
+      //
+      // Hence its OWN read — wonNotInvoicedFor, the same helper the monthly
+      // target cards use — and not the `deals` array above. That array is
+      // filtered to the selected period by closed_at, so deriving this from it
+      // gave 0 for September while reading 818,399 for October, purely because
+      // of which month the outstanding deals happened to be closed in. The
+      // figure is a STATUS; a status cannot be windowed.
+      const wni = await wonNotInvoicedFor({ companyId, ownerIds: achieverIds });
 
       return {
         deals:  deals || [],
         // Preserve the "no target" state (null) so cards fall back gracefully.
         target: totalTarget > 0 ? { target_amount: totalTarget } : null,
+        // The shared Achieved for this scope and period, for the Committed card.
+        achieved: achievedSplit.total,
+        achievedGross: achievedSplit.grossTotal,
+        returnsTotal: achievedSplit.returnsTotal,
+        invoiceCount: achievedSplit.count,
+        wonNotInvoiced: { total: wni.total, count: wni.count },
+        // Who the figures are over, so the page can say so rather than imply
+        // the whole company.
+        achieverIds,
         closedLost,
         error:  null,
       };
     } catch (error) {
       console.error("Error in getForecastData:", error);
-      return { deals: [], target: null, closedLost: { count: null, from: null, to: null }, error };
+      // Every key the success path returns, so a failed load leaves the page
+      // rendering zeros it can label rather than reading undefined off the
+      // result — the shape of the bug that blanked Planning on 2026-10-05.
+      return {
+        deals: [], target: null,
+        achieved: 0, achievedGross: 0, returnsTotal: 0, invoiceCount: 0,
+        wonNotInvoiced: { total: 0, count: 0 },
+        achieverIds: [],
+        closedLost: { count: null, from: null, to: null },
+        error,
+      };
     }
   },
 

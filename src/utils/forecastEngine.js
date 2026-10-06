@@ -210,11 +210,34 @@ function effectiveWeight(deal, historicalRates, repRates) {
  * stage historical rate (60 %) and rep personal win rate (40 %).
  * Stages not present in historicalRates fall back to DEFAULT_STAGE_WEIGHTS.
  */
-export function buildForecast(deals = [], target = 0, historicalRates = null, repRates = null) {
+/**
+ * @param {object} [shared] the figures the REST of the app owns, so this page
+ *   stops deriving revenue of its own:
+ *     achieved       utils/planningCalculations.js fetchAchieved — won AND
+ *                    invoiced, by invoice_date, final_amount ?? amount, net of
+ *                    credit notes, over the achievers. This is "Committed".
+ *     wonNotInvoiced the shared wonNotInvoicedList total: real committed
+ *                    revenue that has not been billed. Carried as its OWN term
+ *                    so it can be shown and labelled, never folded into
+ *                    Achieved.
+ *   Omitted (the harness, and any caller that only wants the stage weights)
+ *   falls back to the old local definition, which is won deals at `amount`.
+ */
+export function buildForecast(deals = [], target = 0, historicalRates = null, repRates = null, shared = null) {
   const wonDeals  = deals.filter((d) => d.stage === "won");
   const openDeals = deals.filter((d) => OPEN_STAGES.has(d.stage));
 
-  const committed = wonDeals.reduce((s, d) => s + (d.amount || 0), 0);
+  // COMMITTED is Achieved when the caller supplies it. The local fallback —
+  // every won deal at `amount`, no invoice test, no returns — read 802,823
+  // for a month whose Achieved was 0, because October's won deals are not
+  // invoiced yet.
+  const usesShared = !!shared && Number.isFinite(Number(shared.achieved));
+  const committed = usesShared
+    ? Number(shared.achieved)
+    : wonDeals.reduce((s, d) => s + (d.amount || 0), 0);
+  // Won, not yet invoiced: counted in the forecast (the money is coming) but
+  // never in Committed (it is not achievement).
+  const wonNotInvoiced = usesShared ? (Number(shared.wonNotInvoiced) || 0) : 0;
 
   const openWeighted = openDeals.reduce((s, d) => {
     const { weight } = effectiveWeight(d, historicalRates, repRates);
@@ -223,8 +246,11 @@ export function buildForecast(deals = [], target = 0, historicalRates = null, re
 
   const openBestCase = openDeals.reduce((s, d) => s + (d.amount || 0), 0);
 
-  const weighted   = committed + openWeighted;
-  const bestCase   = committed + openBestCase;
+  // Both forecasts now carry the won-but-unbilled money explicitly. Leaving
+  // it out understated every period that had invoices still to raise; folding
+  // it into Committed would have overstated achievement.
+  const weighted   = committed + wonNotInvoiced + openWeighted;
+  const bestCase   = committed + wonNotInvoiced + openBestCase;
   const attainment = target > 0 ? Math.round((weighted / target) * 1000) / 10 : 0;
   const gap        = target - weighted;
 
@@ -271,15 +297,20 @@ export function buildForecast(deals = [], target = 0, historicalRates = null, re
       committed:           Math.round((openWeighted / 12) * 100) / 100,
       weighted:            Math.round((openWeighted / 12) * 100) / 100,
       bestCase:            Math.round((openBestCase / 12) * 100) / 100,
-      cumulativeCommitted: Math.round(committed             * 100) / 100,
-      cumulativeWeighted:  Math.round((committed + openWeighted * progress) * 100) / 100,
-      cumulativeBestCase:  Math.round((committed + openBestCase * progress) * 100) / 100,
+      cumulativeCommitted: Math.round((committed + wonNotInvoiced) * 100) / 100,
+      cumulativeWeighted:  Math.round((committed + wonNotInvoiced + openWeighted * progress) * 100) / 100,
+      cumulativeBestCase:  Math.round((committed + wonNotInvoiced + openBestCase * progress) * 100) / 100,
       dealCount:           openDeals.length,
     };
   });
 
   return {
     committed:  Math.round(committed  * 100) / 100,
+    // Reported so the page can show it on its own line and say what it is.
+    wonNotInvoiced: Math.round(wonNotInvoiced * 100) / 100,
+    // Whether Committed is the shared Achieved or this file's local fallback,
+    // so a screen never has to guess which definition it is showing.
+    committedIsAchieved: usesShared,
     weighted:   Math.round(weighted   * 100) / 100,
     bestCase:   Math.round(bestCase   * 100) / 100,
     attainment,
