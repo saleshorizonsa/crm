@@ -8,6 +8,7 @@ import Icon from "./AppIcon";
 import Button from "./ui/Button";
 import { capitalize } from "utils/helper";
 import { formatLocalDateYMD } from "utils/dateFormat";
+import DivisionPicker from "./DivisionPicker";
 
 const SalesTargetAssignment = ({
   onTargetCreated,
@@ -27,6 +28,9 @@ const SalesTargetAssignment = ({
   });
 
   const [subordinates, setSubordinates] = useState([]);
+  // Which division this target belongs to (see DivisionPicker).
+  const [divisionId, setDivisionId] = useState(null);
+
   const [availableTarget, setAvailableTarget] = useState({
     allocated: 0,
     assigned: 0,
@@ -345,6 +349,7 @@ const SalesTargetAssignment = ({
         const targetData = {
           assignedTo: formData.assignedTo,
           companyId: companyId,
+          divisionId,
           targetAmount: parseFloat(formData.targetAmount),
           currency: preferredCurrency,
           periodType: formData.periodType,
@@ -560,6 +565,15 @@ const SalesTargetAssignment = ({
           />
         </div>
 
+        {/* Division — ONLY for someone who belongs to more than one. */}
+        {formData.assignedTo && (
+          <DivisionPicker
+            companyId={companyId}
+            userId={formData.assignedTo}
+            value={divisionId}
+            onChange={setDivisionId}
+          />
+        )}
         {/* Period Type and Start Date */}
         <div className="grid grid-cols-2 gap-4">
           <div>

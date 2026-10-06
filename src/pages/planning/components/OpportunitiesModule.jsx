@@ -4,6 +4,7 @@ import { useAuth } from 'contexts/AuthContext';
 import { useCurrency } from 'contexts/CurrencyContext';
 import Icon from 'components/AppIcon';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
+import DivisionPicker from 'components/DivisionPicker';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
 import { blockIfPlanLocked, blockIfPlanNotApproved, planMonthForDate } from 'utils/planApproval';
@@ -49,6 +50,9 @@ const emptyForm = (month) => ({
   material_group: '',
   expected_month: month,
   notes:          '',
+  // null until DivisionPicker reports the owner's primary — or stays null for
+  // the great majority, who belong to one division and never see the picker.
+  division_id:    null,
 });
 
 export default function OpportunitiesModule({
@@ -323,7 +327,7 @@ export default function OpportunitiesModule({
         .from('opportunities')
         .select(`
           id, customer_name, customer_type, planned_amount, material_group,
-          expected_month, notes, status, deal_id, converted_at, created_at,
+          expected_month, notes, status, deal_id, converted_at, created_at, division_id,
           contact_id, owner_id, bounce_count, last_bounced_at, is_replacement, replaces_deal_id,
           owner:users!owner_id(id, full_name, role, is_active),
           contact:contacts!contact_id(id, first_name, last_name, company_name),
@@ -600,6 +604,10 @@ export default function OpportunitiesModule({
         expected_month: form.expected_month || null,
         notes:          form.notes || null,
         company_id:     company?.id,
+        // Omitted, not null, when the picker did not appear — so the BEFORE
+        // INSERT trigger fills it from the owner's primary division. See
+        // migrations/division_attribution.sql.
+        ...(form.division_id ? { division_id: form.division_id } : {}),
       };
 
       let error;
@@ -697,6 +705,20 @@ export default function OpportunitiesModule({
         contact_id:  opp.contact_id || null,
         description: opp.notes || null,
         expected_close_date: opp.expected_month || null,
+        // THE PLAN ITEM'S DIVISION, inherited. A converted plan item is the same
+        // piece of business in a different table, so it must not change division
+        // on the way across: Kamal's Al BADAH plan sits in PVC Compound, and the
+        // deal it becomes belongs there too. Without this the deal would take
+        // the owner's PRIMARY division from the BEFORE INSERT trigger (Export
+        // for Kamal), and the plan would leave one division while the deal
+        // arrived in another — the panel's plan and funnel would stop reconciling
+        // for exactly the people this session is about.
+        //
+        // `undefined` rather than null when the plan item has no division yet
+        // (before migrations/division_attribution.sql is applied), so the column
+        // is omitted from the insert and the trigger's owner-primary default
+        // still applies instead of being overwritten with an explicit NULL.
+        ...(opp.division_id ? { division_id: opp.division_id } : {}),
         opportunity_id: opp.id,
         converted_at: now,
         stage_changed_at: now,
@@ -748,6 +770,7 @@ export default function OpportunitiesModule({
       customer_type:  opp.customer_type || 'existing',
       contact_id:     opp.contact_id || '',
       planned_amount: opp.planned_amount ?? '',
+      division_id:    opp.division_id || null,
       material_group: opp.material_group || '',
       expected_month: opp.expected_month || currentMonth,
       notes:          opp.notes || '',
@@ -1348,6 +1371,16 @@ export default function OpportunitiesModule({
                     className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-card text-foreground focus:outline-none focus:border-blue-400"
                   />
                 </div>
+
+                {/* Division — ONLY for an owner in more than one. A plan
+                    item is the business this division will book, so a
+                    multi-division planner has to say which one. */}
+                <DivisionPicker
+                  companyId={company?.id}
+                  userId={editingOpp?.owner_id || user?.id}
+                  value={form.division_id}
+                  onChange={(id) => setForm((f) => ({ ...f, division_id: id }))}
+                />
 
                 {/* Notes */}
                 <div>

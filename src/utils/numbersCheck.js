@@ -28,7 +28,10 @@ import {
 import { achievedForBuckets, monthBuckets, rangeYear } from 'utils/achievedSeries';
 import { performanceBars, performanceTotals } from 'utils/performanceBarData';
 import { calcCoverageMetrics } from 'utils/coverageConsoleMetrics';
-import { calcDivisionMetrics } from 'utils/salesDivisionMetrics';
+import {
+  calcDivisionMetrics, groupByDivision, scopeUserIds,
+} from 'utils/salesDivisionMetrics';
+import { fetchAdditionalDivisions } from 'utils/divisionMembership';
 import { subtreeIdsOf } from 'utils/teamHierarchy';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
@@ -202,7 +205,7 @@ async function loadBundle({ companyId, start, end, year }) {
       .select('id, title, stage, amount, final_amount, is_invoiced, invoice_date, expected_close_date, owner_id, division_id, forecast_amount, forecast_probability, contact_id, stage_changed_at, closed_at, created_at, invoice_number')
       .eq('company_id', companyId).not('stage', 'eq', 'lost'),
     supabase.from('users')
-      .select('id, full_name, role, supervisor_id, is_active, is_contributor')
+      .select('id, full_name, role, supervisor_id, is_active, is_contributor, sales_division_id')
       .eq('company_id', companyId).eq('is_active', true),
     // Monthly target rows overlapping the SELECTED period. status = 'active'
     // matters: draft and superseded rows count nowhere else.
@@ -266,6 +269,163 @@ async function loadBundle({ companyId, start, end, year }) {
     now,
     error: firstError?.error || null,
   };
+}
+
+/**
+ * THE INVARIANT THIS SECTION EXISTS FOR: the divisions sum to the company.
+ *
+ * Deals were always attributed by deals.division_id, but target rows, plan
+ * items and future orders were attributed per PERSON — so a person in two
+ * divisions had their whole target and whole plan counted in BOTH. Mohamed
+ * Kamal is in Export and PVC Compound, and the October panel read 5.75M of
+ * target against a company target of 3.70M, visibly wrong to anyone who added
+ * the column up but checked by nothing. These rows add it up.
+ *
+ * Deliberately re-reads targets, plan items and future orders WITH division_id
+ * rather than reusing loadBundle's rows: those three columns arrive with
+ * migrations/division_attribution.sql, and selecting a column PostgREST does
+ * not know about fails the whole request. Keeping them in their own reads means
+ * that, until the migration is applied, this section says so in one row instead
+ * of taking the rest of the page down with it.
+ */
+async function buildDivisionGroups({
+  companyId, consoleData, reference, planning, start, end, users,
+}) {
+  const next = nextMonthBounds(end);
+  const [divRes, additionalByUser, tRes, oRes, fRes] = await Promise.all([
+    supabase.from('sales_divisions')
+      .select('id, name, sort_order').eq('company_id', companyId).order('sort_order'),
+    fetchAdditionalDivisions({ companyId, userIds: (users || []).map((u) => u.id) }),
+    supabase.from('sales_targets')
+      .select('assigned_to, target_amount, period_type, target_type, period_start, period_end, product_group, division_id, client_targets(target_amount)')
+      .eq('company_id', companyId).eq('status', 'active').eq('period_type', 'monthly')
+      .lte('period_start', end).gte('period_end', start),
+    supabase.from('opportunities')
+      .select('id, owner_id, planned_amount, status, expected_month, division_id')
+      .eq('company_id', companyId).eq('status', 'open')
+      .gte('expected_month', start).lte('expected_month', end),
+    supabase.from('future_orders')
+      .select('id, owner_id, planned_amount, expected_month, status, division_id')
+      .eq('company_id', companyId).eq('status', 'pending')
+      .gte('expected_month', next.start).lte('expected_month', next.end),
+  ]);
+
+  const blocked = [tRes, oRes, fRes].find((r) => r?.error);
+  if (blocked) {
+    return [{
+      screen: 'Divisions sum = company',
+      fn: 'calcDivisionMetrics',
+      rows: [row({
+        label: 'Not checkable yet',
+        value: 0,
+        note: 'migrations/division_attribution.sql has not been applied, so one of'
+          + ' sales_targets / opportunities / future_orders has no division_id'
+          + ` column yet: "${blocked.error.message}". Until it is, a plan item or`
+          + ' future order has no division of its own and the panel falls back to'
+          + " its owner's primary — correct for everyone in one division, and"
+          + ' double-counting for anyone in two.',
+      })],
+    }];
+  }
+
+  const divisions = divRes.data || [];
+  // The same bundle the panel builds, with the division-aware rows swapped in.
+  const divData = {
+    ...consoleData,
+    targets: tRes.data || [],
+    opps: oRes.data || [],
+    futureOrders: fRes.data || [],
+  };
+  // role 'director' with no viewer id is the panel's own company-level scope:
+  // everyone, which is what summing to the company requires.
+  const scopeIds = scopeUserIds({ users, viewerId: null, role: 'director' });
+  const perDivision = groupByDivision({
+    users, divisions, scopeIds, additionalByUser,
+  }).map((g) => ({
+    g, m: calcDivisionMetrics(g.userIds, { ...divData, divisionId: g.id }) || {},
+  }));
+
+  const total = (pick) => perDivision.reduce((s, { m }) => s + n(pick(m)), 0);
+  const sumRows = [
+    row({
+      label: `Divisions sum = company — Target (${perDivision.length} divisions)`,
+      value: total((m) => m.target),
+      expected: reference.target,
+      note: 'the row this session exists for. Before the fix the panel summed to'
+        + ' 5.75M against a company target of 3.70M, because a target row was'
+        + " counted in every division its holder belonged to.",
+    }),
+    row({
+      label: 'Divisions sum = company — Achieved',
+      value: total((m) => m.achieved),
+      expected: reference.achieved,
+      note: 'deals are attributed STRICTLY by deals.division_id, with no owner'
+        + ' fallback — so a deal whose division is null belongs to no division'
+        + ' and this row reads short until the backfill is applied. A ✗ here'
+        + ' names new NULL-division deals: only DealModal sets the column, and'
+        + ' the BEFORE INSERT trigger in the migration is what closes the hole.',
+    }),
+    row({
+      label: 'Divisions sum = company — Planned (open plan)',
+      value: total((m) => m.planned),
+      expected: planning.plannedOpen,
+    }),
+    row({
+      label: 'Divisions sum = company — Funnel dated into this period',
+      value: total((m) => m.monthFunnel),
+      expected: reference.funnelWindow,
+    }),
+  ];
+
+  // ── per division: the panel's planned gap against Planning's ─────────────
+  //
+  // Only where the division has exactly ONE supervisor, because that is the
+  // only case where a Planning screen covers the same people: Planning scopes
+  // by HIERARCHY (a supervisor and his subtree) and the panel scopes by
+  // DIVISION, and the two coincide only when the division is that subtree.
+  // Where they do not, the row would be comparing two different populations
+  // and a ✗ would mean nothing.
+  const gapRows = [];
+  for (const { g, m } of perDivision) {
+    const members = g.userIds.map((id) => users.find((u) => u.id === id)).filter(Boolean);
+    const sups = members.filter((u) => u.role === 'supervisor');
+    if (sups.length !== 1) {
+      gapRows.push(row({
+        label: `${g.name} — planned gap (no single supervisor, info only)`,
+        value: n(m.plannedGap),
+        note: `${sups.length} supervisors in this division, so there is no one`
+          + ' Planning screen covering the same people to compare against.',
+      }));
+      continue;
+    }
+    const sup = sups[0];
+    const sc = resolveScope({ users, scope: { kind: 'team', userId: sup.id } });
+    // eslint-disable-next-line no-await-in-loop
+    const sp = await computePlanningPageSummary({
+      companyId, ownerIds: sc.ownerIds, start, end,
+    });
+    const divAchievers = achieverIdsFrom(members);
+    const samePeople = divAchievers.length === sc.achieverIds.length
+      && divAchievers.every((id) => sc.achieverIds.includes(id));
+    gapRows.push(row({
+      label: `${g.name} — planned gap vs Planning for ${sup.full_name || sup.id}`,
+      value: n(m.plannedGap),
+      expected: n(sp.plannedGap),
+      note: samePeople
+        ? 'the division and this supervisor\'s subtree are the same achievers, so'
+          + ' the two screens must agree'
+        : `DIFFERENT POPULATIONS: ${divAchievers.length} achievers in the division`
+          + ` against ${sc.achieverIds.length} in ${sup.full_name || 'the'} subtree.`
+          + ' A difference here is that, not a broken rule — the row is kept'
+          + ' because it is still the only cross-check of the panel gap, and'
+          + ' because the two memberships drifting apart is itself worth seeing.',
+    }));
+  }
+
+  return [
+    { screen: 'Divisions sum = company', fn: 'calcDivisionMetrics', rows: sumRows },
+    { screen: 'Division planned gap vs Planning', fn: 'computePlanningPageSummary', rows: gapRows },
+  ];
 }
 
 /**
@@ -711,6 +871,12 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       }),
     ],
   });
+
+  // ── Divisions sum to the company ─────────────────────────────────────────
+  const divisionGroups = await buildDivisionGroups({
+    companyId, consoleData, reference, planning, start, end, users,
+  });
+  divisionGroups.forEach((grp) => { if (grp.rows.length) groups.push(grp); });
 
   // ── Known to differ — not yet unified ────────────────────────────────────
   //

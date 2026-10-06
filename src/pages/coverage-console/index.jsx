@@ -33,6 +33,12 @@ import { partitionOpenFunnel } from "utils/openFunnel";
 // The per-node metrics this screen shows, lifted out so the numbers-check
 // page can call the same function with the same arguments.
 import { calcCoverageMetrics } from "utils/coverageConsoleMetrics";
+// The coverage figure's one name and formula. This screen computes covRatio
+// itself from calcCoverageMetrics, but it must not name it differently.
+import {
+  EXPECTED_PCT_LABEL,
+  EXPECTED_PCT_TOOLTIP,
+} from "utils/salesDivisionMetrics";
 
 // ── STATE ────────────────────────────────────────────────────────────────────
 // One object, four keys.
@@ -1165,11 +1171,18 @@ export default function CoverageConsole() {
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-gray-50">
-                        {["Name", "Target", "Achieved", "Coverage", "Status"].map(
+                        {/* "Coverage" was this screen's name for the same
+                            covRatio the divisions panel called "Weighted
+                            coverage". Both now use the one label and formula
+                            from utils/salesDivisionMetrics. */}
+                        {["Name", "Target", "Achieved", EXPECTED_PCT_LABEL, "Status"].map(
                           (h) => (
                             <th
                               key={h}
-                              className="text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100"
+                              title={h === EXPECTED_PCT_LABEL ? EXPECTED_PCT_TOOLTIP : undefined}
+                              className={`text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100${
+                                h === EXPECTED_PCT_LABEL ? " cursor-help underline decoration-dotted" : ""
+                              }`}
                             >
                               {h}
                             </th>

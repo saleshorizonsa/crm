@@ -1,4 +1,8 @@
-import { dealInDivision } from 'utils/divisionMembership';
+import {
+  dealInDivision,
+  rowInDivision,
+  primaryDivisionByUser,
+} from 'utils/divisionMembership';
 import { partitionOpenFunnel } from 'utils/openFunnel';
 import {
   CONTRIBUTOR_ROLES,
@@ -86,6 +90,55 @@ export function targetSpanLabel(start, end) {
  * supervisor_id subtree including himself — the same rule as the Coverage Console.
  * `users` must be the company's ACTIVE users.
  */
+/**
+ * THE NAME OF THE covRatio FIGURE, and the formula spelled out.
+ *
+ * It was called "Coverage" on the Coverage Console and "Weighted coverage" on
+ * the divisions panel — two names for one number, neither of which said what
+ * the number means. "Expected % of target" does: it is a FORECAST of the share
+ * of the target that will be invoiced, where both old names read as though it
+ * measured how much pipeline exists. Exported from here, where covRatio is
+ * computed, and imported by every screen that shows it, so the two cannot
+ * drift apart again.
+ */
+export const EXPECTED_PCT_LABEL = 'Expected % of target';
+export const EXPECTED_PCT_TOOLTIP =
+  'If open deals close at their stage probability and plan items convert at the'
+  + " team's conversion rate, this is the share of the target expected to be"
+  + ' invoiced: (invoiced + open deals at forecast + plan × conversion) ÷ target.';
+
+/**
+ * A DIVISION needs this many deals in the 3-month window before its own
+ * conversion rate is used. Below it, the company achiever rate stands in.
+ *
+ * WHY. A division is a handful of people, and a conversion rate over six deals
+ * is noise presented as a measurement: Export reads 100% off six won Al BADAH
+ * deals, and computeRequiredRaw divides the remaining target by exactly that
+ * number. One loss would move the rate 17 points and the plan with it. The
+ * company rate over ~143 deals fits the division less well and estimates it far
+ * better, and the screen says which one it is showing, with the division's own
+ * sample size, so nobody plans against six deals without knowing.
+ *
+ * DIVISIONS ONLY. Person-level rates on Planning are untouched: they have their
+ * own documented fallback chain, and a salesman with four deals is a different
+ * question from a division with four.
+ */
+export const DIVISION_MIN_SAMPLE = 10;
+
+/** The Conversion (3m) label, saying so when the rate is not this group's own. */
+export function conversionLabel(m) {
+  if (!m?.winRateBorrowed) return 'Conversion (3m)';
+  return `Conversion (3m) — company rate (n=${m.winRateSampleN ?? 0})`;
+}
+
+/** The same thing at length, for a tooltip. */
+export function borrowedNote(m) {
+  const n = m?.winRateSampleN ?? 0;
+  return `This division closed ${n} deal${n === 1 ? '' : 's'} in the 3-month `
+    + `window — fewer than ${DIVISION_MIN_SAMPLE}, too few to measure a rate `
+    + 'from — so the company achiever rate is shown and used instead.';
+}
+
 export function scopeUserIds({ users, viewerId, role }) {
   const list = users || [];
   if (role === 'director') return list.map((u) => u.id);
@@ -260,28 +313,67 @@ export function calcDivisionMetrics(userIds, data) {
     ...(users || []).filter((u) => scope.has(u.id) && isAchievedOnly(u)).map((u) => u.id),
   ]);
 
+  // ── ATTRIBUTION BY DIVISION, not per person ──────────────────────────────
+  //
+  // Deals have always been filtered by deals.division_id. Target rows, plan
+  // items and future orders were filtered only by WHOSE they were, so a person
+  // in two divisions had their whole target and whole plan counted in BOTH.
+  // Mohamed Kamal is in Export and PVC Compound, and the October panel summed
+  // to 5.75M of target against a company target of 3.70M. Business decision
+  // 2026-10-06 (option 2): attribute them by division, like deals.
+  //
+  // A row with no division_id falls back to its owner's PRIMARY division,
+  // which is exactly what per-person attribution meant for anyone in a single
+  // division — so no single-division figure moves, and a row created before
+  // migrations/division_attribution.sql is applied still lands somewhere
+  // instead of vanishing.
+  const primaryByUser = primaryDivisionByUser(users);
+  const targetInDivision = rowInDivision(data.divisionId, {
+    primaryByUser, ownerKey: 'assigned_to',
+  });
+  const planInDivision = rowInDivision(data.divisionId, { primaryByUser });
+
   // MONTHLY rows only. A yearly row is a whole year's allocation, so summing one
   // into a month would be wrong whoever holds it. Excludes explicit YEARLY rows
   // rather than requiring 'monthly', so a caller whose query omits period_type
   // still gets its target counted instead of silently receiving 0.
-  const monthlyTargetRows = (targets || []).filter((t) => t.period_type !== 'yearly');
+  const monthlyTargetRows = (targets || [])
+    .filter((t) => t.period_type !== 'yearly')
+    .filter(targetInDivision);
   const target = Object.values(
     targetPerPerson(monthlyTargetRows.filter((t) => isAchiever.has(t.assigned_to))),
   ).reduce((sum, v) => sum + v, 0);
 
-  // A group with no deals in the window borrows the company rate, as the
-  // Coverage Console does, rather than reading 0%.
+  // A group with no deals in the window borrows the COMPANY rate rather than
+  // reading 0%.
   //
-  // Over the ACHIEVERS (decision D4, 2026-10-05 — see utils/winRate3m.js): the same people as Target and Achieved above, so
-  // a division carried by a flagged manager no longer has to borrow a rate it
-  // could measure from his own deals. achieverIdsFrom() for the company list
-  // also drops inactive users, which a bare role filter did not.
+  // THE FALLBACK USED TO BORROW NOTHING. It re-ran winRateFromDeals over
+  // `divisionDeals3m` — the SAME division-filtered list that was empty in the
+  // first place — so a division with no deals got 0.0%, not a borrowed rate.
+  // Then two things compounded on that zero: computeRequiredRaw reads 0 as "no
+  // rate at all, assume 50%" and demanded target x 2 (2.92M of new pipeline for
+  // PVC Compound), while computeCoverage weighted the same funnel and plan by
+  // 0 and reported 0% coverage. One screen, two opposite readings of the same
+  // missing number. It now borrows the company achiever rate over ALL company
+  // deals in the window, and `winRateBorrowed` tells the panel to say
+  // "company rate" rather than presenting it as the division's own.
+  //
+  // Over the ACHIEVERS (decision D4, 2026-10-05 — see utils/winRate3m.js): the
+  // same people as Target and Achieved above, so a division carried by a
+  // flagged manager measures a rate from his own deals instead of borrowing.
+  // achieverIdsFrom() for the company list also drops inactive users, which a
+  // bare role filter did not.
   const divisionDeals3m = (deals3m || []).filter(inThisDivision);
   const mine = winRateFromDeals({ deals: divisionDeals3m, ownerIds: [...isAchiever] });
   const companyAchieverIds = achieverIdsFrom(users);
-  const winRateBorrowed = mine.total === 0;
+  // DIVISION_MIN_SAMPLE applies only when a DIVISION is being measured. A
+  // company-level or team-level call keeps the old condition — borrow only with
+  // no deals at all — because the threshold was reasoned about for divisions and
+  // nothing else, and the company's own rate is what would be borrowed anyway.
+  const minSample = data.divisionId ? DIVISION_MIN_SAMPLE : 1;
+  const winRateBorrowed = mine.total < minSample;
   const winRatePct = winRateBorrowed
-    ? winRateFromDeals({ deals: divisionDeals3m, ownerIds: companyAchieverIds }).winRatePct
+    ? winRateFromDeals({ deals: deals3m || [], ownerIds: companyAchieverIds }).winRatePct
     : mine.winRatePct;
 
   // The shared rule (utils/planningCalculations.js) rather than a local copy of
@@ -320,7 +412,13 @@ export function calcDivisionMetrics(userIds, data) {
   // contributors plus any flagged manager — so a flagged manager's own plan and
   // deals net off the requirement his own target created.
   const achieverIds = [...isAchiever];
-  const planned = sumPlannedByOwner({ rows: opps, ownerIds: achieverIds }).total;
+  // planInDivision as well as the owner scope: a plan item belongs to ONE
+  // division now (its own division_id, or its owner's primary), so a
+  // multi-division person's plan is no longer counted in every division they
+  // belong to. Kamal's October plan was 1,179,250 in BOTH Export and PVC
+  // Compound before this.
+  const divisionOpps = (opps || []).filter(planInDivision);
+  const planned = sumPlannedByOwner({ rows: divisionOpps, ownerIds: achieverIds }).total;
   // Open funnel for the window, raw — THE shared definition
   // (utils/openFunnel.js), not a local re-derivation. The inline version this
   // replaced required an expected_close_date and so silently dropped every
@@ -337,7 +435,12 @@ export function calcDivisionMetrics(userIds, data) {
   // Shown for visibility only — NOT netted off the requirement any more. It is
   // NEXT month's commitment, and subtracting it understated what still had to be
   // built this month. Planning never did it; Planning is the standard.
-  const carryIn = sumPlannedByOwner({ rows: futureOrders, ownerIds: achieverIds }).total;
+  // Same attribution. future_orders.division_id is added by
+  // migrations/division_attribution.sql; until that is applied every row falls
+  // back to its owner's primary division, which is what this screen already
+  // did for anyone in a single division.
+  const divisionFutureOrders = (futureOrders || []).filter(planInDivision);
+  const carryIn = sumPlannedByOwner({ rows: divisionFutureOrders, ownerIds: achieverIds }).total;
   // Required pipeline is measured over what is STILL MISSING (deficit), not over
   // the untouched target: once a month's target is achieved, "new pipeline
   // needed" must read zero rather than keep demanding pipeline against a number
@@ -399,6 +502,10 @@ export function calcDivisionMetrics(userIds, data) {
     pacingOk: isCurrentMonth ? pace >= elapsed - 0.15 : null,
     winRatePct,
     winRateBorrowed,
+    // The DIVISION's own deal count in the window — the n in "company rate
+    // (n=6)". Reported whether or not the rate was borrowed, so a reader can
+    // also see how thin a rate that WAS used is.
+    winRateSampleN: mine.total,
     planned,
     monthFunnel,
     // How much of monthFunnel carries no close date, so a screen can disclose it

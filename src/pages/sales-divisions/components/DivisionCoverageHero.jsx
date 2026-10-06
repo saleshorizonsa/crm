@@ -4,6 +4,13 @@ import DivisionPacingRail from "./DivisionPacingRail";
 // Percentages that cannot crash a render: a figure that has not arrived shows
 // "—" instead of taking the page down. See utils/formatPct.js.
 import { fmtPct } from "utils/formatPct";
+// One spelling of the coverage figure's name and of the Conversion (3m) label,
+// shared with the panel and the Coverage Console.
+import {
+  EXPECTED_PCT_LABEL,
+  EXPECTED_PCT_TOOLTIP,
+  conversionLabel,
+} from "utils/salesDivisionMetrics";
 
 // The Coverage Console's hero (status chip, coverage equation, coverage rail,
 // pacing rail) and its Cycle Ledger, copied from
@@ -55,7 +62,9 @@ export function DivisionCoverageHero({ metrics, scope, title, sub, periodLabel }
           </span>
           <div className="text-[11px] font-mono text-gray-400 mt-2 space-y-1">
             <div>
-              Coverage{" "}
+              <span className="cursor-help underline decoration-dotted" title={EXPECTED_PCT_TOOLTIP}>
+                {EXPECTED_PCT_LABEL}
+              </span>{" "}
               <span className={metrics.coverageOk ? "text-emerald-600 font-semibold" : "text-red-600 font-semibold"}>
                 {metrics.coverageOk ? "PASS" : "FAIL"}{" "}
                 {((metrics.coverage / Math.max(metrics.target, 1)) * 100).toFixed(0)}%
@@ -166,7 +175,7 @@ export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
       ? []
       : [["Gap to target", SAR(metrics.deficit) + " SAR", "", "neg"]]),
     [
-      "Win rate",
+      conversionLabel(metrics),
       fmtPct(metrics.winRatePct),
       metrics.winRateBorrowed ? "company rate (no deals in 3 months)" : "3-month average · to date",
     ],

@@ -11,6 +11,10 @@ import {
   isAllTimeRange,
 } from "utils/dashboardDateUtils";
 import {
+  EXPECTED_PCT_LABEL,
+  EXPECTED_PCT_TOOLTIP,
+  conversionLabel,
+  borrowedNote,
   UNASSIGNED,
   scopeUserIds,
   groupByDivision,
@@ -72,7 +76,17 @@ const HEALTH = {
   none: { text: "No target", cls: "bg-gray-50 text-gray-500 border-gray-200" },
 };
 
-const COLUMNS = ["Name", "Target", "Achieved", "Gap to target", "Win rate", "New pipeline needed", "Coverage", "Status"];
+// "Conversion (3m)", not "Win rate": the figure is won over deals CREATED in
+// the 3 completed months, which is what Required Plan divides by. "Win rate"
+// means won / (won + lost) everywhere else, and the two are different numbers.
+//
+// The coverage column's name and formula come from utils/salesDivisionMetrics,
+// where covRatio is computed, so this screen and the Coverage Console cannot
+// call one number two things again.
+//
+// Planning's "Planning Coverage" keeps its own name: it is the RAW plan plus
+// funnel, unweighted — a different measure that was also called Coverage.
+const COLUMNS = ["Name", "Target", "Achieved", "Gap to target", "Conversion (3m)", "New pipeline needed", EXPECTED_PCT_LABEL, "Status"];
 
 function StatusChip({ m }) {
   const h = HEALTH[healthOf(m)];
@@ -121,7 +135,12 @@ function FigureTable({ rows, empty }) {
             {COLUMNS.map((h) => (
               <th
                 key={h}
-                className="text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 whitespace-nowrap"
+                /* The formula on hover: the column is a ratio of four things
+                   and the name alone cannot say which four. */
+                title={h === EXPECTED_PCT_LABEL ? EXPECTED_PCT_TOOLTIP : undefined}
+                className={`text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 whitespace-nowrap${
+                  h === EXPECTED_PCT_LABEL ? " cursor-help underline decoration-dotted" : ""
+                }`}
               >
                 {h}
               </th>
@@ -149,7 +168,16 @@ function FigureTable({ rows, empty }) {
               <td className="px-4 py-3 font-mono text-gray-600">{compact(row.m.target)}</td>
               <td className="px-4 py-3 font-mono font-semibold text-emerald-700">{compact(row.m.achieved)}</td>
               <td className="px-4 py-3 font-mono text-red-600">{compact(row.m.deficit)}</td>
-              <td className="px-4 py-3 font-mono text-gray-600">{pct(row.m.winRatePct)}</td>
+              {/* A borrowed rate is marked in the table too. The cell has no
+                  room for "company rate (n=6)", so it carries it on hover —
+                  without it, a column of percentages gives no clue that two of
+                  them are the same company figure. */}
+              <td
+                className={`px-4 py-3 font-mono text-gray-600${row.m.winRateBorrowed ? " cursor-help underline decoration-dotted" : ""}`}
+                title={row.m.winRateBorrowed ? borrowedNote(row.m) : undefined}
+              >
+                {pct(row.m.winRatePct)}
+              </td>
               <td className="px-4 py-3 font-mono text-blue-700">{compact(row.m.plannedGap)}</td>
               <td className="px-4 py-3"><CoverageCell m={row.m} /></td>
               <td className="px-4 py-3"><StatusChip m={row.m} /></td>
@@ -166,7 +194,11 @@ function Figures({ m, small = false }) {
     ["Target", `${compact(m.target)} SAR`, "text-gray-900"],
     ["Achieved", `${compact(m.achieved)} SAR`, "text-emerald-700"],
     ["Gap to target", `${compact(m.deficit)} SAR`, "text-red-600"],
-    ["Win rate", pct(m.winRatePct), "text-gray-900"],
+    // Says so when it is not this division's own rate, and how thin the
+    // division's own sample was — presenting a borrowed number as the
+    // division's own is how somebody ends up planning against a conversion
+    // nobody in that division achieved.
+    [conversionLabel(m), pct(m.winRatePct), "text-gray-900"],
     ["New pipeline needed", `${compact(m.plannedGap)} SAR`, "text-blue-700"],
   ];
   return (
