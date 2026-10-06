@@ -20,7 +20,11 @@ import {
   getScopeMonthlyTotals,
   forecastService,
 } from 'services/supabaseService';
-import { achievedForRows, withTargetRowProgress } from 'utils/targetProgress';
+import {
+  achievedForRows,
+  withTargetRowProgress,
+  distinctPeopleScope,
+} from 'utils/targetProgress';
 import { achievedForBuckets, monthBuckets, rangeYear } from 'utils/achievedSeries';
 import { performanceBars, performanceTotals } from 'utils/performanceBarData';
 import { calcCoverageMetrics } from 'utils/coverageConsoleMetrics';
@@ -459,35 +463,50 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
   const progressCtx = { deals: bundle.deals, returns: bundle.returns, users };
   const withProgress = withTargetRowProgress(tableRows, progressCtx);
   const holderIds = [...new Set(tableRows.map((t) => t.assigned_to))];
-  const distinctPeople = holderIds.length;
-  // The table's own reference. It is Achieved over THE PEOPLE IN THE TABLE, not
-  // over the whole scope: somebody who invoiced but holds no target row this
-  // month has no row to appear in, so a table total that equalled the company's
-  // Achieved would be the thing that was wrong. September 2026 is exactly that
-  // case — 3 people hold rows, 6 are achievers — so the figure below is what
-  // the table must show, and the gap is reported as its own line rather than
-  // left to look like a defect.
-  const holdersAchieved = computeAchieved({
-    deals: bundle.deals, contributorIds: holderIds, start, end, returns: bundle.returns,
+  // WHO THE ROWS COVER is not the same as who HOLDS them, and this row was
+  // wrong about that until 2026-10-06.
+  //
+  // targetRowScope treats a row assigned TO a manager BY someone else as a
+  // TEAM ALLOCATION: its progress is the whole subtree's revenue, because that
+  // is what the allocation is for. So one row held by one manager can cover
+  // every achiever beneath him. This check compared the table total against
+  // Achieved for the ROW HOLDERS alone, which agreed only for as long as no
+  // manager had a monthly row — and the moment Mohamed Kamal was given an
+  // October target it reported a 38,528 discrepancy against an app that was
+  // behaving exactly as designed.
+  //
+  // The reference is now Achieved over the people the rows COVER, resolved by
+  // the same shared helper the table uses (distinctPeopleScope). What that
+  // still tests, and it is the thing worth testing: that the total is taken
+  // over PEOPLE and not over rows, and that it is windowed and netted like
+  // every other Achieved. What it no longer pretends to test is the scope
+  // rule itself, which has nothing independent to be checked against.
+  const coveredIds = distinctPeopleScope(tableRows, { users });
+  const distinctPeople = coveredIds.length;
+  const coveredAchieved = computeAchieved({
+    deals: bundle.deals, contributorIds: coveredIds, start, end, returns: bundle.returns,
   }).total;
   groups.push({
     screen: 'Target table (all dashboards)',
     fn: 'achievedForRows / withTargetRowProgress',
     rows: [
       row({
-        label: `Table Achieved total, over ${distinctPeople} distinct ${distinctPeople === 1 ? 'person' : 'people'}`,
+        label: `Table Achieved total — ${tableRows.length} row(s) held by ${holderIds.length},`
+          + ` covering ${distinctPeople} ${distinctPeople === 1 ? 'person' : 'people'}`,
         value: achievedForRows(tableRows, { ...progressCtx, start, end }),
-        expected: holdersAchieved,
+        expected: coveredAchieved,
         note: 'summed over PEOPLE, not over rows — one person holding three rows'
-          + ' counts once. Measured against Achieved for those same people.',
+          + ' counts once. "Covering" exceeds "held by" when a manager holds a'
+          + ' team allocation, because that row\'s progress is his subtree\'s'
+          + ' revenue, not his own.',
       }),
       row({
-        label: `Achieved by the ${achieverIds.length - distinctPeople} achiever(s) holding NO target row (info only)`,
-        value: reference.achieved - holdersAchieved,
+        label: `Achieved by the ${Math.max(0, achieverIds.length - distinctPeople)} achiever(s) NO row covers (info only)`,
+        value: reference.achieved - coveredAchieved,
         note: distinctPeople < achieverIds.length
           ? 'this is why the table total above is below the scope Achieved — it is'
-            + ' revenue with no target row to sit under, not missing revenue'
-          : 'everybody whose revenue counts holds a target row in this period',
+            + ' revenue that no target row covers, not missing revenue'
+          : 'every achiever in this scope is covered by some row in the table',
       }),
       row({
         label: 'Sum of row targets (targetPerPerson)',
@@ -765,65 +784,85 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
         role: scope.kind === 'person' ? 'salesman' : (person?.role || viewerRole),
       };
 
-    // THE REVENUE FIGURE THE SCREEN SHOWS. This row used to measure
-    // reportWonTotal over getReportDeals — which is ReportKPIBar's formula, and
-    // ReportKPIBar is NOT MOUNTED ANYWHERE. So the row was faithfully checking a
-    // figure no user could see, while the By Value tile that users do see went
-    // unchecked. It now reads the same function the tile reads.
+    // THE REVENUE FIGURES USERS ACTUALLY SEE.
+    //
+    // Every label below is the wording ON THE SCREEN, so a reader can hold the
+    // two side by side and match them one to one. That is the whole point of
+    // this page, and it is what the old Reports row failed at: it measured
+    // reportWonTotal over getReportDeals — ReportKPIBar's formula — and
+    // ReportKPIBar IS NOT MOUNTED ANYWHERE, so the check faithfully verified a
+    // figure no user could reach while the By Value tile they do see went
+    // unchecked. Do not add a row for ReportKPIBar unless somebody mounts it.
     const rptAchieved = await getReportAchieved({
       companyId, userId: rptIdentity.userId, role: rptIdentity.role,
       dateFrom: start, dateTo: end,
     });
     const rptTotals = reportAchievedTotals({ ...rptAchieved, start, end });
+    const tileLabel = rptTotals.returns > 0
+      ? 'Revenue (net of returns)'
+      : 'Revenue (invoiced)';
     reportRows.push(
       row({
-        label: 'Reports → By Value — Revenue (net)',
+        // The tile wording is conditional on there being any returns, so this
+        // follows it rather than hard-coding one of the two.
+        label: `Reports → By Value, "${tileLabel}" tile`,
         value: rptTotals.net,
         expected: reference.achieved,
         note: 'the shared Achieved since 2026-10-05: won AND invoiced, by'
           + ' invoice_date, final_amount ?? amount, over the achievers, net of'
-          + ' credit notes raised in the period',
+          + ' credit notes raised in the period. THIS is the figure on the screen.',
       }),
       row({
-        label: 'Reports → By Value — Invoiced (before returns)',
+        label: 'Reports → By Value, "Invoiced (before returns)" line',
         value: rptTotals.invoiced,
         expected: reference.achievedGross,
       }),
       row({
-        label: 'Reports → By Value — Returns',
+        label: 'Reports → By Value, "Returns" line',
         value: rptTotals.returns,
         expected: reference.returns,
         note: 'ALL FIVE credit notes in production are unmatched (deal_id IS NULL),'
-          + ' so they reduce nobody and this reads 0.00. An unmatched return has no'
-          + ' owner to charge; migrations/relink_returns_on_invoice_correction.sql'
-          + ' (NOT APPLIED) is what links them.',
+          + ' so they reduce nobody and this reads 0.00 — which is why the tile'
+          + ' above says "Revenue (invoiced)" and the breakdown lines are hidden.'
+          + ' An unmatched return has no owner to charge;'
+          + ' migrations/relink_returns_on_invoice_correction.sql (NOT APPLIED)'
+          + ' is what links them.',
       }),
       row({
-        label: `Reports → By Salesman — sum of the ${Object.keys(rptTotals.perPerson).length} revenue rows`,
+        label: `Reports → By Salesman, "Revenue" column over `
+          + `${Object.keys(rptTotals.perPerson).length} `
+          + `${Object.keys(rptTotals.perPerson).length === 1 ? 'person' : 'people'}`,
         value: Object.values(rptTotals.perPerson).reduce((s, v) => s + v, 0),
         expected: reference.achieved,
+        note: 'the Total row under that column, summed from the same per-person'
+          + ' split the column itself renders',
       }),
     );
 
-    // The pipeline figure, kept as a labelled row because it is a different
-    // question and always will be.
+    // The PIPELINE figure the stage, velocity and win/loss tables are built on.
+    //
+    // INFO, not a comparison. It has no reference to be measured against: it
+    // answers "what did we close this period", where Achieved answers "what did
+    // we bill". Giving it `expected: reference.achieved` and labelling the
+    // result "known to differ" was the wrong shape — a row that can never agree
+    // is not a failing check, it is a different measurement.
+    //
+    // It is NOT a ReportKPIBar row. That component is unmounted; this is the row
+    // set the eight deal-based tabs render, summed by the one formula that
+    // describes them, so the number is here for context when someone asks why
+    // the revenue tile and the stage tables do not add up.
     const { data: reportDeals } = await reportService.getReportDeals(
       companyId, rptIdentity.userId, rptIdentity.role,
       `${start}T00:00:00`, `${end}T23:59:59`,
     );
-    // INFO, not a comparison. This figure has no reference to be measured
-    // against: it answers "what did we close this period", where Achieved
-    // answers "what did we bill". Giving it `expected: reference.achieved` and
-    // calling the result "known to differ" was the wrong shape — a row that can
-    // never agree is not a failing check, it is a different measurement, and
-    // every other such figure on this page is already an info row.
     reportRows.push(row({
-      label: `Reports — value of deals WON in the period (${(reportDeals || []).length} deals, info only)`,
+      label: `Reports — value of deals WON in the period (${(reportDeals || []).length} deals, context only)`,
       value: reportWonTotal(reportDeals || []),
       note: 'every won deal at `amount`, dated by CLOSED_AT, invoiced or not —'
-        + ' what the stage and velocity tables describe. Deliberately not revenue:'
-        + ' a deal closed in September and invoiced in October is September'
-        + ' pipeline and October revenue, and both statements are true.',
+        + ' what the stage and velocity tables describe, and what the By Value'
+        + ' tile deliberately is NOT. A deal closed in September and invoiced in'
+        + ' October is September pipeline and October revenue, and both'
+        + ' statements are true. No screen shows this total on its own.',
     }));
   } else {
     knownRows.push(row({
