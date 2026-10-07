@@ -622,6 +622,71 @@ async function buildAnnualAllocationRows({ companyId, bundle, year, planning = n
 }
 
 /**
+ * INSIGHTS AS A PERSON = PLANNING AS THE SAME PERSON.
+ *
+ * Insights opened to supervisors and salesmen on 2026-10-07. A supervisor now
+ * has two screens showing him the same five figures over the same people, and
+ * a salesman has two showing him his own — so the only question that matters
+ * is whether they agree. These rows ask it directly, screen against screen,
+ * rather than each against a reference of its own (the lesson of the annual
+ * allocation, where both sides passed while disagreeing by 12.5M).
+ *
+ * The Insights side runs the REAL calcDivisionMetrics over the REAL scope that
+ * scopeUserIds hands the page for that person's role. The Planning side runs
+ * the real computePlanningPageSummary over the same ids. If the page's scope
+ * rule and Planning's disagree for a role, these rows say so.
+ *
+ * Everyone with a contributor role is covered, so a new supervisor or salesman
+ * is checked the day they are created without editing this file.
+ */
+async function buildInsightsVsPlanningRows({
+  companyId, bundle, consoleData, start, end,
+}) {
+  const users = bundle.users || [];
+  const subjects = users.filter(
+    (u) => u.is_active !== false && ['supervisor', 'salesman'].includes(u.role),
+  );
+  if (!subjects.length) return [];
+
+  const rows = [];
+  for (const person of subjects) {
+    const name = person.full_name || person.id;
+    // The page's own scope for this person, from the one shared rule.
+    const scope = scopeUserIds({ users, viewerId: person.id, role: person.role });
+    if (!scope.length) continue;
+
+    // INSIGHTS: the figures the page computes for its whole scope, which is
+    // what its totals row shows. divisionId is null — the person's page is
+    // scoped by WHO, not by division, and the division breakdown underneath
+    // sums to this.
+    const ins = calcDivisionMetrics(scope, { ...consoleData, divisionId: null }) || {};
+
+    // PLANNING: the same people, the same period, the other screen.
+    // eslint-disable-next-line no-await-in-loop
+    const plan = await computePlanningPageSummary({
+      companyId, ownerIds: scope, start, end,
+    });
+
+    const label = (what) => `Insights as ${name} = Planning as ${name} — ${what}`;
+    rows.push(row({ label: label('target'), value: ins.target, expected: plan.target }));
+    rows.push(row({ label: label('achieved'), value: ins.achieved, expected: plan.achieved }));
+    rows.push(row({
+      label: label('planned'), value: ins.planned, expected: plan.plannedOpen,
+    }));
+    rows.push(row({
+      label: label('funnel'), value: ins.monthFunnel, expected: plan.openFunnel,
+      note: 'Planning windows the funnel to the selected period on its "In Funnel"'
+        + ' line, which is the same partition Insights shows',
+    }));
+    rows.push(row({
+      label: label('planned gap'), value: ins.plannedGap, expected: plan.plannedGap,
+      note: `over ${scope.length} ${person.role === 'salesman' ? 'person (himself)' : 'people (him and his team)'}`,
+    }));
+  }
+  return rows;
+}
+
+/**
  * Run the check.
  *
  * @param {object} p
@@ -1070,6 +1135,18 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     companyId, consoleData, reference, planning, start, end, users,
   });
   divisionGroups.forEach((grp) => { if (grp.rows.length) groups.push(grp); });
+
+  // ── Insights for supervisors and salesmen (CEO decision 2026-10-07) ──────
+  const insightsRows = await buildInsightsVsPlanningRows({
+    companyId, bundle, consoleData, start, end,
+  });
+  if (insightsRows.length) {
+    groups.push({
+      screen: 'Insights vs Planning, per person',
+      fn: 'calcDivisionMetrics vs computePlanningPageSummary',
+      rows: insightsRows,
+    });
+  }
 
   // ── Annual allocation (CEO decision 2026-10-07) ──────────────────────────
   const annualAllocRows = await buildAnnualAllocationRows({

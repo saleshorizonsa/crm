@@ -10,6 +10,8 @@ import { useNavigate } from "react-router-dom";
 // The same list the route guard uses, so hiding the entry and refusing the
 // route can never disagree.
 import { NUMBERS_CHECK_ROLES } from "utils/numbersCheck";
+// One list of who may open Insights, shared with Routes.jsx.
+import { DIVISION_PAGE_ROLES } from "utils/salesDivisionMetrics";
 
 const Header = ({
   isCollapsed = false,
@@ -71,8 +73,10 @@ const Header = ({
           icon: "LayoutGrid",
         }]
       : []),
-    // Directors and managers only — the route enforces the same list.
-    ...(["director", "manager"].includes(userProfile?.role)
+    // DIVISION_PAGE_ROLES, not a second copy of the list: the route enforces
+    // the same constant, and the two drifting apart is how a role gets a nav
+    // link to a page that then refuses it (or loses a link to one it may use).
+    ...(DIVISION_PAGE_ROLES.includes(userProfile?.role)
       ? [{ label: "Insights", path: "/insights", icon: "Layers" }]
       : []),
     { label: t("nav.pipeline"), path: "/sales-pipeline", icon: "TrendingUp" },

@@ -254,8 +254,21 @@ export default function SalesDivisions() {
       // and it is hidden outside the current month anyway.
       const nextMonth = nextMonthBounds(now);
 
-      const [usersRes, divisionsRes, dealsRes, targetsRes, deals3mRes, oppsRes, futureRes, flagsRes, escalationsRes, returnsRes] =
-        await Promise.all([
+      // ── PHASE 1: WHO AM I ALLOWED TO SEE? ────────────────────────────────
+      //
+      // This page used to read every company row and narrow in the browser.
+      // For a director that was merely wasteful; for a SALESMAN it would mean
+      // his browser holding every colleague's deals and plan items, which is
+      // not acceptable however carefully the UI hides them (CEO decision
+      // 2026-10-07). So the scope is resolved FIRST and every read below is
+      // filtered by it in the database.
+      //
+      // RLS is the real boundary and these filters are not a substitute for it
+      // — see migrations/insights_rls.sql, which closes the three tables a
+      // salesman can currently read company-wide (opportunities, future_orders,
+      // salesman_flags). These filters make the page correct BEFORE that file is
+      // applied and keep it correct after.
+      const [usersRes, divisionsRes] = await Promise.all([
           supabase
             .from("users")
             // EVERY user: the company total has to include people who have
@@ -270,12 +283,43 @@ export default function SalesDivisions() {
             .select("id, name, sort_order")
             .eq("company_id", company.id)
             .order("sort_order", { ascending: true }),
+      ]);
+      if (usersRes.error) throw usersRes.error;
+
+      // The scope, from the one shared rule: director = the company,
+      // manager/supervisor = his subtree, salesman = himself.
+      const allUsers = usersRes.data || [];
+      const scopeIds = scopeUserIds({ users: allUsers, viewerId: user?.id, role });
+      if (!scopeIds.length) {
+        // A role with no scope (a viewer) gets an empty page, not everybody's.
+        setRaw({
+          users: [], divisions: divisionsRes.data || [], deals: [], targets: [],
+          deals3m: [], opps: [], futureOrders: [], flags: [], escalations: [],
+          returns: [], monthStart, monthEnd, now, additionalByUser: {},
+          companyRate: null, scopeIds: [],
+        });
+        setLoading(false);
+        return;
+      }
+      // Only the people in scope travel to the browser at all. For a director
+      // that is everyone, as before; for a salesman it is one row, which is the
+      // simplest guarantee that no colleague's name can reach the DOM.
+      const scopedUsers = allUsers.filter((u) => scopeIds.includes(u.id));
+
+      // ESCALATIONS are manager/director only (CEO decision 2026-10-07), so a
+      // supervisor or salesman does not even ask for them.
+      const seesEscalations = role === "manager" || role === "director";
+
+      // ── PHASE 2: the figures, every one filtered to the scope ────────────
+      const [dealsRes, targetsRes, deals3mRes, oppsRes, futureRes, flagsRes, escalationsRes, returnsRes] =
+        await Promise.all([
           supabase
             .from("deals")
             .select(
               "id, title, stage, amount, final_amount, is_invoiced, invoice_date, owner_id, division_id, forecast_amount, expected_close_date, stage_changed_at, created_at, contacts!contact_id(first_name, last_name, company_name)"
             )
             .eq("company_id", company.id)
+            .in("owner_id", scopeIds)
             .not("stage", "eq", "lost"),
           // division_id, or every target row falls back to its assignee's PRIMARY
           // division and Kamal's 1,550,000 total_value row lands on Export
@@ -292,6 +336,7 @@ export default function SalesDivisions() {
             .eq("company_id", company.id)
             .eq("status", "active")
             .eq("period_type", "monthly")
+            .in("assigned_to", scopeIds)
             .lte("period_start", monthEnd)
             .gte("period_end", monthStart),
           // The 3-month conversion window. invoice_number and closed_at are read
@@ -308,6 +353,7 @@ export default function SalesDivisions() {
             .from("deals")
             .select("id, stage, owner_id, division_id, created_at, closed_at, invoice_number")
             .eq("company_id", company.id)
+            .in("owner_id", scopeIds)
             .gte("created_at", new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString())
             .lte("created_at", new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59).toISOString()),
           // division_id: Kamal's 15 PVC Compound plan items would otherwise be
@@ -317,6 +363,7 @@ export default function SalesDivisions() {
             .from("opportunities")
             .select("id, owner_id, planned_amount, division_id")
             .eq("company_id", company.id)
+            .in("owner_id", scopeIds)
             .eq("status", "open")
             .gte("expected_month", monthStart)
             .lte("expected_month", monthEnd),
@@ -325,26 +372,39 @@ export default function SalesDivisions() {
             .from("future_orders")
             .select("id, owner_id, planned_amount, division_id")
             .eq("company_id", company.id)
+            .in("owner_id", scopeIds)
             .eq("status", "pending")
             .gte("expected_month", nextMonth.startDate)
             .lte("expected_month", nextMonth.endDate),
           // Exceptions — the Coverage Console's two sources.
           supabase
+            // A salesman and a supervisor see flags on their own / their team's
+            // deals only. The filter is the scope, so it needs no role branch.
             .from("salesman_flags")
             .select("id, owner_id, flag_type, flagged_at, details, reviewed")
             .eq("company_id", company.id)
+            .in("owner_id", scopeIds)
             .eq("reviewed", false),
-          supabase
-            .from("escalation_logs")
-            .select("id, trigger_type, triggered_for, triggered_by, deal_id, details, resolved, created_at")
-            .eq("company_id", company.id)
-            .eq("resolved", false),
+          // Not fetched at all for a supervisor or a salesman. Promise.all needs
+          // a value in the slot, so an already-resolved empty result stands in
+          // rather than a query nobody is allowed to run.
+          seesEscalations
+            ? supabase
+              .from("escalation_logs")
+              .select("id, trigger_type, triggered_for, triggered_by, deal_id, details, resolved, created_at")
+              .eq("company_id", company.id)
+              .eq("resolved", false)
+            : Promise.resolve({ data: [], error: null }),
           // Sales returns in the window, joined to their deal for the owner.
           // Subtracted from Achieved by the shared rule (planningCalculations).
           supabase
             .from("deal_returns")
             .select("id, deal_id, return_date, return_amount, deals!inner(owner_id, division_id)")
             .eq("company_id", company.id)
+            // Filtered on the EMBEDDED deal, which is where the owner is. The
+            // !inner join makes this a real restriction rather than a filter
+            // that leaves unmatched rows behind.
+            .in("deals.owner_id", scopeIds)
             .gte("return_date", monthStart)
             .lte("return_date", monthEnd),
         ]);
@@ -361,10 +421,48 @@ export default function SalesDivisions() {
       if (returnsRes.error) console.warn("Sales Divisions: deal_returns not loaded:", returnsRes.error.message);
       // Additional divisions per user. Failure degrades to primary-only,
       // which is the pre-multi-division behaviour rather than a blank screen.
-      const additionalByUser = await fetchAdditionalDivisions({ companyId: company.id });
+      // Narrowed to the scope: a salesman has no business reading the whole
+      // company's division membership either.
+      const additionalByUser = await fetchAdditionalDivisions({
+        companyId: company.id, userIds: scopeIds,
+      });
+
+      // THE BENCHMARK. A supervisor's or a salesman's own conversion rate means
+      // little without something to read it against, and the CEO asked for the
+      // company RATE beside it — never company amounts. The rate needs
+      // company-wide deals that these two roles must not read, so it comes from
+      // a SECURITY DEFINER function that returns the rate and its counts and
+      // nothing else.
+      //
+      // DEGRADES TO HIDDEN, never to an error: the function arrives with
+      // migrations/insights_rls.sql, which is NOT APPLIED. Until it is, this
+      // resolves to null and the benchmark is simply absent. (The lesson of
+      // 1897c1a: nothing merged may require something production does not have.)
+      let companyRate = null;
+      try {
+        const { data: rateRows, error: rateErr } = await supabase
+          .rpc("company_conversion_3m", { p_company_id: company.id });
+        if (!rateErr) {
+          const r = Array.isArray(rateRows) ? rateRows[0] : rateRows;
+          if (r && Number.isFinite(Number(r.win_rate_pct))) {
+            companyRate = {
+              winRatePct: Number(r.win_rate_pct),
+              won: Number(r.won) || 0,
+              total: Number(r.total) || 0,
+              importedExcluded: Number(r.imported_excluded) || 0,
+            };
+          }
+        }
+      } catch (e) {
+        // Nothing to report to the user: a missing benchmark is not an error
+        // on their part, and the page is fully usable without it.
+        console.warn("Insights: company benchmark rate unavailable:", e?.message);
+      }
 
       setRaw({
-        users: usersRes.data || [],
+        users: scopedUsers,
+        scopeIds,
+        companyRate,
         additionalByUser,
         divisions: divisionsRes.error ? [] : divisionsRes.data || [],
         deals: dealsRes.data || [],
@@ -393,7 +491,7 @@ export default function SalesDivisions() {
     } finally {
       setLoading(false);
     }
-  }, [company?.id, rangeStart, rangeEnd, isCurrentMonth, isAllTime]);
+  }, [company?.id, rangeStart, rangeEnd, isCurrentMonth, isAllTime, user?.id, role]);
 
   useEffect(() => {
     if (!company?.id) return;
@@ -405,13 +503,27 @@ export default function SalesDivisions() {
     [raw, user?.id, role]
   );
 
+  // The panel collapses to the divisions the viewer's SCOPE TOUCHES (CEO
+  // decision 2026-10-07). A salesman in PVC Sheet gets one division, not four
+  // empty ones with his row in a corner of the last; a supervisor gets the
+  // divisions his team actually sells in.
+  //
+  // For a director this removes only divisions with nobody in them at all,
+  // which carry no target, no revenue and no funnel — a row of dashes. The
+  // "divisions sum = company" invariant is unaffected: dropping an all-zero
+  // group cannot change a total.
   const groups = useMemo(
-    () => (raw
-      ? groupByDivision({
+    () => {
+      if (!raw) return [];
+      const all = groupByDivision({
         users: raw.users, divisions: raw.divisions, scopeIds,
         additionalByUser: raw.additionalByUser || {},
-      })
-      : []),
+      });
+      const touched = all.filter((g) => (g.userIds || []).length > 0);
+      // Never return nothing: somebody with a scope but no division membership
+      // at all still needs a page, and that is what Unassigned is for.
+      return touched.length ? touched : all;
+    },
     [raw, scopeIds]
   );
 
@@ -497,15 +609,35 @@ export default function SalesDivisions() {
     });
   };
 
-  const scopeLabel = role === "manager" ? "Manager view · your team" : "Director view · whole company";
+  const scopeLabel = {
+    director: "Director view · whole company",
+    manager: "Manager view · your team",
+    supervisor: "Supervisor view · you and your team",
+    // Said out loud, because a page that normally shows a company and now shows
+    // one person should explain which it is rather than look broken.
+    salesman: "Your figures only",
+  }[role] || "Your figures only";
 
   const hero = (() => {
     const winRate = `${pct(metrics.winRatePct, 0)} win rate`;
-    if (nav.level === "company")
+    if (nav.level === "company") {
+      // Counted off the COLLAPSED groups, and the Unassigned group only counts
+      // when it has somebody in it — "4 divisions" on a page showing one was
+      // the old count of the company's divisions rather than of this page's.
+      const divisionCount = groups.filter((g) => g.id !== UNASSIGNED).length;
+      const people = listedMembers({ users: raw.users, userIds: scopeIds }).length;
       return {
-        title: company?.name || "All Divisions",
-        sub: `${groups.length - 1} divisions · ${listedMembers({ users: raw.users, userIds: scopeIds }).length} team members · ${winRate}`,
+        title: role === "salesman"
+          // His own page, so his own name — the company name over one person's
+          // figures reads like a company total, which is the one thing it is not.
+          ? (raw.users[0]?.full_name || "Your figures")
+          : company?.name || "All Divisions",
+        sub: role === "salesman"
+          ? `your figures · ${winRate}`
+          : `${divisionCount} division${divisionCount === 1 ? "" : "s"}`
+            + ` · ${people} team member${people === 1 ? "" : "s"} · ${winRate}`,
       };
+    }
     if (nav.level === "division")
       return {
         title: currentGroup?.name || "Division",
@@ -830,6 +962,27 @@ export default function SalesDivisions() {
               sub={hero.sub}
               periodLabel={periodLabel}
             />
+
+            {/* THE BENCHMARK (CEO decision 2026-10-07): the company conversion
+                RATE beside their own, for the two roles that cannot see the
+                company. A rate is a rate — no amounts, no names, no totals.
+
+                Absent, not broken, when raw.companyRate is null: the
+                SECURITY DEFINER function it comes from arrives with
+                migrations/insights_rls.sql, which is not applied yet. */}
+            {(role === "supervisor" || role === "salesman") && raw?.companyRate && (
+              <p
+                className="text-xs text-gray-500 px-1 font-mono"
+                title={`The company rate is ${raw.companyRate.won} won of ${raw.companyRate.total} deals created in the 3 completed months, with ${raw.companyRate.importedExcluded} imported rows set aside. It is shown so your own rate has something to be read against; company amounts are not shown.`}
+              >
+                Your conversion{" "}
+                <span className="font-semibold text-gray-900">{pct(metrics.winRatePct, 0)}</span>
+                {" · company "}
+                <span className="font-semibold text-gray-900">
+                  {raw.companyRate.winRatePct.toFixed(1)}%
+                </span>
+              </p>
+            )}
 
             {nav.level === "member" && currentMember?.role === "manager" && (
               <p className="text-xs text-gray-500 px-1">
