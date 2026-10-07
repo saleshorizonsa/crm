@@ -33,7 +33,21 @@ import {
 // scopeUserIds below returns a supervisor his own team and a salesman only
 // himself, the page's queries are filtered to that scope in the database, and
 // nobody else's name is fetched. The route and the nav read this one list.
-export const DIVISION_PAGE_ROLES = ['director', 'manager', 'supervisor', 'salesman'];
+export const DIVISION_PAGE_ROLES = [
+  'director', 'manager', 'supervisor', 'salesman', 'head', 'admin',
+];
+
+/**
+ * Roles whose Insights scope is the WHOLE COMPANY.
+ *
+ * head and admin joined on 2026-10-07 when Insights became the landing page
+ * for everyone: without them in here scopeUserIds returned [] and they would
+ * have landed on an empty page. They are the same three roles the rest of the
+ * app already treats as company-wide — reassignmentService's
+ * COMPANY_WIDE_ROLES and salesReturnsReportService's ALL_RETURNS_ROLES are
+ * both exactly this list.
+ */
+export const COMPANY_SCOPE_ROLES = ['director', 'head', 'admin'];
 
 // Who is LISTED as a division member. Directors and viewers carry no division,
 // targets or deals, so listing them is noise. Listing is all this controls:
@@ -150,7 +164,7 @@ export function scopeUserIds({ users, viewerId, role }) {
   // 2026-10-07). This is what makes the panel's company total equal the KPI
   // strip's, and what keeps the divisions summing to it — a departed person's
   // deals land in whichever division their rows carry, or in Unassigned.
-  if (role === 'director') return list.map((u) => u.id);
+  if (COMPANY_SCOPE_ROLES.includes(role)) return list.map((u) => u.id);
   if (!viewerId) return [];
 
   // SALESMAN: himself, full stop. Not his division, not his team, not a total
