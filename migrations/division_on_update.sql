@@ -1,11 +1,48 @@
 -- ============================================================================
--- NOT APPLIED. Run the APPLY block ON ITS OWN, exactly as
--- division_attribution.sql was run: the PREVIEW and VERIFY blocks are meant to
--- be run by hand, separately, on either side of it. Pasting the whole file is
--- what left that migration's first attempt completely untouched.
+-- APPLIED 2026-10-07 22:21 (Asia/Riyadh). The APPLY block was run ON ITS OWN,
+-- not as part of the whole file — the same way division_attribution.sql was run,
+-- and for the same reason: pasting a whole file is what left that migration's
+-- first attempt completely untouched.
 --
 -- KEEP A DIVISION ONCE A ROW HAS ONE — the BEFORE UPDATE half of
 -- migrations/division_attribution.sql.
+-- ============================================================================
+--
+-- VERIFIED ON PRODUCTION, read-only, after applying (22:30):
+--   triggers          set_deals_division_on_update,
+--                     set_opportunities_division_on_update,
+--                     set_future_orders_division_on_update,
+--                     set_sales_targets_division_on_update — all 4 present and
+--                     ENABLED ('O'). All 13 triggers across the four tables are
+--                     enabled: none of the four updated_at triggers, and not
+--                     trigger_validate_target_assignment, was left disabled by
+--                     the repair.
+--   functions         set_division_from_owner_on_update and
+--                     set_division_from_assignee_on_update, both with
+--                     search_path=public pinned (as are the two INSERT ones).
+--   the repair        SAUDI CARBOTAE CO. LTD → PVC Sheet, and updated_at still
+--                     2026-10-07 13:10:07.557865+00 (16:10 Riyadh) — the row was
+--                     NOT restamped as edited by the repair, which is what
+--                     disabling the updated_at triggers was for.
+--   the assertion     rows with NULL division whose owner HAS a primary: 0 on
+--                     deals, opportunities, future_orders and sales_targets.
+--   the figure        October 2026 open funnel, raw, by division:
+--                       Pipes & Fittings    965,979.71
+--                       PVC Sheet           988,665.00
+--                       TOTAL             1,954,644.71 = the company figure.
+--                     Before the repair the divisions summed to 1,936,329.71 and
+--                     the company to 1,954,644.71 — short by exactly the
+--                     18,315.00 of the one unattributed deal.
+--   /numbers-check    September and October 2026, whole company: every compared
+--                     row agrees. Before applying, October stood at 147/150 —
+--                     the divisions-sum funnel row, PVC Sheet's planned gap and
+--                     the Division attribution row, all three being that one
+--                     deal.
+--
+-- PREVIEW 2's output — the only record of which rows were NULL before the
+-- repair, and the only basis for reverting it — is kept outside this file, in
+-- the project as division-on-update-preview-2026-10-07.md. It is not committed
+-- beside the migration, so it does not travel with the repository.
 -- ============================================================================
 --
 -- WHAT WENT WRONG. The attribution triggers are BEFORE INSERT only, so nothing
