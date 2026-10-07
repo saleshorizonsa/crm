@@ -12,6 +12,8 @@ import {
   isAchievedOnly,
   achieverIdsFrom,
   fetchAchieverIds,
+  isCompanyScope,
+  totalsScopeOpts,
 } from 'utils/achieverScope';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,16 +30,23 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 
-/** Active contributors in scope. `ownerIds = null` means the whole company. */
-export async function fetchContributors({ companyId, ownerIds = null }) {
+/**
+ * Contributors in scope. `ownerIds = null` means the whole company.
+ *
+ * includeInactive is the company-totals rule (see utils/achieverScope.js):
+ * a whole-company Achieved and Target include people who have left.
+ */
+export async function fetchContributors({
+  companyId, ownerIds = null, includeInactive = false,
+}) {
   if (!companyId) return [];
   if (Array.isArray(ownerIds) && ownerIds.length === 0) return [];
   let q = supabase
     .from('users')
     .select('id, full_name, role')
     .eq('company_id', companyId)
-    .eq('is_active', true)
     .in('role', CONTRIBUTOR_ROLES);
+  if (!includeInactive) q = q.eq('is_active', true);
   if (Array.isArray(ownerIds)) q = q.in('id', ownerIds);
   const { data, error } = await q;
   if (error) { console.error('fetchContributors:', error); return []; }
@@ -157,7 +166,11 @@ export async function computeAnnualTarget({ companyId, ownerIds, monthlyTotal, y
   // deactivated person's annual target would keep inflating the company number
   // indefinitely.
   //
-  // Scoped to active users of ANY role, deliberately NOT to CONTRIBUTOR_ROLES,
+  // COMPANY SCOPE INCLUDES EVERYONE (CEO decision 2026-10-07): a yearly row
+  // held by someone who has since left was still the allocation for that year.
+  // A narrowed scope (a team, a person) stays active-only.
+  //
+  // Scoped to users of ANY role, deliberately NOT to CONTRIBUTOR_ROLES,
   // which is the one place in this file that narrowing would be wrong. The
   // annual target IS the manager's yearly team roll-up — that is exactly what
   // the comment at the top of this file describes managers as carrying, and
@@ -166,11 +179,12 @@ export async function computeAnnualTarget({ companyId, ownerIds, monthlyTotal, y
   // manager, so the company annual target would collapse from 40,660,778.80 to
   // the monthly fallback. Excluding deactivated users is the fix here;
   // excluding managers would be a different, and incorrect, change.
-  const { data: activeUsers, error: usersErr } = await supabase
+  let uq = supabase
     .from('users')
     .select('id')
-    .eq('company_id', companyId)
-    .eq('is_active', true);
+    .eq('company_id', companyId);
+  if (!isCompanyScope(ownerIds)) uq = uq.eq('is_active', true);
+  const { data: activeUsers, error: usersErr } = await uq;
   if (usersErr) { console.error('computeAnnualTarget (users):', usersErr); return monthlyTotal; }
 
   let scopeIds = (activeUsers || []).map((u) => u.id);
@@ -709,16 +723,18 @@ export {
 } from 'utils/achieverScope';
 
 /** Active flagged achieved-only users in scope (see isAchievedOnly). `ownerIds = null` = whole company. */
-export async function fetchAchievedOnlyUsers({ companyId, ownerIds = null }) {
+export async function fetchAchievedOnlyUsers({
+  companyId, ownerIds = null, includeInactive = false,
+}) {
   if (!companyId) return [];
   if (Array.isArray(ownerIds) && ownerIds.length === 0) return [];
   let q = supabase
     .from('users')
     .select('id, full_name, role, is_active, is_contributor')
     .eq('company_id', companyId)
-    .eq('is_active', true)
     .eq('is_contributor', true)
     .not('role', 'in', `(${CONTRIBUTOR_ROLES.join(',')})`);
+  if (!includeInactive) q = q.eq('is_active', true);
   if (Array.isArray(ownerIds)) q = q.in('id', ownerIds);
   const { data, error } = await q;
   if (error) { console.error('fetchAchievedOnlyUsers:', error); return []; }

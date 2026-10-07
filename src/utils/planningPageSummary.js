@@ -32,6 +32,9 @@ import {
   computeAnnualTarget,
   computeAnnualAllocation,
 } from './planningCalculations';
+// The active/inactive rule for TOTALS — company includes everyone, a narrowed
+// scope is active-only (CEO decision 2026-10-07).
+import { totalsScopeOpts } from './achieverScope';
 // THE funnel — one definition, undated open deals included.
 import { fetchOpenFunnel } from './openFunnel';
 // "Is the selected range a whole calendar year?" — the same detector the
@@ -248,9 +251,14 @@ export async function computePlanningPageSummary({
   };
   if (!companyId || !start || !end) return empty;
 
+  // COMPANY scope includes everyone, a narrowed scope is active-only — the one
+  // rule, from utils/achieverScope.js, applied to BOTH reads so Achieved and
+  // Target can never be measured over different people. September 2026 read
+  // 103% attainment when only the targets of departed staff were dropped.
+  const totalsOpts = totalsScopeOpts(ownerIds);
   const [contributors, flagged] = await Promise.all([
-    fetchContributors({ companyId, ownerIds }),
-    fetchAchievedOnlyUsers({ companyId, ownerIds }),
+    fetchContributors({ companyId, ownerIds, ...totalsOpts }),
+    fetchAchievedOnlyUsers({ companyId, ownerIds, ...totalsOpts }),
   ]);
   const contributorIds = contributors.map((c) => c.id);
   let scopeIds = [...new Set([...contributorIds, ...flagged.map((u) => u.id)])];

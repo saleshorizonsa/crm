@@ -141,15 +141,22 @@ export function borrowedNote(m) {
 
 export function scopeUserIds({ users, viewerId, role }) {
   const list = users || [];
+  // DIRECTOR = company scope: everyone, active or not (CEO decision
+  // 2026-10-07). This is what makes the panel's company total equal the KPI
+  // strip's, and what keeps the divisions summing to it — a departed person's
+  // deals land in whichever division their rows carry, or in Unassigned.
   if (role === 'director') return list.map((u) => u.id);
   if (role !== 'manager' || !viewerId) return [];
 
   // supervisor_id, not reports_to: it is the only hierarchy column anything
   // writes, and the one the dashboards and every RLS function already use.
   // reports_to is a stale one-time backfill — see utils/teamHierarchy.js.
+  // A MANAGER's scope is a TEAM figure and stays ACTIVE-ONLY — the other half
+  // of the same decision. Said here explicitly because the page's user read is
+  // no longer pre-filtered, so this walk is now the only thing enforcing it.
   const childrenOf = new Map();
   list.forEach((u) => {
-    if (!u.supervisor_id) return;
+    if (!u.supervisor_id || u.is_active === false) return;
     if (!childrenOf.has(u.supervisor_id)) childrenOf.set(u.supervisor_id, []);
     childrenOf.get(u.supervisor_id).push(u.id);
   });
@@ -205,10 +212,19 @@ export function groupByDivision({ users, divisions, scopeIds, additionalByUser =
 }
 
 /** Users of a group who are listed as members (see MEMBER_ROLES), by name. */
+/**
+ * The PEOPLE ROWS of a division or a team.
+ *
+ * ACTIVE ONLY, always. The company TOTAL includes people who have left, so
+ * their revenue and targets are in the figures — but a list of people to click
+ * into is a list of people who are here. Without this filter, widening the
+ * page's user read to serve the totals would have put four departed salesmen
+ * and a departed supervisor into the panel's team lists.
+ */
 export function listedMembers({ users, userIds }) {
   const ids = new Set(userIds || []);
   return (users || [])
-    .filter((u) => ids.has(u.id) && MEMBER_ROLES.includes(u.role))
+    .filter((u) => ids.has(u.id) && u.is_active !== false && MEMBER_ROLES.includes(u.role))
     .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
 }
 

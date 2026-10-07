@@ -258,9 +258,13 @@ export default function SalesDivisions() {
         await Promise.all([
           supabase
             .from("users")
+            // EVERY user: the company total has to include people who have
+            // left (CEO decision 2026-10-07) or this panel contradicts the KPI
+            // strip above it, and the divisions stop summing to the company.
+            // is_active travels with the rows, and listedMembers / scopeUserIds
+            // apply the active-only half of the rule to the PEOPLE LISTS.
             .select("id, full_name, role, supervisor_id, is_active, sales_division_id, is_contributor")
-            .eq("company_id", company.id)
-            .eq("is_active", true),
+            .eq("company_id", company.id),
           supabase
             .from("sales_divisions")
             .select("id, name, sort_order")
