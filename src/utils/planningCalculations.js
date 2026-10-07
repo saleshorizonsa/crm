@@ -207,19 +207,26 @@ export async function computeAnnualTarget({ companyId, ownerIds, monthlyTotal, y
  * target the director assigned him by the end of that year. This reports how
  * far through that he is, and what per month is left to give out.
  *
- * SCOPE: the manager plus his ACTIVE subtree, all roles.
+ * SCOPE: the manager plus his WHOLE subtree, active or not, all roles.
  *
- *   Active only. Decision 2026-10-07, after the figures were put side by side:
- *   including rows held by people who have since left adds 12,559,543 for
- *   JASCO PVC 2026 (Shaikh Osman Shoukat 12,049,543 over Jan–Sep and Mueataz
- *   Mohammed Ahmed 510,000 over Jan–Mar), which would read as 25,368,133
- *   assigned against 40,660,779 allocated. Active-only reads 12,808,590. The
- *   second is the figure management plans against, because the question the
- *   banner answers is "how much have I still got to give out", and allocation
- *   that left with a departed salesman is back in the manager's hands. The
- *   first is the better record of what was historically committed, and it is
- *   not what this screen is for. subtreeIdsOf() enforces this by construction:
- *   it walks active users only.
+ *   EVERYONE, including people who have left. CEO decision 2026-10-07, which
+ *   reversed an earlier call the same day — the reasoning is worth keeping
+ *   because the two readings differ by 12,559,543 on JASCO PVC 2026:
+ *
+ *     including the departed   25,368,133 assigned, 15,292,646 remaining
+ *     active only              12,808,590 assigned, 27,852,189 remaining
+ *
+ *   The departed figures are Shaikh Osman Shoukat's 12,049,543 over Jan–Sep
+ *   and Mueataz Mohammed Ahmed's 510,000 over Jan–Mar. The deciding argument:
+ *   that allocation was really given, and the MONTHS IT SAT IN CANNOT BE
+ *   ASSIGNED AGAIN — January is gone whoever was holding it. Treating it as
+ *   returned to the manager would tell him to find 27.8M in two months when
+ *   the year has already consumed 25.4M of its allocation.
+ *
+ *   This is the company/annual half of the general rule (CEO, 2026-10-07):
+ *   COMPANY and ANNUAL figures include everyone, active or not; PERSON and
+ *   TEAM figures stay active-only. subtreeIdsOf's default is still active-only
+ *   and every other caller keeps it; this one passes includeInactive.
  *
  *   ALL ROLES, deliberately not the achiever scope. The manager's own rows are
  *   half of what the rule covers, and narrowing to CONTRIBUTOR_ROLES would
@@ -266,23 +273,30 @@ export async function computeAnnualAllocation({
   if (!companyId || (!managerId && !Array.isArray(ownerIds))) return empty;
 
   // ── scope ────────────────────────────────────────────────────────────────
+  // EVERY user of the company, not just the active ones: the scope has to be
+  // able to reach a departed person's rows. See the note above.
   const { data: users, error: usersErr } = await supabase
     .from('users')
     .select('id, supervisor_id, is_active')
-    .eq('company_id', companyId)
-    .eq('is_active', true);
+    .eq('company_id', companyId);
   if (usersErr) { console.error('computeAnnualAllocation (users):', usersErr); return empty; }
 
-  const activeIds = (users || []).map((u) => u.id);
+  const allIds = (users || []).map((u) => u.id);
   let scopeIds;
   if (Array.isArray(ownerIds)) {
-    scopeIds = activeIds.filter((id) => ownerIds.includes(id));
+    // A caller's explicit scope governs, intersected with the company's users
+    // so it can never reach another company's rows. It is NOT narrowed to the
+    // active set: a caller that wants active-only passes an active-only list,
+    // which is what the Planning page does today.
+    scopeIds = allIds.filter((id) => ownerIds.includes(id));
   } else {
-    // Himself first, then everyone under him. A manager assigning himself a
-    // monthly row is spending the same allocation as assigning his team one,
-    // which is the whole point of the rule.
-    scopeIds = [managerId, ...subtreeIdsOf({ users: users || [], rootId: managerId })]
-      .filter((id) => activeIds.includes(id));
+    // Himself first, then everyone who has ever reported under him. A manager
+    // assigning himself a monthly row is spending the same allocation as
+    // assigning his team one, which is the whole point of the rule.
+    scopeIds = [
+      managerId,
+      ...subtreeIdsOf({ users: users || [], rootId: managerId, includeInactive: true }),
+    ].filter((id) => allIds.includes(id));
   }
   if (!scopeIds.length) return empty;
 
@@ -292,6 +306,12 @@ export async function computeAnnualAllocation({
   const yearStart = `${y}-01-01`;
   const yearEnd = `${y}-12-31`;
 
+  // NOTE one asymmetry, deliberate and left for the separate approval of the
+  // general rule: computeAnnualTarget narrows to ACTIVE users internally, so a
+  // yearly row held by someone who has left is not counted. It makes no
+  // difference on JASCO PVC today — the only yearly row belongs to Mohamed
+  // Kamal, who is active — and changing it is a change to the ANNUAL TARGET
+  // figure on several other screens, not just here.
   const annual = await computeAnnualTarget({
     companyId,
     ownerIds: managerId ? [managerId] : scopeIds,

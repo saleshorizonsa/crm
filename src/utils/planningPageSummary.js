@@ -302,20 +302,29 @@ export async function computePlanningPageSummary({
   // given. Required Plan stays on the MONTHLY basis (it is what the team is
   // accountable for), and the screen labels it so.
   const whole = wholePeriodOf(start, end);
-  // ONE function for the annual allocation, shared with the target-assignment
-  // banner (computeAnnualAllocation in planningCalculations.js). It was two
-  // copies of "annual − assigned": this one, and the banner's. The figures
-  // agreed on 2026-10-07 — 40,660,778.80 − 12,808,589.56 = 27,852,189.24 on
-  // both — but agreeing today is not the same as being one rule, and the two
-  // scopes could drift the moment a second manager holds a yearly row.
+  // ONE function for the annual allocation — computeAnnualAllocation in
+  // planningCalculations.js — shared with the target-assignment banner, so the
+  // subtraction "annual − assigned" exists once instead of twice.
   //
-  // The SCOPE stays this page's own (scopeIds, the viewer's achievers), which
-  // the helper takes as ownerIds instead of resolving a manager's subtree. So
-  // the arithmetic is shared and the scope is still the screen's.
+  // THE SCOPE IS NOT SHARED, AND THE TWO FIGURES CURRENTLY DIFFER.
+  // This page passes its own scopeIds: the viewer's ACTIVE achievers. The
+  // banner resolves a manager's whole subtree INCLUDING people who have left
+  // (CEO decision 2026-10-07, which applies to annual figures). On JASCO PVC
+  // 2026 that is:
   //
-  // alloc.assigned is the same figure as the "target" above for an annual view:
-  // both are targetPerPerson over the year's monthly rows for this scope. The
-  // numbers-check "Annual allocation remaining" row asserts exactly that.
+  //   this page, "Not yet assigned"      27,852,189   (assigned 12,808,590)
+  //   the banner, "remaining"            15,292,646   (assigned 25,368,133)
+  //
+  // a difference of 12,559,543 — the monthly rows of Shaikh Osman Shoukat and
+  // Mueataz Mohammed Ahmed. BOTH PASS /numbers-check, because each is compared
+  // against a reference built on its own scope, which is precisely why this is
+  // written down here rather than left to be discovered.
+  //
+  // Bringing this page onto the everyone scope is part of the general rule the
+  // CEO asked to approve separately (company and annual figures include
+  // everyone; person and team figures stay active-only). It is deliberately NOT
+  // done here: it would also move Achieved and the conversion rate on this
+  // page, which is a wider change than one subtraction.
   const alloc = whole?.kind === 'year'
     ? await computeAnnualAllocation({
       companyId, ownerIds: scopeIds, year: whole.year,
