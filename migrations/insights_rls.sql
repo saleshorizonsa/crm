@@ -1,5 +1,34 @@
 -- ============================================================================
--- NOT APPLIED. Read the PREVIEW, then run APPLY, then run VERIFY.
+-- PARTIALLY APPLIED 2026-10-07 — read this before running anything.
+--
+--   APPLIED on 2026-10-07 (added by hand, folded into APPLY section (a2) and
+--   the matching block under (b) so the file matches production):
+--     opportunities_select_director_companies
+--     future_orders_select_director_companies
+--
+--   NOT APPLIED — everything else in this file. Verified read-only on
+--   2026-10-07 after the attempt:
+--     my scoped SELECT policies ......... 0 of 4 present
+--     my split write policies ........... 0 of 9 present
+--     company_conversion_3m ............. absent
+--     planned_contacts_this_month ....... absent
+--     the four ORIGINAL company-wide FOR ALL policies ... all 4 still in place
+--   and the hole is still open: as Mohamed Hussein (salesman), opportunities
+--   349 rows / 230 not his, future_orders 108 / 52, salesman_flags 7 / 5 —
+--   the same figures as before the attempt.
+--
+--   SO THE APPLY TRANSACTION ROLLED BACK, cleanly: nothing is half-done and
+--   the original policies are untouched. This is the second time this has
+--   happened on this project — migrations/division_attribution.sql did exactly
+--   the same thing — and the fix there was the same:
+--
+--       *** RUN THE APPLY BLOCK ON ITS OWN. ***
+--
+--   Not the whole file. The PREVIEW and VERIFY sections contain BEGIN / SET
+--   LOCAL ROLE / ROLLBACK of their own, and pasting the file whole puts those
+--   in the same batch as the APPLY transaction. Run PREVIEW by hand, then the
+--   APPLY block alone, then VERIFY by hand — and VERIFY query 2 is the one
+--   that proves it worked: must_be_zero has to read 0.
 --
 -- INSIGHTS FOR SUPERVISORS AND SALESMEN — close the tables a salesman can read
 -- company-wide, and add the one function that lets him see a company RATE
@@ -156,11 +185,48 @@ FROM d;
 -- CEO decision 2026-10-07, see utils/achieverScope.js.
 
 
+-- PREVIEW 5. The "already planned this month" marker, before and after. The
+-- new function counts CONVERTED plan items as well as open ones, which is
+-- wider than CustomerMaster's current query — so this is the one user-visible
+-- change in the file that is not about permissions.
+WITH m AS (
+  SELECT date_trunc('month', now() AT TIME ZONE 'Asia/Riyadh')::date AS s,
+         (date_trunc('month', now() AT TIME ZONE 'Asia/Riyadh') + interval '1 month')::date AS e
+)
+SELECT 'open only (the query today)' AS rule, count(DISTINCT o.contact_id) AS customers_greyed_out
+FROM opportunities o, m
+WHERE o.company_id = 'adf8ee78-cf78-4f02-932c-989a214bdd78'
+  AND o.contact_id IS NOT NULL AND o.status = 'open'
+  AND o.expected_month >= m.s AND o.expected_month < m.e
+UNION ALL
+SELECT 'open + converted (the function)', count(DISTINCT o.contact_id)
+FROM opportunities o, m
+WHERE o.company_id = 'adf8ee78-cf78-4f02-932c-989a214bdd78'
+  AND o.contact_id IS NOT NULL AND o.status IN ('open','converted')
+  AND o.expected_month >= m.s AND o.expected_month < m.e
+UNION ALL
+SELECT 'moved_to_future (still NOT counted)', count(DISTINCT o.contact_id)
+FROM opportunities o, m
+WHERE o.company_id = 'adf8ee78-cf78-4f02-932c-989a214bdd78'
+  AND o.contact_id IS NOT NULL AND o.status = 'moved_to_future'
+  AND o.expected_month >= m.s AND o.expected_month < m.e;
+-- measured 2026-10-07: 34 -> 81, with 11 moved_to_future customers left
+-- available. If 81 is not the intended behaviour, change the status list in
+-- section (e2) of APPLY before running it — the app reads whatever the
+-- function returns.
+
+
 -- ============================================================================
 -- APPLY — one transaction.
 -- ============================================================================
 
 BEGIN;
+
+-- The two director_companies policies are ALREADY ON PRODUCTION (2026-10-07).
+-- Dropped first so this block can be re-run as a whole without colliding with
+-- them — CREATE POLICY has no IF NOT EXISTS.
+DROP POLICY IF EXISTS opportunities_select_director_companies ON public.opportunities;
+DROP POLICY IF EXISTS future_orders_select_director_companies ON public.future_orders;
 
 -- ── (a) opportunities: own, or a subordinate's, or a lead's company ────────
 -- The company-wide policy is replaced, not supplemented: an extra permissive
@@ -174,6 +240,15 @@ CREATE POLICY opportunities_select_scoped ON public.opportunities
   FOR SELECT USING (
     owner_id = auth.uid()
     OR owner_id IN (SELECT s.subordinate_id FROM public.get_user_subordinates(auth.uid()) s)
+    -- DIRECT reports regardless of is_active. get_user_subordinates is
+    -- ACTIVE-ONLY, and without this clause a supervisor loses his DEPARTED
+    -- direct reports rows: Amer Sulaiman Alburaym has two of Ahmad Sulaiman
+    -- Moaminas plan submissions still awaiting approval, and View Plan would
+    -- have rendered an empty list rather than an error. This is the same
+    -- two-level shape the existing deals policy already uses, so it widens
+    -- nothing the app did not already allow; anything deeper than one level
+    -- below a departed person stays with manager-and-above.
+    OR owner_id IN (SELECT u2.id FROM public.users u2 WHERE u2.supervisor_id = auth.uid())
     OR EXISTS (
       SELECT 1 FROM public.users u
        WHERE u.id = auth.uid()
@@ -183,10 +258,29 @@ CREATE POLICY opportunities_select_scoped ON public.opportunities
   );
 
 -- Writes keep the company-wide shape they had: plan items are created and
--- edited through Planning by people who already pass the read policy, and
--- narrowing writes here is a separate change with its own blast radius.
-CREATE POLICY opportunities_write_company ON public.opportunities
-  FOR ALL USING (
+-- edited through Planning and Customer Master by people the old policy already
+-- allowed, and narrowing writes is a separate change with its own blast radius.
+--
+-- *** FOR INSERT / UPDATE / DELETE, NEVER "FOR ALL". ***
+-- A permissive FOR ALL policy's USING clause applies to SELECT as well, and
+-- permissive policies are combined with OR — so a company-wide FOR ALL write
+-- policy sitting beside the scoped SELECT policy above would OR straight over
+-- it and re-grant company-wide reads, leaving this file looking applied and
+-- changing nothing. (The live proof that FOR ALL governs SELECT: today
+-- opportunities has ONLY a FOR ALL policy, and a salesman reads 349 rows
+-- through it.) Splitting the write path by command is what keeps SELECT
+-- governed by one policy alone.
+CREATE POLICY opportunities_insert_company ON public.opportunities
+  FOR INSERT WITH CHECK (
+    company_id IN (
+      SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
+      UNION
+      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY opportunities_update_company ON public.opportunities
+  FOR UPDATE USING (
     company_id IN (
       SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
       UNION
@@ -197,6 +291,38 @@ CREATE POLICY opportunities_write_company ON public.opportunities
     company_id IN (
       SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
       UNION
+      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY opportunities_delete_company ON public.opportunities
+  FOR DELETE USING (
+    company_id IN (
+      SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
+      UNION
+      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
+    )
+  );
+
+-- ── (a2) ...and the DIRECTOR_COMPANIES read route ─────────────────────────
+-- Applied separately on 2026-10-07 and folded in here so the file matches
+-- production.
+--
+-- WHY IT IS NEEDED, and why the scoped policy above does not cover it: that
+-- policy lets a manager-and-above read the whole company, but only when
+-- users.company_id = opportunities.company_id. A director attached to a second
+-- company through director_companies has his OWN company_id on his user row,
+-- so for that other company's rows the test fails and he would have lost reads
+-- the old policy gave him through its director_companies UNION.
+--
+-- It is a company-wide SELECT grant, so it is only safe while
+-- director_companies holds directors. On production today it holds exactly one
+-- row: Nader (director). If a salesman is ever added to that table he gets
+-- company-wide reads of these two tables back, which is the one thing this
+-- file exists to prevent.
+CREATE POLICY opportunities_select_director_companies ON public.opportunities
+  FOR SELECT USING (
+    company_id IN (
       SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
     )
   );
@@ -208,6 +334,15 @@ CREATE POLICY future_orders_select_scoped ON public.future_orders
   FOR SELECT USING (
     owner_id = auth.uid()
     OR owner_id IN (SELECT s.subordinate_id FROM public.get_user_subordinates(auth.uid()) s)
+    -- DIRECT reports regardless of is_active. get_user_subordinates is
+    -- ACTIVE-ONLY, and without this clause a supervisor loses his DEPARTED
+    -- direct reports rows: Amer Sulaiman Alburaym has two of Ahmad Sulaiman
+    -- Moaminas plan submissions still awaiting approval, and View Plan would
+    -- have rendered an empty list rather than an error. This is the same
+    -- two-level shape the existing deals policy already uses, so it widens
+    -- nothing the app did not already allow; anything deeper than one level
+    -- below a departed person stays with manager-and-above.
+    OR owner_id IN (SELECT u2.id FROM public.users u2 WHERE u2.supervisor_id = auth.uid())
     OR EXISTS (
       SELECT 1 FROM public.users u
        WHERE u.id = auth.uid()
@@ -216,8 +351,18 @@ CREATE POLICY future_orders_select_scoped ON public.future_orders
     )
   );
 
-CREATE POLICY future_orders_write_company ON public.future_orders
-  FOR ALL USING (
+-- Split by command for the reason spelled out above the opportunities writes.
+CREATE POLICY future_orders_insert_company ON public.future_orders
+  FOR INSERT WITH CHECK (
+    company_id IN (
+      SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
+      UNION
+      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY future_orders_update_company ON public.future_orders
+  FOR UPDATE USING (
     company_id IN (
       SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
       UNION
@@ -228,6 +373,23 @@ CREATE POLICY future_orders_write_company ON public.future_orders
     company_id IN (
       SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
       UNION
+      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY future_orders_delete_company ON public.future_orders
+  FOR DELETE USING (
+    company_id IN (
+      SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
+      UNION
+      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
+    )
+  );
+
+-- The director_companies read route, as for opportunities above.
+CREATE POLICY future_orders_select_director_companies ON public.future_orders
+  FOR SELECT USING (
+    company_id IN (
       SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
     )
   );
@@ -239,6 +401,15 @@ CREATE POLICY salesman_flags_select_scoped ON public.salesman_flags
   FOR SELECT USING (
     owner_id = auth.uid()
     OR owner_id IN (SELECT s.subordinate_id FROM public.get_user_subordinates(auth.uid()) s)
+    -- DIRECT reports regardless of is_active. get_user_subordinates is
+    -- ACTIVE-ONLY, and without this clause a supervisor loses his DEPARTED
+    -- direct reports rows: Amer Sulaiman Alburaym has two of Ahmad Sulaiman
+    -- Moaminas plan submissions still awaiting approval, and View Plan would
+    -- have rendered an empty list rather than an error. This is the same
+    -- two-level shape the existing deals policy already uses, so it widens
+    -- nothing the app did not already allow; anything deeper than one level
+    -- below a departed person stays with manager-and-above.
+    OR owner_id IN (SELECT u2.id FROM public.users u2 WHERE u2.supervisor_id = auth.uid())
     OR EXISTS (
       SELECT 1 FROM public.users u
        WHERE u.id = auth.uid()
@@ -250,11 +421,22 @@ CREATE POLICY salesman_flags_select_scoped ON public.salesman_flags
 -- The flags are written by background checks running as the service role,
 -- which bypasses RLS; this keeps an authenticated write path for the review
 -- action (marking a flag reviewed), which only the above roles can see anyway.
-CREATE POLICY salesman_flags_write_company ON public.salesman_flags
-  FOR ALL USING (
+-- Split by command, same reason as above.
+CREATE POLICY salesman_flags_insert_company ON public.salesman_flags
+  FOR INSERT WITH CHECK (
+    company_id IN (SELECT u.company_id FROM public.users u WHERE u.id = auth.uid())
+  );
+
+CREATE POLICY salesman_flags_update_company ON public.salesman_flags
+  FOR UPDATE USING (
     company_id IN (SELECT u.company_id FROM public.users u WHERE u.id = auth.uid())
   )
   WITH CHECK (
+    company_id IN (SELECT u.company_id FROM public.users u WHERE u.id = auth.uid())
+  );
+
+CREATE POLICY salesman_flags_delete_company ON public.salesman_flags
+  FOR DELETE USING (
     company_id IN (SELECT u.company_id FROM public.users u WHERE u.id = auth.uid())
   );
 
@@ -342,6 +524,67 @@ $$;
 
 REVOKE ALL ON FUNCTION public.company_conversion_3m(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.company_conversion_3m(uuid) TO authenticated;
+
+-- ── (f) the "already planned this month" marker ───────────────────────────
+-- Customer Master greys out a customer somebody has already planned, which is
+-- what stops two salesmen planning the same one. The marker therefore has to
+-- see the WHOLE COMPANY's plan items — and (a) above takes that away from
+-- precisely the two roles it protects.
+--
+-- So it gets a function that returns A SET OF CONTACT IDS AND NOTHING ELSE:
+-- enough to grey out a row, and nothing about whose plan it is, what it is
+-- worth, how many there are, or any month other than the one asked for. A
+-- salesman learns "someone has this customer this month", which is the point,
+-- and learns nothing he could not already infer from being told he cannot plan
+-- it.
+--
+-- OPEN *AND* CONVERTED, which is WIDER THAN TODAY'S QUERY. CustomerMaster
+-- filtered status = 'open' alone, so a plan item already converted into a deal
+-- stopped blocking its customer — the collision the marker exists to prevent
+-- was allowed the moment the first salesman made progress. Decision
+-- 2026-10-07: converted counts. On production today this moves the marker from
+-- 34 customers to 81 for October, so the screen will visibly grey out more
+-- rows, for every role.
+--
+-- moved_to_future is deliberately NOT counted: a bounced lead has been pushed
+-- out of this month's plan (see utils/leadExpiryCheck.js), so its customer is
+-- genuinely available again. That is 12 rows / 11 customers today.
+CREATE OR REPLACE FUNCTION public.planned_contacts_this_month(
+  p_company uuid,
+  p_month date
+)
+RETURNS SETOF uuid
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  -- Only for your own company, same guard as company_conversion_3m.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.users u
+     WHERE u.id = auth.uid()
+       AND (u.company_id = p_company OR u.company_id IS NULL)
+  ) THEN
+    RETURN;   -- no rows, not an error: the caller falls back / shows nothing
+  END IF;
+
+  -- One calendar month from the date given, computed in SQL so a caller cannot
+  -- widen the window by passing a range. date_trunc guards against a caller
+  -- passing a mid-month date.
+  RETURN QUERY
+  SELECT DISTINCT o.contact_id
+    FROM public.opportunities o
+   WHERE o.company_id = p_company
+     AND o.contact_id IS NOT NULL
+     AND o.status IN ('open', 'converted')
+     AND o.expected_month >= date_trunc('month', p_month)::date
+     AND o.expected_month <  (date_trunc('month', p_month) + interval '1 month')::date;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.planned_contacts_this_month(uuid, date) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.planned_contacts_this_month(uuid, date) TO authenticated;
 
 COMMIT;
 
@@ -432,6 +675,46 @@ ROLLBACK;
 -- expect the same 67.8 / 97 / 143 / 71 — a RATE, from someone who cannot read
 -- a single one of the deals behind it.
 
+-- 8. The "already planned" marker still works for a SALESMAN, which is the
+--    whole reason planned_contacts_this_month exists: the row-level policy has
+--    just taken 230 of 349 plan items away from him, and this still returns
+--    every planned customer in the company.
+BEGIN;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"ba03074d-8b5b-4378-bd51-6fe1f3ee225e","role":"authenticated"}', true);
+SELECT count(*) AS planned_customers_seen_by_a_salesman
+FROM public.planned_contacts_this_month(
+  'adf8ee78-cf78-4f02-932c-989a214bdd78',
+  date_trunc('month', now() AT TIME ZONE 'Asia/Riyadh')::date) ;
+-- and prove he cannot get there the ordinary way:
+SELECT count(DISTINCT contact_id) AS same_question_through_the_table
+FROM opportunities
+WHERE company_id = 'adf8ee78-cf78-4f02-932c-989a214bdd78'
+  AND contact_id IS NOT NULL
+  AND status IN ('open','converted')
+  AND expected_month >= date_trunc('month', now() AT TIME ZONE 'Asia/Riyadh')::date
+  AND expected_month <  (date_trunc('month', now() AT TIME ZONE 'Asia/Riyadh') + interval '1 month')::date;
+ROLLBACK;
+-- expect 81 from the function (the company's planned customers for October
+-- 2026) and a much smaller number from the table — the function is the only
+-- way he can answer the question, and it tells him nothing else.
+
+-- 9. ...and it refuses another company.
+SELECT count(*) AS rows_for_a_foreign_company
+FROM public.planned_contacts_this_month(
+  '00000000-0000-0000-0000-000000000000', '2026-10-01');
+-- expect 0
+
+-- 10. The director_companies route is a company-wide SELECT grant, so it must
+--     only ever hold people who are meant to have one.
+SELECT u.full_name, u.role
+FROM director_companies dc JOIN users u ON u.id = dc.user_id
+ORDER BY u.role, u.full_name;
+-- expect directors (and heads/admins) only. On 2026-10-07: Nader, director.
+-- A salesman in this list has company-wide reads of opportunities and
+-- future_orders, which defeats section (a) and (b).
+
 
 -- ============================================================================
 -- ROLLBACK — restores exactly the four policies this file replaced.
@@ -441,14 +724,23 @@ ROLLBACK;
 
 -- BEGIN;
 --
--- DROP POLICY IF EXISTS opportunities_select_scoped   ON public.opportunities;
--- DROP POLICY IF EXISTS opportunities_write_company   ON public.opportunities;
--- DROP POLICY IF EXISTS future_orders_select_scoped   ON public.future_orders;
--- DROP POLICY IF EXISTS future_orders_write_company   ON public.future_orders;
--- DROP POLICY IF EXISTS salesman_flags_select_scoped  ON public.salesman_flags;
--- DROP POLICY IF EXISTS salesman_flags_write_company  ON public.salesman_flags;
--- DROP POLICY IF EXISTS escalation_logs_manager_up    ON public.escalation_logs;
+-- DROP POLICY IF EXISTS opportunities_select_scoped    ON public.opportunities;
+-- DROP POLICY IF EXISTS opportunities_insert_company   ON public.opportunities;
+-- DROP POLICY IF EXISTS opportunities_update_company   ON public.opportunities;
+-- DROP POLICY IF EXISTS opportunities_delete_company   ON public.opportunities;
+-- DROP POLICY IF EXISTS future_orders_select_scoped    ON public.future_orders;
+-- DROP POLICY IF EXISTS future_orders_insert_company   ON public.future_orders;
+-- DROP POLICY IF EXISTS future_orders_update_company   ON public.future_orders;
+-- DROP POLICY IF EXISTS future_orders_delete_company   ON public.future_orders;
+-- DROP POLICY IF EXISTS salesman_flags_select_scoped   ON public.salesman_flags;
+-- DROP POLICY IF EXISTS salesman_flags_insert_company  ON public.salesman_flags;
+-- DROP POLICY IF EXISTS salesman_flags_update_company  ON public.salesman_flags;
+-- DROP POLICY IF EXISTS salesman_flags_delete_company  ON public.salesman_flags;
+-- DROP POLICY IF EXISTS opportunities_select_director_companies ON public.opportunities;
+-- DROP POLICY IF EXISTS future_orders_select_director_companies ON public.future_orders;
+-- DROP POLICY IF EXISTS escalation_logs_manager_up     ON public.escalation_logs;
 -- DROP FUNCTION IF EXISTS public.company_conversion_3m(uuid);
+-- DROP FUNCTION IF EXISTS public.planned_contacts_this_month(uuid, date);
 --
 -- CREATE POLICY opportunities_company_access ON public.opportunities
 --   FOR ALL USING (
