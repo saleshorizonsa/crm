@@ -124,7 +124,10 @@ function nextMonthBounds(end) {
  * "info" and are never counted as a pass or a failure.
  */
 function row({ label, value, expected = null, kind = 'money', note = null, knownToDiffer = false }) {
-  const tolerance = kind === 'pct' ? PCT_TOLERANCE : MONEY_TOLERANCE;
+  // kind 'count' compares EXACTLY. A row count has no rounding to forgive, and
+  // the money tolerance of 1 would report "0 expected, 1 found" as agreement —
+  // which is exactly the size of defect the division-attribution rows look for.
+  const tolerance = kind === 'pct' ? PCT_TOLERANCE : (kind === 'count' ? 0 : MONEY_TOLERANCE);
   const has = expected !== null && expected !== undefined && Number.isFinite(Number(value));
   const diff = has ? n(value) - n(expected) : null;
   let status = 'info';
@@ -465,6 +468,103 @@ async function buildDivisionGroups({
   ];
 }
 
+/**
+ * EVERY ROW IS ATTRIBUTED, OR ITS OWNER HAS NOWHERE TO PUT IT.
+ *
+ * The division figures only sum to the company while every row carries a
+ * division. A row whose division_id is NULL falls back to its owner's PRIMARY
+ * division on the way into Insights — so a NULL row with an owner who HAS a
+ * primary is counted at company level and in no division, and the two stop
+ * agreeing.
+ *
+ * That is not hypothetical. SAUDI CARBOTAE CO. LTD (18,315) was created with
+ * its division by the BEFORE INSERT trigger at 16:08 on 2026-10-07 and edited
+ * to NULL two minutes later, because DealModal sent
+ * `division_id: formData.division_id || null` on the edit path. October's
+ * divisions-sum row then failed by exactly 18,315 — which is how it was found.
+ * The app now omits the key instead of nulling it, and
+ * migrations/division_on_update.sql adds the BEFORE UPDATE guard; this group is
+ * what notices if either one is ever undone.
+ *
+ * Rows whose owner has NO primary division (Osman, Mueataz — both departed)
+ * are REPORTED, not asserted: there is nothing to attribute them to, and the
+ * company-level fallback is NULL for them too, so they cost no division
+ * anything. Asserting zero there would fail forever for a condition nobody
+ * can fix.
+ */
+async function buildDivisionAttributionRows({ companyId, bundle }) {
+  const users = bundle.users || [];
+  const primaryOf = new Map(users.map((u) => [u.id, u.sales_division_id || null]));
+  const nameOf = new Map(users.map((u) => [u.id, u.full_name || u.id]));
+
+  const TABLES = [
+    { table: 'deals', ownerKey: 'owner_id', labelKey: 'title' },
+    { table: 'opportunities', ownerKey: 'owner_id', labelKey: 'customer_name' },
+    { table: 'future_orders', ownerKey: 'owner_id', labelKey: 'customer_name' },
+    { table: 'sales_targets', ownerKey: 'assigned_to', labelKey: 'target_type' },
+  ];
+
+  const rows = [];
+  let orphans = 0;
+
+  for (const t of TABLES) {
+    // division_id arrives with migrations/division_attribution.sql. Selecting a
+    // column PostgREST does not know about fails the whole request, so a
+    // missing column degrades to one info row instead of taking the page down
+    // (lesson from 1897c1a).
+    // eslint-disable-next-line no-await-in-loop
+    const { data, error } = await supabase
+      .from(t.table)
+      .select(`id, ${t.ownerKey}, ${t.labelKey}`)
+      .eq('company_id', companyId)
+      .is('division_id', null);
+
+    if (error) {
+      rows.push(row({
+        label: `${t.table} — rows with no division: not readable`,
+        value: 0,
+        expected: null,
+        note: `${t.table}.division_id could not be read (${error.message}).`
+          + ' If migrations/division_attribution.sql is not applied here, that'
+          + ' is expected and this row is the degraded answer.',
+      }));
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+
+    const nulls = data || [];
+    const repairable = nulls.filter((r) => primaryOf.get(r[t.ownerKey]));
+    orphans += nulls.length - repairable.length;
+
+    const who = [...new Set(repairable.map((r) => nameOf.get(r[t.ownerKey])))];
+    const what = repairable.slice(0, 3).map((r) => r[t.labelKey] || r.id).join(', ');
+
+    rows.push(row({
+      label: `${t.table} — rows with no division whose owner HAS a primary`,
+      value: repairable.length,
+      expected: 0,
+      kind: 'count',
+      note: repairable.length
+        ? `${what}${repairable.length > 3 ? ' …' : ''} — ${who.join(', ')}.`
+          + ' Each is counted at company level and in no division.'
+          + ' migrations/division_on_update.sql repairs these and stops them recurring.'
+        : 'every row carries a division, or its owner has none to give it',
+    }));
+  }
+
+  if (rows.length) {
+    rows.push(row({
+      label: 'rows left unattributed because the owner has no primary division',
+      value: orphans,
+      expected: null,
+      kind: 'count',
+      note: 'reported, not asserted: there is nothing to attribute them to, and'
+        + ' the company-level fallback is NULL for these owners too, so no'
+        + ' division is short because of them',
+    }));
+  }
+  return rows;
+}
 /**
  * THE COVERAGE RAIL'S DRILL-DOWN ADDS UP.
  *
@@ -1319,6 +1419,16 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     companyId, consoleData, reference, planning, start, end, users,
   });
   divisionGroups.forEach((grp) => { if (grp.rows.length) groups.push(grp); });
+
+  // ── Division attribution survives an UPDATE (2026-10-07) ────────────────
+  const attribRows = await buildDivisionAttributionRows({ companyId, bundle });
+  if (attribRows.length) {
+    groups.push({
+      screen: 'Division attribution',
+      fn: 'division_on_update.sql',
+      rows: attribRows,
+    });
+  }
 
   // ── The coverage rail's drill-down (2026-10-07) ──────────────────────────
   const railRows = await buildRailDrillRows({
