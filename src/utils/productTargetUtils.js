@@ -20,6 +20,31 @@ export const calculateProductTargetValue = (productTargets = []) =>
     0,
   );
 
+/**
+ * The value of the target row CURRENTLY BEING ENTERED, whichever of the three
+ * types the form is on.
+ *
+ * For the live annual-allocation preview, which needs the figure during render.
+ * The three submit handlers compute the same thing inline, interleaved with
+ * their own validation and error messages; those are left alone deliberately —
+ * this is a read for display and must never report a validation failure.
+ */
+export const enteredTargetTotal = ({
+  targetType,
+  targetAmount = 0,
+  clientTargets = [],
+  productTargets = [],
+}) => {
+  const type = normalizeTargetType(targetType);
+  if (type === "by_clients") {
+    return clientTargets
+      .filter((ct) => ct.enabled && parseFloat(ct.target_amount) > 0)
+      .reduce((sum, ct) => sum + (parseFloat(ct.target_amount) || 0), 0);
+  }
+  if (type === PRODUCT_TARGET_TYPE) return calculateProductTargetValue(productTargets);
+  return parseFloat(targetAmount) || 0;
+};
+
 export const validateProductTargets = (productTargets = []) => {
   const selected = productTargets.filter((target) => target.enabled);
 

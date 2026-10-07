@@ -134,6 +134,7 @@ const PlanningPage = () => {
     plannedOpen: 0, openFunnel: 0, availableCoverage: 0,
     coveragePct: null, plannedGap: 0, hasTargetRows: false,
     annualTarget: null, unassignedAnnual: 0, annualYear: null,
+    annualAssigned: 0, annualMonthsLeft: 0, annualPerMonthNeeded: null,
     pipelineConversion3m: null, pipelineTotal3m: 0, importedExcluded: 0,
     untaggedPlanned: 0, untaggedFunnel: 0,
   };
@@ -1260,6 +1261,20 @@ const PlanningPage = () => {
                   Not yet assigned:{" "}
                   <span className="tabular-nums font-medium">{fmtSAR(summaryData.unassignedAnnual)} SAR</span>
                 </p>
+                {summaryData.unassignedAnnual > 0 && summaryData.annualMonthsLeft > 0
+                  && hasFigure(summaryData.annualPerMonthNeeded) && (
+                  <p
+                    className="text-xs text-muted-foreground"
+                    title="The months of this year that carry no monthly target yet, counted from the current month on, and what the unassigned allocation comes to if it is spread evenly over them."
+                  >
+                    {summaryData.annualMonthsLeft} month
+                    {summaryData.annualMonthsLeft === 1 ? "" : "s"} left to assign →{" "}
+                    <span className="tabular-nums font-medium">
+                      {fmtSAR(summaryData.annualPerMonthNeeded)} SAR
+                    </span>{" "}
+                    per month
+                  </p>
+                )}
               </div>
             )}
             <p className="text-xs text-muted-foreground mt-1">

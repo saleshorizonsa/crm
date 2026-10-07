@@ -30,6 +30,7 @@ import {
   fetchAchieved,
   fetchAchievedOnlyUsers,
   computeAnnualTarget,
+  computeAnnualAllocation,
 } from './planningCalculations';
 // THE funnel — one definition, undated open deals included.
 import { fetchOpenFunnel } from './openFunnel';
@@ -241,6 +242,7 @@ export async function computePlanningPageSummary({
     plannedGap: 0, coveragePct: null,
     hasTargetRows: false, untaggedPlanned: 0, untaggedFunnel: 0,
     annualTarget: null, unassignedAnnual: 0, annualYear: null,
+    annualAssigned: 0, annualMonthsLeft: 0, annualPerMonthNeeded: null,
     pipelineConversion3m: null, pipelineTotal3m: 0, importedExcluded: 0,
     scopeIds: [], contributorIds: [],
   };
@@ -300,12 +302,39 @@ export async function computePlanningPageSummary({
   // given. Required Plan stays on the MONTHLY basis (it is what the team is
   // accountable for), and the screen labels it so.
   const whole = wholePeriodOf(start, end);
-  const annualTarget = whole?.kind === 'year'
-    ? await computeAnnualTarget({
-        companyId, ownerIds: scopeIds, monthlyTotal: 0, year: whole.year,
-      })
+  // ONE function for the annual allocation — computeAnnualAllocation in
+  // planningCalculations.js — shared with the target-assignment banner, so the
+  // subtraction "annual − assigned" exists once instead of twice.
+  //
+  // THE SCOPE IS NOT SHARED, AND THE TWO FIGURES CURRENTLY DIFFER.
+  // This page passes its own scopeIds: the viewer's ACTIVE achievers. The
+  // banner resolves a manager's whole subtree INCLUDING people who have left
+  // (CEO decision 2026-10-07, which applies to annual figures). On JASCO PVC
+  // 2026 that is:
+  //
+  //   this page, "Not yet assigned"      27,852,189   (assigned 12,808,590)
+  //   the banner, "remaining"            15,292,646   (assigned 25,368,133)
+  //
+  // a difference of 12,559,543 — the monthly rows of Shaikh Osman Shoukat and
+  // Mueataz Mohammed Ahmed. BOTH PASS /numbers-check, because each is compared
+  // against a reference built on its own scope, which is precisely why this is
+  // written down here rather than left to be discovered.
+  //
+  // Bringing this page onto the everyone scope is part of the general rule the
+  // CEO asked to approve separately (company and annual figures include
+  // everyone; person and team figures stay active-only). It is deliberately NOT
+  // done here: it would also move Achieved and the conversion rate on this
+  // page, which is a wider change than one subtraction.
+  const alloc = whole?.kind === 'year'
+    ? await computeAnnualAllocation({
+      companyId, ownerIds: scopeIds, year: whole.year,
+    })
     : null;
-  const unassignedAnnual = annualTarget ? Math.max(0, annualTarget - target) : 0;
+  const annualTarget = alloc && alloc.annual > 0 ? alloc.annual : null;
+  // Clamped at zero, as this screen has always shown it: "not yet assigned"
+  // cannot be negative, and over-allocation is reported by the banner on the
+  // screen that causes it, not here.
+  const unassignedAnnual = annualTarget ? Math.max(0, alloc.remaining) : 0;
 
   // Required Plan over what is STILL missing, not over the whole target, and
   // with no Future Orders netting — both deliberate departures from the shared
@@ -346,6 +375,12 @@ export async function computePlanningPageSummary({
     annualTarget,
     unassignedAnnual,
     annualYear: whole?.kind === 'year' ? whole.year : null,
+    // From the same helper, so the annual view can say what is left AND how
+    // many months are left to put it in — the question a director asks
+    // immediately after seeing 27.8M unassigned.
+    annualAssigned: alloc ? alloc.assigned : 0,
+    annualMonthsLeft: alloc ? alloc.monthsLeft : 0,
+    annualPerMonthNeeded: alloc ? alloc.perMonthNeeded : null,
     // Information only — never used in a calculation here or anywhere.
     pipelineConversion3m,
     pipelineTotal3m,

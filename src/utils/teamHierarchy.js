@@ -70,20 +70,32 @@ export async function fetchTeamHierarchy({ companyId, userId, role }) {
  * (a manager does only when users.is_contributor flags him; see
  * achieverIdsFrom).
  *
- * Only ACTIVE users are walked, matching fetchTeamHierarchy's own query: an
- * inactive supervisor does not pass his subtree through, which is deliberate —
- * his reports are re-parented when he leaves, and until they are, counting
- * through him would credit a team nobody manages.
+ * Only ACTIVE users are walked BY DEFAULT, matching fetchTeamHierarchy's own
+ * query: an inactive supervisor does not pass his subtree through, which is
+ * deliberate — his reports are re-parented when he leaves, and until they are,
+ * counting through him would credit a team nobody manages.
+ *
+ * `includeInactive` reverses that, for the one caller that has to see history
+ * rather than the team as it stands today: computeAnnualAllocation, where an
+ * allocation given to someone who has since left was still given and the month
+ * it sat in cannot be assigned again (CEO decision 2026-10-07). It both
+ * INCLUDES and TRAVERSES inactive users, which is not a nuance — Mueataz
+ * Mohammed Ahmed's 510,000 of 2026 rows hangs off Shaikh Osman Shoukat, who is
+ * himself inactive, so a walk that included the departed without walking
+ * through them would read 24,858,133 instead of 25,368,133.
+ *
+ * Every other caller keeps the active-only default, which is the person- and
+ * team-level rule.
  *
  * Breadth-first with a seen-set, so a cyclic supervisor_id terminates instead
  * of recursing forever.
  */
-export function subtreeIdsOf({ users, rootId }) {
+export function subtreeIdsOf({ users, rootId, includeInactive = false }) {
   if (!rootId || !Array.isArray(users) || !users.length) return [];
   const childrenOf = new Map();
   users.forEach((u) => {
     if (!u?.id || !u.supervisor_id) return;
-    if (u.is_active === false) return;
+    if (!includeInactive && u.is_active === false) return;
     if (!childrenOf.has(u.supervisor_id)) childrenOf.set(u.supervisor_id, []);
     childrenOf.get(u.supervisor_id).push(u.id);
   });

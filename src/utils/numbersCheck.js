@@ -4,6 +4,7 @@ import {
   fetchMonthlyTargets,
   targetPerPerson,
   computeAnnualTarget,
+  computeAnnualAllocation,
   computeAchieved,
   computeCoverage,
   achieverIdsFrom,
@@ -426,6 +427,137 @@ async function buildDivisionGroups({
     { screen: 'Divisions sum = company', fn: 'calcDivisionMetrics', rows: sumRows },
     { screen: 'Division planned gap vs Planning', fn: 'computePlanningPageSummary', rows: gapRows },
   ];
+}
+
+/**
+ * ANNUAL ALLOCATION — the helper against a recomputation that shares no code
+ * with it.
+ *
+ * CEO decision 2026-10-07: a manager's monthly rows, his team's and his own,
+ * must add up to the yearly target the director gave him. computeAnnualAllocation
+ * reports how far through that he is, and the target-assignment banner reads it,
+ * so a wrong figure here tells a manager the wrong amount to hand out.
+ *
+ * NOTE these rows measure the EVERYONE scope (departed people's rows included,
+ * decision 2026-10-07). The "Annual view — Not yet assigned" row in the
+ * Planning group above measures the same subtraction over the viewer's ACTIVE
+ * achievers and reads 12,559,543 higher for 2026. Both are correct against
+ * their own scope and both pass; the divergence is recorded in
+ * planningPageSummary.js and awaits a separate decision.
+ *
+ * THE INDEPENDENT SIDE walks the hierarchy from its own user read, sums the
+ * bundle's own monthly rows, and takes the max of the yearly rows itself. It
+ * reads users SEPARATELY from the bundle because the bundle's user rows are the
+ * ACTIVE ones and this figure includes everyone (CEO decision 2026-10-07) —
+ * reusing them would have quietly checked the active-only sum and passed. It shares targetPerPerson with the helper deliberately — that IS the
+ * rule under test everywhere else in this file, and re-implementing a row's
+ * value here would check this page against itself rather than the app. What it
+ * does not share is the SCOPE resolution and the subtraction, which is what
+ * this helper newly added.
+ *
+ * One row per person holding a yearly row: self-configuring, so it covers
+ * Mohamed Kamal today and whoever else is given one later without an edit here.
+ */
+async function buildAnnualAllocationRows({ companyId, bundle, year }) {
+  const { data: yearly, error } = await supabase
+    .from('sales_targets')
+    .select('assigned_to, target_amount, target_type, period_start, period_end')
+    .eq('company_id', companyId)
+    .eq('period_type', 'yearly')
+    .eq('status', 'active')
+    .eq('target_type', 'total_value')
+    .gte('period_start', `${year}-01-01`)
+    .lte('period_end', `${year}-12-31`);
+  if (error) {
+    return [row({
+      label: 'Annual allocation remaining — could not read the yearly rows',
+      value: 0,
+      note: error.message,
+    })];
+  }
+
+  // The bundle's users are the ACTIVE ones; the scope walk needs all of them.
+  const { data: everyone, error: everyoneErr } = await supabase
+    .from('users')
+    .select('id, full_name, supervisor_id, is_active')
+    .eq('company_id', companyId);
+  if (everyoneErr) {
+    return [row({
+      label: 'Annual allocation remaining — could not read the users',
+      value: 0,
+      note: everyoneErr.message,
+    })];
+  }
+  const allUsers = everyone || [];
+  const users = bundle.users || [];
+  // A yearly row held by someone inactive is skipped: an allocation nobody is
+  // carrying has no manager to report it to. (The ROWS of departed people are
+  // counted; a departed person's own yearly allocation is not reported as his.)
+  const holders = [...new Set((yearly || []).map((t) => t.assigned_to))]
+    .filter((id) => users.some((u) => u.id === id));
+  if (!holders.length) {
+    return [row({
+      label: `Annual allocation remaining — nobody holds a ${year} yearly row`,
+      value: 0,
+      note: 'nothing to check: the rule applies to a manager who has been given'
+        + ' a yearly target, and no active user has one for this year',
+    })];
+  }
+
+  const out = [];
+  for (const id of holders) {
+    const person = users.find((u) => u.id === id);
+    const name = person?.full_name || id;
+
+    // eslint-disable-next-line no-await-in-loop
+    const alloc = await computeAnnualAllocation({ companyId, managerId: id, year });
+
+    // ── independent ────────────────────────────────────────────────────────
+    // includeInactive, and over allUsers rather than the bundle's active-only
+    // rows: an allocation given to someone who has left was still given, and
+    // the month it sat in cannot be assigned again. Mueataz Mohammed Ahmed's
+    // 510,000 hangs off Shaikh Osman Shoukat, himself inactive, so the walk has
+    // to pass THROUGH the departed as well as include them.
+    const scope = [id, ...subtreeIdsOf({ users: allUsers, rootId: id, includeInactive: true })];
+    const mine = (bundle.yearTargets || []).filter((t) => scope.includes(t.assigned_to));
+    const expAssigned = Object.values(targetPerPerson(mine)).reduce((s, v) => s + v, 0);
+    // Max per person, not sum: a revised annual target replaces the old one.
+    const expAnnual = (yearly || [])
+      .filter((t) => t.assigned_to === id)
+      .reduce((mx, t) => Math.max(mx, parseFloat(t.target_amount) || 0), 0);
+    const expRemaining = expAnnual - expAssigned;
+
+    out.push(row({
+      label: `Annual allocation remaining — ${name} ${year}`,
+      value: alloc.remaining,
+      expected: expRemaining,
+      note: `allocation ${Math.round(expAnnual).toLocaleString('en-US')}`
+        + ` less ${Math.round(expAssigned).toLocaleString('en-US')} of monthly rows`
+        + ` across ${scope.length} people, active or not (him and everyone who`
+        + ' has reported under him) — CEO decision 2026-10-07',
+    }));
+    out.push(row({
+      label: `Annual allocation assigned — ${name} ${year}`,
+      value: alloc.assigned,
+      expected: expAssigned,
+    }));
+    out.push(row({
+      label: `Annual allocation — ${name} ${year}: byMonth sums to assigned`,
+      value: (alloc.byMonth || []).reduce((s, v) => s + v, 0),
+      expected: alloc.assigned,
+      note: 'the 12-month strip on the target-assignment banner is the same'
+        + ' figure broken up, so it has to add back to it',
+    }));
+    out.push(row({
+      label: `Annual allocation — ${name} ${year}: months left to assign`,
+      value: alloc.monthsLeft,
+      note: alloc.monthsLeft > 0
+        ? `months with no rows yet, from this month on`
+          + ` → ${Math.round(alloc.perMonthNeeded || 0).toLocaleString('en-US')} per month`
+        : 'every remaining month of the year already carries rows',
+    }));
+  }
+  return out;
 }
 
 /**
@@ -877,6 +1009,18 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     companyId, consoleData, reference, planning, start, end, users,
   });
   divisionGroups.forEach((grp) => { if (grp.rows.length) groups.push(grp); });
+
+  // ── Annual allocation (CEO decision 2026-10-07) ──────────────────────────
+  const annualAllocRows = await buildAnnualAllocationRows({
+    companyId, bundle, year,
+  });
+  if (annualAllocRows.length) {
+    groups.push({
+      screen: 'Annual allocation (target assignment banner)',
+      fn: 'computeAnnualAllocation',
+      rows: annualAllocRows,
+    });
+  }
 
   // ── Known to differ — not yet unified ────────────────────────────────────
   //
