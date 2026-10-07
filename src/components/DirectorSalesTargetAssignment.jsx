@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Input from "./ui/Input";
 import Select from "./ui/Select";
 import Button from "./ui/Button";
@@ -16,11 +16,13 @@ import { capitalize } from "utils/helper";
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { supabase } from "../lib/supabase";
 import DivisionPicker from "./DivisionPicker";
+import AnnualAllocationBanner from "./AnnualAllocationBanner";
 import {
   PRODUCT_TARGET_TYPE,
   calculateProductTargetValue,
   toProductTargetRows,
   validateProductTargets,
+  enteredTargetTotal,
 } from "../utils/productTargetUtils";
 
 const DirectorSalesTargetAssignment = ({
@@ -69,6 +71,33 @@ const DirectorSalesTargetAssignment = ({
   const [loadingClients, setLoadingClients] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // ── live annual-allocation preview ───────────────────────────────────────
+  // The value of the row being entered right now, so the banner can show what
+  // it does to the remaining allocation BEFORE it is saved. Read-only: it never
+  // validates, never blocks, and the submit handler keeps its own computation.
+  const pendingAmount = useMemo(
+    () => enteredTargetTotal({
+      targetType,
+      targetAmount: formData.targetAmount,
+      clientTargets,
+      productTargets,
+    }),
+    [targetType, formData.targetAmount, clientTargets, productTargets],
+  );
+  // Only a MONTHLY row spends the year's allocation; a yearly row IS the
+  // allocation, so previewing it against itself would be nonsense.
+  const pendingMonth = formData.periodType === "monthly" && formData.periodStart
+    ? String(formData.periodStart).slice(0, 7)
+    : null;
+  // The year the form is working in, not the year it happens to be.
+  const allocYear = formData.periodStart
+    ? Number(String(formData.periodStart).slice(0, 4))
+    : new Date().getFullYear();
+  // Bumped after a save so the banner re-reads instead of showing the figures
+  // from before the row that was just created.
+  const [allocRefresh, setAllocRefresh] = useState(0);
+
 
   const periodTypes = [
     { value: "weekly", label: "Weekly" },
@@ -358,6 +387,7 @@ const DirectorSalesTargetAssignment = ({
       }
 
       setSuccess("Sales target assigned successfully!");
+      setAllocRefresh((n) => n + 1);
 
       // Log activity for target assignment
       const assignedUser = managers.find(u => u.id === salesTarget.assigned_to);
@@ -435,6 +465,16 @@ const DirectorSalesTargetAssignment = ({
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* The selected manager's year. Renders nothing until one is chosen,
+            or if the person chosen holds no yearly row. */}
+        <AnnualAllocationBanner
+          companyId={companyId || userProfile?.company_id}
+          managerId={selectedSubordinate || null}
+          year={allocYear}
+          pendingMonth={pendingMonth}
+          pendingAmount={pendingAmount}
+          refreshKey={allocRefresh}
+        />
         {/* Step 1: Select Manager */}
         <div className="space-y-2">
           <label className="text-sm font-medium text-card-foreground">

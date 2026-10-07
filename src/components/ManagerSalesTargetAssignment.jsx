@@ -12,6 +12,7 @@ import { ownAllocation, sumTargetAmount } from "utils/selfTarget";
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { supabase } from "../lib/supabase";
 import DivisionPicker from "./DivisionPicker";
+import AnnualAllocationBanner from "./AnnualAllocationBanner";
 import {
   fetchAdditionalDivisions, MAX_DIVISIONS_PER_USER,
 } from "utils/divisionMembership";
@@ -20,6 +21,7 @@ import {
   calculateProductTargetValue,
   toProductTargetRows,
   validateProductTargets,
+  enteredTargetTotal,
 } from "../utils/productTargetUtils";
 
 const ManagerSalesTargetAssignment = ({
@@ -126,6 +128,33 @@ const ManagerSalesTargetAssignment = ({
   const [loadingClients, setLoadingClients] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // ── live annual-allocation preview ───────────────────────────────────────
+  // The value of the row being entered right now, so the banner can show what
+  // it does to the remaining allocation BEFORE it is saved. Read-only: it never
+  // validates, never blocks, and the submit handler keeps its own computation.
+  const pendingAmount = useMemo(
+    () => enteredTargetTotal({
+      targetType,
+      targetAmount: formData.targetAmount,
+      clientTargets,
+      productTargets,
+    }),
+    [targetType, formData.targetAmount, clientTargets, productTargets],
+  );
+  // Only a MONTHLY row spends the year's allocation; a yearly row IS the
+  // allocation, so previewing it against itself would be nonsense.
+  const pendingMonth = (formData.periodType || "monthly") === "monthly" && formData.periodStart
+    ? String(formData.periodStart).slice(0, 7)
+    : null;
+  // The year the form is working in, not the year it happens to be.
+  const allocYear = formData.periodStart
+    ? Number(String(formData.periodStart).slice(0, 4))
+    : new Date().getFullYear();
+  // Bumped after a save so the banner re-reads instead of showing the figures
+  // from before the row that was just created.
+  const [allocRefresh, setAllocRefresh] = useState(0);
+
 
   // Sales Division filter (sales_divisions + users.sales_division_id). Purely a
   // filter on the "Assign To" list: targets are created exactly as before.
@@ -623,6 +652,7 @@ const ManagerSalesTargetAssignment = ({
         if (updateError) throw updateError;
 
         setSuccess("Sales target updated successfully!");
+        setAllocRefresh((n) => n + 1);
 
         if (onTargetCreated) {
           onTargetCreated();
@@ -681,6 +711,7 @@ const ManagerSalesTargetAssignment = ({
       }
 
       setSuccess("Sales target assigned successfully!");
+      setAllocRefresh((n) => n + 1);
 
       // Log activity for target assignment
       const assignedUser = subordinates.find(s => s.id === salesTarget.assigned_to);
@@ -807,6 +838,16 @@ const ManagerSalesTargetAssignment = ({
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* The year's allocation, above the form that spends it. Renders
+            nothing unless this manager holds a yearly row for the year. */}
+        <AnnualAllocationBanner
+          companyId={companyId || userProfile?.company_id}
+          managerId={userProfile?.id}
+          year={allocYear}
+          pendingMonth={pendingMonth}
+          pendingAmount={pendingAmount}
+          refreshKey={allocRefresh}
+        />
         {/* Sales Division filter */}
         {showDivisionFilter && (
           <div className="space-y-2">

@@ -1,6 +1,9 @@
 import { supabase } from 'lib/supabase';
 import { fetchWinRate3m } from 'utils/winRate3m';
 import { isImportedDeal, queryDealsWithImportFlag } from 'utils/importedDeals';
+// The one supervisor_id walk. It skips inactive users, which is exactly the
+// scope rule computeAnnualAllocation needs — see its doc comment.
+import { subtreeIdsOf } from 'utils/teamHierarchy';
 // IMPORTED as well as re-exported below, because `export { x } from '...'` does
 // NOT bind x in this module's own scope — computeWinRate calls fetchAchieverIds,
 // and the re-export alone left it undefined at runtime.
@@ -194,6 +197,158 @@ export async function computeAnnualTarget({ companyId, ownerIds, monthlyTotal, y
   });
   const yearlySum = Object.values(per).reduce((s, v) => s + v, 0);
   return yearlySum > 0 ? yearlySum : monthlyTotal;
+}
+
+/**
+ * ANNUAL ALLOCATION — does a manager's monthly assigning add up to his year?
+ *
+ * CEO decision 2026-10-07: a manager's MONTHLY targets — the rows he assigns to
+ * his team AND the rows he assigns to himself — must add up to the YEARLY
+ * target the director assigned him by the end of that year. This reports how
+ * far through that he is, and what per month is left to give out.
+ *
+ * SCOPE: the manager plus his ACTIVE subtree, all roles.
+ *
+ *   Active only. Decision 2026-10-07, after the figures were put side by side:
+ *   including rows held by people who have since left adds 12,559,543 for
+ *   JASCO PVC 2026 (Shaikh Osman Shoukat 12,049,543 over Jan–Sep and Mueataz
+ *   Mohammed Ahmed 510,000 over Jan–Mar), which would read as 25,368,133
+ *   assigned against 40,660,779 allocated. Active-only reads 12,808,590. The
+ *   second is the figure management plans against, because the question the
+ *   banner answers is "how much have I still got to give out", and allocation
+ *   that left with a departed salesman is back in the manager's hands. The
+ *   first is the better record of what was historically committed, and it is
+ *   not what this screen is for. subtreeIdsOf() enforces this by construction:
+ *   it walks active users only.
+ *
+ *   ALL ROLES, deliberately not the achiever scope. The manager's own rows are
+ *   half of what the rule covers, and narrowing to CONTRIBUTOR_ROLES would
+ *   count them only because he happens to carry is_contributor. For JASCO PVC
+ *   today the two scopes give the same 12,808,589.56 — every monthly row
+ *   belongs to an active achiever in Kamal's subtree — so this choice shows up
+ *   only when a non-contributor manager assigns himself a row, where counting
+ *   it is plainly right.
+ *
+ * NO NEW TARGET ARITHMETIC: the annual figure is computeAnnualTarget() and
+ * every monthly sum is targetPerPerson(), the same two functions the dashboards
+ * and Planning already use. This function chooses the SCOPE and does one
+ * subtraction.
+ *
+ * @param {object} p
+ * @param {string} p.companyId
+ * @param {string} [p.managerId]  whose year this is. The annual figure is HIS
+ *   own yearly row — "the yearly target the director assigned him" — not the
+ *   subtree's, so a second manager below him with a yearly row of his own does
+ *   not inflate it.
+ * @param {number} p.year
+ * @param {string[]} [p.ownerIds]  an explicit scope INSTEAD of a manager's
+ *   subtree, for a caller that already has one (the Planning page passes its
+ *   own viewer scope, so both screens run this one function rather than two
+ *   copies of annual − assigned). Intersected with the active set, never
+ *   widened past it.
+ * @returns {Promise<{
+ *   year: number, annual: number, assigned: number,
+ *   byMonth: number[], remaining: number, overAllocated: boolean,
+ *   monthsLeft: number, emptyMonths: number[], perMonthNeeded: number|null,
+ *   scopeIds: string[],
+ * }>} byMonth is 12 entries, index 0 = January. emptyMonths are 1-based month
+ *   numbers with no rows yet, from the current month on.
+ */
+export async function computeAnnualAllocation({
+  companyId, managerId = null, year, ownerIds = null,
+}) {
+  const y = Number(year) > 1970 ? Number(year) : new Date().getFullYear();
+  const empty = {
+    year: y, annual: 0, assigned: 0, byMonth: Array(12).fill(0),
+    remaining: 0, overAllocated: false, monthsLeft: 0, emptyMonths: [],
+    perMonthNeeded: null, scopeIds: [],
+  };
+  if (!companyId || (!managerId && !Array.isArray(ownerIds))) return empty;
+
+  // ── scope ────────────────────────────────────────────────────────────────
+  const { data: users, error: usersErr } = await supabase
+    .from('users')
+    .select('id, supervisor_id, is_active')
+    .eq('company_id', companyId)
+    .eq('is_active', true);
+  if (usersErr) { console.error('computeAnnualAllocation (users):', usersErr); return empty; }
+
+  const activeIds = (users || []).map((u) => u.id);
+  let scopeIds;
+  if (Array.isArray(ownerIds)) {
+    scopeIds = activeIds.filter((id) => ownerIds.includes(id));
+  } else {
+    // Himself first, then everyone under him. A manager assigning himself a
+    // monthly row is spending the same allocation as assigning his team one,
+    // which is the whole point of the rule.
+    scopeIds = [managerId, ...subtreeIdsOf({ users: users || [], rootId: managerId })]
+      .filter((id) => activeIds.includes(id));
+  }
+  if (!scopeIds.length) return empty;
+
+  // ── the two shared figures ───────────────────────────────────────────────
+  // Literal date strings from the year number: never toISOString() on a local
+  // date, which in Asia/Riyadh (UTC+3) turns the 1st into the previous month.
+  const yearStart = `${y}-01-01`;
+  const yearEnd = `${y}-12-31`;
+
+  const annual = await computeAnnualTarget({
+    companyId,
+    ownerIds: managerId ? [managerId] : scopeIds,
+    monthlyTotal: 0,
+    year: y,
+  });
+
+  const rows = await fetchMonthlyTargets({
+    companyId, contributorIds: scopeIds, start: yearStart, end: yearEnd,
+  });
+
+  // targetPerPerson sums per person per month and collapses a row against its
+  // own client breakdown, so this is the same value every other screen reads.
+  const assigned = Object.values(targetPerPerson(rows)).reduce((s, v) => s + v, 0);
+
+  // Per month, through the SAME function rather than a second reduce over
+  // target_amount — a month's figure here and the same month's figure on a
+  // dashboard cannot disagree.
+  const byMonth = Array(12).fill(0);
+  for (let m = 0; m < 12; m += 1) {
+    const mm = String(m + 1).padStart(2, '0');
+    const inMonth = rows.filter((t) => String(t.period_start || '').slice(0, 7) === `${y}-${mm}`);
+    byMonth[m] = Object.values(targetPerPerson(inMonth)).reduce((s, v) => s + v, 0);
+  }
+
+  // ── what is left, and over how many months ───────────────────────────────
+  const remaining = annual - assigned;
+
+  // "From the current month on": a month already carrying rows is spoken for,
+  // and a month in the past cannot be allocated into. For a year that is not
+  // the current one there is no "current month" to count from — a past year has
+  // nothing left to allocate, and a future year has all twelve open.
+  const now = new Date();
+  const startMonth = (() => {
+    if (y === now.getFullYear()) return now.getMonth() + 1;   // local, 1-based
+    return y > now.getFullYear() ? 1 : 13;
+  })();
+  const emptyMonths = [];
+  for (let m = startMonth; m <= 12; m += 1) {
+    if (byMonth[m - 1] === 0) emptyMonths.push(m);
+  }
+  const monthsLeft = emptyMonths.length;
+
+  return {
+    year: y,
+    annual,
+    assigned,
+    byMonth,
+    remaining,
+    // Assigning MORE than the year's allocation is not blocked anywhere — this
+    // is information, never a gate — so the sign has to be reportable.
+    overAllocated: remaining < 0,
+    monthsLeft,
+    emptyMonths,
+    perMonthNeeded: monthsLeft > 0 ? remaining / monthsLeft : null,
+    scopeIds,
+  };
 }
 
 // ── 2. WIN RATE ─────────────────────────────────────────────────────────────
