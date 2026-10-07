@@ -88,6 +88,40 @@ const HEALTH = {
 // funnel, unweighted — a different measure that was also called Coverage.
 const COLUMNS = ["Name", "Target", "Achieved", "Gap to target", "Conversion (3m)", "New pipeline needed", EXPECTED_PCT_LABEL, "Status"];
 
+// ── FROZEN FIRST COLUMN ────────────────────────────────────────────────────
+//
+// The name column stays put while the figures scroll sideways, on desktop and
+// on a phone. position: sticky with left: 0 inside the overflow-x-auto wrapper
+// is all it takes — but ONLY with an opaque background, or the cells scrolling
+// underneath show straight through it.
+//
+// The background is set on the CELL and the hover state is driven by
+// `group-hover` from the row, rather than `bg-inherit`: a <tr> has no
+// background of its own by default, so inheriting gives a transparent cell and
+// the bug this exists to prevent. Every row state a sticky cell can be in needs
+// its own opaque colour here — plain, hovered, and the pinned-supervisor tint.
+const STICKY_CELL = 'sticky left-0 z-10';
+// A right edge so a scrolled figure cannot appear to belong to the name.
+const STICKY_EDGE = 'border-r border-gray-200 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.10)]';
+const stickyBody = (pinned) => `${STICKY_CELL} ${STICKY_EDGE} ${
+  pinned ? 'bg-indigo-50 group-hover:bg-indigo-100' : 'bg-white group-hover:bg-gray-50'
+}`;
+// z-20, above the body cells, so the header corner wins where they cross.
+const STICKY_HEAD = `sticky left-0 z-20 bg-gray-50 ${STICKY_EDGE}`;
+
+// ── HEADERS THAT WRAP ──────────────────────────────────────────────────────
+// "New pipeline needed" and "Expected % of target" are wider than any figure
+// beneath them, and on one line they stretched their columns and pushed the
+// table sideways for no reason. They wrap onto a second line instead, inside a
+// width that fits two words — the row height grows once, for the whole header,
+// and the columns stay as narrow as their numbers.
+const HEAD_WRAP = 'whitespace-normal break-words max-w-[7.5rem] align-bottom';
+// Figures stay on ONE line and right-aligned, which is what makes a column of
+// them scannable; wrapping a number is never useful.
+const NUM_CELL = 'px-4 py-3 font-mono text-right whitespace-nowrap';
+// The first column is a name, so it keeps its left alignment.
+const HEAD_NUM = 'text-right';
+
 function StatusChip({ m }) {
   const h = HEALTH[healthOf(m)];
   return (
@@ -132,15 +166,18 @@ function FigureTable({ rows, empty }) {
       <table className="w-full text-xs">
         <thead>
           <tr className="bg-gray-50">
-            {COLUMNS.map((h) => (
+            {COLUMNS.map((h, i) => (
               <th
                 key={h}
                 /* The formula on hover: the column is a ratio of four things
                    and the name alone cannot say which four. */
                 title={h === EXPECTED_PCT_LABEL ? EXPECTED_PCT_TOOLTIP : undefined}
-                className={`text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 whitespace-nowrap${
-                  h === EXPECTED_PCT_LABEL ? " cursor-help underline decoration-dotted" : ""
-                }`}
+                className={[
+                  'px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100',
+                  // Name column: frozen, left-aligned, never wrapped.
+                  i === 0 ? `text-left whitespace-nowrap ${STICKY_HEAD}` : `${HEAD_NUM} ${HEAD_WRAP}`,
+                  h === EXPECTED_PCT_LABEL ? 'cursor-help underline decoration-dotted' : '',
+                ].filter(Boolean).join(' ')}
               >
                 {h}
               </th>
@@ -152,9 +189,10 @@ function FigureTable({ rows, empty }) {
             <tr
               key={row.id}
               onClick={row.onClick}
-              className={`cursor-pointer hover:bg-gray-50 transition-colors ${row.pinned ? "bg-indigo-50/40" : ""}`}
+              /* `group` so the frozen cell can follow the row's hover state. */
+              className={`group cursor-pointer hover:bg-gray-50 transition-colors ${row.pinned ? "bg-indigo-50/40" : ""}`}
             >
-              <td className="px-4 py-3">
+              <td className={`px-4 py-3 ${stickyBody(row.pinned)}`}>
                 <div className="font-medium text-gray-900 whitespace-nowrap flex items-center gap-2">
                   {row.name}
                   {row.pinned && (
@@ -165,22 +203,24 @@ function FigureTable({ rows, empty }) {
                 </div>
                 <div className="text-[10px] text-gray-400 font-mono mt-0.5 capitalize whitespace-nowrap">{row.sub}</div>
               </td>
-              <td className="px-4 py-3 font-mono text-gray-600">{compact(row.m.target)}</td>
-              <td className="px-4 py-3 font-mono font-semibold text-emerald-700">{compact(row.m.achieved)}</td>
-              <td className="px-4 py-3 font-mono text-red-600">{compact(row.m.deficit)}</td>
+              <td className={`${NUM_CELL} text-gray-600`}>{compact(row.m.target)}</td>
+              <td className={`${NUM_CELL} font-semibold text-emerald-700`}>{compact(row.m.achieved)}</td>
+              <td className={`${NUM_CELL} text-red-600`}>{compact(row.m.deficit)}</td>
               {/* A borrowed rate is marked in the table too. The cell has no
                   room for "company rate (n=6)", so it carries it on hover —
                   without it, a column of percentages gives no clue that two of
                   them are the same company figure. */}
               <td
-                className={`px-4 py-3 font-mono text-gray-600${row.m.winRateBorrowed ? " cursor-help underline decoration-dotted" : ""}`}
+                className={`${NUM_CELL} text-gray-600${row.m.winRateBorrowed ? " cursor-help underline decoration-dotted" : ""}`}
                 title={row.m.winRateBorrowed ? borrowedNote(row.m) : undefined}
               >
                 {pct(row.m.winRatePct)}
               </td>
-              <td className="px-4 py-3 font-mono text-blue-700">{compact(row.m.plannedGap)}</td>
-              <td className="px-4 py-3"><CoverageCell m={row.m} /></td>
-              <td className="px-4 py-3"><StatusChip m={row.m} /></td>
+              <td className={`${NUM_CELL} text-blue-700`}>{compact(row.m.plannedGap)}</td>
+              {/* A bar and a chip, not figures — they keep their own layout and
+                  are simply pushed to the right edge like the numbers. */}
+              <td className="px-4 py-3"><div className="flex justify-end"><CoverageCell m={row.m} /></div></td>
+              <td className="px-4 py-3 text-right"><StatusChip m={row.m} /></td>
             </tr>
           ))}
         </tbody>
@@ -812,10 +852,17 @@ export default function SalesDivisions() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-gray-50">
-                  {["Deal", "Stage", "Amount", "Expected close"].map((h) => (
+                  {/* Same rules as the figures table: the name column is
+                      frozen and never wraps, the rest wrap and sit right. */}
+                  {["Deal", "Stage", "Amount", "Expected close"].map((h, i) => (
                     <th
                       key={h}
-                      className="text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100 whitespace-nowrap"
+                      className={[
+                        'px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100',
+                        i === 0
+                          ? `text-left whitespace-nowrap ${STICKY_HEAD}`
+                          : `${HEAD_NUM} ${HEAD_WRAP}`,
+                      ].join(' ')}
                     >
                       {h}
                     </th>
@@ -827,12 +874,19 @@ export default function SalesDivisions() {
                   <tr
                     key={d.id}
                     onClick={() => go({ ...nav, level: "deal", deal: d.id })}
-                    className="cursor-pointer hover:bg-gray-50 transition-colors"
+                    className="group cursor-pointer hover:bg-gray-50 transition-colors"
                   >
-                    <td className="px-4 py-3 font-medium text-gray-900">{dealName(d)}</td>
-                    <td className="px-4 py-3 text-gray-600 capitalize whitespace-nowrap">{stageLabel(d.stage)}</td>
-                    <td className="px-4 py-3 font-mono text-gray-900 whitespace-nowrap">{SAR(d.amount)} SAR</td>
-                    <td className="px-4 py-3 font-mono text-gray-600 whitespace-nowrap">{fmtDate(d.expected_close_date)}</td>
+                    {/* A deal title is long and is the thing you navigate by,
+                        so it is the frozen column here. It keeps its own
+                        truncation rather than widening the table. */}
+                    <td className={`px-4 py-3 font-medium text-gray-900 ${stickyBody(false)}`}>
+                      <span className="block max-w-[14rem] truncate" title={dealName(d)}>
+                        {dealName(d)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 capitalize whitespace-nowrap text-right">{stageLabel(d.stage)}</td>
+                    <td className={`${NUM_CELL} text-gray-900`}>{SAR(d.amount)} SAR</td>
+                    <td className={`${NUM_CELL} text-gray-600`}>{fmtDate(d.expected_close_date)}</td>
                   </tr>
                 ))}
               </tbody>

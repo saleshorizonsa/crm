@@ -56,15 +56,23 @@ const Header = ({
   };
 
   const navigationItems = [
-    // Menu visibility only — both routes stay reachable by URL for every role.
-    // Directors work from Insights instead of the Dashboard.
-    ...(userProfile?.role !== "director"
-      ? [{
-          label: t("nav.dashboard"),
-          path: "/company-dashboard",
-          icon: "LayoutDashboard",
-        }]
+    // INSIGHTS FIRST. It is where every role that can open it now lands
+    // (utils/landingPath.js), and the first menu item should be the page you
+    // are looking at. DIVISION_PAGE_ROLES, not a second copy of the list: the
+    // route enforces the same constant, and the two drifting apart is how a
+    // role gets a nav link to a page that then refuses it.
+    ...(DIVISION_PAGE_ROLES.includes(userProfile?.role)
+      ? [{ label: "Insights", path: "/insights", icon: "Layers" }]
       : []),
+    // DASHBOARD, for every role including directors. It used to be hidden from
+    // them on the grounds that they "work from Insights" — now everybody does,
+    // and hiding the Dashboard from all of them would strand the figures it is
+    // the only page to show. One click away, unchanged.
+    {
+      label: t("nav.dashboard"),
+      path: "/company-dashboard",
+      icon: "LayoutDashboard",
+    },
     // The Console is a supervisor's tool; admin/head/viewer keep it unchanged.
     ...(!["director", "manager", "salesman"].includes(userProfile?.role)
       ? [{
@@ -72,12 +80,6 @@ const Header = ({
           path: "/coverage-console",
           icon: "LayoutGrid",
         }]
-      : []),
-    // DIVISION_PAGE_ROLES, not a second copy of the list: the route enforces
-    // the same constant, and the two drifting apart is how a role gets a nav
-    // link to a page that then refuses it (or loses a link to one it may use).
-    ...(DIVISION_PAGE_ROLES.includes(userProfile?.role)
-      ? [{ label: "Insights", path: "/insights", icon: "Layers" }]
       : []),
     { label: t("nav.pipeline"), path: "/sales-pipeline", icon: "TrendingUp" },
     { label: t("nav.leads"),    path: "/lead-management", icon: "UserPlus"   },
@@ -187,8 +189,17 @@ const Header = ({
             <Icon name="Menu" size={20} />
           </Button>
 
-          {/* Logo */}
-          <div className="flex items-center space-x-3">
+          {/* Logo — the home link. Goes to "/" rather than "/insights" so
+              HomeRedirect decides per role from utils/landingPath.js: Insights
+              for everyone who can open it, /pipeline-view for a viewer. Hard-
+              wiring /insights here would send a viewer to an Access Denied. */}
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            title="Home"
+            aria-label="Home"
+            className="flex items-center space-x-3 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
             {company?.logo_url ? (
               <div className="flex items-center justify-center w-8 h-8 rounded-lg overflow-hidden bg-white border border-border">
                 <img
@@ -207,7 +218,7 @@ const Header = ({
                 {company?.name || "JASCO CRM"}
               </h1>
             </div>
-          </div>
+          </button>
 
           {/* Desktop Navigation */}
           <nav className={`hidden lg:flex items-center space-x-1 ${isRTL ? "mr-8" : "ml-8"}`}>

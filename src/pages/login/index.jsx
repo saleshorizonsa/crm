@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 import LoginForm from "./components/LoginForm";
 import MFAVerification from "./components/MFAVerification";
@@ -24,6 +24,7 @@ const COMPANIES_WITH_LOGOS = [
 
 const Login = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signIn, user, userProfile, loading } = useAuth();
 
   const [currentStep, setCurrentStep] = useState("login");
@@ -33,9 +34,21 @@ const Login = () => {
 
   useEffect(() => {
     if (user && !loading && userProfile) {
-      navigate(landingPathForRole(userProfile.role));
+      // A DEEP LINK WINS over the default landing page: ProtectedRoute parks
+      // the attempted location in state.from when it bounces a signed-out user
+      // here, so a notification link or a refreshed page reopens itself.
+      //
+      // Guarded against sending anyone back to /login (a bounce loop) and
+      // against a missing pathname. Nothing checks whether their role may open
+      // it — if it cannot, they see the same Access Denied they would have seen
+      // clicking the link while signed in, which is the honest answer.
+      const from = location.state?.from;
+      const target = from?.pathname && from.pathname !== '/login'
+        ? `${from.pathname}${from.search || ''}${from.hash || ''}`
+        : landingPathForRole(userProfile.role);
+      navigate(target, { replace: true });
     }
-  }, [user, userProfile, loading, navigate]);
+  }, [user, userProfile, loading, navigate, location.state]);
 
   // Direct public storage URLs — no auth / no DB read needed.
   // If a logo.png does not exist, onError swaps to the colored initials.

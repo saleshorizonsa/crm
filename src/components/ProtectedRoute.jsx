@@ -19,7 +19,14 @@ export const ProtectedRoute = ({ children, requiredRole, allowedRoles }) => {
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    // REMEMBER WHERE THEY WERE GOING. Without this, following a notification
+    // link to /planning#approvals while signed out sent you to the default
+    // landing page after signing in, and the link was silently lost. The login
+    // page prefers this over landingPathForRole.
+    //
+    // The whole location travels, not just the pathname, so a query string and
+    // a hash (#approvals) survive too.
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
   // Viewers are confined to /pipeline-view — redirect any other path back
