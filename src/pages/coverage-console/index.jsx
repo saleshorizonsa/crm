@@ -2,7 +2,10 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "lib/supabase";
 import { useAuth } from "contexts/AuthContext";
 import Header from "components/ui/Header";
-import CoverageRail from "./components/CoverageRail";
+// The shared rail. This file owned the original; sales-divisions carried a
+// hand-copy of it until 2026-10-07, when the drill-down made two copies
+// untenable and they became one component.
+import CoverageRail from "components/CoverageRail";
 import PacingRail from "./components/PacingRail";
 import OppHero from "./components/OppHero";
 import ExceptionFeed from "./components/ExceptionFeed";
@@ -964,6 +967,15 @@ export default function CoverageConsole() {
                   target={metrics.target}
                   compact={compact}
                   SAR={SAR}
+                  /* The drill-down reads the rows the metrics carry. This
+                     screen is already scoped by its own level, so the panel
+                     groups by person rather than by division. */
+                  metrics={metrics}
+                  users={raw?.users || []}
+                  /* rangeEnd, not the fetch's local monthEnd: that one lives
+                     inside the loader's scope. Same value, in scope here. */
+                  monthEnd={rangeEnd}
+                  scopeLabel={heroInfo?.title || ""}
                 />
                 {/* Pacing is a day-of-month verdict, so it is shown only while
                     the current month is what is selected. For any other period

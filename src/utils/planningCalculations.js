@@ -665,6 +665,10 @@ export function computeReturns({ returns, contributorIds, start = null, end = nu
     total: Object.values(perPerson).reduce((s, v) => s + v, 0),
     perPerson,
     count: counted.length,
+    // The rows themselves: the Invoiced drill-down shows each credit note as
+    // its own line under the invoice it offsets, rather than a net figure
+    // nobody can trace.
+    rows: counted,
   };
 }
 
@@ -788,6 +792,7 @@ export function computeAchieved({
     returnsTotal: ret.total,
     returnsPerPerson: ret.perPerson,
     returnsCount: ret.count,
+    returnRows: ret.rows || [],
   };
 }
 

@@ -35,6 +35,9 @@ import {
 import { fetchAdditionalDivisions } from 'utils/divisionMembership';
 import { subtreeIdsOf } from 'utils/teamHierarchy';
 import { activeIdsFrom } from 'utils/achieverScope';
+// wonNotInvoicedList and summarizeWonNotInvoiced are already imported above,
+// from the same module.
+import { buildCoverageDrill, RAIL_SEGMENTS } from 'utils/coverageDrill';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
 import {
@@ -462,6 +465,105 @@ async function buildDivisionGroups({
   ];
 }
 
+/**
+ * THE COVERAGE RAIL'S DRILL-DOWN ADDS UP.
+ *
+ * The rail says "funnel 1.4M" and the panel that opens behind it has to say
+ * the same 1.4M, then break it into people who also add to 1.4M. Two
+ * assertions per segment, per scope:
+ *
+ *   panel L1 total = rail value       the header matches the bar
+ *   sum of person totals = L1 total   the breakdown matches the header
+ *
+ * buildCoverageDrill GROUPS the row sets the metrics carry rather than
+ * recomputing them, so both should hold by construction. That is exactly why
+ * they are asserted: "by construction" is a claim, and the construction is
+ * two files apart from the figures it claims to preserve.
+ *
+ * SHORTFALL IS DIFFERENT, and the second assertion is deliberately not made
+ * for it. A scope's gap is its own target less its own coverage; the sum of
+ * personal gaps is a different quantity, because one person's overshoot does
+ * not fill another's hole. Where they differ the row REPORTS both instead of
+ * failing, and the panel tells the reader the same thing.
+ */
+async function buildRailDrillRows({ companyId, bundle, consoleData, start, end }) {
+  const users = bundle.users || [];
+  const subjects = [
+    { id: null, name: 'company', role: 'director' },
+    ...users
+      .filter((u) => u.is_active !== false
+        && ['manager', 'supervisor', 'salesman'].includes(u.role))
+      .map((u) => ({ id: u.id, name: u.full_name || u.id, role: u.role })),
+  ];
+
+  const rows = [];
+  for (const subj of subjects) {
+    const scope = scopeUserIds({ users, viewerId: subj.id, role: subj.role });
+    if (!scope.length) continue;
+
+    const metrics = calcDivisionMetrics(scope, { ...consoleData, divisionId: null }) || {};
+    if (!metrics.drill) {
+      rows.push(row({
+        label: `Coverage rail drill-down — ${subj.name}: metrics carry no rows`,
+        value: 0,
+        expected: 1,
+        note: 'calcDivisionMetrics returned no drill payload, so the panel would'
+          + ' have nothing to show behind the rail',
+      }));
+      continue;
+    }
+
+    const built = buildCoverageDrill({ metrics, users, monthEnd: end });
+
+    // The rail's own figures, read off the metrics the rail is given.
+    const coverage = n(metrics.coverage);
+    const railValue = {
+      invoiced: n(metrics.achieved),
+      funnel: n(metrics.weightedFunnel),
+      planning: n(metrics.weightedPlanning),
+      shortfall: Math.max(0, n(metrics.target) - coverage),
+      // Independently: the shared rule over the same scope, so this one is a
+      // real second opinion rather than the same number twice.
+      wonNotInvoiced: summarizeWonNotInvoiced(wonNotInvoicedList({
+        deals: consoleData.deals || [],
+        ownerIds: metrics.drill.forwardIds || [],
+        now: consoleData.now,
+      })).total,
+    };
+
+    RAIL_SEGMENTS.forEach((seg) => {
+      const got = built.segments[seg.key] || { total: 0, peopleTotal: 0, people: [] };
+      rows.push(row({
+        label: `Coverage rail — ${subj.name} — ${seg.label}: panel L1 total = rail value`,
+        value: got.total,
+        expected: railValue[seg.key],
+        note: seg.inCoverage ? null : 'drawn on the rail but NOT counted in coverage'
+          + ' or Expected % of target (decision 2026-10-07)',
+      }));
+
+      if (seg.key === 'shortfall') {
+        const same = Math.abs(got.peopleTotal - got.total) <= 1;
+        rows.push(row({
+          label: `Coverage rail — ${subj.name} — Shortfall: personal gaps add to`,
+          value: got.peopleTotal,
+          expected: same ? got.total : null,
+          note: same
+            ? 'equal here: nobody in this scope is over their target'
+            : `the scope is short ${Math.round(got.total).toLocaleString('en-US')} while personal gaps add to ${Math.round(got.peopleTotal).toLocaleString('en-US')} — someone is over, and an overshoot does not fill another person\'s gap. Reported, not asserted.`,
+        }));
+        return;
+      }
+
+      rows.push(row({
+        label: `Coverage rail — ${subj.name} — ${seg.label}: sum of person totals = L1 total`,
+        value: got.peopleTotal,
+        expected: got.total,
+        note: `${got.people.length} ${got.people.length === 1 ? 'person' : 'people'}`,
+      }));
+    });
+  }
+  return rows;
+}
 /**
  * FORWARD-LOOKING FIGURES EXCLUDE INACTIVE OWNERS — at every scope.
  *
@@ -1217,6 +1319,18 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     companyId, consoleData, reference, planning, start, end, users,
   });
   divisionGroups.forEach((grp) => { if (grp.rows.length) groups.push(grp); });
+
+  // ── The coverage rail's drill-down (2026-10-07) ──────────────────────────
+  const railRows = await buildRailDrillRows({
+    companyId, bundle, consoleData, start, end,
+  });
+  if (railRows.length) {
+    groups.push({
+      screen: 'Coverage rail drill-down',
+      fn: 'buildCoverageDrill',
+      rows: railRows,
+    });
+  }
 
   // ── Forward-looking scope (CEO decision 2026-10-07) ──────────────────────
   groups.push({

@@ -11,6 +11,7 @@ import { activeIdsFrom } from 'utils/achieverScope';
 import {
   CONTRIBUTOR_ROLES,
   isAchievedOnly,
+  wonNotInvoicedList,
   targetPerPerson,
   winRateFromDeals,
   sumPlannedByOwner,
@@ -399,9 +400,10 @@ export function calcDivisionMetrics(userIds, data) {
   const monthlyTargetRows = (targets || [])
     .filter((t) => t.period_type !== 'yearly')
     .filter(targetInDivision);
-  const target = Object.values(
-    targetPerPerson(monthlyTargetRows.filter((t) => isAchiever.has(t.assigned_to))),
-  ).reduce((sum, v) => sum + v, 0);
+  const targetPer = targetPerPerson(
+    monthlyTargetRows.filter((t) => isAchiever.has(t.assigned_to)),
+  );
+  const target = Object.values(targetPer).reduce((sum, v) => sum + v, 0);
 
   // A group with no deals in the window borrows the COMPANY rate rather than
   // reading 0%.
@@ -581,6 +583,37 @@ export function calcDivisionMetrics(userIds, data) {
     weightedPlanning,
     covRatio: target > 0 ? coverage / target : 0,
     contributorIds,
+    // ── THE ROWS BEHIND EACH RAIL FIGURE ──────────────────────────────────
+    //
+    // Carried out of here rather than re-derived by the drill-down, so a
+    // segment's breakdown cannot disagree with the segment: the panel groups
+    // exactly the rows that were summed, and "L1 total = rail value" holds by
+    // construction instead of by a second implementation agreeing.
+    //
+    // perPerson maps come from computeAchieved, which already produced them.
+    drill: {
+      winRatePct,
+      // Invoiced, net of returns: the counted deals and the credit notes that
+      // were subtracted, with both per-person maps.
+      invoicedRows: achievedSplit.deals || [],
+      invoicedPerPerson: achievedSplit.perPerson || {},
+      returnRows: achievedSplit.returnRows || [],
+      returnsPerPerson: achievedSplit.returnsPerPerson || {},
+      // The funnel rows computeCoverage weighted — dated INTO the period plus
+      // the undated, which is what partitionOpenFunnel decided.
+      funnelRows: funnelSplit.rows || [],
+      // The open plan items behind Planned, already narrowed to active owners.
+      planRows: divisionOpps.filter((o) => isForward.has(o.owner_id)),
+      // Won but not yet invoiced: NOT part of coverage (decision 2026-10-07),
+      // carried so the rail can show it as a fourth, non-coverage part.
+      wonNotInvoicedRows: wonNotInvoicedList({
+        deals: data.deals || [], ownerIds: forwardIds, now,
+      }).filter(inThisDivision),
+      // Per-person target and achieved, for the Shortfall level.
+      targetPerPerson: targetPer,
+      forwardIds,
+      achieverIds,
+    },
   };
 }
 

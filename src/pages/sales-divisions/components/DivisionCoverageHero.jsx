@@ -1,5 +1,7 @@
 import React from "react";
-import DivisionCoverageRail from "./DivisionCoverageRail";
+// The shared rail: one implementation for this page and the Coverage Console,
+// which carried a hand-copy of it until 2026-10-07.
+import CoverageRail from "components/CoverageRail";
 import DivisionPacingRail from "./DivisionPacingRail";
 // Percentages that cannot crash a render: a figure that has not arrived shows
 // "—" instead of taking the page down. See utils/formatPct.js.
@@ -45,7 +47,13 @@ export function statusChipOf(metrics) {
   return { text: "At Risk", cls: "bg-amber-50 text-amber-800 border-amber-200" };
 }
 
-export function DivisionCoverageHero({ metrics, scope, title, sub, periodLabel }) {
+export function DivisionCoverageHero({
+  metrics, scope, title, sub, periodLabel,
+  // What the coverage rail's drill-down needs beyond the figures: user rows for
+  // names, divisions for a company-level grouping, and the month end for the
+  // NOT CONVERTED flag. Absent, the rail renders read-only as it always did.
+  drill,
+}) {
   const chip = statusChipOf(metrics);
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6">
@@ -118,13 +126,22 @@ export function DivisionCoverageHero({ metrics, scope, title, sub, periodLabel }
         </p>
       ) : null}
 
-      <DivisionCoverageRail
+      <CoverageRail
         invoiced={metrics.achieved}
         weightedFunnel={metrics.weightedFunnel}
         weightedPlanning={metrics.weightedPlanning}
         target={metrics.target}
         compact={compact}
         SAR={SAR}
+        /* The drill-down. `metrics` carries the rows each figure was summed
+           from, so the panel cannot disagree with the bar above it; users and
+           divisions are only for names and for grouping a company view. */
+        metrics={metrics}
+        users={drill?.users || []}
+        divisions={drill?.divisions || []}
+        byDivision={!!drill?.byDivision}
+        monthEnd={drill?.monthEnd || null}
+        scopeLabel={title}
       />
       {/* Pacing is a day-of-month verdict, so the rail is shown only while the
           current month is what is selected — hidden, not computed against a

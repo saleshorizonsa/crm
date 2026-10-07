@@ -22,6 +22,8 @@ import {
   computeCoverage,
   sumPlannedByOwner,
   computeRequiredRaw,
+  // Won but not yet invoiced: the rail's fourth part, carried on drill below.
+  wonNotInvoicedList,
 } from 'utils/planningCalculations';
 import { partitionOpenFunnel } from 'utils/openFunnel';
 // The ACTIVE subset, for the forward-looking figures (CEO decision
@@ -225,6 +227,27 @@ export function calcCoverageMetrics(userIds, data) {
     returnsTotal,
     remainingTarget,
     funnel,
+    // ── THE ROWS BEHIND EACH RAIL FIGURE ──────────────────────────────────
+    // Carried out of here rather than re-derived by the drill-down panel, so
+    // a segment's breakdown is the segment's own rows re-added and cannot
+    // disagree with the bar above it. Same shape as calcDivisionMetrics.drill.
+    drill: {
+      winRatePct: winRate * 100,
+      invoicedRows: invoicedDeals || [],
+      invoicedPerPerson: achievedSplit.perPerson || {},
+      returnRows: achievedSplit.returnRows || [],
+      returnsPerPerson: achievedSplit.returnsPerPerson || {},
+      funnelRows: monthFunnelDeals || [],
+      planRows: (opps || []).filter((o) => forwardAchieverIds.includes(o.owner_id)),
+      wonNotInvoicedRows: wonNotInvoicedList({
+        deals: data.deals || [],
+        ownerIds: forwardAchieverIds,
+        now: data.now || new Date(),
+      }),
+      targetPerPerson: targetPer,
+      forwardIds: forwardAchieverIds,
+      achieverIds,
+    },
     weightedFunnel: coverageSplit.weightedFunnel,
     planning,
     weightedPlanning: coverageSplit.weightedPlanning,

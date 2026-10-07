@@ -1015,6 +1015,19 @@ export default function SalesDivisions() {
               title={hero.title}
               sub={hero.sub}
               periodLabel={periodLabel}
+              /* What the coverage rail's drill-down needs on top of the
+                 figures. raw.users is ALREADY the viewer's scope — the page
+                 narrows it at fetch time — so the panel cannot name anybody
+                 the rail does not already count. Grouping by division only
+                 where there is more than one division on screen. */
+              drill={{
+                users: raw.users,
+                divisions: raw.divisions,
+                byDivision: nav.level === "company" && groups.length > 1,
+                // rangeEnd, not the loader's local monthEnd: that one lives
+                // inside fetchAll's scope. Same value, in scope here.
+                monthEnd: rangeEnd,
+              }}
             />
 
             {/* THE BENCHMARK (CEO decision 2026-10-07): the company conversion
