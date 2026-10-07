@@ -45,17 +45,19 @@
 --   than blanking it, and an unattributed row is exactly the defect this file
 --   exists to stop creating.
 --
--- ONE EDGE TO BE AWARE OF. Rule (b) outranks the CUSTOMER attribution set by
--- division_attribution.sql (decision 2026-10-07: Al BADAH and PLASTICO BAHRAIN
--- count as Export, nine named customers as PVC Compound, whoever owns them).
--- If such a deal is ever reassigned to someone who belongs to neither of those
--- divisions, rule (b) moves it to the new owner's primary and the customer rule
--- is lost. Nothing is at risk today: PREVIEW 1 returns no rows, and Kamal — who
--- owns every customer-attributed deal — belongs to Export (primary) and PVC
--- Compound (user_sales_divisions), so both of his groups survive rule (b)
--- untouched. If those customers should keep their division across a
--- reassignment, that is a second decision and a customer-list branch in these
--- functions, not a change to the rule above.
+-- RULE (b) OUTRANKS THE CUSTOMER ATTRIBUTION, BY DECISION (2026-10-07): on an
+-- owner change the row follows the NEW OWNER's division, with no customer
+-- exception. So where division_attribution.sql attributes by customer — Al
+-- BADAH and PLASTICO BAHRAIN as Export, nine named customers as PVC Compound,
+-- whoever owns them — reassigning such a row to someone who belongs to neither
+-- of those divisions moves it to the new owner's primary, and the customer rule
+-- does not survive the reassignment. That is intended: these functions carry no
+-- customer list, and none should be added unless that decision is reversed.
+--
+-- Nothing moves today in any case: PREVIEW 1 returns no rows, and Kamal — who
+-- owns every customer-attributed row — belongs to Export (primary) and PVC
+-- Compound (user_sales_divisions), so both of his groups already satisfy rule
+-- (b).
 --
 -- ONE-OFF REPAIR. The APPLY block also fills rows that are ALREADY NULL and
 -- whose owner has a primary division. On 2026-10-07 that is exactly one row —
