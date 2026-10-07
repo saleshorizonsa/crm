@@ -156,6 +156,37 @@ FROM d;
 -- CEO decision 2026-10-07, see utils/achieverScope.js.
 
 
+-- PREVIEW 5. The "already planned this month" marker, before and after. The
+-- new function counts CONVERTED plan items as well as open ones, which is
+-- wider than CustomerMaster's current query — so this is the one user-visible
+-- change in the file that is not about permissions.
+WITH m AS (
+  SELECT date_trunc('month', now() AT TIME ZONE 'Asia/Riyadh')::date AS s,
+         (date_trunc('month', now() AT TIME ZONE 'Asia/Riyadh') + interval '1 month')::date AS e
+)
+SELECT 'open only (the query today)' AS rule, count(DISTINCT o.contact_id) AS customers_greyed_out
+FROM opportunities o, m
+WHERE o.company_id = 'adf8ee78-cf78-4f02-932c-989a214bdd78'
+  AND o.contact_id IS NOT NULL AND o.status = 'open'
+  AND o.expected_month >= m.s AND o.expected_month < m.e
+UNION ALL
+SELECT 'open + converted (the function)', count(DISTINCT o.contact_id)
+FROM opportunities o, m
+WHERE o.company_id = 'adf8ee78-cf78-4f02-932c-989a214bdd78'
+  AND o.contact_id IS NOT NULL AND o.status IN ('open','converted')
+  AND o.expected_month >= m.s AND o.expected_month < m.e
+UNION ALL
+SELECT 'moved_to_future (still NOT counted)', count(DISTINCT o.contact_id)
+FROM opportunities o, m
+WHERE o.company_id = 'adf8ee78-cf78-4f02-932c-989a214bdd78'
+  AND o.contact_id IS NOT NULL AND o.status = 'moved_to_future'
+  AND o.expected_month >= m.s AND o.expected_month < m.e;
+-- measured 2026-10-07: 34 -> 81, with 11 moved_to_future customers left
+-- available. If 81 is not the intended behaviour, change the status list in
+-- section (e2) of APPLY before running it — the app reads whatever the
+-- function returns.
+
+
 -- ============================================================================
 -- APPLY — one transaction.
 -- ============================================================================
@@ -428,6 +459,67 @@ $$;
 REVOKE ALL ON FUNCTION public.company_conversion_3m(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.company_conversion_3m(uuid) TO authenticated;
 
+-- ── (f) the "already planned this month" marker ───────────────────────────
+-- Customer Master greys out a customer somebody has already planned, which is
+-- what stops two salesmen planning the same one. The marker therefore has to
+-- see the WHOLE COMPANY's plan items — and (a) above takes that away from
+-- precisely the two roles it protects.
+--
+-- So it gets a function that returns A SET OF CONTACT IDS AND NOTHING ELSE:
+-- enough to grey out a row, and nothing about whose plan it is, what it is
+-- worth, how many there are, or any month other than the one asked for. A
+-- salesman learns "someone has this customer this month", which is the point,
+-- and learns nothing he could not already infer from being told he cannot plan
+-- it.
+--
+-- OPEN *AND* CONVERTED, which is WIDER THAN TODAY'S QUERY. CustomerMaster
+-- filtered status = 'open' alone, so a plan item already converted into a deal
+-- stopped blocking its customer — the collision the marker exists to prevent
+-- was allowed the moment the first salesman made progress. Decision
+-- 2026-10-07: converted counts. On production today this moves the marker from
+-- 34 customers to 81 for October, so the screen will visibly grey out more
+-- rows, for every role.
+--
+-- moved_to_future is deliberately NOT counted: a bounced lead has been pushed
+-- out of this month's plan (see utils/leadExpiryCheck.js), so its customer is
+-- genuinely available again. That is 12 rows / 11 customers today.
+CREATE OR REPLACE FUNCTION public.planned_contacts_this_month(
+  p_company uuid,
+  p_month date
+)
+RETURNS SETOF uuid
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  -- Only for your own company, same guard as company_conversion_3m.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.users u
+     WHERE u.id = auth.uid()
+       AND (u.company_id = p_company OR u.company_id IS NULL)
+  ) THEN
+    RETURN;   -- no rows, not an error: the caller falls back / shows nothing
+  END IF;
+
+  -- One calendar month from the date given, computed in SQL so a caller cannot
+  -- widen the window by passing a range. date_trunc guards against a caller
+  -- passing a mid-month date.
+  RETURN QUERY
+  SELECT DISTINCT o.contact_id
+    FROM public.opportunities o
+   WHERE o.company_id = p_company
+     AND o.contact_id IS NOT NULL
+     AND o.status IN ('open', 'converted')
+     AND o.expected_month >= date_trunc('month', p_month)::date
+     AND o.expected_month <  (date_trunc('month', p_month) + interval '1 month')::date;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.planned_contacts_this_month(uuid, date) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.planned_contacts_this_month(uuid, date) TO authenticated;
+
 COMMIT;
 
 
@@ -517,6 +609,37 @@ ROLLBACK;
 -- expect the same 67.8 / 97 / 143 / 71 — a RATE, from someone who cannot read
 -- a single one of the deals behind it.
 
+-- 8. The "already planned" marker still works for a SALESMAN, which is the
+--    whole reason planned_contacts_this_month exists: the row-level policy has
+--    just taken 230 of 349 plan items away from him, and this still returns
+--    every planned customer in the company.
+BEGIN;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claims',
+  '{"sub":"ba03074d-8b5b-4378-bd51-6fe1f3ee225e","role":"authenticated"}', true);
+SELECT count(*) AS planned_customers_seen_by_a_salesman
+FROM public.planned_contacts_this_month(
+  'adf8ee78-cf78-4f02-932c-989a214bdd78',
+  date_trunc('month', now() AT TIME ZONE 'Asia/Riyadh')::date) ;
+-- and prove he cannot get there the ordinary way:
+SELECT count(DISTINCT contact_id) AS same_question_through_the_table
+FROM opportunities
+WHERE company_id = 'adf8ee78-cf78-4f02-932c-989a214bdd78'
+  AND contact_id IS NOT NULL
+  AND status IN ('open','converted')
+  AND expected_month >= date_trunc('month', now() AT TIME ZONE 'Asia/Riyadh')::date
+  AND expected_month <  (date_trunc('month', now() AT TIME ZONE 'Asia/Riyadh') + interval '1 month')::date;
+ROLLBACK;
+-- expect 81 from the function (the company's planned customers for October
+-- 2026) and a much smaller number from the table — the function is the only
+-- way he can answer the question, and it tells him nothing else.
+
+-- 9. ...and it refuses another company.
+SELECT count(*) AS rows_for_a_foreign_company
+FROM public.planned_contacts_this_month(
+  '00000000-0000-0000-0000-000000000000', '2026-10-01');
+-- expect 0
+
 
 -- ============================================================================
 -- ROLLBACK — restores exactly the four policies this file replaced.
@@ -540,6 +663,7 @@ ROLLBACK;
 -- DROP POLICY IF EXISTS salesman_flags_delete_company  ON public.salesman_flags;
 -- DROP POLICY IF EXISTS escalation_logs_manager_up     ON public.escalation_logs;
 -- DROP FUNCTION IF EXISTS public.company_conversion_3m(uuid);
+-- DROP FUNCTION IF EXISTS public.planned_contacts_this_month(uuid, date);
 --
 -- CREATE POLICY opportunities_company_access ON public.opportunities
 --   FOR ALL USING (

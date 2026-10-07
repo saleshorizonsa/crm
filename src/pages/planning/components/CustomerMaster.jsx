@@ -142,8 +142,24 @@ export default function CustomerMaster({
     setAddedIds(new Set());
   }, [adminCompany?.id]);
 
-  // Which customers already have an OPEN opportunity for the current month, so
-  // the list can flag them and block a duplicate plan.
+  // Which customers are already planned for the current month, so the list can
+  // flag them and block two salesmen planning the same customer.
+  //
+  // THIS HAS TO SEE THE WHOLE COMPANY while telling the reader nothing about
+  // it. The marker exists to stop a collision, so it is worthless if it only
+  // looks at the viewer's own plan items — and migrations/insights_rls.sql
+  // scopes opportunities to own/subordinates for a salesman and a supervisor,
+  // which would blind exactly the two roles the marker protects.
+  //
+  // So it goes through planned_contacts_this_month(), a SECURITY DEFINER
+  // function returning ONLY a set of contact ids: enough to grey out a row,
+  // and nothing about whose plan it is, what it is worth, or what month beyond
+  // the one asked for.
+  //
+  // DEGRADES TO TODAY'S QUERY if the function is not there yet (the lesson of
+  // 1897c1a — nothing may require something production does not have). Before
+  // the SQL is applied, opportunities is still company-wide, so the fallback
+  // returns the same answer it does today for every role.
   const fetchExistingOpps = useCallback(async () => {
     if (!adminCompany?.id) { setExistingOppIds(new Set()); return; }
     // The same month the insert below plans into, read the same way. Both ends
@@ -151,6 +167,30 @@ export default function CustomerMaster({
     // month's last day through to this month's second-to-last — it flagged the
     // wrong customers as "already planned" and missed the real ones.
     const { start: monthStart, end: monthEnd } = monthBoundsOf(monthKeyOf(new Date()));
+
+    // try/catch as well as the error object: a missing function comes back as
+    // an error, but a network failure throws, and either must land on the
+    // fallback rather than leave the marker empty.
+    try {
+      const { data: rpcIds, error: rpcErr } = await supabase
+        .rpc('planned_contacts_this_month', {
+          p_company: adminCompany.id,
+          p_month: monthStart,
+        });
+      if (!rpcErr && Array.isArray(rpcIds)) {
+        // SETOF uuid comes back as either bare values or one-key rows
+        // depending on the client version, so both shapes are read.
+        setExistingOppIds(new Set(
+          rpcIds
+            .map((r) => (typeof r === 'string' ? r : r?.planned_contacts_this_month ?? r?.contact_id))
+            .filter(Boolean),
+        ));
+        return;
+      }
+    } catch (e) {
+      console.warn('CustomerMaster: planned_contacts_this_month unavailable:', e?.message);
+    }
+
     const { data } = await supabase
       .from('opportunities')
       .select('contact_id')
