@@ -43,7 +43,9 @@ export async function fetchContributors({
   if (Array.isArray(ownerIds) && ownerIds.length === 0) return [];
   let q = supabase
     .from('users')
-    .select('id, full_name, role')
+    // is_active travels with the rows so a caller can derive the ACTIVE-ONLY
+    // forward-looking scope without a second query (CEO decision 2026-10-07).
+    .select('id, full_name, role, is_active')
     .eq('company_id', companyId)
     .in('role', CONTRIBUTOR_ROLES);
   if (!includeInactive) q = q.eq('is_active', true);

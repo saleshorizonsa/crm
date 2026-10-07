@@ -24,6 +24,10 @@ import {
   computeRequiredRaw,
 } from 'utils/planningCalculations';
 import { partitionOpenFunnel } from 'utils/openFunnel';
+// The ACTIVE subset, for the forward-looking figures (CEO decision
+// 2026-10-07). Imported from the leaf module: planningCalculations does not
+// re-export this one.
+import { activeIdsFrom } from 'utils/achieverScope';
 export function calcCoverageMetrics(userIds, data) {
   if (!data || !userIds?.length) return null;
 
@@ -63,6 +67,15 @@ export function calcCoverageMetrics(userIds, data) {
     const u = (users || []).find((x) => x.id === id);
     return u && CONTRIBUTOR_ROLES.includes(u.role);
   });
+  // FORWARD-LOOKING FIGURES ARE ACTIVE-ONLY at every scope (CEO decision
+  // 2026-10-07): the open funnel, Planned and Carry-In below count only owners
+  // who are still here, because a departed person's open plan will not convert
+  // and counting it overstates coverage. Target and Achieved keep the full
+  // scope — they are history.
+  //
+  // /numbers-check caught this screen reading 2,444,012 of Planned against the
+  // reference's 2,424,512: Ahmad Sulaiman Moamina's 4 open October plan items.
+  const forwardIds = activeIdsFrom(contributorIds, users);
 
   // ── TARGET ── shared per-person rule: total_value when present, else the
   // by_clients rows, never both, and by_products never counts. The old filter
@@ -126,7 +139,7 @@ export function calcCoverageMetrics(userIds, data) {
   // ── FUNNEL ──
   const openDeals = (deals || []).filter(
     (d) =>
-      contributorIds.includes(d.owner_id) &&
+      forwardIds.includes(d.owner_id) &&
       !["won", "lost"].includes(d.stage)
   );
   const funnel = openDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
@@ -136,9 +149,13 @@ export function calcCoverageMetrics(userIds, data) {
   // and Achieved already share here. Contributors-only was missed by the
   // contributor-parity pass and left a flagged manager's own plan out of the
   // one number measured against his own target.
+  // Planned and Carry-In are measured over the ACHIEVERS here (a flagged
+  // manager's own plan nets off his own target), so they need the active
+  // subset of that list rather than of the contributors.
+  const forwardAchieverIds = activeIdsFrom(achieverIds, users);
   const planningSum = sumPlannedByOwner({
     rows: opps,
-    ownerIds: achieverIds,
+    ownerIds: forwardAchieverIds,
   });
   const planning = planningSum.total;
 
@@ -191,7 +208,7 @@ export function calcCoverageMetrics(userIds, data) {
   // with Planning. Planning never did it; Planning is the standard.
   const future = sumPlannedByOwner({
     rows: futureOrders,
-    ownerIds: achieverIds,
+    ownerIds: forwardAchieverIds,
   }).total;
 
   // ── NEW PIPELINE NEEDED ── required, less what this month already covers:

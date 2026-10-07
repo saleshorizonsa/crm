@@ -34,6 +34,7 @@ import {
 } from 'utils/salesDivisionMetrics';
 import { fetchAdditionalDivisions } from 'utils/divisionMembership';
 import { subtreeIdsOf } from 'utils/teamHierarchy';
+import { activeIdsFrom } from 'utils/achieverScope';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
 import {
@@ -152,13 +153,17 @@ function row({ label, value, expected = null, kind = 'money', note = null, known
 export function resolveScope({ users, scope }) {
   const all = users || [];
   if (!scope || scope.kind === 'company' || !scope.userId) {
-    // COMPANY: everyone, active or not. The reference has to measure what the
-    // screens measure, and company totals now include departed staff.
-    const opts = { includeInactive: true };
+    // COMPANY: everyone, active or not, for the HISTORICAL figures.
+    //
+    // contributorIds stays ACTIVE-ONLY even here, because it is what the
+    // Planned and Carry-In rows are measured over and those are
+    // forward-looking (CEO decision 2026-10-07). achieverIds carries the
+    // company rule for Target and Achieved. The two halves of the decision,
+    // one line apart.
     return {
       ownerIds: null,
-      achieverIds: achieverIdsFrom(all, opts),
-      contributorIds: contributorIdsFrom(all, opts),
+      achieverIds: achieverIdsFrom(all, { includeInactive: true }),
+      contributorIds: contributorIdsFrom(all),
       label: 'Whole company',
       person: null,
     };
@@ -458,6 +463,72 @@ async function buildDivisionGroups({
 }
 
 /**
+ * FORWARD-LOOKING FIGURES EXCLUDE INACTIVE OWNERS — at every scope.
+ *
+ * CEO decision 2026-10-07. Planned, the open funnel and carry-in count active
+ * owners only: a departed person's open plan will not convert, and counting it
+ * overstates coverage and understates the pipeline still needed. Target and
+ * Achieved go the OTHER way at company scope — they are history and include
+ * whoever was there.
+ *
+ * Two halves of one decision pulling opposite ways through the same bundle is
+ * exactly what gets half-applied, and it was: this group is what caught the
+ * Coverage Console and the Current Sales Plan tab still counting 19,500 of a
+ * departed salesman's plan after Planning had stopped.
+ */
+function buildForwardScopeRows({ bundle, planning, reference }) {
+  const users = bundle.users || [];
+  const active = users.filter((u) => u.is_active !== false);
+  const inactive = users.filter((u) => u.is_active === false);
+
+  // Who may carry a plan: contributor roles plus a flagged manager. Written
+  // out here rather than taken from resolveScope, which is under test.
+  const canPlan = (u) => ['salesman', 'supervisor'].includes(u.role) || u.is_contributor === true;
+  const activePlanners = new Set(active.filter(canPlan).map((u) => u.id));
+  const departedPlanners = inactive.filter(canPlan);
+  const departedIds = new Set(departedPlanners.map((u) => u.id));
+
+  const open = bundle.opps || [];
+  const sumFor = (ids) => open
+    .filter((o) => ids.has(o.owner_id))
+    .reduce((t, o) => t + (parseFloat(o.planned_amount) || 0), 0);
+
+  const expectedPlanned = sumFor(activePlanners);
+  const excluded = sumFor(departedIds);
+  const names = departedPlanners
+    .filter((u) => open.some((o) => o.owner_id === u.id))
+    .map((u) => u.full_name || u.id);
+  const strayFunnel = (reference.funnelWindowRows || [])
+    .filter((d) => !activePlanners.has(d.owner_id)
+      && !active.some((u) => u.id === d.owner_id));
+
+  return [
+    row({
+      label: 'Planned / Funnel exclude inactive owners — Planned',
+      value: planning.plannedOpen,
+      expected: expectedPlanned,
+      note: excluded > 0
+        ? `${Math.round(excluded).toLocaleString('en-US')} of open plan belongs to ${names.join(', ') || 'departed owners'} and is deliberately NOT counted.`
+          + ' Target and Achieved still include them: history, not forecast.'
+        : 'no departed owner holds an open plan item in this window, so the'
+          + ' rule changes nothing today; the row still guards it',
+    }),
+    row({
+      label: 'Planned / Funnel exclude inactive owners — open plan left out',
+      value: excluded,
+      note: names.length ? `held by ${names.join(', ')}` : 'nothing to leave out in this window',
+    }),
+    row({
+      label: 'Planned / Funnel exclude inactive owners — funnel owners all active',
+      value: strayFunnel.length,
+      expected: 0,
+      note: 'a count of open deals in the reference funnel whose owner is not'
+        + ' an active user. Non-zero means a departed owner\'s pipeline is'
+        + ' still being counted toward coverage.',
+    }),
+  ];
+}
+/**
  * ANNUAL ALLOCATION — the helper against a recomputation that shares no code
  * with it.
  *
@@ -715,14 +786,20 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
   } = resolveScope({ users, scope });
 
   // ── THE REFERENCE, computed once from the shared rules ───────────────────
+  // FORWARD-LOOKING FIGURES ARE ACTIVE-ONLY at every scope, so the reference
+  // funnel is measured over the ACTIVE achievers even at company scope, where
+  // achieverIds itself includes the departed for Target and Achieved. Getting
+  // this the wrong way round would make the reference disagree with every
+  // screen and blame the screens.
+  const forwardIds = activeIdsFrom(achieverIds, users);
   const [refAchieved, refTargetRows, refFunnelNow, refFunnelWindow, refRate] = await Promise.all([
     fetchAchieved({ companyId, contributorIds: achieverIds, start, end }),
     fetchMonthlyTargets({ companyId, contributorIds: achieverIds, start, end }),
     // No window — which is how every screen calls it, meaning the CURRENT month
     // plus the undated deals (INCLUDE_UNDATED).
-    fetchOpenFunnel({ companyId, scopeIds: achieverIds }),
+    fetchOpenFunnel({ companyId, scopeIds: forwardIds }),
     // The same function over the SELECTED period, for the screens that window it.
-    fetchOpenFunnel({ companyId, scopeIds: achieverIds, start, end }),
+    fetchOpenFunnel({ companyId, scopeIds: forwardIds, start, end }),
     // The ACHIEVER scope (decision D4): the same people as Achieved and Target.
     // fetchWinRate3m narrows to it internally now, so passing ownerIds would give
     // the same answer — the achievers are passed explicitly so this row states
@@ -752,6 +829,9 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     funnelNow: refFunnelNow.total,
     funnelNowUndated: refFunnelNow.undated?.total || 0,
     funnelWindow: refFunnelWindow.total,
+    // The ROWS, not just the total, so the forward-scope check can look at who
+    // owns them instead of trusting a sum.
+    funnelWindowRows: refFunnelWindow.rows || [],
     funnelWindowUndated: refFunnelWindow.undated?.total || 0,
     conversion3m: refRate.winRate3m,
     conversionWon3m: refRate.won3m,
@@ -1040,7 +1120,9 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
   groups.push({ screen: 'Planning summary', fn: 'computePlanningPageSummary', rows: planningRows });
 
   // ── Current Sales Plan tab ───────────────────────────────────────────────
-  const planScopeIds = ownerIds || achieverIds;
+  // The plan is FORWARD-LOOKING, so this tab counts active owners only (CEO
+  // decision 2026-10-07) — the same scope Planning's own Planned uses.
+  const planScopeIds = ownerIds || forwardIds;
   const tabRows = (bundle.oppsAll || []).filter((o) => planScopeIds.includes(o.owner_id));
   const tabOpen = openPlanTotal(tabRows);
   groups.push({
@@ -1135,6 +1217,13 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     companyId, consoleData, reference, planning, start, end, users,
   });
   divisionGroups.forEach((grp) => { if (grp.rows.length) groups.push(grp); });
+
+  // ── Forward-looking scope (CEO decision 2026-10-07) ──────────────────────
+  groups.push({
+    screen: 'Forward-looking figures exclude inactive owners',
+    fn: 'activeIdsFrom',
+    rows: buildForwardScopeRows({ bundle, planning, reference }),
+  });
 
   // ── Insights for supervisors and salesmen (CEO decision 2026-10-07) ──────
   const insightsRows = await buildInsightsVsPlanningRows({

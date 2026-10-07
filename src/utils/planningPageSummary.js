@@ -34,7 +34,7 @@ import {
 } from './planningCalculations';
 // The active/inactive rule for TOTALS — company includes everyone, a narrowed
 // scope is active-only (CEO decision 2026-10-07).
-import { totalsScopeOpts } from './achieverScope';
+import { totalsScopeOpts, activeIdsFrom } from './achieverScope';
 // THE funnel — one definition, undated open deals included.
 import { fetchOpenFunnel } from './openFunnel';
 // "Is the selected range a whole calendar year?" — the same detector the
@@ -262,6 +262,10 @@ export async function computePlanningPageSummary({
   ]);
   const contributorIds = contributors.map((c) => c.id);
   let scopeIds = [...new Set([...contributorIds, ...flagged.map((u) => u.id)])];
+  // FORWARD-LOOKING FIGURES ARE ACTIVE-ONLY at every scope (CEO decision
+  // 2026-10-07): Planned and the open funnel below use this, Target and
+  // Achieved above use the full scope. See utils/achieverScope.js.
+  const forwardScopeIds = activeIdsFrom(scopeIds, [...contributors, ...flagged]);
   if (!scopeIds.length) {
     if (Array.isArray(ownerIds) && ownerIds.length === 1) scopeIds = [...ownerIds];
     else return empty;
@@ -352,8 +356,8 @@ export async function computePlanningPageSummary({
     : 0;
 
   const [planned, funnel] = await Promise.all([
-    fetchPlannedOpen({ companyId, ownerIds: scopeIds, start, end, productGroup }),
-    fetchFunnelForPeriod({ companyId, scopeIds, start, end, productGroup }),
+    fetchPlannedOpen({ companyId, ownerIds: forwardScopeIds, start, end, productGroup }),
+    fetchFunnelForPeriod({ companyId, scopeIds: forwardScopeIds, start, end, productGroup }),
   ]);
 
   const availableCoverage = planned.total + funnel.total;

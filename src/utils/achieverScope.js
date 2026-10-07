@@ -42,9 +42,46 @@ export const CONTRIBUTOR_ROLES = ['salesman', 'supervisor'];
  *
  * An ownerIds of null is what every caller already uses for "the whole
  * company", so the rule needs no new plumbing at the call sites.
+ *
+ * ── AND THE OTHER HALF: FORWARD-LOOKING FIGURES ARE ACTIVE-ONLY ───────────
+ *
+ * CEO decision 2026-10-07, the same day and the qualifier to the above. The
+ * company rule covers HISTORY — Target and Achieved, what was committed and
+ * what came in. It does NOT cover what is still to come:
+ *
+ *   Planned (open plan items), the open funnel, future orders / carry-in
+ *   count ACTIVE owners only, AT EVERY SCOPE INCLUDING COMPANY.
+ *
+ * A departed person's open plan will not convert. Counting it overstates
+ * coverage and understates the pipeline still needed — the two figures
+ * management acts on. Today that is Ahmad Sulaiman Moamina's 4 open October
+ * plan items, 19,500: company Planned reads 2,424,512, not 2,444,012.
+ *
+ * The split is not arbitrary. A past month cannot be re-targeted, so its
+ * target and its revenue are facts about what happened and both include
+ * whoever was there. A future month CAN be re-planned, and will be, by
+ * whoever is still here — so a forecast built on a departed person's plan is
+ * a forecast of something nobody is going to do.
+ *
+ * Conversion (3m) was already active-only at every scope, for its own reason:
+ * it is a rate, not a total.
  */
 export function isCompanyScope(ownerIds) {
   return !Array.isArray(ownerIds);
+}
+
+/**
+ * The ACTIVE subset of a set of ids — the forward-looking scope.
+ *
+ * Takes the ids and the user rows they came from, because every caller
+ * already has both and an extra query per figure is not worth it. An id with
+ * no matching row is dropped: it cannot be shown to be active.
+ */
+export function activeIdsFrom(ids, users) {
+  const active = new Set(
+    (users || []).filter((u) => u && u.is_active !== false).map((u) => u.id),
+  );
+  return (ids || []).filter((id) => active.has(id));
 }
 
 /** The option object for a TOTALS scope (Achieved, Target) — not for a rate. */

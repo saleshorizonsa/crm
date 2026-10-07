@@ -4,6 +4,10 @@ import {
   primaryDivisionByUser,
 } from 'utils/divisionMembership';
 import { partitionOpenFunnel } from 'utils/openFunnel';
+// activeIdsFrom comes from the leaf module directly: planningCalculations
+// re-exports the older achiever-scope names but not this one, and a leaf
+// import cannot create the cycle that re-export list exists to avoid.
+import { activeIdsFrom } from 'utils/achieverScope';
 import {
   CONTRIBUTOR_ROLES,
   isAchievedOnly,
@@ -360,6 +364,13 @@ export function calcDivisionMetrics(userIds, data) {
     ...contributorIds,
     ...(users || []).filter((u) => scope.has(u.id) && isAchievedOnly(u)).map((u) => u.id),
   ]);
+  // FORWARD-LOOKING FIGURES ARE ACTIVE-ONLY (CEO decision 2026-10-07): a
+  // departed person's open plan, funnel and future orders will not convert, so
+  // counting them overstates coverage. isAchiever above has no is_active test —
+  // deliberately, because Target and Achieved are history and include whoever
+  // was there — so the forward set is derived from it here.
+  const forwardIds = activeIdsFrom([...isAchiever], users);
+  const isForward = new Set(forwardIds);
 
   // ── ATTRIBUTION BY DIVISION, not per person ──────────────────────────────
   //
@@ -452,7 +463,7 @@ export function calcDivisionMetrics(userIds, data) {
   // is 308,750 of his own pipeline, the same defect that had supervisor Diba
   // reading In Funnel 0.00 against 1,510,602.80 of his own deals.
   const openDeals = (deals || []).filter(
-    (d) => isAchiever.has(d.owner_id) && !['won', 'lost'].includes(d.stage),
+    (d) => isForward.has(d.owner_id) && !['won', 'lost'].includes(d.stage),
   );
   const pipeline = openDeals.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
 
@@ -466,7 +477,7 @@ export function calcDivisionMetrics(userIds, data) {
   // belong to. Kamal's October plan was 1,179,250 in BOTH Export and PVC
   // Compound before this.
   const divisionOpps = (opps || []).filter(planInDivision);
-  const planned = sumPlannedByOwner({ rows: divisionOpps, ownerIds: achieverIds }).total;
+  const planned = sumPlannedByOwner({ rows: divisionOpps, ownerIds: forwardIds }).total;
   // Open funnel for the window, raw — THE shared definition
   // (utils/openFunnel.js), not a local re-derivation. The inline version this
   // replaced required an expected_close_date and so silently dropped every
@@ -488,7 +499,7 @@ export function calcDivisionMetrics(userIds, data) {
   // back to its owner's primary division, which is what this screen already
   // did for anyone in a single division.
   const divisionFutureOrders = (futureOrders || []).filter(planInDivision);
-  const carryIn = sumPlannedByOwner({ rows: divisionFutureOrders, ownerIds: achieverIds }).total;
+  const carryIn = sumPlannedByOwner({ rows: divisionFutureOrders, ownerIds: forwardIds }).total;
   // Required pipeline is measured over what is STILL MISSING (deficit), not over
   // the untouched target: once a month's target is achieved, "new pipeline
   // needed" must read zero rather than keep demanding pipeline against a number

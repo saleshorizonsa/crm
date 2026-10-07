@@ -1,6 +1,6 @@
 import { supabase } from 'lib/supabase';
 // The active/inactive rule for TOTALS (CEO decision 2026-10-07).
-import { isCompanyScope, totalsScopeOpts } from 'utils/achieverScope';
+import { isCompanyScope, totalsScopeOpts, activeIdsFrom } from 'utils/achieverScope';
 import {
   CONTRIBUTOR_ROLES,
   fetchMonthlyTargets,
@@ -119,6 +119,13 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     companyId, ownerIds, ...totalsScopeOpts(ownerIds),
   });
   const achievedScopeIds = [...scopeIds, ...achievedOnlyUsers.map((u) => u.id)];
+  // FORWARD-LOOKING FIGURES ARE ACTIVE-ONLY at every scope (CEO decision
+  // 2026-10-07). Two sets because the role scope differs and this decision does
+  // not change it: Planned and Carry-In are contributor-only, the funnel is
+  // achiever-scoped. Only is_active is being applied here.
+  const allRows = [...userList, ...achievedOnlyUsers];
+  const forwardContribIds = activeIdsFrom(scopeIds, allRows);
+  const forwardAchieverIds = activeIdsFrom(achievedScopeIds, allRows);
 
   // "Nobody in scope" is the ACHIEVER set being empty, not the contributor set.
   // This tested scopeIds, so narrowing to a flagged manager alone — "View
@@ -313,7 +320,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     .select('owner_id, planned_amount')
     .eq('company_id', companyId)
     .eq('status', 'open')
-    .in('owner_id', scopeIds)
+    .in('owner_id', forwardContribIds)
     .gte('expected_month', mb.startDate)
     .lte('expected_month', mb.endDate);
   const plannedPer = {};
@@ -330,7 +337,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   // 1,843,031.87 against Planning's 2,151,781.87. Same people now.
   // Current-month bound, like Planning and Funnel Analytics — the util decides
   // the window, so the three cannot drift apart again.
-  const funnel = await fetchOpenFunnel({ companyId, scopeIds: achievedScopeIds });
+  const funnel = await fetchOpenFunnel({ companyId, scopeIds: forwardAchieverIds });
   const funnelValue = funnel.total;
   // The slice of that funnel dated INTO the window, which is what nets off the
   // pipeline requirement — same rule as planningPageSummary.js, the Coverage
@@ -347,7 +354,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   //    the required plan (customers already committed), reducing the new pipeline
   //    still needed. Only 'pending' orders (moved ones are already in the plan).
   const { total: carryInTotal, perPerson: carryPer } = await computeCarryIn({
-    companyId, contributorIds: scopeIds,
+    companyId, contributorIds: forwardContribIds,
   });
   const salesmanData = userList
     .map((u) => {
