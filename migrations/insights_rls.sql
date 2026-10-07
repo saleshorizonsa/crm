@@ -1,34 +1,64 @@
 -- ============================================================================
--- PARTIALLY APPLIED 2026-10-07 — read this before running anything.
+-- APPLIED 2026-10-07 12:40 (Asia/Riyadh). APPLY block run on its own.
 --
---   APPLIED on 2026-10-07 (added by hand, folded into APPLY section (a2) and
---   the matching block under (b) so the file matches production):
---     opportunities_select_director_companies
---     future_orders_select_director_companies
+-- VERIFIED READ-ONLY AT 12:55, independently of the run:
 --
---   NOT APPLIED — everything else in this file. Verified read-only on
---   2026-10-07 after the attempt:
---     my scoped SELECT policies ......... 0 of 4 present
---     my split write policies ........... 0 of 9 present
---     company_conversion_3m ............. absent
---     planned_contacts_this_month ....... absent
---     the four ORIGINAL company-wide FOR ALL policies ... all 4 still in place
---   and the hole is still open: as Mohamed Hussein (salesman), opportunities
---   349 rows / 230 not his, future_orders 108 / 52, salesman_flags 7 / 5 —
---   the same figures as before the attempt.
+--   POLICIES — 15 present, and all four original company-wide FOR ALL
+--   policies gone (opportunities_company_access, future_orders_access,
+--   salesman_flags_access, escalation_logs_access):
+--     opportunities   select_scoped · select_director_companies ·
+--                     insert_company · update_company · delete_company
+--     future_orders   select_scoped · select_director_companies ·
+--                     insert_company · update_company · delete_company
+--     salesman_flags  select_scoped · insert_company · update_company ·
+--                     delete_company
+--     escalation_logs manager_up (ALL)
 --
---   SO THE APPLY TRANSACTION ROLLED BACK, cleanly: nothing is half-done and
---   the original policies are untouched. This is the second time this has
---   happened on this project — migrations/division_attribution.sql did exactly
---   the same thing — and the fix there was the same:
+--   FUNCTIONS — both SECURITY DEFINER with search_path=public pinned:
+--     company_conversion_3m        returns TABLE(win_rate_pct, won, total,
+--                                  imported_excluded), VOLATILE
+--     planned_contacts_this_month  returns SETOF uuid, STABLE
 --
---       *** RUN THE APPLY BLOCK ON ITS OWN. ***
+--   AS MOHAMED HUSSEIN (salesman) — the point of the file:
+--     opportunities      119 visible, 0 not his   (was 349 / 230)
+--     future_orders       56 visible, 0 not his   (was 108 /  52)
+--     salesman_flags       2 visible, 0 not his   (was   7 /   5)
+--     escalation_logs      0
+--     company_conversion_3m        67.8% · 97/143 · 71 imported excluded
+--     planned_contacts_this_month  81 customers — the "already planned"
+--                                  marker still works for the role that can
+--                                  no longer read the plan items behind it
 --
---   Not the whole file. The PREVIEW and VERIFY sections contain BEGIN / SET
---   LOCAL ROLE / ROLLBACK of their own, and pasting the file whole puts those
---   in the same batch as the APPLY transaction. Run PREVIEW by hand, then the
---   APPLY block alone, then VERIFY by hand — and VERIFY query 2 is the one
---   that proves it worked: must_be_zero has to read 0.
+--   AS AMER SULAIMAN ALBURAYM (supervisor):
+--     opportunities      281 visible, 0 outside his team
+--     future_orders       78 visible, 0 outside his team
+--     salesman_flags       3 visible, 0 outside his team
+--     escalation_logs      0 — manager and above only
+--     and Ahmad Sulaiman Moamina's 17 plan items ARE visible, which is the
+--     direct-report clause doing its job: Ahmad is inactive, so
+--     get_user_subordinates does not return him, and without that clause
+--     Amer would have lost the two plan submissions of Ahmad's he still has
+--     awaiting approval.
+--
+--   AS MOHAMED KAMAL (manager) — nothing regressed for the roles that
+--   already had these screens:
+--     opportunities 349 · future_orders 108 · salesman_flags 7 ·
+--     escalation_logs 0 (allowed, none exist)
+--
+-- IF THIS IS EVER REPLAYED: run the APPLY BLOCK ON ITS OWN, not the whole
+-- file. A first attempt that pasted the file whole rolled back cleanly and
+-- changed nothing — the PREVIEW and VERIFY sections carry their own BEGIN /
+-- SET LOCAL ROLE / ROLLBACK, which lands them in the same batch as the APPLY
+-- transaction. migrations/division_attribution.sql failed the same way.
+-- VERIFY query 2 is the proof either way: must_be_zero has to read 0.
+--
+-- ONE THING TO KEEP WATCHING: opportunities_select_director_companies and
+-- future_orders_select_director_companies are company-wide SELECT grants to
+-- anyone listed in director_companies. That table holds one row today —
+-- Nader, director. A salesman added to it gets company-wide reads of both
+-- tables back, which is the one thing this file exists to prevent. VERIFY
+-- query 10 lists it.
+-- ============================================================================
 --
 -- INSIGHTS FOR SUPERVISORS AND SALESMEN — close the tables a salesman can read
 -- company-wide, and add the one function that lets him see a company RATE
