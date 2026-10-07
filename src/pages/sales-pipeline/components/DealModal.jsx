@@ -1426,8 +1426,27 @@ const DealModal = ({
       // Expected close date is optional — send null (not "") so a blank value
       // doesn't fail the insert on the date column.
       expected_close_date: formData.expected_close_date || null,
-      division_id: formData.division_id || null,
     };
+
+    // DIVISION — the key is OMITTED when the form has no value, never sent as
+    // NULL, on create and on edit alike.
+    //
+    // This read `division_id: formData.division_id || null`. formData starts at
+    // `deal?.division_id || null` and is filled from the owner's primary
+    // division by an async lookup, so a save before that lookup resolves — or a
+    // save on a deal object that reached this modal without the column — wrote
+    // NULL over a division the database had already set. SAUDI CARBOTAE CO. LTD
+    // was created at 16:08 on 2026-10-07 with its division and edited to NULL at
+    // 16:10; the October divisions then stopped summing to the company by
+    // exactly its 18,315, which /numbers-check reported the same evening.
+    //
+    // Omitting instead of nulling is safe in both directions: on INSERT the
+    // BEFORE INSERT trigger fills it from the owner's primary division, and on
+    // UPDATE an absent column leaves the stored value alone. Same reasoning as
+    // owner_id above, and the same as the opportunity and target payloads.
+    // See migrations/division_attribution.sql and division_on_update.sql.
+    if (formData.division_id) dealData.division_id = formData.division_id;
+    else delete dealData.division_id;
 
     // Always recalculate amount from the actual product line items to prevent drift
     if (deal?.id && dealProducts.length > 0) {
