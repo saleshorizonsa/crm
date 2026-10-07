@@ -19,10 +19,49 @@ import { supabase } from 'lib/supabase';
 // contributor-roles-only — he carries no monthly plan.
 export const CONTRIBUTOR_ROLES = ['salesman', 'supervisor'];
 
-/** Ids of the ACTIVE contributors in a list of user rows (needs role + is_active). */
-export function contributorIdsFrom(users) {
+/**
+ * THE ACTIVE/INACTIVE RULE (CEO decision 2026-10-07).
+ *
+ * A COMPANY-scope total — Achieved and Target on a director or whole-company
+ * view, any period — includes EVERYONE who was ever in it, active or not. A
+ * PERSON or TEAM total stays active-only.
+ *
+ * WHY THEY MOVE TOGETHER. September 2026 invoiced 1,518,070 against monthly
+ * targets of 3,050,494. Counting the revenue of people who have since left
+ * while dropping their targets read 1,518,070 / 1,481,075 = 103% attainment for
+ * a month that actually came in at 50%. A past month cannot be re-targeted, so
+ * the only two consistent answers are "both" or "neither", and management needs
+ * the historical truth: both.
+ *
+ * CONVERSION (3m) IS EXCLUDED, at every scope. It is a RATE, not a total, and
+ * it is the divisor in Required Plan and New Pipeline Needed on every screen
+ * including team and person ones — widening it would move 67.8% to 62.7% and
+ * raise everybody's required pipeline by about 8%, which is a different
+ * decision from reporting history correctly. fetchWinRate3m therefore keeps the
+ * active-only default and is deliberately NOT given this option.
+ *
+ * An ownerIds of null is what every caller already uses for "the whole
+ * company", so the rule needs no new plumbing at the call sites.
+ */
+export function isCompanyScope(ownerIds) {
+  return !Array.isArray(ownerIds);
+}
+
+/** The option object for a TOTALS scope (Achieved, Target) — not for a rate. */
+export function totalsScopeOpts(ownerIds) {
+  return { includeInactive: isCompanyScope(ownerIds) };
+}
+
+/**
+ * Ids of the contributors in a list of user rows (needs role + is_active).
+ *
+ * ACTIVE ONLY BY DEFAULT. `includeInactive` is the company-totals rule above;
+ * every caller that has not opted in behaves exactly as before.
+ */
+export function contributorIdsFrom(users, { includeInactive = false } = {}) {
   return (users || [])
-    .filter((u) => u && u.is_active === true && CONTRIBUTOR_ROLES.includes(u.role))
+    .filter((u) => u && (includeInactive || u.is_active === true)
+      && CONTRIBUTOR_ROLES.includes(u.role))
     .map((u) => u.id);
 }
 
@@ -36,9 +75,9 @@ export function contributorIdsFrom(users) {
  * manager still carries no monthly quota. Counting him in those would skew them
  * rather than fix Achieved.
  */
-export function isAchievedOnly(user) {
+export function isAchievedOnly(user, { includeInactive = false } = {}) {
   return !!user
-    && user.is_active === true
+    && (includeInactive || user.is_active === true)
     && user.is_contributor === true
     && !CONTRIBUTOR_ROLES.includes(user.role);
 }
@@ -63,8 +102,14 @@ export function isAchievedOnly(user) {
  * Still NOT this scope: Planned and Carry-In, which stay on
  * contributorIdsFrom, because a flagged manager carries no monthly plan.
  */
-export function achieverIdsFrom(users) {
-  return [...contributorIdsFrom(users), ...(users || []).filter(isAchievedOnly).map((u) => u.id)];
+export function achieverIdsFrom(users, opts = {}) {
+  // The filter callback is written out rather than passed isAchievedOnly
+  // directly: Array.prototype.filter would hand it the INDEX as its second
+  // argument, which is now the options object.
+  return [
+    ...contributorIdsFrom(users, opts),
+    ...(users || []).filter((u) => isAchievedOnly(u, opts)).map((u) => u.id),
+  ];
 }
 
 /**
@@ -95,19 +140,32 @@ export const targetOwnerIdsFrom = achieverIdsFrom;
  * One query, because the callers that need this (fetchWinRate3m) are already
  * issuing one of their own and a second round trip per rate is not free.
  */
-export async function fetchAchieverIds({ companyId, ownerIds = null }) {
+export async function fetchAchieverIds({
+  companyId, ownerIds = null, includeInactive = false,
+}) {
   if (!companyId) return [];
   if (Array.isArray(ownerIds) && ownerIds.length === 0) return [];
   let q = supabase
     .from('users')
     .select('id, role, is_active, is_contributor')
-    .eq('company_id', companyId)
-    .eq('is_active', true);
+    .eq('company_id', companyId);
+  // Both the query AND the in-memory predicates have to be widened, or the
+  // rows arrive and are then dropped.
+  if (!includeInactive) q = q.eq('is_active', true);
   if (Array.isArray(ownerIds)) q = q.in('id', ownerIds);
   const { data, error } = await q;
   if (error) {
     console.error('fetchAchieverIds:', error);
     return [];
   }
-  return achieverIdsFrom(data || []);
+  return achieverIdsFrom(data || [], { includeInactive });
+}
+
+/**
+ * The TOTALS scope for Achieved and Target: the company rule applied for you.
+ * A caller measuring a total passes its ownerIds and gets the right set;
+ * a caller measuring a RATE must not use this.
+ */
+export async function fetchTotalsScopeIds({ companyId, ownerIds = null }) {
+  return fetchAchieverIds({ companyId, ownerIds, ...totalsScopeOpts(ownerIds) });
 }

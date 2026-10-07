@@ -17,7 +17,7 @@ import {
 // Whose revenue and target count. The Forecast service resolves it the same
 // way every other screen does rather than taking whatever assignees a
 // sales_targets query happens to return.
-import { fetchAchieverIds } from "../utils/achieverScope";
+import { fetchAchieverIds, totalsScopeOpts } from "../utils/achieverScope";
 import { wholePeriodOf } from "../utils/dashboardDateUtils";
 // The returns importer's own matcher, so correcting an invoice number re-matches
 // returns by exactly the rule that matched them on import.
@@ -4332,9 +4332,15 @@ export async function getScopeMonthlyTotals({ companyId, ownerIds = null, start,
   if (!companyId) return empty;
   if (Array.isArray(ownerIds) && ownerIds.length === 0) return empty;
 
+  // Target and Achieved are TOTALS: a company scope includes everyone, active
+  // or not (CEO decision 2026-10-07). This tile read a September target of
+  // 1,481,075 against 1,518,070 invoiced — 103% for a month that came in at
+  // 50% — because the targets of departed staff were dropped and their revenue
+  // was not. Both move together or neither does.
+  const totalsOpts = totalsScopeOpts(ownerIds);
   const [contributors, flagged] = await Promise.all([
-    fetchContributors({ companyId, ownerIds }),
-    fetchAchievedOnlyUsers({ companyId, ownerIds }),
+    fetchContributors({ companyId, ownerIds, ...totalsOpts }),
+    fetchAchievedOnlyUsers({ companyId, ownerIds, ...totalsOpts }),
   ]);
   const scopeIds = [...contributors.map((c) => c.id), ...flagged.map((u) => u.id)];
   if (!scopeIds.length) return empty;
@@ -6151,7 +6157,12 @@ export const forecastService = {
       //
       // The ANNUAL view takes the yearly allocation instead (decision D3),
       // exactly as the KPI strip does.
-      const achieverIds = await fetchAchieverIds({ companyId, ownerIds });
+      // Company scope includes everyone (CEO decision 2026-10-07). This drives
+      // the Forecast page's Target AND its Won-not-yet-invoiced, both of which
+      // are totals.
+      const achieverIds = await fetchAchieverIds({
+        companyId, ownerIds, ...totalsScopeOpts(ownerIds),
+      });
       // No period means "All Time". Targets only exist per month, so the
       // all-time figure is the sum of every monthly row ever assigned — the
       // same thing the old query returned for that case, now by the shared rule.

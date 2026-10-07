@@ -173,12 +173,15 @@ export default function CoverageConsole() {
           .eq("company_id", company.id)
           .not("stage", "eq", "lost"),
 
-        // All active users
+        // EVERY user, not only the active ones: the company totals have to
+        // include people who have left (CEO decision 2026-10-07) or this screen
+        // contradicts the KPI strip and Planning on the same figures. The row
+        // filters and the subtree walk below apply the active-only half of the
+        // rule, so no departed person appears in a list or a drill-down.
         supabase
           .from("users")
           .select("id, full_name, role, supervisor_id, is_active, is_contributor")
-          .eq("company_id", company.id)
-          .eq("is_active", true),
+          .eq("company_id", company.id),
 
         // Monthly targets overlapping this month. status=active matters: draft
         // and superseded rows were being counted here but nowhere else.
@@ -341,9 +344,12 @@ export default function CoverageConsole() {
   // maintains. Reading it here gave this console a different team from the
   // dashboards for the same manager. See utils/teamHierarchy.js.
   const childrenMap = useMemo(() => {
+    // A TEAM subtree stays ACTIVE-ONLY (the other half of the 2026-10-07 rule).
+    // The user rows now include people who have left, so this map is the only
+    // thing keeping them out of a manager's or supervisor's scope.
     const map = new Map();
     (raw?.users || []).forEach((u) => {
-      if (!u.supervisor_id) return;
+      if (!u.supervisor_id || u.is_active === false) return;
       if (!map.has(u.supervisor_id)) map.set(u.supervisor_id, []);
       map.get(u.supervisor_id).push(u.id);
     });
@@ -576,7 +582,7 @@ export default function CoverageConsole() {
       // them when you drill in. Listing both tiers here would show the same
       // salesmen twice at different levels of aggregation.
       const teamHeads = raw.users.filter(
-        (u) => scopedIds.includes(u.id) && u.role === "manager"
+        (u) => scopedIds.includes(u.id) && u.is_active !== false && u.role === "manager"
       );
 
       // Flat hierarchy (supervisors reporting straight to a director, no
@@ -585,7 +591,8 @@ export default function CoverageConsole() {
         teamHeads.length > 0
           ? teamHeads
           : raw.users.filter(
-              (u) => scopedIds.includes(u.id) && u.role === "supervisor"
+              (u) => scopedIds.includes(u.id) && u.is_active !== false
+                && u.role === "supervisor"
             );
 
       return effectiveTeamHeads
@@ -609,8 +616,12 @@ export default function CoverageConsole() {
     }
 
     if (nav.level === "team" && nav.team) {
+      // People rows: those who are still here. The team's TOTAL above may
+      // include a departed member's figures; the list of people to drill into
+      // does not list them.
       const members = raw.users.filter(
-        (m) => subtreeOf(nav.team).includes(m.id) && m.id !== nav.team
+        (m) => subtreeOf(nav.team).includes(m.id) && m.is_active !== false
+          && m.id !== nav.team
       );
 
       return members

@@ -1,4 +1,6 @@
 import { supabase } from 'lib/supabase';
+// The active/inactive rule for TOTALS (CEO decision 2026-10-07).
+import { isCompanyScope, totalsScopeOpts } from 'utils/achieverScope';
 import {
   CONTRIBUTOR_ROLES,
   fetchMonthlyTargets,
@@ -88,12 +90,18 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   if (Array.isArray(ownerIds) && ownerIds.length === 0) return empty;
 
   // 1. Owner-role users in scope (the rows).
+  //
+  // COMPANY scope includes everyone, active or not (CEO decision 2026-10-07):
+  // the strip's Target and Achieved are company totals on a director view, and
+  // dropping a departed salesman's target while keeping his revenue read 103%
+  // attainment for a September that came in at 50%. A narrowed scope (a team, a
+  // person) stays active-only.
   let uq = supabase
     .from('users')
-    .select('id, full_name, role')
+    .select('id, full_name, role, is_active')
     .eq('company_id', companyId)
-    .eq('is_active', true)
     .in('role', CONTRIBUTOR_ROLES);
+  if (!isCompanyScope(ownerIds)) uq = uq.eq('is_active', true);
   if (Array.isArray(ownerIds)) uq = uq.in('id', ownerIds);
   const { data: users } = await uq;
   const userList = users || [];
@@ -104,7 +112,12 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   // monthly target counts exactly like a salesman's. Only MONTHLY rows are ever
   // read (fetchMonthlyTargets filters period_type), so his yearly allocation
   // cannot leak into a monthly sum.
-  const achievedOnlyUsers = await fetchAchievedOnlyUsers({ companyId, ownerIds });
+  // The same rule as the contributor read above — the two halves of the strip's
+  // scope must widen together or a flagged manager's revenue is counted while
+  // his target is not.
+  const achievedOnlyUsers = await fetchAchievedOnlyUsers({
+    companyId, ownerIds, ...totalsScopeOpts(ownerIds),
+  });
   const achievedScopeIds = [...scopeIds, ...achievedOnlyUsers.map((u) => u.id)];
 
   // "Nobody in scope" is the ACHIEVER set being empty, not the contributor set.
@@ -508,8 +521,10 @@ export async function computeDirectorAnnual({ companyId, year: yearArg = null })
 
   // The scope every figure here uses: contributors plus flagged
   // achieved-only users — the same scope as the KPI strip's annual Achieved.
-  const contributors = await fetchContributors({ companyId });
-  const achievedOnlyUsers = await fetchAchievedOnlyUsers({ companyId });
+  // No ownerIds at all: this is the whole company, so it includes everyone
+  // (CEO decision 2026-10-07).
+  const contributors = await fetchContributors({ companyId, includeInactive: true });
+  const achievedOnlyUsers = await fetchAchievedOnlyUsers({ companyId, includeInactive: true });
   const scopeIds = [...contributors, ...achievedOnlyUsers].map((c) => c.id);
 
   // The MONTHLY fallback: that year's monthly rows, by the shared per-person

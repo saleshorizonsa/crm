@@ -152,16 +152,23 @@ function row({ label, value, expected = null, kind = 'money', note = null, known
 export function resolveScope({ users, scope }) {
   const all = users || [];
   if (!scope || scope.kind === 'company' || !scope.userId) {
+    // COMPANY: everyone, active or not. The reference has to measure what the
+    // screens measure, and company totals now include departed staff.
+    const opts = { includeInactive: true };
     return {
       ownerIds: null,
-      achieverIds: achieverIdsFrom(all),
-      contributorIds: contributorIdsFrom(all),
+      achieverIds: achieverIdsFrom(all, opts),
+      contributorIds: contributorIdsFrom(all, opts),
       label: 'Whole company',
       person: null,
     };
   }
   const person = all.find((u) => u.id === scope.userId) || null;
   if (scope.kind === 'team') {
+    // TEAM stays ACTIVE-ONLY (the rule's other half), and subtreeIdsOf's
+    // default already enforces it — it is stated here because the bundle's user
+    // rows are no longer pre-filtered, so the active-only behaviour of these
+    // two branches now depends on these functions rather than on the query.
     const below = subtreeIdsOf({ users: all, rootId: scope.userId });
     const ids = [scope.userId, ...below];
     const members = ids.map((id) => all.find((u) => u.id === id)).filter(Boolean);
@@ -205,9 +212,14 @@ async function loadBundle({ companyId, start, end, year }) {
     supabase.from('deals')
       .select('id, title, stage, amount, final_amount, is_invoiced, invoice_date, expected_close_date, owner_id, division_id, forecast_amount, forecast_probability, contact_id, stage_changed_at, closed_at, created_at, invoice_number')
       .eq('company_id', companyId).not('stage', 'eq', 'lost'),
+    // EVERY user, not just the active ones (CEO decision 2026-10-07): the
+    // bundle feeds the company-level Coverage Console and Insights figures,
+    // which are company totals and now include people who have left. Screens
+    // that list PEOPLE still filter is_active themselves — widening the bundle
+    // changes which figures are summed, not who is offered in a picker.
     supabase.from('users')
       .select('id, full_name, role, supervisor_id, is_active, is_contributor, sales_division_id')
-      .eq('company_id', companyId).eq('is_active', true),
+      .eq('company_id', companyId),
     // Monthly target rows overlapping the SELECTED period. status = 'active'
     // matters: draft and superseded rows count nowhere else.
     supabase.from('sales_targets')
@@ -389,7 +401,7 @@ async function buildDivisionGroups({
   const gapRows = [];
   for (const { g, m } of perDivision) {
     const members = g.userIds.map((id) => users.find((u) => u.id === id)).filter(Boolean);
-    const sups = members.filter((u) => u.role === 'supervisor');
+    const sups = members.filter((u) => u.role === 'supervisor' && u.is_active !== false);
     if (sups.length !== 1) {
       gapRows.push(row({
         label: `${g.name} — planned gap (no single supervisor, info only)`,
@@ -405,21 +417,37 @@ async function buildDivisionGroups({
     const sp = await computePlanningPageSummary({
       companyId, ownerIds: sc.ownerIds, start, end,
     });
-    const divAchievers = achieverIdsFrom(members);
+    // The division scope includes everyone (it has to sum to a company total
+    // that does), and a supervisor's subtree is active-only — the two halves of
+    // the CEO's rule of 2026-10-07. So the two figures are the same arithmetic
+    // over genuinely different populations whenever a division has ever had a
+    // member who left.
+    //
+    // It is an EQUALITY only while the populations coincide, and an INFO row
+    // with both figures when they do not. Asserting equality across two
+    // deliberately different scopes is how a check starts crying wolf, and a
+    // check nobody believes catches nothing. What is lost is real and worth
+    // stating: this row caught the NULL-division deal in September (39,423
+    // against 0), and for a division with a departed member it would now report
+    // rather than fail.
+    const divAchievers = achieverIdsFrom(members, { includeInactive: true });
     const samePeople = divAchievers.length === sc.achieverIds.length
       && divAchievers.every((id) => sc.achieverIds.includes(id));
     gapRows.push(row({
-      label: `${g.name} — planned gap vs Planning for ${sup.full_name || sup.id}`,
+      label: samePeople
+        ? `${g.name} — planned gap vs Planning for ${sup.full_name || sup.id}`
+        : `${g.name} — planned gap ${Math.round(n(m.plannedGap)).toLocaleString('en-US')}`
+          + ` vs Planning ${Math.round(n(sp.plannedGap)).toLocaleString('en-US')} (info only)`,
       value: n(m.plannedGap),
-      expected: n(sp.plannedGap),
+      expected: samePeople ? n(sp.plannedGap) : null,
       note: samePeople
-        ? 'the division and this supervisor\'s subtree are the same achievers, so'
+        ? 'the division and this supervisor\'s subtree are the same people, so'
           + ' the two screens must agree'
-        : `DIFFERENT POPULATIONS: ${divAchievers.length} achievers in the division`
-          + ` against ${sc.achieverIds.length} in ${sup.full_name || 'the'} subtree.`
-          + ' A difference here is that, not a broken rule — the row is kept'
-          + ' because it is still the only cross-check of the panel gap, and'
-          + ' because the two memberships drifting apart is itself worth seeing.',
+        : `DIFFERENT POPULATIONS BY RULE: ${divAchievers.length} in the division`
+          + ` (everyone, active or not — a division total has to sum to a company`
+          + ` total) against ${sc.achieverIds.length} in ${sup.full_name || 'the'}`
+          + " subtree (active only — a team figure). Not comparable, so it is"
+          + ' reported rather than asserted.',
     }));
   }
 
@@ -458,7 +486,7 @@ async function buildDivisionGroups({
  * One row per person holding a yearly row: self-configuring, so it covers
  * Mohamed Kamal today and whoever else is given one later without an edit here.
  */
-async function buildAnnualAllocationRows({ companyId, bundle, year }) {
+async function buildAnnualAllocationRows({ companyId, bundle, year, planning = null }) {
   const { data: yearly, error } = await supabase
     .from('sales_targets')
     .select('assigned_to, target_amount, target_type, period_start, period_end')
@@ -548,6 +576,39 @@ async function buildAnnualAllocationRows({ companyId, bundle, year }) {
       note: 'the 12-month strip on the target-assignment banner is the same'
         + ' figure broken up, so it has to add back to it',
     }));
+    // ── THE CROSS-SCREEN ROW ───────────────────────────────────────────────
+    // Planning's "Not yet assigned" against the BANNER's "remaining", compared
+    // to EACH OTHER rather than each to its own reference.
+    //
+    // WHY THIS ROW EXISTS. For a few hours on 2026-10-07 those two figures read
+    // 27,852,189 and 15,292,646 — the same subtraction over two different
+    // populations — and every row on this page passed, because each was checked
+    // against a reference built on its own scope. A per-screen reference cannot
+    // catch two screens disagreeing with each other; only a row that puts them
+    // side by side can. Same shape as the division sum that stayed correct
+    // while the split was wrong.
+    //
+    // Only on an ANNUAL range, where Planning computes the figure at all, and
+    // only for the holder whose scope Planning's covers — at company scope that
+    // is whoever holds the yearly row.
+    if (planning && planning.annualTarget !== null && planning.annualTarget !== undefined) {
+      out.push(row({
+        label: `Annual allocation — ${name} ${year}: Planning "Not yet assigned" = the banner's "remaining"`,
+        value: n(planning.unassignedAnnual),
+        expected: Math.max(0, alloc.remaining),
+        note: 'the two screens compared to EACH OTHER, not to a reference each.'
+          + ' Planning scopes by viewer and the banner by the yearly-row holder,'
+          + ' so they agree only while both obey the company rule (everyone,'
+          + ' active or not). Clamped at zero on both sides, which is how'
+          + ' Planning has always shown it.',
+      }));
+      out.push(row({
+        label: `Annual allocation — ${name} ${year}: Planning "assigned" = the banner's`,
+        value: n(planning.annualAssigned),
+        expected: alloc.assigned,
+      }));
+    }
+
     out.push(row({
       label: `Annual allocation — ${name} ${year}: months left to assign`,
       value: alloc.monthsLeft,
@@ -1012,7 +1073,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
 
   // ── Annual allocation (CEO decision 2026-10-07) ──────────────────────────
   const annualAllocRows = await buildAnnualAllocationRows({
-    companyId, bundle, year,
+    companyId, bundle, year, planning,
   });
   if (annualAllocRows.length) {
     groups.push({
