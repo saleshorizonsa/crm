@@ -1,5 +1,34 @@
 -- ============================================================================
--- NOT APPLIED. Read the PREVIEW, then run APPLY, then run VERIFY.
+-- PARTIALLY APPLIED 2026-10-07 — read this before running anything.
+--
+--   APPLIED on 2026-10-07 (added by hand, folded into APPLY section (a2) and
+--   the matching block under (b) so the file matches production):
+--     opportunities_select_director_companies
+--     future_orders_select_director_companies
+--
+--   NOT APPLIED — everything else in this file. Verified read-only on
+--   2026-10-07 after the attempt:
+--     my scoped SELECT policies ......... 0 of 4 present
+--     my split write policies ........... 0 of 9 present
+--     company_conversion_3m ............. absent
+--     planned_contacts_this_month ....... absent
+--     the four ORIGINAL company-wide FOR ALL policies ... all 4 still in place
+--   and the hole is still open: as Mohamed Hussein (salesman), opportunities
+--   349 rows / 230 not his, future_orders 108 / 52, salesman_flags 7 / 5 —
+--   the same figures as before the attempt.
+--
+--   SO THE APPLY TRANSACTION ROLLED BACK, cleanly: nothing is half-done and
+--   the original policies are untouched. This is the second time this has
+--   happened on this project — migrations/division_attribution.sql did exactly
+--   the same thing — and the fix there was the same:
+--
+--       *** RUN THE APPLY BLOCK ON ITS OWN. ***
+--
+--   Not the whole file. The PREVIEW and VERIFY sections contain BEGIN / SET
+--   LOCAL ROLE / ROLLBACK of their own, and pasting the file whole puts those
+--   in the same batch as the APPLY transaction. Run PREVIEW by hand, then the
+--   APPLY block alone, then VERIFY by hand — and VERIFY query 2 is the one
+--   that proves it worked: must_be_zero has to read 0.
 --
 -- INSIGHTS FOR SUPERVISORS AND SALESMEN — close the tables a salesman can read
 -- company-wide, and add the one function that lets him see a company RATE
@@ -193,6 +222,12 @@ WHERE o.company_id = 'adf8ee78-cf78-4f02-932c-989a214bdd78'
 
 BEGIN;
 
+-- The two director_companies policies are ALREADY ON PRODUCTION (2026-10-07).
+-- Dropped first so this block can be re-run as a whole without colliding with
+-- them — CREATE POLICY has no IF NOT EXISTS.
+DROP POLICY IF EXISTS opportunities_select_director_companies ON public.opportunities;
+DROP POLICY IF EXISTS future_orders_select_director_companies ON public.future_orders;
+
 -- ── (a) opportunities: own, or a subordinate's, or a lead's company ────────
 -- The company-wide policy is replaced, not supplemented: an extra permissive
 -- policy would be OR'd with the old one and change nothing.
@@ -269,6 +304,29 @@ CREATE POLICY opportunities_delete_company ON public.opportunities
     )
   );
 
+-- ── (a2) ...and the DIRECTOR_COMPANIES read route ─────────────────────────
+-- Applied separately on 2026-10-07 and folded in here so the file matches
+-- production.
+--
+-- WHY IT IS NEEDED, and why the scoped policy above does not cover it: that
+-- policy lets a manager-and-above read the whole company, but only when
+-- users.company_id = opportunities.company_id. A director attached to a second
+-- company through director_companies has his OWN company_id on his user row,
+-- so for that other company's rows the test fails and he would have lost reads
+-- the old policy gave him through its director_companies UNION.
+--
+-- It is a company-wide SELECT grant, so it is only safe while
+-- director_companies holds directors. On production today it holds exactly one
+-- row: Nader (director). If a salesman is ever added to that table he gets
+-- company-wide reads of these two tables back, which is the one thing this
+-- file exists to prevent.
+CREATE POLICY opportunities_select_director_companies ON public.opportunities
+  FOR SELECT USING (
+    company_id IN (
+      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
+    )
+  );
+
 -- ── (b) future_orders: the same shape ─────────────────────────────────────
 DROP POLICY IF EXISTS future_orders_access ON public.future_orders;
 
@@ -324,6 +382,14 @@ CREATE POLICY future_orders_delete_company ON public.future_orders
     company_id IN (
       SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
       UNION
+      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
+    )
+  );
+
+-- The director_companies read route, as for opportunities above.
+CREATE POLICY future_orders_select_director_companies ON public.future_orders
+  FOR SELECT USING (
+    company_id IN (
       SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
     )
   );
@@ -640,6 +706,15 @@ FROM public.planned_contacts_this_month(
   '00000000-0000-0000-0000-000000000000', '2026-10-01');
 -- expect 0
 
+-- 10. The director_companies route is a company-wide SELECT grant, so it must
+--     only ever hold people who are meant to have one.
+SELECT u.full_name, u.role
+FROM director_companies dc JOIN users u ON u.id = dc.user_id
+ORDER BY u.role, u.full_name;
+-- expect directors (and heads/admins) only. On 2026-10-07: Nader, director.
+-- A salesman in this list has company-wide reads of opportunities and
+-- future_orders, which defeats section (a) and (b).
+
 
 -- ============================================================================
 -- ROLLBACK — restores exactly the four policies this file replaced.
@@ -661,6 +736,8 @@ FROM public.planned_contacts_this_month(
 -- DROP POLICY IF EXISTS salesman_flags_insert_company  ON public.salesman_flags;
 -- DROP POLICY IF EXISTS salesman_flags_update_company  ON public.salesman_flags;
 -- DROP POLICY IF EXISTS salesman_flags_delete_company  ON public.salesman_flags;
+-- DROP POLICY IF EXISTS opportunities_select_director_companies ON public.opportunities;
+-- DROP POLICY IF EXISTS future_orders_select_director_companies ON public.future_orders;
 -- DROP POLICY IF EXISTS escalation_logs_manager_up     ON public.escalation_logs;
 -- DROP FUNCTION IF EXISTS public.company_conversion_3m(uuid);
 -- DROP FUNCTION IF EXISTS public.planned_contacts_this_month(uuid, date);
