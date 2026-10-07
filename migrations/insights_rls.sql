@@ -174,6 +174,15 @@ CREATE POLICY opportunities_select_scoped ON public.opportunities
   FOR SELECT USING (
     owner_id = auth.uid()
     OR owner_id IN (SELECT s.subordinate_id FROM public.get_user_subordinates(auth.uid()) s)
+    -- DIRECT reports regardless of is_active. get_user_subordinates is
+    -- ACTIVE-ONLY, and without this clause a supervisor loses his DEPARTED
+    -- direct reports rows: Amer Sulaiman Alburaym has two of Ahmad Sulaiman
+    -- Moaminas plan submissions still awaiting approval, and View Plan would
+    -- have rendered an empty list rather than an error. This is the same
+    -- two-level shape the existing deals policy already uses, so it widens
+    -- nothing the app did not already allow; anything deeper than one level
+    -- below a departed person stays with manager-and-above.
+    OR owner_id IN (SELECT u2.id FROM public.users u2 WHERE u2.supervisor_id = auth.uid())
     OR EXISTS (
       SELECT 1 FROM public.users u
        WHERE u.id = auth.uid()
@@ -183,10 +192,29 @@ CREATE POLICY opportunities_select_scoped ON public.opportunities
   );
 
 -- Writes keep the company-wide shape they had: plan items are created and
--- edited through Planning by people who already pass the read policy, and
--- narrowing writes here is a separate change with its own blast radius.
-CREATE POLICY opportunities_write_company ON public.opportunities
-  FOR ALL USING (
+-- edited through Planning and Customer Master by people the old policy already
+-- allowed, and narrowing writes is a separate change with its own blast radius.
+--
+-- *** FOR INSERT / UPDATE / DELETE, NEVER "FOR ALL". ***
+-- A permissive FOR ALL policy's USING clause applies to SELECT as well, and
+-- permissive policies are combined with OR — so a company-wide FOR ALL write
+-- policy sitting beside the scoped SELECT policy above would OR straight over
+-- it and re-grant company-wide reads, leaving this file looking applied and
+-- changing nothing. (The live proof that FOR ALL governs SELECT: today
+-- opportunities has ONLY a FOR ALL policy, and a salesman reads 349 rows
+-- through it.) Splitting the write path by command is what keeps SELECT
+-- governed by one policy alone.
+CREATE POLICY opportunities_insert_company ON public.opportunities
+  FOR INSERT WITH CHECK (
+    company_id IN (
+      SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
+      UNION
+      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY opportunities_update_company ON public.opportunities
+  FOR UPDATE USING (
     company_id IN (
       SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
       UNION
@@ -194,6 +222,15 @@ CREATE POLICY opportunities_write_company ON public.opportunities
     )
   )
   WITH CHECK (
+    company_id IN (
+      SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
+      UNION
+      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY opportunities_delete_company ON public.opportunities
+  FOR DELETE USING (
     company_id IN (
       SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
       UNION
@@ -208,6 +245,15 @@ CREATE POLICY future_orders_select_scoped ON public.future_orders
   FOR SELECT USING (
     owner_id = auth.uid()
     OR owner_id IN (SELECT s.subordinate_id FROM public.get_user_subordinates(auth.uid()) s)
+    -- DIRECT reports regardless of is_active. get_user_subordinates is
+    -- ACTIVE-ONLY, and without this clause a supervisor loses his DEPARTED
+    -- direct reports rows: Amer Sulaiman Alburaym has two of Ahmad Sulaiman
+    -- Moaminas plan submissions still awaiting approval, and View Plan would
+    -- have rendered an empty list rather than an error. This is the same
+    -- two-level shape the existing deals policy already uses, so it widens
+    -- nothing the app did not already allow; anything deeper than one level
+    -- below a departed person stays with manager-and-above.
+    OR owner_id IN (SELECT u2.id FROM public.users u2 WHERE u2.supervisor_id = auth.uid())
     OR EXISTS (
       SELECT 1 FROM public.users u
        WHERE u.id = auth.uid()
@@ -216,8 +262,18 @@ CREATE POLICY future_orders_select_scoped ON public.future_orders
     )
   );
 
-CREATE POLICY future_orders_write_company ON public.future_orders
-  FOR ALL USING (
+-- Split by command for the reason spelled out above the opportunities writes.
+CREATE POLICY future_orders_insert_company ON public.future_orders
+  FOR INSERT WITH CHECK (
+    company_id IN (
+      SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
+      UNION
+      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY future_orders_update_company ON public.future_orders
+  FOR UPDATE USING (
     company_id IN (
       SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
       UNION
@@ -225,6 +281,15 @@ CREATE POLICY future_orders_write_company ON public.future_orders
     )
   )
   WITH CHECK (
+    company_id IN (
+      SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
+      UNION
+      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY future_orders_delete_company ON public.future_orders
+  FOR DELETE USING (
     company_id IN (
       SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
       UNION
@@ -239,6 +304,15 @@ CREATE POLICY salesman_flags_select_scoped ON public.salesman_flags
   FOR SELECT USING (
     owner_id = auth.uid()
     OR owner_id IN (SELECT s.subordinate_id FROM public.get_user_subordinates(auth.uid()) s)
+    -- DIRECT reports regardless of is_active. get_user_subordinates is
+    -- ACTIVE-ONLY, and without this clause a supervisor loses his DEPARTED
+    -- direct reports rows: Amer Sulaiman Alburaym has two of Ahmad Sulaiman
+    -- Moaminas plan submissions still awaiting approval, and View Plan would
+    -- have rendered an empty list rather than an error. This is the same
+    -- two-level shape the existing deals policy already uses, so it widens
+    -- nothing the app did not already allow; anything deeper than one level
+    -- below a departed person stays with manager-and-above.
+    OR owner_id IN (SELECT u2.id FROM public.users u2 WHERE u2.supervisor_id = auth.uid())
     OR EXISTS (
       SELECT 1 FROM public.users u
        WHERE u.id = auth.uid()
@@ -250,11 +324,22 @@ CREATE POLICY salesman_flags_select_scoped ON public.salesman_flags
 -- The flags are written by background checks running as the service role,
 -- which bypasses RLS; this keeps an authenticated write path for the review
 -- action (marking a flag reviewed), which only the above roles can see anyway.
-CREATE POLICY salesman_flags_write_company ON public.salesman_flags
-  FOR ALL USING (
+-- Split by command, same reason as above.
+CREATE POLICY salesman_flags_insert_company ON public.salesman_flags
+  FOR INSERT WITH CHECK (
+    company_id IN (SELECT u.company_id FROM public.users u WHERE u.id = auth.uid())
+  );
+
+CREATE POLICY salesman_flags_update_company ON public.salesman_flags
+  FOR UPDATE USING (
     company_id IN (SELECT u.company_id FROM public.users u WHERE u.id = auth.uid())
   )
   WITH CHECK (
+    company_id IN (SELECT u.company_id FROM public.users u WHERE u.id = auth.uid())
+  );
+
+CREATE POLICY salesman_flags_delete_company ON public.salesman_flags
+  FOR DELETE USING (
     company_id IN (SELECT u.company_id FROM public.users u WHERE u.id = auth.uid())
   );
 
@@ -441,13 +526,19 @@ ROLLBACK;
 
 -- BEGIN;
 --
--- DROP POLICY IF EXISTS opportunities_select_scoped   ON public.opportunities;
--- DROP POLICY IF EXISTS opportunities_write_company   ON public.opportunities;
--- DROP POLICY IF EXISTS future_orders_select_scoped   ON public.future_orders;
--- DROP POLICY IF EXISTS future_orders_write_company   ON public.future_orders;
--- DROP POLICY IF EXISTS salesman_flags_select_scoped  ON public.salesman_flags;
--- DROP POLICY IF EXISTS salesman_flags_write_company  ON public.salesman_flags;
--- DROP POLICY IF EXISTS escalation_logs_manager_up    ON public.escalation_logs;
+-- DROP POLICY IF EXISTS opportunities_select_scoped    ON public.opportunities;
+-- DROP POLICY IF EXISTS opportunities_insert_company   ON public.opportunities;
+-- DROP POLICY IF EXISTS opportunities_update_company   ON public.opportunities;
+-- DROP POLICY IF EXISTS opportunities_delete_company   ON public.opportunities;
+-- DROP POLICY IF EXISTS future_orders_select_scoped    ON public.future_orders;
+-- DROP POLICY IF EXISTS future_orders_insert_company   ON public.future_orders;
+-- DROP POLICY IF EXISTS future_orders_update_company   ON public.future_orders;
+-- DROP POLICY IF EXISTS future_orders_delete_company   ON public.future_orders;
+-- DROP POLICY IF EXISTS salesman_flags_select_scoped   ON public.salesman_flags;
+-- DROP POLICY IF EXISTS salesman_flags_insert_company  ON public.salesman_flags;
+-- DROP POLICY IF EXISTS salesman_flags_update_company  ON public.salesman_flags;
+-- DROP POLICY IF EXISTS salesman_flags_delete_company  ON public.salesman_flags;
+-- DROP POLICY IF EXISTS escalation_logs_manager_up     ON public.escalation_logs;
 -- DROP FUNCTION IF EXISTS public.company_conversion_3m(uuid);
 --
 -- CREATE POLICY opportunities_company_access ON public.opportunities
