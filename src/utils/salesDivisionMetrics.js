@@ -28,7 +28,12 @@ import {
 //
 // Levels: Company -> Division (supervisor card) -> Team -> Member -> Deal.
 
-export const DIVISION_PAGE_ROLES = ['director', 'manager'];
+// Who may open Insights. Supervisors and salesmen were added 2026-10-07 (CEO
+// decision) and see a NARROWED page, not a filtered copy of the company one:
+// scopeUserIds below returns a supervisor his own team and a salesman only
+// himself, the page's queries are filtered to that scope in the database, and
+// nobody else's name is fetched. The route and the nav read this one list.
+export const DIVISION_PAGE_ROLES = ['director', 'manager', 'supervisor', 'salesman'];
 
 // Who is LISTED as a division member. Directors and viewers carry no division,
 // targets or deals, so listing them is noise. Listing is all this controls:
@@ -146,7 +151,20 @@ export function scopeUserIds({ users, viewerId, role }) {
   // strip's, and what keeps the divisions summing to it — a departed person's
   // deals land in whichever division their rows carry, or in Unassigned.
   if (role === 'director') return list.map((u) => u.id);
-  if (role !== 'manager' || !viewerId) return [];
+  if (!viewerId) return [];
+
+  // SALESMAN: himself, full stop. Not his division, not his team, not a total
+  // he is part of — CEO decision 2026-10-07. Returned before the walk so there
+  // is no path by which a colleague's id can enter his scope, and because the
+  // page derives every query filter from this array, that is also what the
+  // DATABASE is asked for.
+  if (role === 'salesman') return [viewerId];
+
+  // SUPERVISOR: himself and everyone under him, any depth — the same walk as a
+  // manager, and deliberately the same code. In a division with two
+  // supervisors he gets his own team and not the other's, because the walk
+  // starts at him rather than at the division.
+  if (role !== 'manager' && role !== 'supervisor') return [];
 
   // supervisor_id, not reports_to: it is the only hierarchy column anything
   // writes, and the one the dashboards and every RLS function already use.
