@@ -39,10 +39,16 @@
 --                     the Division attribution row, all three being that one
 --                     deal.
 --
--- PREVIEW 2's output — the only record of which rows were NULL before the
--- repair, and the only basis for reverting it — is kept outside this file, in
--- the project as division-on-update-preview-2026-10-07.md. It is not committed
--- beside the migration, so it does not travel with the repository.
+-- THE PRE-REPAIR RECORD lives beside this file, in the repository:
+--
+--     migrations/records/division_on_update_2026-10-07.md
+--
+-- It names the ONE row the repair changed (deals 8232d669-…, SAUDI CARBOTAE CO.
+-- LTD, NULL → PVC Sheet) with the statement that reverts it, and lists all 60
+-- rows the repair deliberately left NULL. Keep it: once a NULL division_id is
+-- filled the column no longer records that it was ever NULL, so nothing in the
+-- database can say what the repair touched, and the ROLLBACK block below cannot
+-- undo the data without that list.
 -- ============================================================================
 --
 -- WHAT WENT WRONG. The attribution triggers are BEFORE INSERT only, so nothing
@@ -127,8 +133,8 @@
 --
 -- ROLLBACK at the bottom drops the triggers and functions. It does NOT revert
 -- the repair: once a NULL is filled, the column no longer records that it was
--- ever NULL. PREVIEW 2's output is the only record of which rows were touched,
--- so keep it; the rollback block carries today's single id as a comment.
+-- ever NULL. records/division_on_update_2026-10-07.md is what the data can be
+-- reverted from; the rollback block carries the single id as a comment too.
 -- ============================================================================
 
 
@@ -157,7 +163,8 @@ ORDER BY u.full_name, d.title;
 -- ============================================================================
 -- PREVIEW 2 — what the repair will touch, and what it will leave. Read-only.
 --   RUN THIS AND KEEP THE OUTPUT: it is the only record of which rows were
---   NULL, and the rollback cannot reconstruct it.
+--   NULL, and the rollback cannot reconstruct it. The 2026-10-07 run is saved
+--   in records/division_on_update_2026-10-07.md.
 -- ============================================================================
 WITH rows_null AS (
   SELECT 'deals'         AS tbl, d.id, d.title                                   AS label, d.owner_id    AS person
@@ -437,9 +444,11 @@ WHERE d.id = '8232d669-6d28-4536-95d6-ff836b62d593';
 -- ROLLBACK — drops the guard. Run only to undo this migration.
 --
 -- The repair is NOT reverted: a filled column no longer records that it was
--- NULL, and PREVIEW 2's output is the only list of what changed. To undo
--- today's single repaired row as well, run the commented statement below —
--- with the updated_at trigger disabled, or the revert will restamp the row.
+-- NULL. records/division_on_update_2026-10-07.md is the list of what changed and
+-- what was left alone. To undo the single repaired row as well, run the
+-- commented statements below — with the updated_at trigger disabled, or the
+-- revert restamps the row, and with the new guard disabled, or it refills the
+-- division immediately. The record file carries the same statements.
 -- ============================================================================
 DROP TRIGGER IF EXISTS set_deals_division_on_update         ON public.deals;
 DROP TRIGGER IF EXISTS set_opportunities_division_on_update ON public.opportunities;
@@ -448,7 +457,19 @@ DROP TRIGGER IF EXISTS set_sales_targets_division_on_update ON public.sales_targ
 DROP FUNCTION IF EXISTS public.set_division_from_owner_on_update();
 DROP FUNCTION IF EXISTS public.set_division_from_assignee_on_update();
 
+-- Run AFTER the DROPs above, when the guard is already gone:
+--
 -- ALTER TABLE public.deals DISABLE TRIGGER update_deals_updated_at;
 -- UPDATE public.deals SET division_id = NULL
 --  WHERE id = '8232d669-6d28-4536-95d6-ff836b62d593';
+-- ALTER TABLE public.deals ENABLE TRIGGER update_deals_updated_at;
+--
+-- To revert the DATA ONLY, keeping the guard in place, disable it as well or it
+-- refills the division in the same statement:
+--
+-- ALTER TABLE public.deals DISABLE TRIGGER update_deals_updated_at;
+-- ALTER TABLE public.deals DISABLE TRIGGER set_deals_division_on_update;
+-- UPDATE public.deals SET division_id = NULL
+--  WHERE id = '8232d669-6d28-4536-95d6-ff836b62d593';
+-- ALTER TABLE public.deals ENABLE TRIGGER set_deals_division_on_update;
 -- ALTER TABLE public.deals ENABLE TRIGGER update_deals_updated_at;
