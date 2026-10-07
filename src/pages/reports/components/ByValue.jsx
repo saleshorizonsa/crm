@@ -3,6 +3,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from "recharts";
+// The Conversion (3m) label lives with the rule, so this page cannot drift into
+// calling the same figure something else.
+import { conversionLabel } from "utils/salesDivisionMetrics";
 
 const STAGE_LABELS = {
   lead: "Lead", contact_made: "Qualified", proposal_sent: "Proposal",
@@ -62,9 +65,19 @@ const ByValue = ({ deals, achieved = null, formatCurrency, winRate3m = null, ope
   const netRevenue = achieved?.net ?? 0;
   const hasReturns = returned > 0;
 
-  // Prefer the dashboard-consistent figures when provided (3-month win rate and
-  // all-open pipeline); otherwise fall back to this period's own numbers.
-  const displayWinRate = winRate3m != null ? `${winRate3m.toFixed(1)}%` : `${stats.winRate}%`;
+  // Prefer the dashboard-consistent figures when provided (the 3-month
+  // conversion rate and all-open pipeline); otherwise fall back to this
+  // period's own numbers.
+  //
+  // THE LABEL FOLLOWS THE FIGURE. When index.jsx supplies winRate3m this tile
+  // shows fetchWinRate3m's rate — deals WON over deals CREATED in the three
+  // completed months, 67.8% for JASCO PVC — which every dashboard, Planning and
+  // Insights calls "Conversion (3m)". It is NOT won ÷ (won + lost), and calling
+  // it "Win Rate" invited exactly that reading. Without the fetch (still
+  // loading, or no company) the tile falls back to stats.winRate, which IS
+  // won ÷ closed for this period, so it keeps the "Win Rate" name.
+  const showsConversion3m = winRate3m != null;
+  const displayWinRate = showsConversion3m ? `${winRate3m.toFixed(1)}%` : `${stats.winRate}%`;
   const displayPipeline = openPipeline != null ? openPipeline : stats.pipeline;
 
   const monthData = useMemo(() => {
@@ -147,7 +160,17 @@ const ByValue = ({ deals, achieved = null, formatCurrency, winRate3m = null, ope
       bg: "bg-green-50",
     },
           { label: "Lost",            value: formatCurrency(stats.lost),     color: "text-red-500",   bg: "bg-red-50"   },
-          { label: "Win Rate",        value: displayWinRate,                 color: "text-purple-600",bg: "bg-purple-50", subtitle: winRate3m != null ? "3-month avg" : undefined },
+          {
+            // conversionLabel() is the one spelling of this name, shared with
+            // Insights and the division cards — not a sixth copy of the string.
+            label: showsConversion3m ? conversionLabel(null) : "Win Rate",
+            value: displayWinRate,
+            color: "text-purple-600",
+            bg: "bg-purple-50",
+            subtitle: showsConversion3m
+              ? "won ÷ created, last 3 months"
+              : "won ÷ closed, this period",
+          },
         ].map(({ label, value, color, bg, subtitle }) => (
           <div key={label} className={`${bg} rounded-xl p-4 border border-white/60`}>
             <p className="text-xs text-gray-500 mb-1">{label}</p>
