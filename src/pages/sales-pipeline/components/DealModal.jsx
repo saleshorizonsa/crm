@@ -47,7 +47,11 @@ function ProductPickerRow({ product, isSelected, price, onToggle, onPriceChange 
     ? parseFloat(price.quantity || 0) * parseFloat(price.price || 0)
     : 0;
 
-  // Strip non-ASCII characters that appear when UOM encoding is incorrect (e.g. "1/2â€|")
+  // Strip non-ASCII characters that appear when UOM encoding is incorrect: a
+  // half-inch unit, whose UTF-8 is E2 80 9D, arrives decoded as cp1252 and
+  // shows as three junk characters. Described rather than shown - this comment
+  // used to carry the junk itself, and one of its three bytes had already been
+  // lost, so there was nothing to put back.
   const uomDisplay = (product.base_unit_of_measure || 'EA')
     .replace(/[^\x20-\x7E]/g, '').trim() || 'EA';
 
