@@ -25,6 +25,7 @@ import {
   buildExceptions,
   healthOf,
   DASHBOARD_ROLES,
+  CONTACT_AUDIT_ROLES,
 } from "utils/salesDivisionMetrics";
 import { fetchAdditionalDivisions } from "utils/divisionMembership";
 import { DivisionCoverageHero, DivisionCycleLedger } from "./components/DivisionCoverageHero";
@@ -33,6 +34,9 @@ import DivisionExceptionFeed from "./components/DivisionExceptionFeed";
 import InsightsBanners from "./components/InsightsBanners";
 import InsightsMyWork from "./components/InsightsMyWork";
 import InsightsTargets from "./components/InsightsTargets";
+// The Dashboard's own audit panel, unchanged — the component already scopes
+// itself by ownerIds.
+import ContactReportsAudit from "components/dashboard/ContactReportsAudit";
 
 // Insights (route /insights; folder and component keep the sales-divisions name)
 // — Company → Division → Team → Member → Deal.
@@ -993,6 +997,23 @@ export default function SalesDivisions() {
             companyId={company?.id}
             subordinateIds={subordinateIds}
           />
+        )}
+
+        {/* ── CONTACT REPORTS AUDIT ──
+            The last thing the Dashboard had that nothing else did. It showed
+            only to supervisors there; here it reaches everyone who reviews a
+            team, scoped to their own. Collapsed until opened, so it costs a
+            query only when somebody wants it. subordinateIds is memoised —
+            the component takes ownerIds as an effect dependency, and a fresh
+            array each render would refetch on every one. */}
+        {CONTACT_AUDIT_ROLES.includes(role) && company?.id && (
+          <div data-testid="insights-contact-audit">
+            <ContactReportsAudit
+              companyId={company.id}
+              ownerIds={subordinateIds}
+              reviewerId={user?.id}
+            />
+          </div>
         )}
 
         {/* ── COVERAGE | TARGETS ──

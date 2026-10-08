@@ -93,6 +93,21 @@ export const DASHBOARD_ROLES = ['manager', 'director', 'head', 'admin'];
  */
 export const TARGETS_PAGE_ROLES = ['supervisor'];
 
+/**
+ * Who sees the Contact Reports audit on Insights.
+ *
+ * Everyone who reviews somebody else's work — so everyone with a team, which
+ * is everyone except a salesman. It only ever showed on the SUPERVISOR's
+ * dashboard; moving it to Insights hands it to managers and above as well,
+ * scoped to their own team the same way, which they never had and costs
+ * nothing: the component already takes `ownerIds` and fetches only when
+ * somebody opens it.
+ *
+ * A salesman is excluded on purpose. The panel exists to audit a team's
+ * reports, and his own are what it would be auditing.
+ */
+export const CONTACT_AUDIT_ROLES = ['supervisor', 'manager', 'director', 'head', 'admin'];
+
 // Who is LISTED as a division member. Directors and viewers carry no division,
 // targets or deals, so listing them is noise. Listing is all this controls:
 // totals are computed over the whole scope, and the contributor rule inside
