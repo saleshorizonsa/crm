@@ -51,6 +51,12 @@ export const FLAG_STYLE = {
   STUCK: "bg-amber-50 text-amber-700 border-amber-200",
   "NOT CONVERTED": "bg-amber-50 text-amber-700 border-amber-200",
   STALE: "bg-red-50 text-red-700 border-red-200",
+  // Muted on purpose: a one-off customer is still selectable, and the mark is
+  // information rather than a warning.
+  "one-off": "bg-gray-50 text-gray-500 border-gray-200",
+  "NO HISTORY": "bg-gray-50 text-gray-600 border-gray-200",
+  DUPLICATE: "bg-amber-50 text-amber-700 border-amber-200",
+  "ABOVE USUAL": "bg-amber-50 text-amber-700 border-amber-200",
 };
 
 /* â”€â”€ the table style of Session 9: frozen first column, wrapped headers â”€â”€â”€â”€â”€ */

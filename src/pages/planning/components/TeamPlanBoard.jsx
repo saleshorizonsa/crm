@@ -37,6 +37,11 @@ const COLUMNS = [
   { key: "target", label: "Target", money: true },
   { key: "requiredPlan", label: "Required plan", money: true },
   { key: "planned", label: "Planned", money: true },
+  // DISPLAY ONLY — see utils/teamPlanBoard.js. A converted item is a deal now
+  // and is already counted in the funnel and in Achieved; putting it back into
+  // Planned would count it twice. It is here because without it a salesman who
+  // converted his whole plan read exactly like one who never planned.
+  { key: "converted", label: "Converted", converted: true },
   { key: "funnel", label: "Funnel", money: true },
   { key: "coveragePct", label: "Planning coverage %", pct: true },
   { key: "plannedGap", label: "Planned gap", money: true },
@@ -70,6 +75,24 @@ export default function TeamPlanBoard({
   if (!loading && !rows.length) return null;
 
   const cell = (r, c) => {
+    if (c.converted) {
+      if (!r.convertedCount && !r.movedCount) return "—";
+      return (
+        <span
+          title={[
+            `${r.convertedCount} plan ${r.convertedCount === 1 ? "item" : "items"} converted to deals, worth ${money(r.convertedValue)}`,
+            r.movedCount ? `${r.movedCount} moved to a later month, worth ${money(r.movedValue)}` : null,
+            "Already counted as deals in Funnel and Achieved — not added to Planned, Required plan or the gap.",
+          ].filter(Boolean).join(". ")}
+          className="text-emerald-700"
+        >
+          {r.convertedCount} · {money(r.convertedValue)}
+          {r.movedCount ? (
+            <span className="text-muted-foreground font-normal"> (+{r.movedCount} moved)</span>
+          ) : null}
+        </span>
+      );
+    }
     if (c.money) return money(r[c.key]);
     if (c.pct) return pct(r[c.key]);
     if (c.int) return r[c.key] == null ? "—" : String(r[c.key]);
@@ -143,8 +166,22 @@ export default function TeamPlanBoard({
                     ].join(" ")}
                   >
                     {c.key === "planStatus" ? (
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${STATUS_STYLE[r.planStatus] || ""}`}>
-                        {r.planStatus}
+                      <span className="inline-flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${STATUS_STYLE[r.planStatus] || ""}`}>
+                          {r.planStatus}
+                        </span>
+                        {/* NO PLAN AT ALL — open and converted both zero. A
+                            plan that has all been converted is not an empty
+                            plan, and this used to read the same for both. */}
+                        {r.emptyPlan && (
+                          <span
+                            data-testid="board-no-plan"
+                            title="Nothing planned for this month: no open items and none converted."
+                            className="text-[10px] px-1.5 py-0.5 rounded border font-semibold bg-red-50 text-red-700 border-red-200"
+                          >
+                            no plan
+                          </span>
+                        )}
                       </span>
                     ) : cell(r, c)}
                   </td>
@@ -160,6 +197,11 @@ export default function TeamPlanBoard({
                 <td className="px-3 py-2 text-right tabular-nums">{money(totals.target)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{money(totals.requiredPlan)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{money(totals.plannedOpen)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-emerald-700">
+                  {rows.reduce((s, r) => s + (r.convertedCount || 0), 0)}
+                  {" · "}
+                  {money(rows.reduce((s, r) => s + (r.convertedValue || 0), 0))}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums">{money(totals.openFunnel)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{pct(totals.coveragePct)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{money(totals.plannedGap)}</td>
@@ -179,6 +221,8 @@ export default function TeamPlanBoard({
         The totals row is the viewer&apos;s own Planning cards, not a sum of the rows:
         a team&apos;s required plan is its own remaining target ÷ its own conversion,
         which is not the sum of its members&apos;.
+        {" "}<b>Converted</b> is shown for information — those items are deals now,
+        counted in Funnel and Achieved, and are in none of the figures beside them.
       </p>
     </section>
   );

@@ -61,6 +61,12 @@ export default function PlanningCardPanel({
       total={node.total}
       note={node.note}
       columns={node.columns}
+      /* THE ROWS, for the cards that have no grouping. Required plan lists its
+         own arithmetic and Planned gap lists the suggested customers — neither
+         is split by person, so both carry `rows` rather than `children`. These
+         were not passed at all at first, and both sheets read "No rows." while
+         the suggestions sat right underneath in the footer. */
+      rows={node.rows || null}
       groupLabels={node.groupLabels || []}
       onOpenRecord={card === "required" ? undefined : openRecord}
       onClose={onClose}
@@ -75,7 +81,15 @@ export default function PlanningCardPanel({
           <div className="flex flex-col gap-1.5">
             {closers.slice(0, 8).map((r) => (
               <div key={r.key} className="flex items-center justify-between gap-3 text-xs">
-                <span className="truncate text-gray-700">{r.customer}</span>
+                <span className="truncate text-gray-700">
+                  {r.customer}
+                  {/* How regular they are, next to the name — the same thing
+                      the table column says, because this is where the choice
+                      is actually made. */}
+                  <span className={`ml-1.5 text-[10px] ${r.oneOff ? "text-gray-400" : "text-gray-500"}`}>
+                    bought {r.reliability}{r.oneOff ? " · one-off" : ""}
+                  </span>
+                </span>
                 <button
                   type="button"
                   onClick={() => onAddToPlan(r)}

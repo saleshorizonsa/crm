@@ -161,6 +161,39 @@ export async function fetchPlannedOpen({ companyId, ownerIds, start, end, produc
 }
 
 /**
+ * PLAN ITEMS THAT HAVE BEEN WORKED — converted to a deal, or moved to a later
+ * month.
+ *
+ * FOR DISPLAY ONLY, and deliberately not part of any figure this file
+ * returns. A converted item IS a deal: it is already counted in the open
+ * funnel beside it and in Achieved once invoiced, so adding it to "planned"
+ * would count the same work twice. "Planned = open items only" stays exactly
+ * as it was.
+ *
+ * It is read because the absence of it was misleading. Mohamed Hussein's
+ * October showed Planned 0 against a Required Plan of 693,096 — reading as a
+ * man who never planned — while 29 of his plan items, worth 299,155, had
+ * already become deals and 8 more had been moved to a later month. The board
+ * and the coverage panel now say so.
+ */
+async function fetchPlanWorked({ companyId, ownerIds, start, end }) {
+  if (!companyId || !ownerIds?.length) return [];
+  const { data, error } = await supabase
+    .from('opportunities')
+    .select('id, owner_id, planned_amount, material_group, customer_name, contact_id, status, expected_month, deal_id')
+    .eq('company_id', companyId)
+    .in('owner_id', ownerIds)
+    .in('status', ['converted', 'moved_to_future'])
+    .gte('expected_month', start)
+    .lte('expected_month', end);
+  if (error) {
+    console.error('fetchPlanWorked:', error);
+    return [];
+  }
+  return data || [];
+}
+
+/**
  * Open funnel value for the selected period — THE shared definition.
  *
  * This file used to carry its own copy, and the copy bounded the query by
@@ -367,9 +400,11 @@ export async function computePlanningPageSummary({
     ? computeRequiredRaw({ target: remainingTarget, winRatePct })
     : 0;
 
-  const [planned, funnel] = await Promise.all([
+  const [planned, funnel, planWorked] = await Promise.all([
     fetchPlannedOpen({ companyId, ownerIds: forwardScopeIds, start, end, productGroup }),
     fetchFunnelForPeriod({ companyId, scopeIds: forwardScopeIds, start, end, productGroup }),
+    // Display only. Enters no figure below — see fetchPlanWorked.
+    fetchPlanWorked({ companyId, ownerIds: forwardScopeIds, start, end }),
   ]);
 
   const availableCoverage = planned.total + funnel.total;
@@ -393,6 +428,8 @@ export async function computePlanningPageSummary({
       invoicedPerPerson: achievedRes.perPerson || {},
       returnRows: achievedRes.returnRows || [],
       planRows: planned.rows || [],
+      // Converted and moved-on items. In the panel, in no total.
+      planRowsWorked: planWorked,
       funnelRows: funnel.rows || [],
       scopeIds,
       forwardScopeIds,

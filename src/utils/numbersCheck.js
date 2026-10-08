@@ -524,9 +524,17 @@ async function buildPlanningDrillRows({ companyId, bundle, start, end }) {
     }
 
     const cards = buildPlanningDrill(sum, { users });
-    const sumRows = (node) => (node.children
-      ? node.children.reduce((t, c) => t + sumRows(c), 0)
-      : (node.rows || []).reduce((t, r) => t + n(r.value), 0));
+    // INFORMATIONAL BRANCHES ARE SKIPPED. The coverage card lists converted
+    // plan items beside the open ones so a worked plan is visible, but they
+    // are deals now and are counted in the funnel — adding them here would
+    // make the panel's rows exceed its own header by the amount of work the
+    // team actually did, which is the opposite of what this row checks.
+    const sumRows = (node) => {
+      if (node.informational) return 0;
+      return node.children
+        ? node.children.reduce((t, c) => t + sumRows(c), 0)
+        : (node.rows || []).reduce((t, r) => t + n(r.value), 0);
+    };
 
     const pairs = [
       ['Achieved', cards.achieved, sum.achieved, true],

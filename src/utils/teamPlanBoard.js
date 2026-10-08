@@ -58,6 +58,41 @@ export async function buildTeamPlanBoard({
   const subByOwner = new Map();
   (subs || []).forEach((r) => { subByOwner.set(r.owner_id, r); });
 
+  /**
+   * WHAT HAPPENED TO THE REST OF THE PLAN — converted, and moved on.
+   *
+   * "Planned" is open items only, which is the right formula: a converted item
+   * is a deal now, and counting it again as plan would double it. But the board
+   * read as though Mohamed Hussein had never planned — 0 against a required
+   * 693,096 — when in fact he had converted 29 of his October items, worth
+   * 299,155, and moved 8 more to a later month. The best worker on the team
+   * looked like the worst.
+   *
+   * So the board SHOWS them, in their own column, and they enter no figure:
+   * not Planning coverage, not Required plan, not the Planned gap. They are
+   * already counted once, as deals, in the Funnel and in Achieved.
+   */
+  const { data: worked } = await supabase
+    .from('opportunities')
+    .select('owner_id, planned_amount, status')
+    .eq('company_id', companyId)
+    .in('owner_id', ids)
+    .in('status', ['converted', 'moved_to_future'])
+    .gte('expected_month', start)
+    .lte('expected_month', end);
+  const workedByOwner = new Map();
+  (worked || []).forEach((r) => {
+    if (!workedByOwner.has(r.owner_id)) {
+      workedByOwner.set(r.owner_id, {
+        convertedCount: 0, convertedValue: 0, movedCount: 0, movedValue: 0,
+      });
+    }
+    const w = workedByOwner.get(r.owner_id);
+    const amt = parseFloat(r.planned_amount) || 0;
+    if (r.status === 'converted') { w.convertedCount += 1; w.convertedValue += amt; }
+    else { w.movedCount += 1; w.movedValue += amt; }
+  });
+
   const settled = await Promise.all(people.map(async (u) => {
     const sum = await computePlanningPageSummary({
       companyId, ownerIds: [u.id], start, end, productGroup,
@@ -71,6 +106,9 @@ export async function buildTeamPlanBoard({
       (o) => planItemFlags(o, flagCtx).includes('NOT CONVERTED'),
     ).length;
 
+    const w = workedByOwner.get(u.id)
+      || { convertedCount: 0, convertedValue: 0, movedCount: 0, movedValue: 0 };
+
     return {
       id: u.id,
       name: u.full_name || u.email || 'Unknown',
@@ -79,6 +117,19 @@ export async function buildTeamPlanBoard({
       target: sum.target,
       requiredPlan: sum.requiredPlan,
       planned: sum.plannedOpen,
+      // DISPLAY ONLY. Nothing below this line enters a figure above it.
+      convertedCount: w.convertedCount,
+      convertedValue: w.convertedValue,
+      movedCount: w.movedCount,
+      movedValue: w.movedValue,
+      /**
+       * NOBODY PLANNED ANYTHING — open and converted both zero.
+       *
+       * The distinction the board got wrong: a plan of nothing and a plan that
+       * has all been converted both showed Planned 0. Only the first is an
+       * empty plan.
+       */
+      emptyPlan: (sum.plannedOpen || 0) === 0 && w.convertedCount === 0,
       funnel: sum.openFunnel,
       coveragePct: sum.coveragePct,
       plannedGap: sum.plannedGap,

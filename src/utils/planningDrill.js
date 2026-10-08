@@ -21,6 +21,12 @@ const ymd = (d) => {
 
 /** An open plan item is NOT CONVERTED once this few days are left. */
 export const NOT_CONVERTED_DAYS = 7;
+/**
+ * The window the gap closer looks back over, stated here so the row can say
+ * "4 of 6" without the number being written twice. utils/gapCloser.js reads
+ * the same constant.
+ */
+export const HISTORY_WINDOW_MONTHS = 6;
 /** A planned amount this many times the customer's usual order is ABOVE USUAL. */
 export const ABOVE_USUAL_MULTIPLE = 2;
 
@@ -129,10 +135,13 @@ export const PLAN_DRILL_COLUMNS = {
   ],
   gap: [
     { key: 'customer', label: 'Customer' },
-    { key: 'lastInvoice', label: 'Last invoice', type: 'date' },
-    { key: 'months', label: 'Months bought (6)', type: 'int' },
     { key: 'value', label: 'Usual order', type: 'money' },
+    // Beside the usual order, not three columns away: it is what says whether
+    // that average means anything.
+    { key: 'reliability', label: 'Bought in' },
+    { key: 'lastInvoice', label: 'Last invoice', type: 'date' },
     { key: 'runningTotal', label: 'Running total', type: 'money' },
+    { key: 'flags', label: '', type: 'flags' },
     { key: 'lastSalesman', label: 'Last salesman' },
   ],
 };
@@ -253,12 +262,38 @@ export function buildPlanningDrill(summary, {
     columns: PLAN_DRILL_COLUMNS.funnel,
     children: byPerson(d.funnelRows || [], users, null, funnelRow),
   };
+  /**
+   * CONVERTED PLAN ITEMS — a third group, in the panel and in no total.
+   *
+   * They are deals now: counted in the funnel group beside them, and in
+   * Achieved once invoiced. Adding them to coverage would count the same work
+   * twice. But leaving them out of the PANEL made a salesman who converted his
+   * whole plan indistinguishable from one who never planned — Mohamed
+   * Hussein's October read 0 planned while 29 of his items, worth 299,155, had
+   * become deals.
+   *
+   * `informational` marks it: the sheet labels it, and /numbers-check skips it
+   * when adding the rows up against the card.
+   */
+  const convertedRows = (d.planRowsWorked || []).filter((o) => o.status === 'converted');
+  const convertedGroup = convertedRows.length ? {
+    id: 'converted',
+    name: 'Converted to deals (not in the total)',
+    informational: true,
+    total: convertedRows.reduce((s, o) => s + num(o.planned_amount), 0),
+    columns: PLAN_DRILL_COLUMNS.planItems,
+    children: byPerson(convertedRows, users, null, planRow),
+  } : null;
+
   cards.coverage = {
     label: 'Planning coverage',
     total: num(summary?.plannedOpen) + num(summary?.openFunnel),
     columns: PLAN_DRILL_COLUMNS.planItems,
     groupLabels: ['What covers it', 'Person'],
-    children: [planGroup, funnelGroup],
+    children: [planGroup, funnelGroup, convertedGroup].filter(Boolean),
+    note: convertedGroup
+      ? `Open plan ${Math.round(num(summary?.plannedOpen)).toLocaleString('en-US')} + funnel ${Math.round(num(summary?.openFunnel)).toLocaleString('en-US')}. ${convertedRows.length} plan items worth ${Math.round(convertedGroup.total).toLocaleString('en-US')} have already converted to deals — listed below for information, counted in the funnel, not added here.`
+      : null,
   };
 
   // ── Required plan → the arithmetic, in words ──────────────────────────────
@@ -297,13 +332,24 @@ export function buildPlanningDrill(summary, {
 /* ── the gap closer's arithmetic (pure half) ───────────────────────────────── */
 
 /**
- * Turn invoice history into candidates, ordered by usual order, and say how
- * many of them would close the gap.
+ * Turn invoice history into candidates and say how many would close the gap.
  *
  * USUAL ORDER is the average invoiced value per month they actually bought —
  * not per month in the window. A customer who bought twice in six months at
  * 50,000 each has a usual order of 50,000, not 16,667: when they buy, that is
  * what they buy, and that is what planning one of them is worth.
+ *
+ * ORDERED BY HOW REGULAR THEY ARE, then by size. Sorting by size alone put
+ * JAECO at 225,992 and Rukn Al-Dahia at 161,535 at the top of Alseyed's list
+ * and declared that those two would close his gap — when each had bought in
+ * ONE of the last six months. A single invoice is not an order pattern, and a
+ * suggestion built on one is a guess wearing the clothes of an average. A
+ * customer who bought in four of six months at 60,000 is a better call than
+ * one who bought once at 200,000, so months come first.
+ *
+ * One-off customers (bought in exactly one month) are kept, marked, and sink
+ * to the bottom: they may still be the right call, and the reader can see what
+ * they are choosing.
  *
  * @param {object[]} candidates  { key, customer, lastInvoice, months, total, lastSalesman }
  * @param {number}   gap
@@ -313,10 +359,16 @@ export function rankGapClosers(candidates, gap) {
     .map((c) => ({
       ...c,
       value: c.months > 0 ? num(c.total) / c.months : 0,
+      oneOff: c.months === 1,
+      // "4 of 6" — said on the row, so the usual order is never read as more
+      // reliable than it is.
+      reliability: `${c.months} of ${HISTORY_WINDOW_MONTHS}`,
     }))
     .filter((c) => c.value > 0)
-    .sort((a, b) => b.value - a.value);
+    .sort((a, b) => (b.months - a.months) || (b.value - a.value));
 
+  // The running total follows the order on screen, so the marker lands on the
+  // customer that actually closes the gap once the list is read top to bottom.
   let running = 0;
   let closesAt = -1;
   rows.forEach((r, i) => {
@@ -326,7 +378,13 @@ export function rankGapClosers(candidates, gap) {
   });
 
   const n = closesAt === -1 ? 0 : closesAt + 1;
-  rows.forEach((r, i) => { r.closesGap = n > 0 && i < n; });
+  rows.forEach((r, i) => {
+    r.closesGap = n > 0 && i < n;
+    // ONE-OFF is said out loud. It is not a reason to exclude the customer —
+    // one big order may be exactly the right call — but the reader should know
+    // that the "usual order" beside it is a single invoice.
+    r.flags = r.oneOff ? ['one-off'] : [];
+  });
 
   return {
     rows,
@@ -336,7 +394,11 @@ export function rankGapClosers(candidates, gap) {
     verdict: gap <= 0
       ? 'No gap: the plan and the funnel already cover what is required.'
       : n > 0
-        ? `These ${n} ${n === 1 ? 'customer' : 'customers'} would close the gap of ${Math.round(gap).toLocaleString('en-US')}.`
+        ? `These ${n} ${n === 1 ? 'customer' : 'customers'} would close the gap of ${Math.round(gap).toLocaleString('en-US')}${
+          rows.slice(0, n).every((r) => r.oneOff)
+            ? ' — but each bought in only one of the last six months, so those usual orders are single invoices'
+            : ''
+        }.`
         : `All ${rows.length} candidates together come to ${Math.round(running).toLocaleString('en-US')}, short of the ${Math.round(gap).toLocaleString('en-US')} gap.`,
   };
 }
