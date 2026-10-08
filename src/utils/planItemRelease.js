@@ -126,6 +126,51 @@ export async function releasePlanItemsForDeal(dealId, status = RELEASE_STATUS.de
 }
 
 /**
+ * PUT THE ITEMS BACK THE WAY THEY WERE, because the delete did not happen.
+ *
+ * The release goes first so that a deal is never deleted with an item still
+ * pointing at it. That leaves the other order of failure to answer for: the
+ * item released, then the delete refused. The deal is still there and its item
+ * now reads `open` with no link — an item that looks unplanned beside a live
+ * deal, which is the same lie as the orphan, told the other way round.
+ *
+ * So the caller restores. Each row goes back to the exact status, deal_id and
+ * converted_at it was read with, by id.
+ *
+ * BEST EFFORT, AND HONEST ABOUT IT: `items` is what the SELECT policy let the
+ * caller see. For the owner of the deal — which is every linked item on
+ * production — that is all of them. For a viewer the policy narrows it could
+ * be fewer, and what was not read cannot be put back; the caller is told the
+ * restore failed so the message can say so rather than claim nothing happened.
+ *
+ * @param {object[]} items  rows as returned by releasePlanItemsForDeal
+ * @returns {Promise<{restored: number, error: object|null}>}
+ */
+export async function restorePlanItems(items) {
+  if (!items?.length) return { restored: 0, error: null };
+
+  const results = await Promise.all(items.map(async (o) => {
+    const { error } = await supabase
+      .from('opportunities')
+      .update({
+        status: o.status,
+        deal_id: o.deal_id,
+        converted_at: o.converted_at ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', o.id);
+    return error || null;
+  }));
+
+  const failed = results.filter(Boolean);
+  if (failed.length) {
+    console.error('restorePlanItems: could not restore', failed.length, 'of', items.length, failed[0]);
+    return { restored: items.length - failed.length, error: failed[0] };
+  }
+  return { restored: items.length, error: null };
+}
+
+/**
  * One line naming what a delete will do to the plan, for the confirm dialog.
  * Returns null when the deal came from no plan item.
  */

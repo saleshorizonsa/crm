@@ -6,6 +6,7 @@ import { forecastFieldsFor } from "../utils/forecastCalc";
 // one place, called by both delete paths below.
 import {
   releasePlanItemsForDeal,
+  restorePlanItems,
   fetchPlanItemsForDeal,
   RELEASE_STATUS,
 } from "../utils/planItemRelease";
@@ -1059,11 +1060,14 @@ export const dealService = {
   // anything is deleted and a failure abandons the delete: see
   // utils/planItemRelease.js.
   async deleteDealWithCascade(dealId, { planItemStatus = RELEASE_STATUS.deleted } = {}) {
+    // Declared out here so the catch below can put the item back too: a throw
+    // leaves the plan released just as surely as a returned error does.
+    let released = { released: 0, items: [], error: null };
     try {
       // THE PLAN ITEM FIRST, BEFORE ANYTHING IS DESTROYED. Once the deal row
       // is gone the FK has nulled deal_id and there is no way left to find
       // which item this was.
-      const released = await releasePlanItemsForDeal(dealId, planItemStatus);
+      released = await releasePlanItemsForDeal(dealId, planItemStatus);
       if (released.error) return { error: released.error };
 
       // Delete deal_products first
@@ -1083,8 +1087,17 @@ export const dealService = {
         ?.from("deals")
         ?.delete()
         ?.eq("id", dealId);
+      // THE OTHER ORDER OF FAILURE: the item was released and the delete then
+      // refused, so the deal is still here with an item that reads unplanned
+      // beside it. Put the item back exactly as it was.
+      //
+      // The child rows deleted above are NOT recoverable, and this does not
+      // pretend otherwise — it restores the plan item, which is the record
+      // that drives every figure.
+      if (error) await restorePlanItems(released.items);
       return { error };
     } catch (error) {
+      await restorePlanItems(released.items);
       return { error };
     }
   },
@@ -1094,16 +1107,20 @@ export const dealService = {
   // Same rule as the cascade version: the plan item goes back first, and if
   // that fails the deal stays.
   async deleteDeal(dealId, { planItemStatus = RELEASE_STATUS.deleted } = {}) {
+    let released = { released: 0, items: [], error: null };
     try {
-      const released = await releasePlanItemsForDeal(dealId, planItemStatus);
+      released = await releasePlanItemsForDeal(dealId, planItemStatus);
       if (released.error) return { error: released.error };
 
       const { error } = await supabase
         ?.from("deals")
         ?.delete()
         ?.eq("id", dealId);
+      // Released, then refused: hand the item back to the plan it came from.
+      if (error) await restorePlanItems(released.items);
       return { error };
     } catch (error) {
+      await restorePlanItems(released.items);
       return { error };
     }
   },

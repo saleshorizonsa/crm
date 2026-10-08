@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase';
 // A deal's plan item must never be orphaned by a delete — the same rule the
 // manual delete paths use, not a second copy of it.
-import { releasePlanItemsForDeal, RELEASE_STATUS } from './planItemRelease';
+import { releasePlanItemsForDeal, restorePlanItems, RELEASE_STATUS } from './planItemRelease';
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 
@@ -249,8 +249,10 @@ async function moveLeadToFutureOrders(lead, companyId, userId, now) {
   const { error: delErr } = await deleteDealCascade(lead.id);
   if (delErr) {
     // Roll the future_orders row back so the next sweep retries cleanly instead
-    // of stacking a duplicate entry every 6 hours.
+    // of stacking a duplicate entry every 6 hours — and put the plan item back
+    // the way it was, because the deal it belongs to is still in the Funnel.
     console.error('🔴 checkExpiredLeads: could not delete deal', lead.id, delErr);
+    await restorePlanItems(release.items);
     await supabase.from('future_orders').delete().eq('id', future.id);
     return false;
   }
