@@ -5,7 +5,18 @@ import LeadScoreBadge from "../../../components/ui/LeadScoreBadge";
 import Icon from "../../../components/AppIcon";
 import { useLanguage } from "../../../i18n";
 
-const HotLeadsWidget = ({ companyId }) => {
+/**
+ * `ownerIds` NARROWS THE WIDGET TO A SCOPE, and must be passed wherever the
+ * viewer is not entitled to the whole company.
+ *
+ * Without it the widget reads every user row RLS will serve and shows the hot
+ * leads of all of them — which is right on a director's dashboard and wrong on
+ * a salesman's Insights page, where it would put other people's customers in
+ * front of him. Insights passes his own id, or a supervisor's team.
+ *
+ * Omitted, the behaviour is exactly as before: every user the query can see.
+ */
+const HotLeadsWidget = ({ companyId, ownerIds = null }) => {
   const [leads, setLeads] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
@@ -16,14 +27,17 @@ const HotLeadsWidget = ({ companyId }) => {
       setIsLoading(true);
       try {
         // contacts has no company_id column — scope via owner_id.
-        // RLS already limits the users query to the current company's users.
-        const { data: users, error: usersError } = await supabase
-          .from("users")
-          .select("id");
-        if (usersError) throw usersError;
+        let userIds = ownerIds;
+        if (!userIds) {
+          // RLS already limits the users query to the current company's users.
+          const { data: users, error: usersError } = await supabase
+            .from("users")
+            .select("id");
+          if (usersError) throw usersError;
+          userIds = (users || []).map((u) => u.id);
+        }
 
-        const userIds = (users || []).map((u) => u.id);
-        if (userIds.length === 0) {
+        if (!userIds || userIds.length === 0) {
           setLeads([]);
           return;
         }
@@ -46,7 +60,12 @@ const HotLeadsWidget = ({ companyId }) => {
     };
 
     fetchHotLeads();
-  }, []);
+    // Re-runs when the scope changes. It used to run once with no
+    // dependencies, which was harmless while the only caller was a dashboard
+    // that never changed company — but Insights resolves the viewer's scope
+    // asynchronously, so a fetch pinned to the first render would have read the
+    // whole company before `ownerIds` arrived and then never corrected itself.
+  }, [companyId, ownerIds ? ownerIds.join(",") : null]);
 
   return (
     <div className="bg-white rounded-lg shadow p-6">

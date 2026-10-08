@@ -36,7 +36,13 @@ import PipelineView from "./pages/pipeline-view";
 import PlanningPage from "./pages/planning";
 import CoverageConsole from "./pages/coverage-console";
 import SalesDivisions from "./pages/sales-divisions";
-import { DIVISION_PAGE_ROLES, COVERAGE_CONSOLE_ROLES } from "./utils/salesDivisionMetrics";
+import {
+  DIVISION_PAGE_ROLES,
+  COVERAGE_CONSOLE_ROLES,
+  DASHBOARD_ROLES,
+  TARGETS_PAGE_ROLES,
+} from "./utils/salesDivisionMetrics";
+import TargetsPage from "./pages/targets";
 import ReassignRecords from "./pages/reassign-records";
 import NumbersCheck from "./pages/numbers-check";
 // The roles the numbers check is for, imported from the page's own util so the
@@ -72,8 +78,26 @@ const Routes = () => {
                 <Route
                   path="/company-dashboard"
                   element={
-                    <ProtectedRoute>
+                    // Manager and above. Everything a salesman or a supervisor
+                    // worked from here now lives on Insights, which is where
+                    // this sends them — with the same one-line notice the
+                    // Console uses, because an old bookmark is not a trespass.
+                    <ProtectedRoute
+                      allowedRoles={DASHBOARD_ROLES}
+                      denyNotice="This page is not enabled for your account."
+                    >
                       <CompanyDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/targets"
+                  element={
+                    <ProtectedRoute
+                      allowedRoles={TARGETS_PAGE_ROLES}
+                      denyNotice="This page is not enabled for your account."
+                    >
+                      <TargetsPage />
                     </ProtectedRoute>
                   }
                 />

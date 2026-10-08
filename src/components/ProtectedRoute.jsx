@@ -74,14 +74,19 @@ export const ProtectedRoute = ({ children, requiredRole, allowedRoles, denyNotic
   // NOT OFFERED, rather than forbidden: land them somewhere they can work, and
   // say why in one line. RouteNotice, rendered below on whichever route they
   // arrive at, is what shows it.
+  //
+  // NEVER REDIRECT A PAGE TO ITSELF. landingPathForRole falls back to
+  // /company-dashboard for any role that cannot open Insights, and that page is
+  // now role-gated too — so for a role holding neither (the unused `agent`, or
+  // anything added to the enum later) the redirect would point straight back
+  // here and spin. Access Denied is an unhelpful answer but a finite one.
   if (restricted && !permitted && denyNotice) {
-    return (
-      <Navigate
-        to={landingPathForRole(userProfile?.role)}
-        replace
-        state={{ notice: denyNotice }}
-      />
-    );
+    const landing = landingPathForRole(userProfile?.role);
+    if (landing !== location.pathname) {
+      return (
+        <Navigate to={landing} replace state={{ notice: denyNotice }} />
+      );
+    }
   }
 
   // Check role-based access if a role restriction is specified

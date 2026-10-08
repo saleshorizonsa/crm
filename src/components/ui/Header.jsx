@@ -12,7 +12,12 @@ import { useNavigate } from "react-router-dom";
 import { NUMBERS_CHECK_ROLES } from "utils/numbersCheck";
 // One list of who may open Insights, and one of who may open the Coverage
 // Console — both shared with Routes.jsx.
-import { DIVISION_PAGE_ROLES, COVERAGE_CONSOLE_ROLES } from "utils/salesDivisionMetrics";
+import {
+  DIVISION_PAGE_ROLES,
+  COVERAGE_CONSOLE_ROLES,
+  DASHBOARD_ROLES,
+  TARGETS_PAGE_ROLES,
+} from "utils/salesDivisionMetrics";
 
 const Header = ({
   isCollapsed = false,
@@ -65,15 +70,25 @@ const Header = ({
     ...(DIVISION_PAGE_ROLES.includes(userProfile?.role)
       ? [{ label: "Insights", path: "/insights", icon: "Layers" }]
       : []),
-    // DASHBOARD, for every role including directors. It used to be hidden from
-    // them on the grounds that they "work from Insights" — now everybody does,
-    // and hiding the Dashboard from all of them would strand the figures it is
-    // the only page to show. One click away, unchanged.
-    {
-      label: t("nav.dashboard"),
-      path: "/company-dashboard",
-      icon: "LayoutDashboard",
-    },
+    // DASHBOARD — manager and above (CEO decision 2026-10-07). It was briefly
+    // shown to everyone, directors included, so that nobody landing on Insights
+    // lost the figures only the Dashboard had. For a salesman and a supervisor
+    // those figures moved onto Insights instead — the banners, the hot leads,
+    // the activity feed and the target tables — so the entry goes with the
+    // page. The route reads the same constant, and the mobile drawer renders
+    // this same array.
+    ...(DASHBOARD_ROLES.includes(userProfile?.role)
+      ? [{
+          label: t("nav.dashboard"),
+          path: "/company-dashboard",
+          icon: "LayoutDashboard",
+        }]
+      : []),
+    // TARGETS — where a supervisor assigns to his salesmen now that he has no
+    // Dashboard to do it from.
+    ...(TARGETS_PAGE_ROLES.includes(userProfile?.role)
+      ? [{ label: "Targets", path: "/targets", icon: "Target" }]
+      : []),
     // THE CONSOLE: manager and above (CEO decision 2026-10-07). Insights
     // answers the same coverage question for a supervisor or a salesman,
     // narrowed to their own scope, and it is where they land.

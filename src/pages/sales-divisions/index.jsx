@@ -24,10 +24,15 @@ import {
   calcDivisionMetrics,
   buildExceptions,
   healthOf,
+  DASHBOARD_ROLES,
 } from "utils/salesDivisionMetrics";
 import { fetchAdditionalDivisions } from "utils/divisionMembership";
 import { DivisionCoverageHero, DivisionCycleLedger } from "./components/DivisionCoverageHero";
 import DivisionExceptionFeed from "./components/DivisionExceptionFeed";
+// What moved here from the Dashboard for the roles that no longer have one.
+import InsightsBanners from "./components/InsightsBanners";
+import InsightsMyWork from "./components/InsightsMyWork";
+import InsightsTargets from "./components/InsightsTargets";
 
 // Insights (route /insights; folder and component keep the sales-divisions name)
 // — Company → Division → Team → Member → Deal.
@@ -258,6 +263,14 @@ export default function SalesDivisions() {
   const role = userProfile?.role;
 
   const [nav, setNav] = useState(INIT_NAV);
+  // "coverage" (everything this page has always shown) or "targets".
+  const [section, setSection] = useState("coverage");
+
+  // THE ROLES THIS PAGE HAS TO BE COMPLETE FOR. A manager and above keep their
+  // Dashboard, so the panels that moved here are rendered only for the roles
+  // that lost theirs — reading DASHBOARD_ROLES rather than naming supervisor
+  // and salesman again, so the two cannot disagree about who has what.
+  const ownsNoDashboard = Boolean(role) && !DASHBOARD_ROLES.includes(role);
   // Selected period, shared with Planning, the dashboards and the Console.
   const { dateRange, setRange } = useDateRange();
   const defMonth = monthBounds(new Date());
@@ -541,6 +554,14 @@ export default function SalesDivisions() {
   const scopeIds = useMemo(
     () => (raw ? scopeUserIds({ users: raw.users, viewerId: user?.id, role }) : []),
     [raw, user?.id, role]
+  );
+
+  // The people UNDER the viewer — his scope less himself. The plan, forecast
+  // and bounce-back alerts are about a supervisor's salesmen, which is the
+  // same `ownerIds` the Dashboard passed them.
+  const subordinateIds = useMemo(
+    () => scopeIds.filter((id) => id !== user?.id),
+    [scopeIds, user?.id]
   );
 
   // The panel collapses to the divisions the viewer's SCOPE TOUCHES (CEO
@@ -960,6 +981,59 @@ export default function SalesDivisions() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+        {/* ── WHAT NEEDS ACTING ON, FIRST ──
+            The banners that used to greet a salesman or a supervisor on the
+            Dashboard. They are only rendered for the roles that no longer have
+            a Dashboard to see them on; a manager's is unchanged, so repeating
+            them here would double them up. */}
+        {ownsNoDashboard && (
+          <InsightsBanners
+            role={role}
+            userId={user?.id}
+            companyId={company?.id}
+            subordinateIds={subordinateIds}
+          />
+        )}
+
+        {/* ── COVERAGE | TARGETS ──
+            Two sections rather than one long page. "Coverage" is everything
+            this page has always shown; "Targets" is the pair of tables that
+            answer what a person was given and how far through it they are. */}
+        {ownsNoDashboard && (
+          <div className="flex items-center gap-1 border-b border-gray-200 -mt-1">
+            {[
+              ["coverage", "Coverage"],
+              ["targets", "Targets"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSection(key)}
+                aria-current={section === key}
+                data-testid={`insights-tab-${key}`}
+                className={`text-xs font-medium px-3.5 py-2 -mb-px border-b-2 transition-colors ${
+                  section === key
+                    ? "border-indigo-600 text-indigo-700"
+                    : "border-transparent text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {section === "targets" ? (
+          <InsightsTargets
+            companyId={company?.id}
+            role={role}
+            scopeIds={scopeIds}
+            users={raw.users}
+            deals={raw.deals}
+            range={{ from: rangeStart, to: rangeEnd }}
+          />
+        ) : (
+        <>
         {divisionsNote && (
           <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
             {divisionsNote}
@@ -1071,6 +1145,22 @@ export default function SalesDivisions() {
               <DivisionExceptionFeed exceptions={exceptions} userName={userName} onJump={jumpToException} />
             )}
           </>
+        )}
+
+        {/* ── MY WORK ──
+            Below the tables, as the last thing on the Coverage section: the
+            hot leads and the activity feed a salesman and a supervisor worked
+            from on the Dashboard, scoped to themselves and their team. */}
+        {ownsNoDashboard && (
+          <InsightsMyWork
+            companyId={company?.id}
+            userId={user?.id}
+            ownerIds={scopeIds}
+            users={raw.users}
+            scopeLabel={scopeLabel}
+          />
+        )}
+        </>
         )}
       </div>
     </div>

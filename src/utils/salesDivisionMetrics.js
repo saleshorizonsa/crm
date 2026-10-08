@@ -69,6 +69,30 @@ export const COMPANY_SCOPE_ROLES = ['director', 'head', 'admin'];
  */
 export const COVERAGE_CONSOLE_ROLES = ['manager', 'director', 'head', 'admin'];
 
+/**
+ * Who still has a Dashboard (CEO decision 2026-10-07).
+ *
+ * For a salesman and a supervisor, Insights replaced it: the banners that tell
+ * them to act, their hot leads, their activity feed and their target tables all
+ * moved there first, and only then was this list narrowed. The order mattered —
+ * taking the page away before moving its contents would have cost them features
+ * for as long as the gap lasted.
+ *
+ * Read by the route guard, both menus and the Insights page, which renders the
+ * moved panels for exactly the roles NOT in here. One list, so a role can never
+ * be left with neither the Dashboard nor its replacement.
+ */
+export const DASHBOARD_ROLES = ['manager', 'director', 'head', 'admin'];
+
+/**
+ * Who gets /targets, where a supervisor assigns targets to his salesmen.
+ *
+ * Supervisors only, for now. Managers assign through
+ * ManagerSalesTargetAssignment on a Dashboard they keep, so sending them here
+ * as well would give them two places instead of one.
+ */
+export const TARGETS_PAGE_ROLES = ['supervisor'];
+
 // Who is LISTED as a division member. Directors and viewers carry no division,
 // targets or deals, so listing them is noise. Listing is all this controls:
 // totals are computed over the whole scope, and the contributor rule inside
