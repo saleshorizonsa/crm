@@ -1,4 +1,7 @@
 import { supabase } from '../lib/supabase';
+// A deal's plan item must never be orphaned by a delete — the same rule the
+// manual delete paths use, not a second copy of it.
+import { releasePlanItemsForDeal, RELEASE_STATUS } from './planItemRelease';
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 
@@ -13,12 +16,16 @@ export const SLA_REASON = 'No contact within 3-day SLA';
 // and Customer Master query for current-month planning, and a bounced lead must
 // not reappear there.
 //
-// opportunities.status carries a CHECK constraint that currently only permits
-// open / converted / won / lost, so this value is rejected (SQLSTATE 23514)
-// until migrations/add_opportunity_moved_to_future_status.sql has been applied.
-// Until then we fall back to leaving the row 'open' but pushing expected_month
-// to the Future Order's month, which is what actually takes it out of the
-// current month's plan — every current-plan query filters status AND month.
+// THE CONSTRAINT NOW ALLOWS IT. Verified read-only on production 2026-10-08:
+//   opportunities_status_check CHECK (status = ANY (ARRAY[
+//     'open','converted','won','lost','moved_to_future']))
+// and 68 rows already hold 'moved_to_future', so
+// migrations/add_opportunity_moved_to_future_status.sql is applied. The
+// SQLSTATE 23514 fallback below is therefore dead on production and is kept
+// only for a database where that migration has not been replayed; it leaves
+// the row 'open' but pushes expected_month to the Future Order's month, which
+// also takes it out of the current month's plan — every current-plan query
+// filters status AND month.
 const FUTURE_STATUS = 'moved_to_future';
 const CHECK_VIOLATION = '23514';
 const UNDEFINED_COLUMN = '42703';
@@ -223,6 +230,19 @@ async function moveLeadToFutureOrders(lead, companyId, userId, now) {
 
   if (insErr) {
     console.error('🔴 checkExpiredLeads: future_orders insert failed for deal', lead.id, insErr);
+    return false;
+  }
+
+  // THE PLAN ITEM GOES BACK BEFORE THE DEAL IS DELETED, by the same shared
+  // rule the manual paths use (utils/planItemRelease.js). This sweep already
+  // reset the opportunity below, and correctly — but it did so AFTER the
+  // delete and only when `lead.opportunity_id` was set, so a lead whose
+  // opportunity_id was empty while the item still pointed at the deal came out
+  // of it orphaned. Keying on deal_id finds the item either way.
+  const release = await releasePlanItemsForDeal(lead.id, RELEASE_STATUS.movedToFuture);
+  if (release.error) {
+    console.error('🔴 checkExpiredLeads: could not release the plan item for deal', lead.id, release.error);
+    await supabase.from('future_orders').delete().eq('id', future.id);
     return false;
   }
 

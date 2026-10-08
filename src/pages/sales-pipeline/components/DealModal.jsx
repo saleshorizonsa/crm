@@ -16,6 +16,8 @@ import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { fetchAdditionalDivisions } from "utils/divisionMembership";
+// Deleting a deal must put its plan item back, and the dialog must say so.
+import { planItemWarning, RELEASE_STATUS } from "utils/planItemRelease";
 import {
   currencyService,
   productService,
@@ -433,6 +435,9 @@ const DealModal = ({
   const [dealType, setDealType] = useState("value"); // "value" | "product"
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteReferences, setDeleteReferences] = useState(null);
+  // "This deal came from plan item X (amount, month)…" — null when the deal
+  // was never planned.
+  const [planItemNotice, setPlanItemNotice] = useState(null);
   const [dealProducts, setDealProducts] = useState([]);
   const [selectedProducts, setSelectedProducts] = useState([]); // For new deals
 
@@ -1558,6 +1563,9 @@ const DealModal = ({
       if (error) throw error;
 
       setDeleteReferences(data);
+      // Name the plan item before anyone presses Delete, and say where it
+      // goes back to.
+      setPlanItemNotice(planItemWarning(data?.planItems, RELEASE_STATUS.deleted));
       setShowDeleteConfirm(true);
     } catch (error) {
       console.error("Error checking deal references:", error);
@@ -1571,11 +1579,19 @@ const DealModal = ({
 
     setIsDeleting(true);
     try {
-      // Use cascade delete if there are references
+      // Use cascade delete if there are references.
+      //
+      // Either way the plan item this deal came from is set back to `open`
+      // FIRST, and a failure there leaves the deal alone - the service
+      // enforces it, this call only says where the item should go back to.
       const { error } =
         deleteReferences?.totalReferences > 0
-          ? await dealService.deleteDealWithCascade(deal.id)
-          : await dealService.deleteDeal(deal.id);
+          ? await dealService.deleteDealWithCascade(deal.id, {
+              planItemStatus: RELEASE_STATUS.deleted,
+            })
+          : await dealService.deleteDeal(deal.id, {
+              planItemStatus: RELEASE_STATUS.deleted,
+            });
 
       if (error) throw error;
 
@@ -1637,10 +1653,19 @@ const DealModal = ({
       if (insErr) throw insErr;
 
       // Remove the deal from the Funnel (cascade delete if it has references).
+      //
+      // The plan item goes to `moved_to_future`, not `open`: the work has been
+      // deferred to the month the future order now sits in, so putting the
+      // item back into THIS month's plan would ask for it twice. The service
+      // releases it before deleting anything and keeps the deal if that fails.
       const { data: refs } = await dealService.checkDealReferences(deal.id);
       const { error: delErr } = refs?.totalReferences > 0
-        ? await dealService.deleteDealWithCascade(deal.id)
-        : await dealService.deleteDeal(deal.id);
+        ? await dealService.deleteDealWithCascade(deal.id, {
+            planItemStatus: RELEASE_STATUS.movedToFuture,
+          })
+        : await dealService.deleteDeal(deal.id, {
+            planItemStatus: RELEASE_STATUS.movedToFuture,
+          });
       if (delErr) throw delErr;
 
       setShowReplacement(false);
@@ -2780,6 +2805,21 @@ const DealModal = ({
                 </h3>
               </div>
 
+              {/* THE PLAN ITEM, NAMED — outside the references block on
+                  purpose. A converted deal often has no tasks, activities or
+                  products at all, so that block does not render and the plan
+                  item would go unmentioned, which is how 28 orphans were
+                  made. */}
+              {planItemNotice && (
+                <div
+                  data-testid="delete-plan-item-notice"
+                  className="mb-4 flex gap-2.5 items-start rounded-lg border border-amber-200 bg-amber-50 p-3"
+                >
+                  <Icon name="ClipboardList" size={16} className="text-amber-700 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-amber-800">{planItemNotice}</p>
+                </div>
+              )}
+
               {deleteReferences?.totalReferences > 0 ? (
                 <div className="mb-4">
                   <p className="text-sm text-muted-foreground mb-3">
@@ -2863,7 +2903,17 @@ const DealModal = ({
               <Button
                 variant="ghost"
                 type="button"
-                onClick={() => { setMoveMonth(''); setMoveError(''); setShowMoveFuture(true); }}
+                onClick={async () => {
+                  setMoveMonth('');
+                  setMoveError('');
+                  // Same courtesy as the delete dialog: say what happens to
+                  // the plan item. This path deletes the deal too.
+                  const { data } = await dealService.checkDealReferences(deal.id);
+                  setPlanItemNotice(
+                    planItemWarning(data?.planItems, RELEASE_STATUS.movedToFuture),
+                  );
+                  setShowMoveFuture(true);
+                }}
                 disabled={isSaving || isDeleting}
                 className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
               >
@@ -3001,6 +3051,15 @@ const DealModal = ({
                   />
                   <p className="text-xs text-muted-foreground mt-1">Must be next month or later.</p>
                 </div>
+                {planItemNotice && (
+                  <div
+                    data-testid="move-plan-item-notice"
+                    className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-100 rounded-xl"
+                  >
+                    <Icon name="ClipboardList" size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-800">{planItemNotice}</p>
+                  </div>
+                )}
                 {moveError && (
                   <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-100 rounded-xl">
                     <Icon name="AlertTriangle" size={14} className="text-amber-500 flex-shrink-0" />

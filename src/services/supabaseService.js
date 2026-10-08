@@ -2,6 +2,13 @@ import { supabase } from "../lib/supabase";
 import { calculateLeadScore } from "../utils/leadScoring";
 import { handleTargetChange } from "../utils/targetChangeHandler";
 import { forecastFieldsFor } from "../utils/forecastCalc";
+// A deal's plan item must never be left orphaned by a delete — one rule, in
+// one place, called by both delete paths below.
+import {
+  releasePlanItemsForDeal,
+  fetchPlanItemsForDeal,
+  RELEASE_STATUS,
+} from "../utils/planItemRelease";
 // The shared definitions of Target and Achieved. getMonthlyTarget and
 // getScopeMonthlyTotals below are consumers of these, not second copies.
 import {
@@ -987,6 +994,12 @@ export const dealService = {
         tasks: 0,
         activities: 0,
         deal_products: 0,
+        // THE ONE THAT WAS MISSING. A plan item pointing at this deal is the
+        // reference that matters most to the figures, and it was not counted,
+        // so the confirm dialog told the user a converted deal had no
+        // references at all. 28 of production's 35 orphaned plan items were
+        // created through that dialog.
+        opportunities: 0,
       };
 
       // Check tasks
@@ -1010,18 +1023,49 @@ export const dealService = {
         ?.eq("deal_id", dealId);
       references.deal_products = productsCount || 0;
 
+      // The plan items themselves, not just a count: the dialog has to name
+      // the customer, amount and month so the user knows what returns to the
+      // plan.
+      const { data: planItems } = await fetchPlanItemsForDeal(dealId);
+      references.opportunities = (planItems || []).length;
+
+      // `totalReferences` DECIDES WHICH DELETE PATH RUNS, so it stays what it
+      // has always been: the child rows that have to be removed or unlinked
+      // first. A plan item needs neither — it is released by
+      // releasePlanItemsForDeal, which both delete paths call — and counting
+      // it here would quietly send every converted deal down the cascade.
       const totalReferences =
         references.tasks + references.activities + references.deal_products;
 
-      return { data: { references, totalReferences }, error: null };
+      return {
+        data: {
+          references,
+          totalReferences,
+          // Named, so the confirm dialog can say what returns to the plan.
+          planItems: planItems || [],
+        },
+        error: null,
+      };
     } catch (error) {
       return { data: null, error };
     }
   },
 
   // Delete deal with cascade (deletes related records first)
-  async deleteDealWithCascade(dealId) {
+  //
+  // `planItemStatus` is where a plan item that was converted into this deal
+  // goes back to - RELEASE_STATUS.deleted ('open') by default, because a
+  // deleted deal leaves the work still due. The release happens BEFORE
+  // anything is deleted and a failure abandons the delete: see
+  // utils/planItemRelease.js.
+  async deleteDealWithCascade(dealId, { planItemStatus = RELEASE_STATUS.deleted } = {}) {
     try {
+      // THE PLAN ITEM FIRST, BEFORE ANYTHING IS DESTROYED. Once the deal row
+      // is gone the FK has nulled deal_id and there is no way left to find
+      // which item this was.
+      const released = await releasePlanItemsForDeal(dealId, planItemStatus);
+      if (released.error) return { error: released.error };
+
       // Delete deal_products first
       await supabase?.from("deal_products")?.delete()?.eq("deal_id", dealId);
 
@@ -1046,8 +1090,14 @@ export const dealService = {
   },
 
   // Delete deal
-  async deleteDeal(dealId) {
+  //
+  // Same rule as the cascade version: the plan item goes back first, and if
+  // that fails the deal stays.
+  async deleteDeal(dealId, { planItemStatus = RELEASE_STATUS.deleted } = {}) {
     try {
+      const released = await releasePlanItemsForDeal(dealId, planItemStatus);
+      if (released.error) return { error: released.error };
+
       const { error } = await supabase
         ?.from("deals")
         ?.delete()
