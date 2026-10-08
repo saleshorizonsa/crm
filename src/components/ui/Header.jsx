@@ -10,8 +10,9 @@ import { useNavigate } from "react-router-dom";
 // The same list the route guard uses, so hiding the entry and refusing the
 // route can never disagree.
 import { NUMBERS_CHECK_ROLES } from "utils/numbersCheck";
-// One list of who may open Insights, shared with Routes.jsx.
-import { DIVISION_PAGE_ROLES } from "utils/salesDivisionMetrics";
+// One list of who may open Insights, and one of who may open the Coverage
+// Console — both shared with Routes.jsx.
+import { DIVISION_PAGE_ROLES, COVERAGE_CONSOLE_ROLES } from "utils/salesDivisionMetrics";
 
 const Header = ({
   isCollapsed = false,
@@ -73,8 +74,17 @@ const Header = ({
       path: "/company-dashboard",
       icon: "LayoutDashboard",
     },
-    // The Console is a supervisor's tool; admin/head/viewer keep it unchanged.
-    ...(!["director", "manager", "salesman"].includes(userProfile?.role)
+    // THE CONSOLE: manager and above (CEO decision 2026-10-07). Insights
+    // answers the same coverage question for a supervisor or a salesman,
+    // narrowed to their own scope, and it is where they land.
+    //
+    // This was the inverse: a hand-written list hid the Console from directors
+    // and managers, the two roles that now keep it, and showed it to
+    // supervisors, salesmen's bosses, admin, head AND viewer — who was bounced
+    // straight back to /pipeline-view by ProtectedRoute on arrival. The route
+    // reads the same constant, so the menu cannot offer a page the route then
+    // refuses.
+    ...(COVERAGE_CONSOLE_ROLES.includes(userProfile?.role)
       ? [{
           label: t("nav.console"),
           path: "/coverage-console",

@@ -19,9 +19,45 @@ import { DIVISION_PAGE_ROLES } from './salesDivisionMetrics';
 // DEEP LINKS DO NOT COME THROUGH HERE. This is the DEFAULT only — what you get
 // for visiting "/" or signing in with nowhere particular to go. A specific URL
 // is honoured by ProtectedRoute remembering it and the login page preferring
-// it; see both.
+// it; see postLoginPath below.
 export function landingPathForRole(role) {
   if (role === 'viewer') return '/pipeline-view';
   if (DIVISION_PAGE_ROLES.includes(role)) return '/insights';
   return '/company-dashboard';
+}
+
+/**
+ * THE PATHS THAT MEAN "NOWHERE PARTICULAR".
+ *
+ * "/" is the app's front door, and "/company-dashboard" was the front door
+ * until Insights became the landing page. Both are where a browser ends up on
+ * its own — a bookmark, a restored tab, a typed address — rather than somewhere
+ * a person chose to go, so neither counts as a deep link worth preserving
+ * across a sign-in.
+ */
+export const HOME_PATHS = ['/', '/company-dashboard'];
+
+export const isHomePath = (pathname) => HOME_PATHS.includes(pathname);
+
+/**
+ * Where to send someone who has just signed in.
+ *
+ * A REMEMBERED PATH WINS, except when it is one of the home paths. Following a
+ * notification link to /planning#approvals while signed out has to land on
+ * /planning#approvals, with its query and hash intact. But someone whose
+ * bookmark is the old home page should land on their own landing page, not be
+ * returned to the page the landing rule exists to replace — which is what
+ * happened while this only skipped "/login": a restored
+ * /company-dashboard tab was treated as a deliberate destination, and a
+ * director who had Insights as a landing page never saw it.
+ *
+ * @param {object} from  a react-router location (ProtectedRoute's `state.from`)
+ * @param {string} role  the signed-in user's role
+ */
+export function postLoginPath({ from, role }) {
+  const pathname = from?.pathname;
+  if (!pathname || pathname === '/login' || isHomePath(pathname)) {
+    return landingPathForRole(role);
+  }
+  return `${pathname}${from.search || ''}${from.hash || ''}`;
 }

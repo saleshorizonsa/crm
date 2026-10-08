@@ -55,7 +55,10 @@ const UserManagement = () => {
 
     // Only check permissions if userProfile is loaded
     if (userProfile && !canManageUsers) {
-      navigate("/company-dashboard");
+      // "/" , not the Dashboard: HomeRedirect decides where each role goes, so
+      // a supervisor bounced off this page lands on Insights like everywhere
+      // else instead of on the page the landing rule replaced.
+      navigate("/");
       return;
     }
 

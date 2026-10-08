@@ -7,7 +7,7 @@ import CompanyBranding from "./components/CompanyBranding";
 import DailyQuote from "../../components/DailyQuote";
 import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
-import { landingPathForRole } from "../../utils/landingPath";
+import { postLoginPath } from "../../utils/landingPath";
 
 // Public storage URLs — no DB query / no auth needed (companies table is RLS-blocked pre-login).
 // Logos are publicly readable from the company-logos bucket; onError falls back to colored initials.
@@ -38,15 +38,14 @@ const Login = () => {
       // the attempted location in state.from when it bounces a signed-out user
       // here, so a notification link or a refreshed page reopens itself.
       //
-      // Guarded against sending anyone back to /login (a bounce loop) and
-      // against a missing pathname. Nothing checks whether their role may open
-      // it — if it cannot, they see the same Access Denied they would have seen
-      // clicking the link while signed in, which is the honest answer.
-      const from = location.state?.from;
-      const target = from?.pathname && from.pathname !== '/login'
-        ? `${from.pathname}${from.search || ''}${from.hash || ''}`
-        : landingPathForRole(userProfile.role);
-      navigate(target, { replace: true });
+      // postLoginPath holds the rule — including which paths do NOT count as a
+      // deep link ("/" and "/company-dashboard", the two front doors a browser
+      // arrives at on its own). Nothing checks whether their role may open the
+      // remembered path: if it cannot, they get the same answer they would have
+      // got clicking the link while signed in, which is the honest one.
+      navigate(postLoginPath({ from: location.state?.from, role: userProfile.role }), {
+        replace: true,
+      });
     }
   }, [user, userProfile, loading, navigate, location.state]);
 

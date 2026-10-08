@@ -36,7 +36,7 @@ import PipelineView from "./pages/pipeline-view";
 import PlanningPage from "./pages/planning";
 import CoverageConsole from "./pages/coverage-console";
 import SalesDivisions from "./pages/sales-divisions";
-import { DIVISION_PAGE_ROLES } from "./utils/salesDivisionMetrics";
+import { DIVISION_PAGE_ROLES, COVERAGE_CONSOLE_ROLES } from "./utils/salesDivisionMetrics";
 import ReassignRecords from "./pages/reassign-records";
 import NumbersCheck from "./pages/numbers-check";
 // The roles the numbers check is for, imported from the page's own util so the
@@ -192,7 +192,16 @@ const Routes = () => {
                 <Route
                   path="/coverage-console"
                   element={
-                    <ProtectedRoute>
+                    // Manager and above (CEO decision 2026-10-07): Insights
+                    // answers the same question for a supervisor or a salesman,
+                    // narrowed to their own scope. denyNotice sends anyone else
+                    // to their landing page with one line of explanation rather
+                    // than an Access Denied screen — an old bookmark is not a
+                    // trespass. Same constant as the menu entry in Header.jsx.
+                    <ProtectedRoute
+                      allowedRoles={COVERAGE_CONSOLE_ROLES}
+                      denyNotice="This page is not enabled for your account."
+                    >
                       <CoverageConsole />
                     </ProtectedRoute>
                   }

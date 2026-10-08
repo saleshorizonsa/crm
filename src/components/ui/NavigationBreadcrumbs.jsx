@@ -1,14 +1,22 @@
 import React from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../AppIcon';
 import Button from './Button';
+import { useLanguage } from '../../i18n';
 
 const NavigationBreadcrumbs = ({ items = [], className = '' }) => {
+  const { t } = useLanguage();
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const defaultBreadcrumbs = [
     { label: 'Dashboard', path: '/company-dashboard', icon: 'Home' }
   ];
 
-  const breadcrumbItems = items?.length > 0 ? items : defaultBreadcrumbs;
-  const currentPath = window.location?.pathname;
+  // The ROUTER's location, not window.location: these crumbs navigate within
+  // the app now, and a window-read pathname would keep describing the page the
+  // browser last loaded.
+  const currentPath = location.pathname;
 
   // Auto-generate breadcrumbs based on current path
   const generateBreadcrumbs = () => {
@@ -45,11 +53,41 @@ const NavigationBreadcrumbs = ({ items = [], className = '' }) => {
     return pathMap?.[currentPath] || defaultBreadcrumbs;
   };
 
-  const finalBreadcrumbs = items?.length > 0 ? items : generateBreadcrumbs();
+  // Callers are inconsistent: the pathMap above uses `path`, every page that
+  // passes its own items uses `href`. The component only ever read `path`, so
+  // every hand-written crumb — which is most of them — rendered as dead text
+  // with no icon. Read both.
+  const targetOf = (item) => item?.path || item?.href || null;
+
+  /**
+   * THE FIRST CRUMB IS "HOME", AND HOME IS "/".
+   *
+   * Every crumb trail in the app starts with the Dashboard, because the
+   * Dashboard used to be the home page. It is not any more: "/" routes through
+   * HomeRedirect, which sends each role to its own landing page — Insights for
+   * most, /pipeline-view for a viewer. So off the Dashboard the first crumb
+   * becomes Home → "/", and the one page that still names the Dashboard is the
+   * Dashboard itself.
+   *
+   * Done here rather than in a dozen call sites: the trails are written per
+   * page, and the next page added would have started with the old crumb again.
+   */
+  const withHomeCrumb = (crumbs) => {
+    const [first, ...rest] = crumbs || [];
+    if (!first) return crumbs;
+    if (currentPath === '/company-dashboard') return crumbs;
+    if (targetOf(first) !== '/company-dashboard') return crumbs;
+    return [{ label: t('nav.home'), path: '/', icon: 'Home' }, ...rest];
+  };
+
+  const finalBreadcrumbs = withHomeCrumb(
+    items?.length > 0 ? items : generateBreadcrumbs(),
+  );
 
   const handleNavigation = (path) => {
+    // Client-side, so the app does not reload itself to move one level up.
     if (path && path !== currentPath) {
-      window.location.href = path;
+      navigate(path);
     }
   };
 
@@ -62,10 +100,11 @@ const NavigationBreadcrumbs = ({ items = [], className = '' }) => {
       <ol className="flex items-center space-x-1">
         {finalBreadcrumbs?.map((item, index) => {
           const isLast = index === finalBreadcrumbs?.length - 1;
-          const isClickable = item?.path && !isLast && item?.path !== currentPath;
+          const target = targetOf(item);
+          const isClickable = target && !isLast && target !== currentPath;
 
           return (
-            <li key={`${item?.path}-${index}`} className="flex items-center">
+            <li key={`${target}-${index}`} className="flex items-center">
               {index > 0 && (
                 <Icon 
                   name="ChevronRight" 
@@ -77,7 +116,7 @@ const NavigationBreadcrumbs = ({ items = [], className = '' }) => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleNavigation(item?.path)}
+                  onClick={() => handleNavigation(target)}
                   className="h-auto p-1 text-muted-foreground hover:text-foreground transition-enterprise"
                 >
                   <div className="flex items-center space-x-1.5">

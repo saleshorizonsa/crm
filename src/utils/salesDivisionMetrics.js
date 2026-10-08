@@ -54,6 +54,21 @@ export const DIVISION_PAGE_ROLES = [
  */
 export const COMPANY_SCOPE_ROLES = ['director', 'head', 'admin'];
 
+/**
+ * Who may open the Coverage Console (CEO decision 2026-10-07).
+ *
+ * Insights is enough for supervisors and salesmen: it answers the same coverage
+ * question, narrowed to their own scope, and it is where they land. The Console
+ * is the roll-up across teams, so it stops at manager.
+ *
+ * The rule REVERSED on that date. The Console was built as a supervisor's tool
+ * and the menu hid it from directors and managers — the two roles that now keep
+ * it — so a role list spelled out at a call site would not just drift, it would
+ * be backwards. The route guard and both menus read this constant, the same way
+ * they read DIVISION_PAGE_ROLES.
+ */
+export const COVERAGE_CONSOLE_ROLES = ['manager', 'director', 'head', 'admin'];
+
 // Who is LISTED as a division member. Directors and viewers carry no division,
 // targets or deals, so listing them is noise. Listing is all this controls:
 // totals are computed over the whole scope, and the contributor rule inside
