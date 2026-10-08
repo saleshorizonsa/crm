@@ -42,6 +42,14 @@ const STAGE_COLOR = {
   lost:          '#6B7280',
 };
 
+/** Why each flag is on a row — the sentence a reader needs, not the rule name. */
+const PLAN_FLAG_WHY = {
+  'NOT CONVERTED': 'Still open with a week or less left in the month. Nobody has turned it into a deal, so it will not convert into anything.',
+  DUPLICATE: 'Somebody else has this customer in their plan for the same month. Two people calling one customer is work done twice.',
+  'NO HISTORY': 'This customer has never been invoiced. Not wrong in itself, but a plan made only of these is a plan of hope.',
+  'ABOVE USUAL': 'Planned at more than twice what this customer usually buys in a month they buy.',
+};
+
 const emptyForm = (month) => ({
   customer_name:  '',
   customer_type:  'existing',
@@ -79,6 +87,17 @@ export default function OpportunitiesModule({
   filterProductGroup = null,
   onFilterProductGroupChange,
   productGroups = [],
+  // THE GAP CLOSER'S ONE ACTION. A suggestion arrives here as
+  // { customer, value, contactId } and opens the normal add form with those
+  // fields filled in — the person still confirms, and nothing is written until
+  // they do. The page clears it through onPrefillConsumed so re-opening the
+  // panel does not reopen the form.
+  prefill = null,
+  onPrefillConsumed,
+  // The health flags, computed once by the page for the whole scope:
+  // customer key → flag list. Passed in rather than computed per row so the
+  // list, the panel and the chips cannot disagree about what is wrong.
+  flagsByItemId = null,
 }) {
   const { user, company: authCompany, userProfile } = useAuth();
   const { formatCurrency } = useCurrency();
@@ -167,6 +186,10 @@ export default function OpportunitiesModule({
   const [filterStatus, setFilterStatus] = useState('all');
 
   const [showModal, setShowModal]   = useState(false);
+  // Which flag the list is narrowed to, or null for everything. A chip, not a
+  // dropdown: there are four flags and the question is always "show me the
+  // broken ones".
+  const [flagFilter, setFlagFilter] = useState(null);
   const [editingOpp, setEditingOpp] = useState(null);
   const [form, setForm]             = useState(() => emptyForm(currentMonth));
 
@@ -783,6 +806,24 @@ export default function OpportunitiesModule({
     setForm(emptyForm(currentMonth));
   }
 
+  // A suggestion from the Gap closer: the add form, already filled in.
+  // `customer_type: 'existing'` because every candidate has bought before —
+  // that is what made it a candidate.
+  useEffect(() => {
+    if (!prefill || isViewingOther) return;
+    setEditingOpp(null);
+    setForm({
+      ...emptyForm(currentMonth),
+      customer_name:  prefill.customer || '',
+      customer_type:  'existing',
+      contact_id:     prefill.contactId || '',
+      planned_amount: prefill.value != null ? String(Math.round(prefill.value)) : '',
+    });
+    setShowModal(true);
+    onPrefillConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
+
   // Close on ESC
   useEffect(() => {
     if (!showModal) return;
@@ -1026,7 +1067,56 @@ export default function OpportunitiesModule({
         </div>
       ) : (
         <div className="space-y-3">
-          {opportunities.map((opp) => {
+          {/* FLAG CHIPS. Counted over the whole list, so the counts do not
+              change as the list is narrowed. */}
+          {flagsByItemId && (() => {
+            const counts = {};
+            opportunities.forEach((o) => {
+              (flagsByItemId[o.id] || []).forEach((f) => {
+                const base = f.startsWith('DUPLICATE') ? 'DUPLICATE' : f;
+                counts[base] = (counts[base] || 0) + 1;
+              });
+            });
+            const names = Object.keys(counts);
+            if (!names.length) return null;
+            return (
+              <div className="flex items-center gap-2 flex-wrap" data-testid="plan-flag-chips">
+                <span className="text-xs text-muted-foreground">Show only:</span>
+                {names.map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setFlagFilter(flagFilter === f ? null : f)}
+                    aria-pressed={flagFilter === f}
+                    className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                      flagFilter === f
+                        ? 'bg-amber-100 border-amber-300 text-amber-800'
+                        : 'bg-card border-border text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {f} · {counts[f]}
+                  </button>
+                ))}
+                {flagFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setFlagFilter(null)}
+                    className="text-xs text-muted-foreground underline decoration-dotted"
+                  >
+                    clear
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+
+          {opportunities
+            .filter((o) => {
+              if (!flagFilter) return true;
+              const fl = (flagsByItemId?.[o.id] || []);
+              return fl.some((f) => (f.startsWith('DUPLICATE') ? 'DUPLICATE' : f) === flagFilter);
+            })
+            .map((opp) => {
             const daysSince = Math.floor(
               (Date.now() - new Date(opp.created_at).getTime()) / 86400000,
             );
@@ -1063,6 +1153,23 @@ export default function OpportunitiesModule({
                         }`}>
                           {isNew ? 'New Customer' : 'Existing'}
                         </span>
+                        {/* WHAT IS WRONG WITH THIS ITEM. Computed once by the
+                            page for the whole scope (utils/planningDrill.js),
+                            so these say the same thing as the panel's. */}
+                        {(flagsByItemId?.[opp.id] || []).map((f) => (
+                          <span
+                            key={f}
+                            data-testid="plan-item-flag"
+                            title={PLAN_FLAG_WHY[f.startsWith('DUPLICATE') ? 'DUPLICATE' : f] || f}
+                            className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${
+                              f === 'NO HISTORY'
+                                ? 'bg-gray-50 text-gray-600 border-gray-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}
+                          >
+                            {f}
+                          </span>
+                        ))}
                         {!isOpen && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium capitalize">
                             {opp.status}

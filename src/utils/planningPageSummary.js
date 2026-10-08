@@ -129,10 +129,14 @@ export function openPlanTotal(rows) {
 }
 
 export async function fetchPlannedOpen({ companyId, ownerIds, start, end, productGroup }) {
-  if (!companyId || !ownerIds?.length) return { total: 0, untagged: 0 };
+  if (!companyId || !ownerIds?.length) return { total: 0, untagged: 0, rows: [] };
   const { data, error } = await supabase
     .from('opportunities')
-    .select('owner_id, planned_amount, material_group')
+    // The columns the figure needs, plus the ones the row needs to be WORTH
+    // opening: which customer, which month, and the deal it became. Session 13
+    // opens these cards, and a total with no rows behind it cannot be checked
+    // against anything.
+    .select('id, owner_id, planned_amount, material_group, customer_name, contact_id, status, expected_month, deal_id, created_at')
     .eq('company_id', companyId)
     .eq('status', 'open')
     .in('owner_id', ownerIds)
@@ -141,16 +145,19 @@ export async function fetchPlannedOpen({ companyId, ownerIds, start, end, produc
   // `failed` matters as much as the zero. A swallowed error here returns a
   // total of 0, which is indistinguishable from "nothing planned" — that is how
   // a plan came to be filed with total_planned 0.00 against a real pipeline.
-  if (error) { console.error('fetchPlannedOpen:', error); return { total: 0, untagged: 0, failed: true }; }
+  if (error) { console.error('fetchPlannedOpen:', error); return { total: 0, untagged: 0, rows: [], failed: true }; }
 
   let total = 0;
   let untagged = 0;
+  const counted = [];
   (data || []).forEach((row) => {
     const amt = parseFloat(row.planned_amount) || 0;
     if (!row.material_group) untagged += amt;
-    if (matchesGroup(row.material_group, productGroup)) total += amt;
+    if (matchesGroup(row.material_group, productGroup)) { total += amt; counted.push(row); }
   });
-  return { total, untagged };
+  // `rows` is exactly what `total` is the sum of — the same filter, not a
+  // second one — so a panel built from them cannot disagree with the card.
+  return { total, untagged, rows: counted };
 }
 
 /**
@@ -182,7 +189,7 @@ async function fetchFunnelForPeriod({ companyId, scopeIds, start, end, productGr
   if (!productGroup) {
     return {
       total: funnel.total, untagged: 0, failed: funnel.failed,
-      undated: funnel.undated, dealCount: funnel.dealCount,
+      undated: funnel.undated, dealCount: funnel.dealCount, rows,
     };
   }
 
@@ -200,14 +207,15 @@ async function fetchFunnelForPeriod({ companyId, scopeIds, start, end, productGr
 
   let total = 0;
   let untagged = 0;
+  const counted = [];
   rows.forEach((d) => {
     const g = groupByDeal.get(d.id);
     if (!g) { untagged += amountOf(d); return; }
-    if (matchesGroup(g, productGroup)) total += amountOf(d);
+    if (matchesGroup(g, productGroup)) { total += amountOf(d); counted.push(d); }
   });
   return {
     total, untagged, failed: funnel.failed,
-    undated: funnel.undated, dealCount: rows.length,
+    undated: funnel.undated, dealCount: counted.length, rows: counted,
   };
 }
 
@@ -280,9 +288,13 @@ export async function computePlanningPageSummary({
   const target = Object.values(targetPerPerson(targetRows)).reduce((s, v) => s + v, 0);
 
   // ── Achieved: the one strict definition — won AND invoiced, by invoice_date.
-  const { total: achieved } = await fetchAchieved({
+  // The whole result, not just the total: `deals` is the invoices behind
+  // Achieved and `returnRows` the credit notes netted off it, which is what
+  // the Target/Achieved card opens onto.
+  const achievedRes = await fetchAchieved({
     companyId, contributorIds: scopeIds, start, end,
   });
+  const achieved = achievedRes.total;
 
   // Every contributor-flagged person in scope counts here in full, including a
   // manager whose only target row is yearly. His invoiced revenue lands in
@@ -368,6 +380,26 @@ export async function computePlanningPageSummary({
   const coveragePct = requiredPlan > 0 ? (availableCoverage / requiredPlan) * 100 : null;
 
   return {
+    /**
+     * THE ROWS BEHIND THE CARDS (Session 13).
+     *
+     * Every one of these was already read to produce a figure above; none is
+     * fetched again and none is recomputed. A card that can be opened has to
+     * show the same rows its own total was summed from, or the panel and the
+     * card are two different measurements with one name.
+     */
+    drill: {
+      invoicedRows: achievedRes.deals || [],
+      invoicedPerPerson: achievedRes.perPerson || {},
+      returnRows: achievedRes.returnRows || [],
+      planRows: planned.rows || [],
+      funnelRows: funnel.rows || [],
+      scopeIds,
+      forwardScopeIds,
+      winRatePct,
+      requiredPlan,
+      targetRows,
+    },
     target,
     achieved,
     attainmentPct: target > 0 ? (achieved / target) * 100 : null,

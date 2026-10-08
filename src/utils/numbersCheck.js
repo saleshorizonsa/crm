@@ -38,6 +38,9 @@ import { activeIdsFrom } from 'utils/achieverScope';
 // wonNotInvoicedList and summarizeWonNotInvoiced are already imported above,
 // from the same module.
 import { buildCoverageDrill, RAIL_SEGMENTS } from 'utils/coverageDrill';
+import { buildPlanningDrill } from 'utils/planningDrill';
+import { computeGapCloser } from 'utils/gapCloser';
+import { buildTeamPlanBoard } from 'utils/teamPlanBoard';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
 import {
@@ -468,6 +471,125 @@ async function buildDivisionGroups({
   ];
 }
 
+/**
+ * THE PLANNING CARDS OPEN ONTO THEIR OWN FIGURES.
+ *
+ * Four of the five cards can be clicked (session 13), and each opens a panel
+ * whose header is supposed to be the card's own number. buildPlanningDrill
+ * GROUPS the rows computePlanningPageSummary already read rather than
+ * recomputing them, so the equality should hold by construction — which is
+ * exactly why it is asserted. Two rows per openable card:
+ *
+ *   panel total = card            the header matches the tile
+ *   rows add to the panel total   the breakdown matches the header
+ *
+ * Required plan has no rows to add up (it shows the arithmetic in words), so
+ * only its header is compared.
+ *
+ * THE TEAM BOARD. Its totals row is the viewer's own cards, NOT a sum of the
+ * per-person rows, and the difference is real: a team's Required Plan is its
+ * own remaining target ÷ its own conversion, which is not the sum of its
+ * members'. What DOES add up is Target, so that is asserted and Required Plan
+ * is reported beside it.
+ *
+ * THE GAP CLOSER answers the Planned gap card, so the gap it ranks candidates
+ * against must be the gap the card shows.
+ */
+async function buildPlanningDrillRows({ companyId, bundle, start, end }) {
+  const users = bundle.users || [];
+  const subjects = [
+    { id: null, name: 'company', role: 'director' },
+    ...users
+      .filter((u) => u.is_active !== false
+        && ['manager', 'supervisor', 'salesman'].includes(u.role))
+      .map((u) => ({ id: u.id, name: u.full_name || u.id, role: u.role })),
+  ];
+
+  const rows = [];
+  for (const subj of subjects) {
+    const scope = subj.id ? scopeUserIds({ users, viewerId: subj.id, role: subj.role }) : null;
+    // eslint-disable-next-line no-await-in-loop
+    const sum = await computePlanningPageSummary({
+      companyId, ownerIds: scope, start, end, productGroup: null,
+    });
+    if (!sum.drill) {
+      rows.push(row({
+        label: `Planning cards — ${subj.name}: the summary carries no rows`,
+        value: 0, expected: 1,
+        note: 'computePlanningPageSummary returned no drill payload, so the cards'
+          + ' would open onto nothing',
+      }));
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+
+    const cards = buildPlanningDrill(sum, { users });
+    const sumRows = (node) => (node.children
+      ? node.children.reduce((t, c) => t + sumRows(c), 0)
+      : (node.rows || []).reduce((t, r) => t + n(r.value), 0));
+
+    const pairs = [
+      ['Achieved', cards.achieved, sum.achieved, true],
+      ['Planning coverage', cards.coverage, n(sum.plannedOpen) + n(sum.openFunnel), true],
+      ['Required plan', cards.required, sum.requiredPlan, false],
+      ['Planned gap', cards.gap, sum.plannedGap, false],
+    ];
+    pairs.forEach(([label, node, expected, hasRows]) => {
+      rows.push(row({
+        label: `Planning card — ${subj.name} — ${label}: panel total = card`,
+        value: node.total,
+        expected,
+      }));
+      if (hasRows) {
+        rows.push(row({
+          label: `Planning card — ${subj.name} — ${label}: rows add to the panel total`,
+          value: sumRows(node),
+          expected: node.total,
+        }));
+      }
+    });
+
+    // The gap closer ranks against the card's own gap.
+    if (scope && scope.length) {
+      // eslint-disable-next-line no-await-in-loop
+      const gc = await computeGapCloser({
+        companyId, ownerIds: scope, monthStart: start, monthEnd: end,
+        gap: sum.plannedGap, users,
+      });
+      rows.push(row({
+        label: `Gap closer — ${subj.name}: the gap it ranks against = the Planned gap card`,
+        value: gc.gap,
+        expected: sum.plannedGap,
+        note: `${gc.rows.length} candidates; ${gc.closesAt ? `the first ${gc.closesAt} would close it` : 'none close it'}`,
+      }));
+    }
+
+    // The team board, for the people who get one.
+    if (subj.id && ['manager', 'supervisor'].includes(subj.role) && scope.length > 1) {
+      const people = users.filter((u) => scope.includes(u.id) && u.is_active !== false);
+      // eslint-disable-next-line no-await-in-loop
+      const board = await buildTeamPlanBoard({
+        companyId, people, start, end,
+        monthKey: `${String(start).slice(0, 7)}-01`,
+        flagCtx: { now: bundle.now || new Date(), monthEnd: end, viewerRole: subj.role },
+      });
+      const perPersonTarget = board.rows.reduce((t, r) => t + n(r.target), 0);
+      rows.push(row({
+        label: `Team plan board — ${subj.name}: the people\'s targets add to the totals row`,
+        value: perPersonTarget,
+        expected: sum.target,
+        note: `${board.rows.length} people`,
+      }));
+      rows.push(row({
+        label: `Team plan board — ${subj.name}: the people\'s required plans add to`,
+        value: board.rows.reduce((t, r) => t + n(r.requiredPlan), 0),
+        expected: null,
+        note: `the totals row shows ${Math.round(n(sum.requiredPlan)).toLocaleString('en-US')}, which is the TEAM\'s remaining target ÷ the TEAM\'s conversion — not the sum of the members\'. Reported, not asserted.`,
+      }));
+    }
+  }
+  return rows;
+}
 /**
  * EVERY ROW IS ATTRIBUTED, OR ITS OWNER HAS NOWHERE TO PUT IT.
  *
@@ -1419,6 +1541,16 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     companyId, consoleData, reference, planning, start, end, users,
   });
   divisionGroups.forEach((grp) => { if (grp.rows.length) groups.push(grp); });
+
+  // ── The Planning cards' panels (2026-10-08) ──────────────────────────────
+  const planRows = await buildPlanningDrillRows({ companyId, bundle, start, end });
+  if (planRows.length) {
+    groups.push({
+      screen: 'Planning cards drill-down',
+      fn: 'buildPlanningDrill',
+      rows: planRows,
+    });
+  }
 
   // ── Division attribution survives an UPDATE (2026-10-07) ────────────────
   const attribRows = await buildDivisionAttributionRows({ companyId, bundle });
