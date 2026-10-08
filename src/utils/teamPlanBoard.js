@@ -1,6 +1,8 @@
 import { supabase } from 'lib/supabase';
 import { computePlanningPageSummary } from 'utils/planningPageSummary';
-import { planItemFlags } from 'utils/planningDrill';
+import {
+  planItemFlags, isConvertedWithDeal, isConvertedDealMissing,
+} from 'utils/planningDrill';
 
 /**
  * ONE ROW PER PERSON IN SCOPE — the team's plans, side by side.
@@ -71,10 +73,16 @@ export async function buildTeamPlanBoard({
    * So the board SHOWS them, in their own column, and they enter no figure:
    * not Planning coverage, not Required plan, not the Planned gap. They are
    * already counted once, as deals, in the Funnel and in Achieved.
+   *
+   * CONVERTED MEANS isConvertedWithDeal, the rule Plan accuracy uses - status
+   * converted AND the deal still there. `deal_id` is read for exactly that.
+   * The ones whose deal has gone are counted separately as DEAL MISSING: they
+   * are in no figure anywhere, so the column names them instead of absorbing
+   * them into a number that would then disagree with the funnel.
    */
   const { data: worked } = await supabase
     .from('opportunities')
-    .select('owner_id, planned_amount, status')
+    .select('owner_id, planned_amount, status, deal_id')
     .eq('company_id', companyId)
     .in('owner_id', ids)
     .in('status', ['converted', 'moved_to_future'])
@@ -84,14 +92,28 @@ export async function buildTeamPlanBoard({
   (worked || []).forEach((r) => {
     if (!workedByOwner.has(r.owner_id)) {
       workedByOwner.set(r.owner_id, {
-        convertedCount: 0, convertedValue: 0, movedCount: 0, movedValue: 0,
+        convertedCount: 0,
+        convertedValue: 0,
+        movedCount: 0,
+        movedValue: 0,
+        dealMissingCount: 0,
+        dealMissingValue: 0,
       });
     }
     const w = workedByOwner.get(r.owner_id);
     const amt = parseFloat(r.planned_amount) || 0;
-    if (r.status === 'converted') { w.convertedCount += 1; w.convertedValue += amt; }
+    if (isConvertedWithDeal(r)) { w.convertedCount += 1; w.convertedValue += amt; }
+    else if (isConvertedDealMissing(r)) { w.dealMissingCount += 1; w.dealMissingValue += amt; }
     else { w.movedCount += 1; w.movedValue += amt; }
   });
+  const EMPTY_WORKED = {
+    convertedCount: 0,
+    convertedValue: 0,
+    movedCount: 0,
+    movedValue: 0,
+    dealMissingCount: 0,
+    dealMissingValue: 0,
+  };
 
   const settled = await Promise.all(people.map(async (u) => {
     const sum = await computePlanningPageSummary({
@@ -106,8 +128,7 @@ export async function buildTeamPlanBoard({
       (o) => planItemFlags(o, flagCtx).includes('NOT CONVERTED'),
     ).length;
 
-    const w = workedByOwner.get(u.id)
-      || { convertedCount: 0, convertedValue: 0, movedCount: 0, movedValue: 0 };
+    const w = workedByOwner.get(u.id) || EMPTY_WORKED;
 
     return {
       id: u.id,
@@ -122,12 +143,21 @@ export async function buildTeamPlanBoard({
       convertedValue: w.convertedValue,
       movedCount: w.movedCount,
       movedValue: w.movedValue,
+      // Marked converted with no deal behind it. In no figure on the page,
+      // which is why it is named.
+      dealMissingCount: w.dealMissingCount,
+      dealMissingValue: w.dealMissingValue,
       /**
        * NOBODY PLANNED ANYTHING — open and converted both zero.
        *
        * The distinction the board got wrong: a plan of nothing and a plan that
        * has all been converted both showed Planned 0. Only the first is an
        * empty plan.
+       *
+       * Converted-WITH-A-DEAL, deliberately: a plan whose every item is marked
+       * converted with the deal gone has nothing to show for itself anywhere,
+       * and saying "no plan" next to the DEAL MISSING count is the honest
+       * reading of it.
        */
       emptyPlan: (sum.plannedOpen || 0) === 0 && w.convertedCount === 0,
       funnel: sum.openFunnel,

@@ -57,6 +57,9 @@ export const FLAG_STYLE = {
   "NO HISTORY": "bg-gray-50 text-gray-600 border-gray-200",
   DUPLICATE: "bg-amber-50 text-amber-700 border-amber-200",
   "ABOVE USUAL": "bg-amber-50 text-amber-700 border-amber-200",
+  // Red: the item's value is in no figure on the page, and somebody has to
+  // either re-convert it or set it back to open.
+  "DEAL MISSING": "bg-red-50 text-red-700 border-red-200",
 };
 
 /* ── the table style of Session 9: frozen first column, wrapped headers ───── */

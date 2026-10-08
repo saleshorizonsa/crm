@@ -30,13 +30,36 @@ export const HISTORY_WINDOW_MONTHS = 6;
 /** A planned amount this many times the customer's usual order is ABOVE USUAL. */
 export const ABOVE_USUAL_MULTIPLE = 2;
 
+/* ── what "converted" means ────────────────────────────────────────────────── */
+
+/**
+ * ONE DEFINITION OF CONVERTED: the status says so AND the deal is still there.
+ *
+ * `opportunities.deal_id` is ON DELETE SET NULL, so deleting or merging away a
+ * deal leaves the plan item marked `converted` with no deal behind it. On
+ * production today that is 4 items worth 679,147 for October and 11 worth
+ * 3,504,947 for September — and the board was counting them as converted while
+ * Plan accuracy, which follows the deal link, was not. Alseyed's October read
+ * 1,310,047 on the board and 968,400 in the funnel: the same word, two numbers.
+ *
+ * The board, the coverage panel and Plan accuracy now all ask these two
+ * questions, so there is one answer. An item that fails the second is not
+ * quietly dropped - it is DEAL MISSING, and it is shown.
+ */
+export const isConvertedWithDeal = (o) => o?.status === 'converted' && !!o?.deal_id;
+export const isConvertedDealMissing = (o) => o?.status === 'converted' && !o?.deal_id;
+
 /* ── flags ─────────────────────────────────────────────────────────────────── */
 
 /**
- * THE FOUR THINGS WRONG WITH A PLAN ITEM.
+ * THE FIVE THINGS WRONG WITH A PLAN ITEM.
  *
  *   NOT CONVERTED  open, and the month is nearly over — nobody turned it into
  *                  a deal, so it will not convert into anything.
+ *   DEAL MISSING   marked converted, and the deal it was converted into is no
+ *                  longer there. The item counts as neither plan nor pipeline,
+ *                  so without this flag its value simply vanishes from the
+ *                  page — see isConvertedWithDeal.
  *   DUPLICATE      somebody else planned the same customer this month. Two
  *                  people calling one customer is the waste this flag exists
  *                  to show. For a SALESMAN the flag says "another salesman"
@@ -67,6 +90,7 @@ export function planItemFlags(item, ctx = {}) {
     const left = Math.ceil((new Date(`${monthEnd}T23:59:59`) - now) / 86400000);
     if (left >= 0 && left <= NOT_CONVERTED_DAYS) flags.push('NOT CONVERTED');
   }
+  if (isConvertedDealMissing(item)) flags.push('DEAL MISSING');
 
   const key = customerKey(item, contactName);
   const others = (plannedByOthers.get(key) || []).filter((id) => id !== item.owner_id);
@@ -274,8 +298,14 @@ export function buildPlanningDrill(summary, {
    *
    * `informational` marks it: the sheet labels it, and /numbers-check skips it
    * when adding the rows up against the card.
+   *
+   * ONLY ITEMS WITH A DEAL BEHIND THEM, by isConvertedWithDeal — the same
+   * question Plan accuracy asks. The ones whose deal has gone get a group of
+   * their own rather than being folded in or dropped, because their value is
+   * in no other figure on the page and would otherwise just disappear.
    */
-  const convertedRows = (d.planRowsWorked || []).filter((o) => o.status === 'converted');
+  const convertedRows = (d.planRowsWorked || []).filter(isConvertedWithDeal);
+  const orphanRows = (d.planRowsWorked || []).filter(isConvertedDealMissing);
   const convertedGroup = convertedRows.length ? {
     id: 'converted',
     name: 'Converted to deals (not in the total)',
@@ -284,16 +314,29 @@ export function buildPlanningDrill(summary, {
     columns: PLAN_DRILL_COLUMNS.planItems,
     children: byPerson(convertedRows, users, null, planRow),
   } : null;
+  const orphanGroup = orphanRows.length ? {
+    id: 'deal-missing',
+    name: 'Converted, deal no longer exists (not in the total)',
+    informational: true,
+    total: orphanRows.reduce((s, o) => s + num(o.planned_amount), 0),
+    columns: PLAN_DRILL_COLUMNS.planItems,
+    children: byPerson(orphanRows, users, null, planRow),
+  } : null;
 
   cards.coverage = {
     label: 'Planning coverage',
     total: num(summary?.plannedOpen) + num(summary?.openFunnel),
     columns: PLAN_DRILL_COLUMNS.planItems,
     groupLabels: ['What covers it', 'Person'],
-    children: [planGroup, funnelGroup, convertedGroup].filter(Boolean),
-    note: convertedGroup
-      ? `Open plan ${Math.round(num(summary?.plannedOpen)).toLocaleString('en-US')} + funnel ${Math.round(num(summary?.openFunnel)).toLocaleString('en-US')}. ${convertedRows.length} plan items worth ${Math.round(convertedGroup.total).toLocaleString('en-US')} have already converted to deals — listed below for information, counted in the funnel, not added here.`
-      : null,
+    children: [planGroup, funnelGroup, convertedGroup, orphanGroup].filter(Boolean),
+    note: [
+      convertedGroup
+        ? `Open plan ${Math.round(num(summary?.plannedOpen)).toLocaleString('en-US')} + funnel ${Math.round(num(summary?.openFunnel)).toLocaleString('en-US')}. ${convertedRows.length} plan items worth ${Math.round(convertedGroup.total).toLocaleString('en-US')} have already converted to deals — listed below for information, counted in the funnel, not added here.`
+        : null,
+      orphanGroup
+        ? `${orphanRows.length} more worth ${Math.round(orphanGroup.total).toLocaleString('en-US')} are marked converted but the deal is no longer there, so they are in no figure on this page at all — they are listed so they can be put right.`
+        : null,
+    ].filter(Boolean).join(' ') || null,
   };
 
   // ── Required plan → the arithmetic, in words ──────────────────────────────

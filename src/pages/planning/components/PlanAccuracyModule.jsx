@@ -139,6 +139,16 @@ export default function PlanAccuracyModule({
             <p className="text-[11px] text-muted-foreground pt-1.5 border-t border-border">
               Invoiced {money(t.invoicedValue)} of {money(t.plannedValue)} planned.
               {t.movedItems > 0 && ` ${t.movedItems} ${t.movedItems === 1 ? "item was" : "items were"} moved to a later month.`}
+              {/* ITEMS WHOSE DEAL IS GONE — said plainly, because they are in
+                  none of the four bars above and would otherwise look like
+                  items that were never worked at all. */}
+              {t.dealMissingItems > 0 && (
+                <span data-testid="accuracy-deal-missing" className="text-red-600">
+                  {" "}{t.dealMissingItems} {t.dealMissingItems === 1 ? "item is" : "items are"}
+                  {" "}marked converted but the deal no longer exists, worth {money(t.dealMissingValue)}
+                  {" "}— counted in none of the bars above.
+                </span>
+              )}
             </p>
           </div>
 

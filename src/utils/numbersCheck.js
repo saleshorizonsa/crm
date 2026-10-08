@@ -41,7 +41,7 @@ import { buildCoverageDrill, RAIL_SEGMENTS } from 'utils/coverageDrill';
 import { buildPlanningDrill } from 'utils/planningDrill';
 import { computeGapCloser } from 'utils/gapCloser';
 import { buildTeamPlanBoard } from 'utils/teamPlanBoard';
-import { computePlanAccuracy } from 'utils/planAccuracy';
+import { computePlanAccuracy, monthRange } from 'utils/planAccuracy';
 import { computeWeeklyPacing } from 'utils/weeklyPacing';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
@@ -539,6 +539,56 @@ async function buildPlanAccuracyRows({ companyId, bundle, start, end, reference 
     kind: 'count',
     note: `won ${Math.round(n(t.wonValue)).toLocaleString('en-US')} over ${t.wonItems} items, invoiced ${Math.round(n(t.invoicedValue)).toLocaleString('en-US')} over ${t.invoicedItems}`,
   }));
+
+  /**
+   * ONE DEFINITION OF CONVERTED, asserted across two modules.
+   *
+   * The board counted status='converted' and Plan accuracy followed the deal
+   * link, so Alseyed's October read 1,310,047 in one place and 968,400 in the
+   * other — the same word, two numbers, because a deleted or merged deal sets
+   * opportunities.deal_id to NULL and leaves the status behind.
+   *
+   * The board's Converted column must equal Plan accuracy's converted items
+   * for the same scope and month, and the items whose deal has gone must be
+   * accounted for separately rather than silently dropped by either.
+   */
+  // Only over one calendar month: the board counts by expected_month in the
+  // range, Plan accuracy by expected_month in the month, and over any other
+  // range the two are answering different questions and a mismatch would mean
+  // nothing.
+  const wholeMonth = String(start).endsWith('-01')
+    && String(start).slice(0, 7) === String(end).slice(0, 7)
+    && monthRange(String(start).slice(0, 7)).end === String(end);
+  const board = wholeMonth
+    ? await buildTeamPlanBoard({
+      companyId,
+      people: users.filter((u) => u.is_active !== false),
+      start,
+      end,
+      monthKey: `${String(start).slice(0, 7)}-01`,
+      flagCtx: { now: bundle.now || new Date(), monthEnd: end },
+    })
+    : { rows: [] };
+  const boardRows = board.rows || [];
+  if (boardRows.length) {
+    const boardConverted = boardRows.reduce((s, r) => s + n(r.convertedCount), 0);
+    const boardMissing = boardRows.reduce((s, r) => s + n(r.dealMissingCount), 0);
+    const accMissing = n(t.dealMissingItems);
+    rows.push(row({
+      label: 'Converted: the board\'s count = Plan accuracy\'s converted items',
+      value: boardConverted,
+      expected: t.convertedItems,
+      kind: 'count',
+      note: 'both count status=converted AND a deal still linked (isConvertedWithDeal)',
+    }));
+    rows.push(row({
+      label: 'Converted: items whose deal is gone are counted, not dropped',
+      value: boardMissing,
+      expected: accMissing,
+      kind: 'count',
+      note: `${accMissing} item(s) worth ${Math.round(n(t.dealMissingValue)).toLocaleString('en-US')} marked converted with no deal — shown as DEAL MISSING on both screens`,
+    }));
+  }
 
   // Per person, which is where a mis-attribution actually shows up.
   acc.people.forEach((person) => {

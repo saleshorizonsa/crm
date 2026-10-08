@@ -84,19 +84,29 @@ export default function TeamPlanBoard({
   const cell = (r, c) => {
     if (c.pacing) return <VerdictPill verdict={pacingByPerson[r.id] || null} />;
     if (c.converted) {
-      if (!r.convertedCount && !r.movedCount) return "—";
+      if (!r.convertedCount && !r.movedCount && !r.dealMissingCount) return "—";
       return (
         <span
           title={[
             `${r.convertedCount} plan ${r.convertedCount === 1 ? "item" : "items"} converted to deals, worth ${money(r.convertedValue)}`,
             r.movedCount ? `${r.movedCount} moved to a later month, worth ${money(r.movedValue)}` : null,
-            "Already counted as deals in Funnel and Achieved — not added to Planned, Required plan or the gap.",
+            // Its own line, because this one is not good news and is in no
+            // figure on the page.
+            r.dealMissingCount
+              ? `${r.dealMissingCount} marked converted but the deal no longer exists, worth ${money(r.dealMissingValue)} — counted nowhere`
+              : null,
+            "Converted items are already counted as deals in Funnel and Achieved — not added to Planned, Required plan or the gap.",
           ].filter(Boolean).join(". ")}
           className="text-emerald-700"
         >
           {r.convertedCount} · {money(r.convertedValue)}
           {r.movedCount ? (
             <span className="text-muted-foreground font-normal"> (+{r.movedCount} moved)</span>
+          ) : null}
+          {r.dealMissingCount ? (
+            <span data-testid="board-deal-missing" className="text-red-600 font-normal">
+              {" "}(+{r.dealMissingCount} deal missing)
+            </span>
           ) : null}
         </span>
       );

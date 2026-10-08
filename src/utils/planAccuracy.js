@@ -2,6 +2,7 @@ import { supabase } from 'lib/supabase';
 import {
   isAchievedDeal, achievedAmount, fetchReturns, computeReturns,
 } from 'utils/planningCalculations';
+import { isConvertedDealMissing } from 'utils/planningDrill';
 
 /**
  * DID THE PLAN HAPPEN? — plan accuracy for completed months.
@@ -71,6 +72,11 @@ const OUTCOME = {
   lost: 'lost',
   not_converted: 'never became a deal',
   moved: 'moved to a later month',
+  // Marked converted, and the deal is gone — deleted or merged away, which
+  // sets opportunities.deal_id to NULL. Distinct from "never became a deal":
+  // it did, and the record of it has been lost. Called out instead of folded
+  // in, because somebody has to put it right.
+  deal_missing: 'converted, deal no longer exists',
 };
 
 /**
@@ -155,6 +161,7 @@ export async function computePlanAccuracy({
     const invoiced = deal ? isAchievedDeal(deal, {}) : false;
     let outcome = OUTCOME.not_converted;
     if (o.status === 'moved_to_future') outcome = OUTCOME.moved;
+    else if (isConvertedDealMissing(o)) outcome = OUTCOME.deal_missing;
     else if (deal) {
       if (invoiced) outcome = OUTCOME.invoiced;
       else if (deal.stage === 'won') outcome = OUTCOME.won;
@@ -213,6 +220,11 @@ export async function computePlanAccuracy({
       // no hit rate, and 0% would read as a failure to deliver on nothing.
       hitRate: plannedValue > 0 ? (invoicedValue / plannedValue) * 100 : null,
       movedItems: mine.filter((o) => o.status === 'moved_to_future').length,
+      // Marked converted with the deal gone. Not in convertedItems, not in the
+      // funnel, not in Achieved — so the figure is stated rather than lost.
+      dealMissingItems: mine.filter(isConvertedDealMissing).length,
+      dealMissingValue: mine.filter(isConvertedDealMissing)
+        .reduce((s, o) => s + num(o.planned_amount), 0),
       // The other cut — this month's revenue by where it came from.
       achievedFromPlan: fromPlan.reduce((s, d) => s + achievedAmount(d), 0),
       achievedUnplanned: unplanned.reduce((s, d) => s + achievedAmount(d), 0),
