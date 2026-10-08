@@ -1,4 +1,4 @@
-﻿// THE COVERAGE RAIL â€” one implementation, used by Insights and the Coverage
+// THE COVERAGE RAIL — one implementation, used by Insights and the Coverage
 // Console.
 //
 // It existed twice, hand-copied, with a comment in each telling the reader to
@@ -11,7 +11,7 @@
 // row sets the metrics carry, and this file draws them.
 //
 // NON-INTERACTIVE WITHOUT `drill`. A caller that cannot supply the row sets
-// gets exactly the old rail â€” a bar and a legend â€” rather than clickable
+// gets exactly the old rail — a bar and a legend — rather than clickable
 // segments that open an empty panel.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -30,8 +30,8 @@ import DrillSheet, { money } from "components/DrillSheet";
  * people; Session 13 needed the same sheet on Planning, so the sheet moved out
  * and this is what is left of the coverage-specific part: which tree to build.
  *
- *   company view   division â†’ person â†’ rows
- *   anywhere else  person â†’ rows
+ *   company view   division → person → rows
+ *   anywhere else  person → rows
  *
  * Shortfall keeps its own note, because a scope's gap is not the sum of the
  * personal gaps and the reader has to be told so.
@@ -46,7 +46,7 @@ function CoverageDrillPanel({ segment, drill, byDivision, onClose, onOpenRecord,
     : seg.people;
 
   const note = seg.key === "shortfall" && Math.abs(seg.peopleTotal - seg.total) > 1
-    ? `Personal gaps add to ${money(seg.peopleTotal)}. The rail shows the scope's own target less its own coverage â€” one person's overshoot does not fill another's gap.`
+    ? `Personal gaps add to ${money(seg.peopleTotal)}. The rail shows the scope's own target less its own coverage — one person's overshoot does not fill another's gap.`
     : null;
 
   return (
@@ -66,7 +66,7 @@ function CoverageDrillPanel({ segment, drill, byDivision, onClose, onOpenRecord,
   );
 }
 
-/* â”€â”€ the rail itself â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── the rail itself ──────────────────────────────────────────────────────── */
 const CoverageRail = ({
   invoiced = 0,
   weightedFunnel = 0,
@@ -87,7 +87,7 @@ const CoverageRail = ({
   const [open, setOpen] = useState(null);
   const navigate = useNavigate();
 
-  // LEVEL 3 â€” open the record in the window that already exists, rather than a
+  // LEVEL 3 — open the record in the window that already exists, rather than a
   // read-only copy of it inside the panel. A deal goes to the Pipeline with
   // state.openDealId, which sales-pipeline already consumes to open its
   // DealModal (the same route the KPI strip's Invoiced list uses). A plan item
@@ -162,7 +162,7 @@ const CoverageRail = ({
               <div
                 key={d.key}
                 style={{ width: pct(d.value), background: segMeta(d.key).color }}
-                title={`${segMeta(d.key).label}: ${SAR(d.value)} SAR${openable(d.key) ? " â€” click for the breakdown" : ""}`}
+                title={`${segMeta(d.key).label}: ${SAR(d.value)} SAR${openable(d.key) ? " — click for the breakdown" : ""}`}
                 aria-label={`${segMeta(d.key).label} ${SAR(d.value)} SAR`}
                 {...partProps(d.key)}
               />
@@ -173,7 +173,7 @@ const CoverageRail = ({
           {gap > 0 && (
             <div
               style={{ width: pct(gap) }}
-              title={`Coverage shortfall: ${SAR(gap)} SAR${openable("shortfall") ? " â€” click for the breakdown" : ""}`}
+              title={`Coverage shortfall: ${SAR(gap)} SAR${openable("shortfall") ? " — click for the breakdown" : ""}`}
               aria-label={`Coverage shortfall ${SAR(gap)} SAR`}
               {...partProps("shortfall")}
             />
@@ -204,12 +204,12 @@ const CoverageRail = ({
               background:
                 "repeating-linear-gradient(45deg, #10b981 0 4px, #a7f3d0 4px 8px)",
             }}
-            title={`Won, not invoiced: ${SAR(wonNotInvoiced)} SAR â€” not counted in coverage${openable("wonNotInvoiced") ? ". Click for the breakdown" : ""}`}
+            title={`Won, not invoiced: ${SAR(wonNotInvoiced)} SAR — not counted in coverage${openable("wonNotInvoiced") ? ". Click for the breakdown" : ""}`}
             aria-label={`Won not invoiced ${SAR(wonNotInvoiced)} SAR, not in coverage`}
             {...partProps("wonNotInvoiced")}
           />
           <span className="text-[10px] font-mono text-gray-400">
-            won, not invoiced â€” not in coverage
+            won, not invoiced — not in coverage
           </span>
         </div>
       )}
@@ -247,7 +247,7 @@ const CoverageRail = ({
               style={{ background: "repeating-linear-gradient(45deg, #10b981 0 2px, #a7f3d0 2px 4px)" }}
             />
             <span className={`text-[10px] font-mono text-gray-500 ${openable("wonNotInvoiced") ? "underline decoration-dotted" : ""}`}>
-              Won, not invoiced {compact(wonNotInvoiced)} Â· not in coverage
+              Won, not invoiced {compact(wonNotInvoiced)} · not in coverage
             </span>
           </button>
         )}

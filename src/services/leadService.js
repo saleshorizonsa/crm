@@ -1,8 +1,8 @@
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 
-// Today in the user's own zone. Every date-only value written by this file â€”
-// creation_date and the stage_dates map â€” used `new Date().toISOString()`, which
+// Today in the user's own zone. Every date-only value written by this file —
+// creation_date and the stage_dates map — used `new Date().toISOString()`, which
 // in Riyadh (UTC+3) returns YESTERDAY between midnight and 03:00: a lead created
 // at 01:00 was dated the previous day, and so was the stage it entered.
 const todayLocal = () => format(new Date(), 'yyyy-MM-dd');

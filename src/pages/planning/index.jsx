@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "contexts/AuthContext";
 import { supabase } from "lib/supabase";
 import Header from "components/ui/Header";
@@ -12,17 +12,17 @@ import { computePlanningPageSummary, fetchProductGroups, fetchPlannedOpen } from
 import { fetchMonthlyTargets, targetPerPerson } from "utils/planningCalculations";
 // Percentages that cannot crash a render. planning/index.jsx:1305 took the
 // whole page down in production on 2026-10-05 by calling .toFixed on a figure
-// that was undefined behind a `!== null` guard â€” see utils/formatPct.js.
+// that was undefined behind a `!== null` guard — see utils/formatPct.js.
 import { fmtPct, fmtPctValue, hasFigure } from "utils/formatPct";
 
 // The two rate labels, written once so the page and the KPI strip say the
 // same thing. "Win rate" is deliberately NOT used for either: it means
-// won Ã· (won + lost), which is a different number.
+// won ÷ (won + lost), which is a different number.
 const CONVERSION_TOOLTIP =
-  "Won Ã· deals created in the last 3 completed months, excluding imported history. "
+  "Won ÷ deals created in the last 3 completed months, excluding imported history. "
   + "This is the rate Required Plan divides by.";
 const PIPELINE_CONVERSION_TOOLTIP =
-  "Information only â€” nothing is calculated from it. The same window and people as "
+  "Information only — nothing is calculated from it. The same window and people as "
   + "Conversion (3m), also excluding orders created and won within a day (logged after "
   + "the fact), so it describes deals that actually passed through the pipeline.";
 import { fetchTeamHierarchy } from "utils/teamHierarchy";
@@ -30,7 +30,7 @@ import { useDateRange } from "contexts/DateRangeContext";
 import { periodLabelFromRange, isAnnualRange } from "utils/dashboardDateUtils";
 import QuickDateSelector from "components/QuickDateSelector";
 import PlanApprovalsModule from "./components/PlanApprovalsModule";
-// Session 13 â€” the cards are openable, the gap has suggestions, the plan items
+// Session 13 — the cards are openable, the gap has suggestions, the plan items
 // carry health flags and a team lead gets a board.
 import PlanningCardPanel, { PlanCardOpener } from "./components/PlanningCardPanel";
 import TeamPlanBoard from "./components/TeamPlanBoard";
@@ -65,7 +65,7 @@ const fmtSAR = (n) =>
   );
 
 // Isolate each tab so a crash in one (e.g. a bad row of data) can't take down
-// the whole Planning page â€” the other tabs stay usable and the failing tab shows
+// the whole Planning page — the other tabs stay usable and the failing tab shows
 // the actual error message instead of a blank "Something went wrong".
 class TabErrorBoundary extends React.Component {
   constructor(props) {
@@ -126,13 +126,13 @@ const PlanningPage = () => {
   // Historical sales upload is a director/admin/head-only tool
   const canUploadHistory = ["director", "admin", "head"].includes(role);
 
-  // â”€â”€ THE SUMMARY SHAPE â€” one literal, used by all three summary states â”€â”€â”€â”€â”€â”€
+  // ── THE SUMMARY SHAPE — one literal, used by all three summary states ──────
   //
   // Every field the tiles read must be here, because a field that is absent
   // reads as `undefined`, and `undefined !== null` is true: a guard written as
   // `x !== null` lets it straight through to `.toFixed`. That is exactly how the
   // whole page went blank in production on 2026-10-05. There used to be TWO
-  // copies of this object â€” this one and `emptySummary` below â€” and the copy
+  // copies of this object — this one and `emptySummary` below — and the copy
   // here was missing six fields the render reads (pipelineConversion3m,
   // pipelineTotal3m, importedExcluded, annualTarget, unassignedAnnual,
   // annualYear). One literal now, so the two cannot drift again.
@@ -151,41 +151,41 @@ const PlanningPage = () => {
     untaggedPlanned: 0, untaggedFunnel: 0,
   };
 
-  // â”€â”€ Planning summary bar (visible on every tab) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Planning summary bar (visible on every tab) ─────────────────────────────
   // This holds the SHARED PERIOD's figures. What the tiles actually render is
   // `summaryData` further down, which switches to next month's figures while the
-  // early-plan switch is on next month â€” see the comment there.
+  // early-plan switch is on next month — see the comment there.
   const [currentSummary, setCurrentSummary] = useState(emptySummary);
   const [currentSummaryLoading, setCurrentSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState(null);
   // Why a submit failure gets its OWN state rather than reusing summaryError:
   // that one belongs to the summary fetch and is rewritten by every refetch, so a
   // submit failure parked there would be wiped by the next period or filter
-  // change â€” the user would see the message vanish without having fixed anything.
+  // change — the user would see the message vanish without having fixed anything.
   const [submitError, setSubmitError] = useState(null);
   // True when the message in submitError is the GATE refusing, not a failure.
   // Same banner, but it must not end by telling someone to call their
   // administrator about a rule that is working correctly.
   const [submitRefused, setSubmitRefused] = useState(false);
-  // Monotonic request id â€” see fetchPlanningSummary. useRef so it survives
+  // Monotonic request id — see fetchPlanningSummary. useRef so it survives
   // re-renders without causing one.
   const summaryReq = useRef(0);
 
-  // â”€â”€ Filters, owned here because the cards above the tabs follow them â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Filters, owned here because the cards above the tabs follow them ────────
   // The salesman selector and the product-group selector are rendered inside the
   // Current Sales Plan tab (where the team expects them), but the four summary
-  // cards used to ignore the salesman entirely â€” filterOwner was not even in
+  // cards used to ignore the salesman entirely — filterOwner was not even in
   // fetchPlanningSummary's dependency list, so drilling into one person changed
   // the list underneath and left the consolidated numbers above it untouched.
   // One filter for the WHOLE page, not one per tab. Customer Master, Current
   // Sales Plan and Future Orders each used to keep a private salesman filter, so
   // picking a salesman on the tab the page opens on (Customer Master) narrowed
-  // that list and left the cards on the full team scope â€” they only ever
+  // that list and left the cards on the full team scope — they only ever
   // followed the Current Sales Plan tab's copy.
-  // â”€â”€ SESSION 13 STATE â”€â”€
+  // ── SESSION 13 STATE ──
   // Which card is open, if any.
   const [openCard, setOpenCard] = useState(null);
-  // The gap closer, loaded the first time the Planned gap card is opened â€”
+  // The gap closer, loaded the first time the Planned gap card is opened —
   // four more reads that nobody needs until they ask the question.
   const [gapCloser, setGapCloser] = useState(null);
   const [gapLoading, setGapLoading] = useState(false);
@@ -197,8 +197,8 @@ const PlanningPage = () => {
   const [planPrefill, setPlanPrefill] = useState(null);
   // The team board.
   const [board, setBoard] = useState({ rows: [], loading: false });
-  // The people in scope. There is no page-level people list â€” the owner filter
-  // lives inside OpportunitiesModule â€” so this is read from the ids the summary
+  // The people in scope. There is no page-level people list — the owner filter
+  // lives inside OpportunitiesModule — so this is read from the ids the summary
   // itself resolved, which means it is exactly the scope every figure on the
   // page was computed over and cannot drift from it.
   const [scopePeople, setScopePeople] = useState([]);
@@ -238,7 +238,7 @@ const PlanningPage = () => {
   const isDirectorRole = DIRECTOR_ROLES.includes(role);
   const isSalesman = role === "salesman";
 
-  // â”€â”€ Shared period (synced with the dashboards via DateRangeContext) â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Shared period (synced with the dashboards via DateRangeContext) ─────────
   const { dateRange, setRange } = useDateRange();
   const nowRef = new Date();
   const defStart = `${nowRef.getFullYear()}-${String(nowRef.getMonth() + 1).padStart(2, "0")}-01`;
@@ -258,7 +258,7 @@ const PlanningPage = () => {
   const canApprove = TEAM_ROLES.includes(role) || DIRECTOR_ROLES.includes(role);
 
   // Whose plan is on screen. A team lead or director can point the owner filter
-  // at anyone in their scope and read that person's Current Sales Plan â€” the
+  // at anyone in their scope and read that person's Current Sales Plan — the
   // opportunity list and the summary cards already follow this filter, so the
   // plan's SUBMISSION state has to follow it too or the bar would describe the
   // viewer's own plan while the page below it describes someone else's.
@@ -267,7 +267,7 @@ const PlanningPage = () => {
   // Only the plan's own owner may submit it. Everyone else is read-only.
   const isViewingOther = !!viewedOwnerId && viewedOwnerId !== user?.id;
 
-  // â”€â”€ Plan submission (deadline: 25th of the month) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Plan submission (deadline: 25th of the month) ───────────────────────────
   // Keyed BY PLAN MONTH rather than a single row, because in the last 7 days of
   // a month two plans can be open at once: this month's (due on the 25th, quite
   // possibly overdue) and next month's, submitted early. Same table, same
@@ -281,7 +281,7 @@ const PlanningPage = () => {
   const nextMonthKey = nextMonthKeyOf(now);
   const earlyOpen = isEarlyWindowOpen(now);
   // The first 3 days of a month keep the month that just ended submittable. It
-  // is still late â€” this only restores the action, never the deadline.
+  // is still late — this only restores the action, never the deadline.
   const prevMonthKey = prevMonthKeyOf(now);
   const graceOpen = isGraceWindowOpen(now);
 
@@ -315,7 +315,7 @@ const PlanningPage = () => {
 
   // Next month's own figures, loaded only while the early window is open.
   // Separate from summaryData because that one follows the shared period
-  // selector (which the dashboards also read) â€” scoping next month must not
+  // selector (which the dashboards also read) — scoping next month must not
   // move everyone else's period.
   //
   // These are declared HERE, above activeSummary, and must stay above it:
@@ -354,7 +354,7 @@ const PlanningPage = () => {
 
   // What the five summary tiles read. While the early-plan switch is on next
   // month, the list below showed next month's plans but the tiles still showed
-  // the shared period's â€” so someone planning October read September's target
+  // the shared period's — so someone planning October read September's target
   // and coverage above it. The tiles now follow the month on screen.
   //
   // The shared period SELECTOR is deliberately untouched: the dashboards read
@@ -371,9 +371,9 @@ const PlanningPage = () => {
       : periodLabel;
 
 
-  /* â”€â”€ SESSION 13: what the cards open onto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  /* ── SESSION 13: what the cards open onto ─────────────────────────────────
    *
-   * Every figure below comes from `summaryData` â€” computePlanningPageSummary's
+   * Every figure below comes from `summaryData` — computePlanningPageSummary's
    * own result, including the `drill` payload of rows it already read. Nothing
    * here recomputes a total, which is what makes "panel total = card" a real
    * check rather than a restatement.
@@ -445,7 +445,7 @@ const PlanningPage = () => {
     return out;
   }, [summaryData, flagCtx]);
 
-  // The Planned gap card's suggestions â€” loaded when it is first opened.
+  // The Planned gap card's suggestions — loaded when it is first opened.
   useEffect(() => {
     let alive = true;
     if (openCard !== "gap" || gapCloser || !companyId || !planScopeKey) return undefined;
@@ -475,9 +475,9 @@ const PlanningPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planDrillReady, summaryData, scopePeople, flagData.contactName, flagCtx, gapCloser]);
 
-  // â”€â”€ the team plan board â”€â”€
+  // ── the team plan board ──
   // Only for somebody with a team, and only over the people the page already
-  // offers in its owner filter â€” the same scope, so the board cannot show a
+  // offers in its owner filter — the same scope, so the board cannot show a
   // person the rest of the page would not.
   // WEEKLY PACING, for the whole scope in one call. It also yields the
   // per-person verdicts the board's column shows, so the panel and the column
@@ -535,17 +535,17 @@ const PlanningPage = () => {
   const deadlineDay = new Date(`${deadlineFor(activeMonthKey)}T00:00:00`);
   const isLate = isLateFor(activeMonthKey, now);
   // `activeSummary` used to be aliased here for the submit bar's "how much is
-  // missing" line. Nothing in the bar reads the summary any more â€” submission
+  // missing" line. Nothing in the bar reads the summary any more — submission
   // completeness is a question about the PLAN, not about coverage, and the
   // summary is the coverage view (see submitBarNote). The tiles read
   // summaryData directly.
 
-  // â”€â”€ The submitter's OWN plan, which is what the submit bar is about â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── The submitter's OWN plan, which is what the submit bar is about ────────
   //
   // Deliberately NOT taken from the summary above. That one follows the owner
   // filter and the shared period, so the gate moved with whatever was on screen:
   // with "All Salesmen" selected a supervisor was judged against his whole team's
-  // target, and filtered to his own name against his own â€” the same button,
+  // target, and filtered to his own name against his own — the same button,
   // enabled or disabled depending on a dropdown. It is now always his own target
   // for the month being planned, whatever the page is showing.
   //
@@ -555,7 +555,7 @@ const PlanningPage = () => {
   // reason.
   const [ownPlan, setOwnPlan] = useState({ target: 0, plannedOpen: 0, loaded: false, failed: false });
 
-  // Bumped by refreshPlanData() whenever this user's plan rows change â€” see
+  // Bumped by refreshPlanData() whenever this user's plan rows change — see
   // there for the full list of writers. The read below depends on it, so the
   // gate is re-measured after every add, edit, delete, convert and move.
   //
@@ -563,7 +563,7 @@ const PlanningPage = () => {
   // Amer opened October at 410,951 against a 406,000 target, deleted and reduced
   // rows down to 389,451, and the button stayed enabled all the way through
   // because planComplete was still answering a question about the figures the
-  // page had loaded with. He submitted, and the row recorded 389,451 â€” below
+  // page had loaded with. He submitted, and the row recorded 389,451 — below
   // target, in the current month, which the gate exists to prevent.
   const [planVersion, setPlanVersion] = useState(0);
 
@@ -609,38 +609,38 @@ const PlanningPage = () => {
   }, [companyId, user?.id, activeMonthKey, planVersion, readOwnPlanFor]);
 
   // Complete when the owner has planned at least his own target. Deliberately NOT
-  // target Ã· win rate: that is a coverage estimate, and gating on it meant the
+  // target ÷ win rate: that is a coverage estimate, and gating on it meant the
   // "Still Unplanned" figure on screen was never the amount that would unlock the
-  // button â€” Amer could plan his target in full and still be refused. Required
+  // button — Amer could plan his target in full and still be refused. Required
   // Plan stays on the row and in the approval queue as the coverage view.
   const planComplete = ownPlan.loaded && !ownPlan.failed
     && ownPlan.plannedOpen >= ownPlan.target;
 
-  // Required Plan is Remaining Target Ã· win rate, and a month that has not
+  // Required Plan is Remaining Target ÷ win rate, and a month that has not
   // started has no invoiced revenue, so its ENTIRE target is still remaining.
-  // Requiring full coverage there made early submission unreachable â€” Amer had
+  // Requiring full coverage there made early submission unreachable — Amer had
   // to plan another 545,351 SAR before the button would unlock at all. So the
   // next-month path may be submitted under-planned; the shortfall is recorded on
   // the row (total_planned vs required_plan) and shown to the approving manager,
   // rather than the plan being silently accepted as if it were complete.
   // Current-month submission keeps the original rule.
-  // Both now measured against the owner's OWN target â€” the same basis as the gate
+  // Both now measured against the owner's OWN target — the same basis as the gate
   // above, so the shortfall the salesman is shown is exactly the amount that will
   // unlock his button. Taken from ownPlan rather than the summary for the same
   // reason the gate is: the summary follows the owner filter and the shared
   // period, and a shortfall that moves with a dropdown is not actionable.
   //
   // The approval queue still shows its own "short by" from the row's
-  // total_planned vs required_plan, which is the coverage view (Ã· win rate) and
+  // total_planned vs required_plan, which is the coverage view (÷ win rate) and
   // so a larger number. That is the manager's question, not the salesman's.
   const underPlanned = ownPlan.loaded && ownPlan.target > 0
     && ownPlan.plannedOpen < ownPlan.target;
   const plannedShortfall = Math.max(0, ownPlan.target - ownPlan.plannedOpen);
 
-  // â”€â”€ Whose figures the bar DESCRIBES, which is not whose it gates on â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Whose figures the bar DESCRIBES, which is not whose it gates on ─────────
   //
   // When a lead points the owner filter at a subordinate, the bar is about that
-  // person's plan â€” the opportunity list and the tiles below it already are â€” so
+  // person's plan — the opportunity list and the tiles below it already are — so
   // a shortfall read off ownPlan would print the VIEWER's missing amount under
   // the subordinate's name. The alternative was to show no amount at all; a
   // number is the whole reason a lead opens that screen, so it is computed for
@@ -649,7 +649,7 @@ const PlanningPage = () => {
   // The GATE is untouched: planComplete and canSubmit stay on ownPlan, and
   // canSubmit is false while viewing someone else anyway.
   //
-  // Fetched only when actually viewing someone else â€” otherwise this IS ownPlan,
+  // Fetched only when actually viewing someone else — otherwise this IS ownPlan,
   // so the ordinary case keeps its two queries.
   const [viewedPlan, setViewedPlan] = useState({ target: 0, plannedOpen: 0, loaded: false, failed: false });
   useEffect(() => {
@@ -680,7 +680,7 @@ const PlanningPage = () => {
   }, [isViewingOther, companyId, viewedOwnerId, activeMonthKey]);
 
   const subjectPlan = isViewingOther ? viewedPlan : ownPlan;
-  // Identical to plannedShortfall for one's own plan â€” deliberately written as
+  // Identical to plannedShortfall for one's own plan — deliberately written as
   // the same expression on the same two numbers, so the figure the bar prints
   // cannot drift from the figure the gate uses.
   const subjectShortfall = isViewingOther
@@ -694,7 +694,7 @@ const PlanningPage = () => {
   // Nobody submits on someone else's behalf: the bar still shows, so a lead can
   // read where that person's plan stands, but the button is not theirs to press.
   // Whether the figures on screen are real yet. An unloaded summary is all
-  // zeros, and `planComplete` then reads 0 >= 0 as "complete" â€” which is how a
+  // zeros, and `planComplete` then reads 0 >= 0 as "complete" — which is how a
   // plan was filed with total_planned 0.00 and required_plan 0.00 while the
   // owner had 386,340 SAR of open pipeline and a 406,000 target. A failed fetch
   // lands on the same zeros, so both are excluded here.
@@ -704,7 +704,7 @@ const PlanningPage = () => {
   const summaryReady = !summaryLoading && !activeSummaryError;
 
   // The grace window is for a month that is already over and already late, so
-  // the completeness bar is not applied to it either â€” withholding the button
+  // the completeness bar is not applied to it either — withholding the button
   // from someone trying to file a late plan is what created this gap.
   const canSubmit = summaryReady
     && (planningNextMonth || planningPrevMonth || planComplete)
@@ -714,18 +714,18 @@ const PlanningPage = () => {
   // reading a subordinate's plan, because its whole content is that plan's state.
   const showSubmitBar = (isSalesman || isSupervisor || isManager || isViewingOther) && !!companyId;
 
-  // â”€â”€ The line under the submit bar's heading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── The line under the submit bar's heading ─────────────────────────────────
   //
   // The "how much is missing" figure here used to be activeSummary.plannedGap,
   // which answers a different question than the button does: it is team- and
-  // filter-wide, measured against Required Plan (target Ã· win rate) and net of
+  // filter-wide, measured against Required Plan (target ÷ win rate) and net of
   // the open funnel, while the button unlocks on the owner's OWN open plan
   // against his OWN target for the month on screen. So a salesman with a big
   // funnel read "Add 0 SAR more to enable submission" beside a disabled button,
   // and a lead with "All Salesmen" selected read his whole team's gap.
   //
-  // It is now the figure the gate actually uses â€” the same target âˆ’ planned as
-  // plannedShortfall â€” and it names both sides, so it can be checked against the
+  // It is now the figure the gate actually uses — the same target − planned as
+  // plannedShortfall — and it names both sides, so it can be checked against the
   // plan listed underneath it.
   //
   // "Add 0 SAR" is no longer reachable: until the fetch lands the numbers are
@@ -738,12 +738,12 @@ const PlanningPage = () => {
       return `Submitted ${when}${planSubmission.is_late ? " (Late)" : ""}`;
     }
     if (!subjectPlan.loaded) {
-      return isViewingOther ? "Loading their figuresâ€¦" : "Loading your figuresâ€¦";
+      return isViewingOther ? "Loading their figures…" : "Loading your figures…";
     }
     if (subjectPlan.failed) {
       return isViewingOther
-        ? "Couldn't load their plan figures â€” refresh to try again."
-        : "Couldn't load your plan figures â€” refresh to try again.";
+        ? "Couldn't load their plan figures — refresh to try again."
+        : "Couldn't load your plan figures — refresh to try again.";
     }
 
     const month = monthNameOf(activeMonthKey);
@@ -753,10 +753,10 @@ const PlanningPage = () => {
     // branch told someone to "enable submission" beside an already-enabled
     // button all through the grace window.
     if (planningNextMonth && subjectUnderPlanned) {
-      return `${fmtSAR(subjectShortfall)} SAR under target â€” you can submit, your manager will see it flagged as under-planned`;
+      return `${fmtSAR(subjectShortfall)} SAR under target — you can submit, your manager will see it flagged as under-planned`;
     }
     if (planningPrevMonth && subjectUnderPlanned) {
-      return `${fmtSAR(subjectShortfall)} SAR under target â€” you can still file this late ${month} plan`;
+      return `${fmtSAR(subjectShortfall)} SAR under target — you can still file this late ${month} plan`;
     }
     if (!subjectComplete) {
       const sides = `(target ${fmtSAR(subjectPlan.target)}, planned ${fmtSAR(subjectPlan.plannedOpen)})`;
@@ -769,8 +769,8 @@ const PlanningPage = () => {
 
   // Every month that can be submitted right now, oldest first. Usually just this
   // month; a second appears during the early window (next month) or the grace
-  // window (last month). The two windows cannot overlap â€” one is the first 3 days
-  // of a month, the other the last 7 â€” but nothing here depends on that.
+  // window (last month). The two windows cannot overlap — one is the first 3 days
+  // of a month, the other the last 7 — but nothing here depends on that.
   const monthOptions = [
     ...(graceOpen ? [{ key: "prev", label: `${monthNameOf(prevMonthKey)} (late)`, month: prevMonthKey }] : []),
     { key: "current", label: monthNameOf(currentMonthKey), month: currentMonthKey },
@@ -780,14 +780,14 @@ const PlanningPage = () => {
 
   // The owner scope a submitted plan covers: a salesman's own, a lead's own plus
   // their team, null (whole company) for a director. Deliberately ignores the
-  // owner FILTER â€” what a lead is looking at must not change what they file.
+  // owner FILTER — what a lead is looking at must not change what they file.
   // A plan is about the person who files it and NOBODY ELSE.
   //
   // This used to scope a supervisor's plan to himself PLUS his whole downline,
   // which double-counted: the Sales Manager assigns a target to every supervisor
   // and salesman directly, and each of them files their own plan against it. So
   // Amer's plan covered Hussein, whose own plan Amer had already approved, and
-  // Amer's completeness was judged against 826,000 â€” his own 406,000 plus two
+  // Amer's completeness was judged against 826,000 — his own 406,000 plus two
   // targets belonging to people who plan for themselves.
   //
   // A supervisor's plan now behaves exactly like a salesman's. A director still
@@ -805,7 +805,7 @@ const PlanningPage = () => {
     // submitting while pointed at someone else would file the VIEWER's plan
     // carrying the OTHER person's numbers.
     if (isViewingOther) return;
-    // The month being submitted is whichever one is on screen â€” this month, or
+    // The month being submitted is whichever one is on screen — this month, or
     // next month during the early window. Everything on the row is derived from
     // that month, not from today's date: an October plan sent on 24 September
     // carries October's deadline and is not late.
@@ -817,10 +817,10 @@ const PlanningPage = () => {
     setSubmitRefused(false);
     const stamp = new Date();
     try {
-      // â”€â”€ The gate, re-measured against the database, before anything is written
+      // ── The gate, re-measured against the database, before anything is written
       //
       // canSubmit was decided when the page last read these figures, and a plan
-      // can change between that read and this click â€” by the person's own edits
+      // can change between that read and this click — by the person's own edits
       // (the refresh below covers those), by a second tab, or by a manager
       // editing a row during review. The write that follows records the plan's
       // CURRENT value, so without this an under-target plan could be filed
@@ -837,7 +837,7 @@ const PlanningPage = () => {
         const short = atClick.target - atClick.plannedOpen;
         setSubmitRefused(true);
         setSubmitError(
-          `Your plan changed â€” it is now ${fmtSAR(atClick.plannedOpen)} SAR, below your target of ${fmtSAR(atClick.target)} SAR. `
+          `Your plan changed — it is now ${fmtSAR(atClick.plannedOpen)} SAR, below your target of ${fmtSAR(atClick.target)} SAR. `
           + `Add ${fmtSAR(short)} SAR more to submit.`,
         );
         return;
@@ -884,7 +884,7 @@ const PlanningPage = () => {
         deadline_date: deadlineFor(planMonth),
         // `flagged` is deliberately NOT written. It is the deadline checker's
         // record that this month was missed, and submitting late does not undo
-        // that â€” this payload used to set it to false, which quietly cleared the
+        // that — this payload used to set it to false, which quietly cleared the
         // flag on exactly the late submissions the grace window now enables.
         // Omitting it leaves an existing flag alone, and a fresh row still gets
         // the column default of false.
@@ -905,7 +905,7 @@ const PlanningPage = () => {
           .maybeSingle();
 
       let { data: saved, error } = await upsert(withApproval);
-      // add_plan_approval_workflow.sql not applied yet â€” submit still works.
+      // add_plan_approval_workflow.sql not applied yet — submit still works.
       if (isMissingApprovalSchema(error)) ({ data: saved, error } = await upsert(base));
       if (error) throw error;
 
@@ -922,7 +922,7 @@ const PlanningPage = () => {
       await fetchPlanSubmission();
     } catch (err) {
       // This used to log and stop. The button went back to normal and the user
-      // was told nothing, which is indistinguishable from never having clicked â€”
+      // was told nothing, which is indistinguishable from never having clicked —
       // so a salesman whose submit failed had every reason to believe it had
       // worked. Anything in the try can land here: the upsert, the scope lookup,
       // or the summary recompute.
@@ -937,13 +937,13 @@ const PlanningPage = () => {
     // Every filter or period change starts a new request while the previous one
     // may still be in flight, and each of these takes ~1-2s (eight round trips).
     // Nothing used to discard the older one, so whichever RESOLVED LAST wrote the
-    // cards â€” and the unfiltered request is the slower of the two, because it
+    // cards — and the unfiltered request is the slower of the two, because it
     // covers every contributor. Land it after a filtered one and the cards snap
     // back to team-wide numbers with a filter visibly applied, until the next
     // refetch (clicking the period again) happens to win the race.
     //
     // A sequence number fixes it regardless of resolve order: only the newest
-    // request may write. AbortController is not an option here â€” these go
+    // request may write. AbortController is not an option here — these go
     // through the supabase client, not raw fetch.
     const seq = summaryReq.current + 1;
     summaryReq.current = seq;
@@ -957,14 +957,14 @@ const PlanningPage = () => {
     setSummaryError(null);
     const startedAt = Date.now();
     try {
-      // â”€â”€ ONE definition for EVERY role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ── ONE definition for EVERY role ──────────────────────────────────
       // This page, the Coverage Console and the dashboards each carried their
       // own copy of these five calculations and had drifted: the same manager's
       // Target read 3,050,494 here and 2,300,494 on his dashboard. They now all
       // call utils/planningCalculations.js, so a fix lands everywhere at once.
       //
-      // Owner scope: director â†’ whole company; manager/supervisor â†’ self + full
-      // downline; salesman â†’ self. The shared code narrows that to CONTRIBUTORS
+      // Owner scope: director → whole company; manager/supervisor → self + full
+      // downline; salesman → self. The shared code narrows that to CONTRIBUTORS
       // (salesmen + supervisors) for Target, Planned and carry-in.
       const isDirector = DIRECTOR_ROLES.includes(role);
       const isTeamLead = TEAM_ROLES.includes(role);
@@ -983,7 +983,7 @@ const PlanningPage = () => {
       // Planning-page-only chain (utils/planningPageSummary.js). The shared
       // computePlanningSummary() is deliberately untouched and still serves the
       // Coverage Console, the dashboards and the KPI strip with the older
-      // definition (raw Target Ã· win rate, netted against Future Orders carry-in).
+      // definition (raw Target ÷ win rate, netted against Future Orders carry-in).
       const sum = await computePlanningPageSummary({
         companyId,
         ownerIds,
@@ -1012,7 +1012,7 @@ const PlanningPage = () => {
         setSummaryError("Some figures could not be loaded. Reload before submitting.");
       }
 
-      // SPREAD, not a hand-written field list â€” the same form the next-month and
+      // SPREAD, not a hand-written field list — the same form the next-month and
       // previous-month setters below already use. The hand-written list that was
       // here copied 15 of the producer's 24 fields and silently dropped the six
       // the render reads, so `summaryData.pipelineConversion3m` was undefined on
@@ -1022,7 +1022,7 @@ const PlanningPage = () => {
       setCurrentSummary({ ...emptySummary, ...sum, winRate3m: sum.winRatePct });
     } catch (err) {
       // Swallowing this left the PREVIOUS filter's numbers on screen with the
-      // new filter applied â€” wrong figures that look like real ones. Say so.
+      // new filter applied — wrong figures that look like real ones. Say so.
       console.error("Planning summary:", err);
       if (isCurrent()) {
         setCurrentSummary(emptySummary);
@@ -1036,7 +1036,7 @@ const PlanningPage = () => {
   useEffect(() => { fetchPlanningSummary(); }, [fetchPlanningSummary]);
 
   // Next month's figures, for the early-submission bar. Same chain as the
-  // current month, just a different window â€” and only while the window is open,
+  // current month, just a different window — and only while the window is open,
   // so outside it this costs nothing and today's flow is untouched.
   const fetchNextMonthSummary = useCallback(async () => {
     if (!earlyOpen || !companyId || !user?.id) { setNextSummary(emptySummary); return; }
@@ -1070,7 +1070,7 @@ const PlanningPage = () => {
   useEffect(() => { fetchNextMonthSummary(); }, [fetchNextMonthSummary]);
 
   // Last month's figures, for the grace window. Same chain again, bounded to the
-  // month that just ended â€” so a late plan records that month's planned value
+  // month that just ended — so a late plan records that month's planned value
   // and required plan, not the new month's, which is what the shared period
   // selector has already moved on to.
   const fetchPrevMonthSummary = useCallback(async () => {
@@ -1104,16 +1104,16 @@ const PlanningPage = () => {
 
   useEffect(() => { fetchPrevMonthSummary(); }, [fetchPrevMonthSummary]);
 
-  // â”€â”€ "This user's plan rows changed" â€” ONE callback, every writer calls it â”€â”€â”€â”€
+  // ── "This user's plan rows changed" — ONE callback, every writer calls it ────
   //
   // Everything that reads the plan hangs off this: the tiles for the month on
-  // screen, next month's and last month's tiles, and â€” the reason it exists â€”
+  // screen, next month's and last month's tiles, and — the reason it exists —
   // ownPlan, which is what the submit gate and the submit bar's shortfall are
   // measured from.
   //
   // It replaces three different arrangements: OpportunitiesModule refreshed the
   // current and next-month summaries, FutureOrdersModule only the current one,
-  // and Customer Master's "add to plan" notified nothing at all â€” so adding a
+  // and Customer Master's "add to plan" notified nothing at all — so adding a
   // row there left every figure on the page, including the gate, describing a
   // plan that no longer existed.
   const refreshPlanData = useCallback(() => {
@@ -1189,18 +1189,18 @@ const PlanningPage = () => {
           <h1 className="text-2xl font-bold text-foreground">Planning</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {activeTab === "opportunities"
-              ? "Current Sales Plan â€” Plan how you'll hit your monthly target, then convert to deals"
+              ? "Current Sales Plan — Plan how you'll hit your monthly target, then convert to deals"
               : activeTab === "future_orders"
-              ? "Future Orders â€” Deals moved from the Funnel to a future month; they auto-move to Current Sales Plan when the month arrives"
+              ? "Future Orders — Deals moved from the Funnel to a future month; they auto-move to Current Sales Plan when the month arrives"
               : activeTab === "sales_returns"
-                ? "Sales Returns â€” Import ERP credit notes; each return reduces Achieved in the month it happened"
+                ? "Sales Returns — Import ERP credit notes; each return reduces Achieved in the month it happened"
               : activeTab === "historical_data"
-              ? "Historical Data â€” Import past SAP/ERP sales to power forecasting and year-over-year comparisons"
-              : "Customer Master â€” Import, assign and manage your customer accounts"}
+              ? "Historical Data — Import past SAP/ERP sales to power forecasting and year-over-year comparisons"
+              : "Customer Master — Import, assign and manage your customer accounts"}
           </p>
         </div>
 
-        {/* Period switcher â€” shares DateRangeContext with the dashboards, so
+        {/* Period switcher — shares DateRangeContext with the dashboards, so
             switching here updates the dashboard period and vice-versa. */}
         <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
           <QuickDateSelector
@@ -1235,14 +1235,14 @@ const PlanningPage = () => {
 
         {showSubmitBar && planSubmission?.approval_status === "rejected" && (
           <div className="flex items-center gap-2 px-5 py-3 bg-amber-50 border border-amber-200 rounded-xl mb-4">
-            <span className="text-base">âŒ</span>
+            <span className="text-base">❌</span>
             <div>
               <p className="text-sm font-semibold text-amber-800">
                 {isViewingOther ? `${filterOwnerName || "Team member"}: Plan Sent Back` : "Plan Sent Back"}
               </p>
               <p className="text-xs text-amber-700">
                 {planSubmission.rejection_reason
-                  ? `"${planSubmission.rejection_reason}"${isViewingOther ? " â€” awaiting their revision." : " â€” revise your plan and submit again."}`
+                  ? `"${planSubmission.rejection_reason}"${isViewingOther ? " — awaiting their revision." : " — revise your plan and submit again."}`
                   : isViewingOther ? "Awaiting their revision." : "Revise your plan and submit again."}
               </p>
             </div>
@@ -1269,7 +1269,7 @@ const PlanningPage = () => {
                     </span>
                   )}
                   {planSubmission?.is_submitted
-                    ? `âœ… ${monthNameOf(activeMonthKey)} Plan Submitted`
+                    ? `✅ ${monthNameOf(activeMonthKey)} Plan Submitted`
                     : isLate
                       ? `ðŸš¨ ${monthNameOf(activeMonthKey)} Plan Overdue`
                       : `ðŸ“‹ ${monthNameOf(activeMonthKey)} Plan Due by 25th`}
@@ -1282,7 +1282,7 @@ const PlanningPage = () => {
 
             {isViewingOther ? (
               <span className="text-[11px] px-2.5 py-1 rounded-full bg-muted text-muted-foreground border border-border whitespace-nowrap">
-                read-only â€” only {filterOwnerName || "the owner"} can submit this
+                read-only — only {filterOwnerName || "the owner"} can submit this
               </span>
             ) : !planSubmission?.is_submitted && (
               <button
@@ -1303,8 +1303,8 @@ const PlanningPage = () => {
                 {submitting === activeMonthKey && (
                   <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 )}
-                {/* "Plan Incomplete" was shown for three different situations â€”
-                    genuinely under-planned, still loading, and failed to load â€”
+                {/* "Plan Incomplete" was shown for three different situations —
+                    genuinely under-planned, still loading, and failed to load —
                     and the last two are not the salesman's fault to fix.
                     ownPlan is checked alongside the summary because the gate
                     reads BOTH: with the summary loaded and ownPlan still in
@@ -1317,9 +1317,9 @@ const PlanningPage = () => {
                       ? `Submit ${monthNameOf(activeMonthKey)} Plan`
                       : "Submit Plan"
                   : summaryLoading || !ownPlan.loaded
-                    ? "Loading your figuresâ€¦"
+                    ? "Loading your figures…"
                     : activeSummaryError || ownPlan.failed
-                      ? "Figures unavailable â€” reload"
+                      ? "Figures unavailable — reload"
                       : "Plan Incomplete"}
               </button>
             )}
@@ -1328,7 +1328,7 @@ const PlanningPage = () => {
 
         {/* A submit that threw. Directly under the submit bar, because that is
             where the person is looking after pressing the button, and it says
-            plainly that the plan was NOT filed â€” the thing the silent catch left
+            plainly that the plan was NOT filed — the thing the silent catch left
             them to guess. Same styling as the summary error below. */}
         {submitError && (
           <div className="flex items-start gap-2 p-3 mb-3 rounded-xl bg-red-50 border border-red-200">
@@ -1340,7 +1340,7 @@ const PlanningPage = () => {
               <p className="text-xs text-red-600 mt-0.5">
                 {submitRefused
                   ? `${submitError} Nothing was saved.`
-                  : `${submitError} â€” nothing was saved. Try again, and tell your administrator if it keeps failing.`}
+                  : `${submitError} — nothing was saved. Try again, and tell your administrator if it keeps failing.`}
               </p>
             </div>
             <button
@@ -1352,7 +1352,7 @@ const PlanningPage = () => {
           </div>
         )}
 
-        {/* Active filters â€” the cards below follow them, but the selectors live
+        {/* Active filters — the cards below follow them, but the selectors live
             inside the Current Sales Plan tab, so say so from every tab. */}
         {(filterOwner !== "all" || filterProductGroup) && (
           <div className="flex items-center gap-2 flex-wrap mb-3">
@@ -1379,7 +1379,7 @@ const PlanningPage = () => {
             )}
             {filterProductGroup && (
               <span className="text-xs text-amber-700">
-                Target is all-products â€” no target carries a product group yet
+                Target is all-products — no target carries a product group yet
               </span>
             )}
           </div>
@@ -1403,7 +1403,7 @@ const PlanningPage = () => {
           </div>
         )}
 
-        {/* THE TEAM PLAN BOARD â€” who has planned, and who is short. Above
+        {/* THE TEAM PLAN BOARD — who has planned, and who is short. Above
             the cards because it is the first question a team lead has, and only
             for a team lead: a salesman's board would be one row of his own
             figures, which the cards already are. */}
@@ -1421,9 +1421,9 @@ const PlanningPage = () => {
           />
         )}
 
-        {/* Planning summary bar â€” shown on every tab */}
+        {/* Planning summary bar — shown on every tab */}
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-          {/* Card 1 â€” TARGET */}
+          {/* Card 1 — TARGET */}
           <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
             {/* The card is a control: it opens the rows its own figure was
                 summed from. */}
@@ -1452,7 +1452,7 @@ const PlanningPage = () => {
                     </span>
                   )}
                 </p>
-                {/* "Gap to target" app-wide for target âˆ’ achieved; "Remaining"
+                {/* "Gap to target" app-wide for target − achieved; "Remaining"
                     was a third name for the same thing the KPI strip calls
                     Deficit. */}
                 <p className="text-xs text-foreground font-medium mt-0.5">
@@ -1460,7 +1460,7 @@ const PlanningPage = () => {
                 </p>
               </div>
             )}
-            {/* ANNUAL VIEW â€” three figures side by side, not one
+            {/* ANNUAL VIEW — three figures side by side, not one
                 (CEO decision D3, 2026-10-05). The monthly sum alone hid
                 27.8M of allocation nobody is carrying yet; the annual figure
                 alone measured the team against a number it was never given. */}
@@ -1488,7 +1488,7 @@ const PlanningPage = () => {
                     title="The months of this year that carry no monthly target yet, counted from the current month on, and what the unassigned allocation comes to if it is spread evenly over them."
                   >
                     {summaryData.annualMonthsLeft} month
-                    {summaryData.annualMonthsLeft === 1 ? "" : "s"} left to assign â†’{" "}
+                    {summaryData.annualMonthsLeft === 1 ? "" : "s"} left to assign →{" "}
                     <span className="tabular-nums font-medium">
                       {fmtSAR(summaryData.annualPerMonthNeeded)} SAR
                     </span>{" "}
@@ -1502,12 +1502,12 @@ const PlanningPage = () => {
             </p>
           </div>
 
-          {/* Card 2 â€” WIN RATE */}
+          {/* Card 2 — WIN RATE */}
           <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-1 bg-purple-500" />
-            {/* "Conversion (3m)", not "Win rate": this is won Ã· deals CREATED
+            {/* "Conversion (3m)", not "Win rate": this is won ÷ deals CREATED
                 in the window, which is what Required Plan divides by. "Win
-                rate" is kept for won Ã· (won + lost) alone. */}
+                rate" is kept for won ÷ (won + lost) alone. */}
             <p
               className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2"
               title={CONVERSION_TOOLTIP}
@@ -1524,7 +1524,7 @@ const PlanningPage = () => {
             <p className="text-xs text-muted-foreground mt-1">
               3 completed months{summaryData.winRateIsDefault && " (default)"}
             </p>
-            {/* INFORMATION ONLY (CEO decision D2) â€” drives nothing. */}
+            {/* INFORMATION ONLY (CEO decision D2) — drives nothing. */}
             {!summaryLoading && hasFigure(summaryData.pipelineConversion3m) && (
               <p
                 className="text-xs text-muted-foreground mt-1.5 pt-1.5 border-t border-border"
@@ -1543,7 +1543,7 @@ const PlanningPage = () => {
             )}
           </div>
 
-          {/* Card 3 â€” REQUIRED PLAN */}
+          {/* Card 3 — REQUIRED PLAN */}
           <div className="bg-card rounded-2xl border border-border p-4 relative overflow-hidden">
             {/* The card is a control: it opens the rows its own figure was
                 summed from. */}
@@ -1570,11 +1570,11 @@ const PlanningPage = () => {
                 ? summaryData.hasTargetRows
                   ? "Target already achieved"
                   : "Nothing to plan against"
-                : `Remaining Target Ã· ${fmtPct(summaryData.winRate3m, 0)} conversion (3m)`}
+                : `Remaining Target ÷ ${fmtPct(summaryData.winRate3m, 0)} conversion (3m)`}
             </p>
           </div>
 
-          {/* Card 4 â€” PLANNING COVERAGE (new) */}
+          {/* Card 4 — PLANNING COVERAGE (new) */}
           {/* Available Planning Coverage = untransferred plan + open funnel for
               the period, both RAW and unweighted. Deliberately not
               computeCoverage(), which weights the same inputs by win rate and
@@ -1625,13 +1625,13 @@ const PlanningPage = () => {
                 ? ""
                 : !hasFigure(summaryData.coveragePct)
                   ? summaryData.hasTargetRows
-                    ? "Fully covered â€” nothing required"
+                    ? "Fully covered — nothing required"
                     : "No target to cover"
                   : `${fmtPctValue(summaryData.coveragePct, 0)}% of Required Plan`}
             </p>
           </div>
 
-          {/* Card 5 â€” PLANNED GAP = max(0, Required Plan âˆ’ Available Coverage) */}
+          {/* Card 5 — PLANNED GAP = max(0, Required Plan − Available Coverage) */}
           <div
             className={`rounded-2xl border p-4 relative overflow-hidden ${
               !summaryLoading && summaryData.plannedGap <= 0
@@ -1653,7 +1653,7 @@ const PlanningPage = () => {
             {summaryLoading ? (
               <div className="h-7 w-24 bg-muted rounded animate-pulse" />
             ) : summaryData.plannedGap <= 0 ? (
-              <p className="text-xl font-bold text-green-600">On Track âœ“</p>
+              <p className="text-xl font-bold text-green-600">On Track ✓</p>
             ) : (
               <p className="text-xl font-bold text-red-600 tabular-nums">
                 {fmtSAR(summaryData.plannedGap)}
@@ -1702,7 +1702,7 @@ const PlanningPage = () => {
           ))}
         </div>
 
-        {/* Tab content â€” each isolated so one tab's error can't blank the page */}
+        {/* Tab content — each isolated so one tab's error can't blank the page */}
         <TabErrorBoundary tabKey={activeTab}>
           {activeTab === "customer_master" && (
             <CustomerMaster
@@ -1720,7 +1720,7 @@ const PlanningPage = () => {
           {activeTab === "opportunities" && (
             <>
             {/* During the last 7 days of the month both plans are live. The
-                switch lives HERE, inside the tab whose contents it changes â€”
+                switch lives HERE, inside the tab whose contents it changes —
                 not up by the period selector, where it was invisible to anyone
                 looking at their plan. It gets banner styling because a salesman
                 has to notice it without being told it exists. */}
@@ -1738,15 +1738,15 @@ const PlanningPage = () => {
                       graceOpen ? "text-amber-900 dark:text-amber-100" : "text-blue-900 dark:text-blue-100"
                     }`}>
                       {graceOpen
-                        ? `â³ ${monthNameOf(prevMonthKey)} can still be submitted`
+                        ? `⏳ ${monthNameOf(prevMonthKey)} can still be submitted`
                         : `ðŸ—“ï¸ ${monthNameOf(nextMonthKey)} planning is open`}
                     </p>
                     <p className={`text-xs ${
                       graceOpen ? "text-amber-700 dark:text-amber-300" : "text-blue-700 dark:text-blue-300"
                     }`}>
                       {graceOpen
-                        ? `Last ${GRACE_DAYS} days to file it â€” until ${graceClosesAfter(now).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}. It still counts as late.`
-                        : "You can plan next month now â€” pick which month you are working on."}
+                        ? `Last ${GRACE_DAYS} days to file it — until ${graceClosesAfter(now).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}. It still counts as late.`
+                        : "You can plan next month now — pick which month you are working on."}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
@@ -1763,7 +1763,7 @@ const PlanningPage = () => {
                           }`}
                         >
                           {opt.label}
-                          {row?.is_locked ? " ðŸ”’" : row?.is_submitted ? " âœ…" : ""}
+                          {row?.is_locked ? " ðŸ”’" : row?.is_submitted ? " ✅" : ""}
                         </button>
                       );
                     })}
@@ -1780,7 +1780,7 @@ const PlanningPage = () => {
               prefill={planPrefill}
               onPrefillConsumed={() => setPlanPrefill(null)}
               // Scoped to next month while that is what is being planned. The
-              // SHARED period selector is deliberately not touched â€” it is the
+              // SHARED period selector is deliberately not touched — it is the
               // dashboards' period too, and moving it would drag every other
               // screen into next month.
               periodStart={planningNextMonth ? monthBoundsOf(nextMonthKey).start
@@ -1840,7 +1840,7 @@ const PlanningPage = () => {
         </TabErrorBoundary>
       </main>
 
-      {/* THE CARD PANEL â€” Session 10's sheet, opened by a card.
+      {/* THE CARD PANEL — Session 10's sheet, opened by a card.
           Mounted last so it overlays the page, and only while a card is open.
           onAddToPlan hands the suggestion to the plan form; it does not write. */}
       {openCard && planCards && (
@@ -1862,7 +1862,7 @@ const PlanningPage = () => {
         />
       )}
       {openCard === "gap" && gapLoading && (
-        <span className="sr-only" role="status">Loading suggestionsâ€¦</span>
+        <span className="sr-only" role="status">Loading suggestions…</span>
       )}
     </div>
   );

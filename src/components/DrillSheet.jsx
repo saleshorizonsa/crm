@@ -1,13 +1,13 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * THE DRILL-DOWN SHEET â€” one implementation, used by every screen that has
+ * THE DRILL-DOWN SHEET — one implementation, used by every screen that has
  * figures worth opening.
  *
  * Session 10 built this for the coverage rail: a sheet from the right, a
  * breadcrumb, a frozen first column, sortable wrapped headers, an Excel
  * export, Esc and outside-click to close. Session 13 needed the same thing on
- * Planning, and the rail's version was welded to coverage segments â€” exactly
+ * Planning, and the rail's version was welded to coverage segments — exactly
  * the shape the rail itself was in before Session 10 (two hand-copied rails
  * that had already drifted). So the sheet moved here first, and both screens
  * are adapters onto it.
@@ -18,31 +18,31 @@
  *
  * A node with `children` lists them and lets the reader open one; a node with
  * `rows` shows the table. Each child is { id, name, total, children?, rows? },
- * which is enough for one level (Planning: person â†’ rows), two (the rail at
- * company level: division â†’ person â†’ rows) or none at all (a card whose rows
+ * which is enough for one level (Planning: person → rows), two (the rail at
+ * company level: division → person → rows) or none at all (a card whose rows
  * belong to nobody in particular).
  *
  * The breadcrumb is the path taken, so stepping back is free, and the export
- * always writes what is on screen â€” the group list at a group level, the rows
+ * always writes what is on screen — the group list at a group level, the rows
  * at a leaf.
  */
 
 export const money = (v) => Math.abs(Math.round(Number(v) || 0)).toLocaleString("en-US");
 const fmtDate = (d) =>
-  (d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "â€”");
+  (d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 const fmtMonth = (d) =>
-  (d ? new Date(d).toLocaleDateString("en-GB", { month: "short", year: "numeric" }) : "â€”");
+  (d ? new Date(d).toLocaleDateString("en-GB", { month: "short", year: "numeric" }) : "—");
 
 /** One cell, formatted by its column type. Numbers never wrap. */
 export function cellText(row, col) {
   const v = row[col.key];
   if (col.type === "money") return `${money(v)}${v < 0 ? " CR" : ""}`;
-  if (col.type === "pct") return v == null ? "â€”" : `${Number(v).toFixed(0)}%`;
-  if (col.type === "int") return v == null ? "â€”" : String(v);
+  if (col.type === "pct") return v == null ? "—" : `${Number(v).toFixed(0)}%`;
+  if (col.type === "int") return v == null ? "—" : String(v);
   if (col.type === "date") return fmtDate(v);
   if (col.type === "month") return fmtMonth(v);
-  if (col.type === "flags") return (v || []).join(" Â· ") || "â€”";
-  return v == null || v === "" ? "â€”" : String(v);
+  if (col.type === "flags") return (v || []).join(" · ") || "—";
+  return v == null || v === "" ? "—" : String(v);
 }
 
 export const FLAG_STYLE = {
@@ -59,7 +59,7 @@ export const FLAG_STYLE = {
   "ABOVE USUAL": "bg-amber-50 text-amber-700 border-amber-200",
 };
 
-/* â”€â”€ the table style of Session 9: frozen first column, wrapped headers â”€â”€â”€â”€â”€ */
+/* ── the table style of Session 9: frozen first column, wrapped headers ───── */
 export const STICKY_EDGE = "border-r border-gray-200 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.10)]";
 export const HEAD_WRAP = "whitespace-normal break-words max-w-[7.5rem] align-bottom";
 
@@ -123,7 +123,7 @@ export function DrillTable({ columns, rows, onRowClick, emptyText }) {
                 >
                   {c.label}
                   <span aria-hidden="true">
-                    {sort.key === c.key ? (sort.dir === "asc" ? " â†‘" : " â†“") : ""}
+                    {sort.key === c.key ? (sort.dir === "asc" ? " ↑" : " ↓") : ""}
                   </span>
                 </button>
               </th>
@@ -161,7 +161,7 @@ export function DrillTable({ columns, rows, onRowClick, emptyText }) {
                         ))}
                       </span>
                     ) : (
-                      <span className="text-gray-300">â€”</span>
+                      <span className="text-gray-300">—</span>
                     )
                   ) : (
                     cellText(r, c)
@@ -201,7 +201,7 @@ export function GroupList({ items, onPick, unit }) {
             </span>
           </span>
           <span className="font-mono text-sm text-gray-900 whitespace-nowrap">{money(it.total)}</span>
-          <span className="text-gray-300">â€º</span>
+          <span className="text-gray-300">›</span>
         </button>
       ))}
       {unit && <div className="px-4 py-2 text-[10px] font-mono text-gray-400">{unit}</div>}
@@ -209,7 +209,7 @@ export function GroupList({ items, onPick, unit }) {
   );
 }
 
-/** Rows â†’ a worksheet, using the same columns the panel shows. */
+/** Rows → a worksheet, using the same columns the panel shows. */
 export function exportRows({ segment, columns, rows, scopeLabel }) {
   const header = columns.map((c) => c.label);
   const body = rows.map((r) => columns.map((c) => {
@@ -225,7 +225,7 @@ export function exportRows({ segment, columns, rows, scopeLabel }) {
     }).join(","))
     .join("\r\n");
   // A BOM so Excel opens Arabic customer names in UTF-8 rather than mojibake.
-  const blob = new Blob([`ï»¿${csv}`], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -235,7 +235,7 @@ export function exportRows({ segment, columns, rows, scopeLabel }) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-/* â”€â”€ the sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── the sheet ────────────────────────────────────────────────────────────── */
 
 /** The node the reader is looking at, walked down from the root by `path`. */
 function nodeAt(root, path) {
@@ -325,7 +325,7 @@ export default function DrillSheet({
             <nav className="flex items-center gap-1 text-[11px] font-mono text-gray-400 flex-wrap">
               {crumbs.map((c, i) => (
                 <span key={`${c.label}-${i}`} className="flex items-center gap-1">
-                  {i > 0 && <span>â€º</span>}
+                  {i > 0 && <span>›</span>}
                   {c.onClick ? (
                     <button type="button" onClick={c.onClick} className="hover:text-gray-700 underline decoration-dotted">
                       {c.label}
@@ -375,7 +375,7 @@ export default function DrillSheet({
               aria-label="Close"
               className="w-8 h-8 rounded hover:bg-gray-100 text-gray-500 text-lg leading-none"
             >
-              Ã—
+              ×
             </button>
           </div>
         </header>
@@ -402,9 +402,9 @@ export default function DrillSheet({
 
         <footer className="px-4 py-2 border-t border-gray-100 text-[10px] font-mono text-gray-400">
           {atLeaf
-            ? `${leafRows.length} rows${onOpenRecord ? " Â· click a row to open it" : ""}`
+            ? `${leafRows.length} rows${onOpenRecord ? " · click a row to open it" : ""}`
             : `${node.children.length} ${groupHint ? groupHint.toLowerCase() : "groups"}`}
-          {footerHint ? ` Â· ${footerHint}` : ""}
+          {footerHint ? ` · ${footerHint}` : ""}
         </footer>
       </aside>
     </>

@@ -1,4 +1,4 @@
-﻿import { supabase } from 'lib/supabase';
+import { supabase } from 'lib/supabase';
 import { isAchievedDeal, achievedAmount } from 'utils/planningCalculations';
 import { customerKey, rankGapClosers, HISTORY_WINDOW_MONTHS } from 'utils/planningDrill';
 
@@ -8,7 +8,7 @@ import { customerKey, rankGapClosers, HISTORY_WINDOW_MONTHS } from 'utils/planni
  * The Planning page says "you are 300,000 short of the plan you need" and then
  * leaves the reader to work out who to call. This answers that: customers who
  * have actually bought in the last six months, are not already in somebody's
- * plan this month, and have no open deal due this month â€” ordered by what they
+ * plan this month, and have no open deal due this month — ordered by what they
  * usually order, with the point marked where enough of them have been listed
  * to cover the gap.
  *
@@ -16,8 +16,8 @@ import { customerKey, rankGapClosers, HISTORY_WINDOW_MONTHS } from 'utils/planni
  * the existing plan-item form with the fields filled in, and the person
  * confirms. A suggestion that writes itself is not a suggestion.
  *
- * SCOPE. `ownerIds` is the viewer's own scope, passed in â€” himself for a
- * salesman, his team for a supervisor â€” and every read here is filtered by it,
+ * SCOPE. `ownerIds` is the viewer's own scope, passed in — himself for a
+ * salesman, his team for a supervisor — and every read here is filtered by it,
  * so this cannot surface a customer the viewer may not see. The one exception
  * is deliberate and narrow: whether a customer is ALREADY PLANNED is asked of
  * the whole company through a SECURITY DEFINER function that returns contact
@@ -45,7 +45,7 @@ function monthsBefore(dateStr, n) {
  * Through the SECURITY DEFINER function, with the same degrade the Customer
  * Master uses: a missing function must leave the marker empty rather than take
  * the feature down (the lesson of 1897c1a). When it degrades, the direct query
- * answers for whatever opportunities RLS lets this viewer read â€” narrower, so
+ * answers for whatever opportunities RLS lets this viewer read — narrower, so
  * the exclusion is weaker, never wider.
  */
 export async function fetchPlannedContactIds({ companyId, monthStart, monthEnd }) {
@@ -81,11 +81,11 @@ export async function fetchPlannedContactIds({ companyId, monthStart, monthEnd }
 }
 
 /**
- * WHO ELSE PLANNED EACH CUSTOMER THIS MONTH â€” for the DUPLICATE flag.
+ * WHO ELSE PLANNED EACH CUSTOMER THIS MONTH — for the DUPLICATE flag.
  *
  * Company-wide on purpose: two people planning one customer is the waste the
  * flag exists to show, and it cannot be seen from inside one person's scope.
- * It returns a map of customer â†’ owner ids, and the UI decides what may be
+ * It returns a map of customer → owner ids, and the UI decides what may be
  * said: a supervisor and above see the other person's name, a salesman is told
  * only that it is "another salesman" (planItemFlags does that, not this).
  *
@@ -140,7 +140,7 @@ export async function computeGapCloser({
   const since = monthsBefore(monthStart, HISTORY_MONTHS);
 
   const [dealsRes, plannedRes, openRes, contactsRes] = await Promise.all([
-    // INVOICED history, by the shared rule â€” the same columns Achieved is read
+    // INVOICED history, by the shared rule — the same columns Achieved is read
     // from, so "has bought" here means exactly what Achieved means everywhere.
     supabase.from('deals')
       .select('id, title, contact_id, owner_id, stage, amount, final_amount, is_invoiced, invoice_date')
@@ -176,7 +176,7 @@ export async function computeGapCloser({
     if (nm) contactName.set(c.id, nm);
   });
 
-  // â”€â”€ the history, per customer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── the history, per customer ─────────────────────────────────────────────
   // Only invoiced-and-won rows count, and the value is final_amount ?? amount:
   // the shared definition, not a second one.
   const hist = new Map();
@@ -184,7 +184,7 @@ export async function computeGapCloser({
   // contact and a plan item that carries only a typed name land on the same
   // customer. Without the names the two never meet; see customerKey.
   (dealsRes.data || []).forEach((d) => {
-    // Won, invoiced, dated â€” the shared rule â€” and strictly BEFORE the month
+    // Won, invoiced, dated — the shared rule — and strictly BEFORE the month
     // being planned: history is what they bought already, not what they are
     // buying now.
     if (!isAchievedDeal(d, { start: since })) return;
@@ -194,7 +194,7 @@ export async function computeGapCloser({
       hist.set(key, {
         key,
         contactId: d.contact_id || null,
-        customer: (d.contact_id && contactName.get(d.contact_id)) || d.title || 'â€”',
+        customer: (d.contact_id && contactName.get(d.contact_id)) || d.title || '—',
         total: 0,
         monthsSet: new Set(),
         lastInvoice: null,
@@ -219,14 +219,14 @@ export async function computeGapCloser({
     });
   });
 
-  // â”€â”€ the exclusions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── the exclusions ────────────────────────────────────────────────────────
   const plannedIds = plannedRes.ids || new Set();
   // The same key function, so "already has a deal due this month" is matched
   // against the same notion of a customer the history is keyed by.
   const dueThisMonth = new Set();
   (openRes.data || []).forEach((d) => { dueThisMonth.add(customerKey(d, contactName)); });
 
-  const nameOfUser = (id) => (users || []).find((u) => u.id === id)?.full_name || 'â€”';
+  const nameOfUser = (id) => (users || []).find((u) => u.id === id)?.full_name || '—';
 
   const candidates = [...hist.values()]
     .filter((h) => {
