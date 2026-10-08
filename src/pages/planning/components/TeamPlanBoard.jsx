@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { VerdictPill } from "./WeeklyPacing";
 
 /**
  * THE TEAM PLAN BOARD — one row per person, at the top of Planning.
@@ -46,11 +47,17 @@ const COLUMNS = [
   { key: "coveragePct", label: "Planning coverage %", pct: true },
   { key: "plannedGap", label: "Planned gap", money: true },
   { key: "notConverted", label: "Not-converted items", int: true },
+  // The weekly pacing verdict, computed once for the whole scope by
+  // utils/weeklyPacing.js and passed in — the same verdict the pacing panel
+  // above shows, not a second reading of it.
+  { key: "pacing", label: "Pacing", pacing: true },
   { key: "daysLeft", label: "Days left", int: true },
 ];
 
 export default function TeamPlanBoard({
   rows = [], totals = null, loading = false, onPickPerson, scopeLabel = "",
+  // id -> "on pace" | "behind" | "far behind", and the scope's own verdict.
+  pacingByPerson = {}, pacingTotal = null,
 }) {
   const [sort, setSort] = useState({ key: "plannedGap", dir: "desc" });
 
@@ -75,6 +82,7 @@ export default function TeamPlanBoard({
   if (!loading && !rows.length) return null;
 
   const cell = (r, c) => {
+    if (c.pacing) return <VerdictPill verdict={pacingByPerson[r.id] || null} />;
     if (c.converted) {
       if (!r.convertedCount && !r.movedCount) return "—";
       return (
@@ -207,6 +215,9 @@ export default function TeamPlanBoard({
                 <td className="px-3 py-2 text-right tabular-nums">{money(totals.plannedGap)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {rows.reduce((s, r) => s + (r.notConverted || 0), 0)}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <VerdictPill verdict={pacingTotal} />
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {rows[0]?.daysLeft ?? "—"}

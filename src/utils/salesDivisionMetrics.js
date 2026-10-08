@@ -203,6 +203,17 @@ export const EXPECTED_PCT_TOOLTIP =
  */
 export const DIVISION_MIN_SAMPLE = 10;
 
+/**
+ * THE PACING TOLERANCE, in share-of-target points.
+ *
+ * A scope is "on pace" when the share of its target it has achieved is within
+ * this much of the share of the month that has elapsed. Fifteen points, the
+ * Coverage Console's own figure, exported here because session 13's weekly
+ * pacing asks the same question week by week and a second 0.15 written
+ * somewhere else would be a second rule waiting to drift.
+ */
+export const PACING_TOLERANCE = 0.15;
+
 /** The Conversion (3m) label, saying so when the rate is not this group's own. */
 export function conversionLabel(m) {
   if (!m?.winRateBorrowed) return 'Conversion (3m)';
@@ -614,7 +625,7 @@ export function calcDivisionMetrics(userIds, data) {
     isCurrentMonth,
     isAllTime,
     coverageOk: coverage >= target,
-    pacingOk: isCurrentMonth ? pace >= elapsed - 0.15 : null,
+    pacingOk: isCurrentMonth ? pace >= elapsed - PACING_TOLERANCE : null,
     winRatePct,
     winRateBorrowed,
     // The DIVISION's own deal count in the window — the n in "company rate

@@ -37,6 +37,10 @@ import TeamPlanBoard from "./components/TeamPlanBoard";
 import { buildPlanningDrill, planItemFlags } from "utils/planningDrill";
 import { computeGapCloser, fetchPlannedByCustomer } from "utils/gapCloser";
 import { buildTeamPlanBoard } from "utils/teamPlanBoard";
+// Session 13 part B - did the plan happen, and is this month keeping up.
+import PlanAccuracyModule from "./components/PlanAccuracyModule";
+import WeeklyPacing from "./components/WeeklyPacing";
+import { computeWeeklyPacing } from "utils/weeklyPacing";
 // (supabase is already imported at the top of this file)
 import {
   monthKeyOf, nextMonthKeyOf, prevMonthKeyOf,
@@ -198,6 +202,9 @@ const PlanningPage = () => {
   // itself resolved, which means it is exactly the scope every figure on the
   // page was computed over and cannot drift from it.
   const [scopePeople, setScopePeople] = useState([]);
+  // Weekly pacing for the month on screen. Null outside a month in progress,
+  // where an even pace line means nothing.
+  const [pacing, setPacing] = useState({ data: null, loading: false });
 
   const [filterOwner, setFilterOwner] = useState("all");
   const [filterProductGroup, setFilterProductGroup] = useState(null);
@@ -472,6 +479,34 @@ const PlanningPage = () => {
   // Only for somebody with a team, and only over the people the page already
   // offers in its owner filter â€” the same scope, so the board cannot show a
   // person the rest of the page would not.
+  // WEEKLY PACING, for the whole scope in one call. It also yields the
+  // per-person verdicts the board's column shows, so the panel and the column
+  // cannot disagree about who is behind.
+  useEffect(() => {
+    let alive = true;
+    if (!companyId || !planScopeKey) {
+      setPacing({ data: null, loading: false });
+      return undefined;
+    }
+    setPacing((x) => ({ ...x, loading: true }));
+    computeWeeklyPacing({
+      companyId,
+      ownerIds: planScopeIds,
+      start: planPeriod.start,
+      end: planPeriod.end,
+      users: scopePeople,
+      now,
+    }).then((r) => { if (alive) setPacing({ data: r, loading: false }); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, planScopeKey, planPeriod.start, planPeriod.end, scopePeople.length]);
+
+  const pacingByPerson = useMemo(() => {
+    const out = {};
+    (pacing.data?.people || []).forEach((x) => { out[x.id] = x.verdict; });
+    return out;
+  }, [pacing.data]);
+
   const showBoard = (TEAM_ROLES.includes(role) || DIRECTOR_ROLES.includes(role))
     && filterOwner === "all";
   const boardPeopleKey = (scopePeople || []).map((u) => u.id).join(",");
@@ -1111,6 +1146,8 @@ const PlanningPage = () => {
     { id: "customer_master", label: "Customer Master", icon: "Users"  },
     { id: "opportunities",   label: "Current Sales Plan", icon: "Target" },
     { id: "future_orders",   label: "Future Orders",   icon: "CalendarClock" },
+    // Looking back at completed months: what was planned and what came of it.
+    { id: "plan_accuracy",   label: "Plan Accuracy",   icon: "History" },
     ...(canApprove
       ? [{
           id: "approvals",
@@ -1377,6 +1414,10 @@ const PlanningPage = () => {
             loading={board.loading}
             onPickPerson={(id) => setFilterOwner(id)}
             scopeLabel={tilePeriodLabel}
+            // The same verdicts the pacing panel above shows, computed once by
+            // utils/weeklyPacing.js - not a second reading of them.
+            pacingByPerson={pacingByPerson}
+            pacingTotal={pacing.data?.totals?.verdict || null}
           />
         )}
 
@@ -1631,6 +1672,18 @@ const PlanningPage = () => {
           </div>
         </div>
 
+        {/* WEEKLY PACING - between the cards and the tabs. Hidden outside a
+            month in progress, where an even pace line means nothing. */}
+        {pacing.data?.isCurrentMonth && (
+          <div className="mb-6">
+            <WeeklyPacing
+              data={pacing.data}
+              loading={pacing.loading}
+              scopeLabel={tilePeriodLabel}
+            />
+          </div>
+        )}
+
         {/* Tab bar */}
         <div className="flex items-center gap-1 bg-muted rounded-xl p-1 mb-6 w-fit">
           {tabs.map((tab) => (
@@ -1765,6 +1818,15 @@ const PlanningPage = () => {
             <PlanApprovalsModule
               adminCompany={adminCompany}
               onChange={() => { refreshPendingApprovals(); fetchPlanningSummary(); }}
+            />
+          )}
+
+          {activeTab === "plan_accuracy" && (
+            <PlanAccuracyModule
+              companyId={companyId}
+              ownerIds={filterOwner !== "all" ? [filterOwner] : planScopeIds}
+              users={scopePeople}
+              scopeLabel={filterOwnerName || undefined}
             />
           )}
 

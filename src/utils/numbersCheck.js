@@ -1,4 +1,4 @@
-import { supabase } from 'lib/supabase';
+﻿import { supabase } from 'lib/supabase';
 import {
   fetchAchieved,
   fetchMonthlyTargets,
@@ -41,6 +41,8 @@ import { buildCoverageDrill, RAIL_SEGMENTS } from 'utils/coverageDrill';
 import { buildPlanningDrill } from 'utils/planningDrill';
 import { computeGapCloser } from 'utils/gapCloser';
 import { buildTeamPlanBoard } from 'utils/teamPlanBoard';
+import { computePlanAccuracy } from 'utils/planAccuracy';
+import { computeWeeklyPacing } from 'utils/weeklyPacing';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
 import {
@@ -50,7 +52,7 @@ import {
   reportAchievedTotals,
 } from 'services/reportService';
 
-// THE NUMBERS CHECK — every figure the app shows for one scope, beside ONE
+// THE NUMBERS CHECK â€” every figure the app shows for one scope, beside ONE
 // reference figure.
 //
 // Why it exists: the same month's revenue used to read one number on the KPI
@@ -64,7 +66,7 @@ import {
 //
 //  1. The reference is computed ONCE, straight from the shared rules.
 //  2. Every other row calls THE SAME FUNCTION THE SCREEN CALLS, with the
-//     arguments that screen would pass. No row re-implements a figure — a second
+//     arguments that screen would pass. No row re-implements a figure â€” a second
 //     implementation that agrees proves nothing about the screen, and one that
 //     disagrees cannot be told apart from a real bug.
 //
@@ -77,9 +79,9 @@ import {
 //
 // TWO WINDOWS, BOTH LEGITIMATE. A figure is only comparable to a reference over
 // the same window, and the app deliberately uses two:
-//   • the SELECTED period — Achieved, Target, Planning's funnel, the Coverage
+//   â€¢ the SELECTED period â€” Achieved, Target, Planning's funnel, the Coverage
 //     Console's and Insights' funnel;
-//   • the CURRENT calendar month — the KPI strip's Funnel card and
+//   â€¢ the CURRENT calendar month â€” the KPI strip's Funnel card and
 //     Won-not-invoiced, which are live operational figures and do not move when
 //     somebody looks at a past month.
 // So the reference carries BOTH funnels, each from fetchOpenFunnel, and every
@@ -105,7 +107,7 @@ const sum = (obj) => Object.values(obj || {}).reduce((s, v) => s + (Number(v) ||
 const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
 /**
- * The month AFTER `end`'s month, as yyyy-MM-dd — the Coverage Console's
+ * The month AFTER `end`'s month, as yyyy-MM-dd â€” the Coverage Console's
  * carry-in window.
  *
  * Built from the STRING's year and month, then formatted from local date parts.
@@ -122,13 +124,13 @@ function nextMonthBounds(end) {
 /**
  * One comparison.
  *
- * `expected: null` marks a figure with nothing to compare against — the
+ * `expected: null` marks a figure with nothing to compare against â€” the
  * reference rows themselves, and counts shown only for context. Those report as
  * "info" and are never counted as a pass or a failure.
  */
 function row({ label, value, expected = null, kind = 'money', note = null, knownToDiffer = false }) {
   // kind 'count' compares EXACTLY. A row count has no rounding to forgive, and
-  // the money tolerance of 1 would report "0 expected, 1 found" as agreement —
+  // the money tolerance of 1 would report "0 expected, 1 found" as agreement â€”
   // which is exactly the size of defect the division-attribution rows look for.
   const tolerance = kind === 'pct' ? PCT_TOLERANCE : (kind === 'count' ? 0 : MONEY_TOLERANCE);
   const has = expected !== null && expected !== undefined && Number.isFinite(Number(value));
@@ -144,17 +146,17 @@ function row({ label, value, expected = null, kind = 'money', note = null, known
 /**
  * Who counts, for a scope choice.
  *
- *   company → every achiever in the company (the screens pass ownerIds = null)
- *   team    → one manager/supervisor and his active subtree
- *   person  → one person
+ *   company â†’ every achiever in the company (the screens pass ownerIds = null)
+ *   team    â†’ one manager/supervisor and his active subtree
+ *   person  â†’ one person
  *
  * THREE id sets come back, because the app deliberately measures different
  * things over different people and conflating them is exactly how figures drift:
  *   ownerIds       the raw scope a screen is handed (null = whole company)
- *   achieverIds    whose revenue and monthly target count — contributors plus
+ *   achieverIds    whose revenue and monthly target count â€” contributors plus
  *                  anyone individually flagged users.is_contributor
  *   contributorIds contributor roles only. Kept because Planned and Carry-In
- *                  are still measured over it — a flagged manager carries no
+ *                  are still measured over it â€” a flagged manager carries no
  *                  monthly plan. CONVERSION no longer uses it: it moved to the
  *                  achiever scope on 2026-10-05 (decision D4), so Achieved,
  *                  Target and Conversion are now one scope.
@@ -180,7 +182,7 @@ export function resolveScope({ users, scope }) {
   const person = all.find((u) => u.id === scope.userId) || null;
   if (scope.kind === 'team') {
     // TEAM stays ACTIVE-ONLY (the rule's other half), and subtreeIdsOf's
-    // default already enforces it — it is stated here because the bundle's user
+    // default already enforces it â€” it is stated here because the bundle's user
     // rows are no longer pre-filtered, so the active-only behaviour of these
     // two branches now depends on these functions rather than on the query.
     const below = subtreeIdsOf({ users: all, rootId: scope.userId });
@@ -209,7 +211,7 @@ export function resolveScope({ users, scope }) {
  * copies of the same query.
  *
  * The shape is deliberately the Coverage Console's `data` bundle, because
- * calcCoverageMetrics and calcDivisionMetrics both take exactly that — and each
+ * calcCoverageMetrics and calcDivisionMetrics both take exactly that â€” and each
  * query here is the SAME query that screen issues: same columns, same filters,
  * same window. A bundle that quietly differed would make those two screens' rows
  * measure something the screens never show, which is worse than not checking
@@ -229,7 +231,7 @@ async function loadBundle({ companyId, start, end, year }) {
     // EVERY user, not just the active ones (CEO decision 2026-10-07): the
     // bundle feeds the company-level Coverage Console and Insights figures,
     // which are company totals and now include people who have left. Screens
-    // that list PEOPLE still filter is_active themselves — widening the bundle
+    // that list PEOPLE still filter is_active themselves â€” widening the bundle
     // changes which figures are summed, not who is offered in a picker.
     supabase.from('users')
       .select('id, full_name, role, supervisor_id, is_active, is_contributor, sales_division_id')
@@ -241,7 +243,7 @@ async function loadBundle({ companyId, start, end, year }) {
       .eq('company_id', companyId).eq('status', 'active').eq('period_type', 'monthly')
       .lte('period_start', end).gte('period_end', start),
     // The 3 completed months, for every conversion rate computed in memory.
-    // invoice_number travels with the rows because isImportedDeal needs it —
+    // invoice_number travels with the rows because isImportedDeal needs it â€”
     // without it every loaded-in invoice looks worked and the rate inflates.
     supabase.from('deals')
       .select('id, stage, owner_id, division_id, created_at, closed_at, invoice_number')
@@ -252,7 +254,7 @@ async function loadBundle({ companyId, start, end, year }) {
     supabase.from('opportunities')
       .select('id, owner_id, planned_amount, status, expected_month')
       .eq('company_id', companyId).gte('expected_month', start).lte('expected_month', end),
-    // Carry-in: NEXT month's committed orders, pending only — the console's rule.
+    // Carry-in: NEXT month's committed orders, pending only â€” the console's rule.
     supabase.from('future_orders')
       .select('id, owner_id, planned_amount, expected_month, status')
       .eq('company_id', companyId).eq('status', 'pending')
@@ -302,7 +304,7 @@ async function loadBundle({ companyId, start, end, year }) {
  * THE INVARIANT THIS SECTION EXISTS FOR: the divisions sum to the company.
  *
  * Deals were always attributed by deals.division_id, but target rows, plan
- * items and future orders were attributed per PERSON — so a person in two
+ * items and future orders were attributed per PERSON â€” so a person in two
  * divisions had their whole target and whole plan counted in BOTH. Mohamed
  * Kamal is in Export and PVC Compound, and the October panel read 5.75M of
  * target against a company target of 3.70M, visibly wrong to anyone who added
@@ -349,7 +351,7 @@ async function buildDivisionGroups({
           + ' sales_targets / opportunities / future_orders has no division_id'
           + ` column yet: "${blocked.error.message}". Until it is, a plan item or`
           + ' future order has no division of its own and the panel falls back to'
-          + " its owner's primary — correct for everyone in one division, and"
+          + " its owner's primary â€” correct for everyone in one division, and"
           + ' double-counting for anyone in two.',
       })],
     }];
@@ -375,7 +377,7 @@ async function buildDivisionGroups({
   const total = (pick) => perDivision.reduce((s, { m }) => s + n(pick(m)), 0);
   const sumRows = [
     row({
-      label: `Divisions sum = company — Target (${perDivision.length} divisions)`,
+      label: `Divisions sum = company â€” Target (${perDivision.length} divisions)`,
       value: total((m) => m.target),
       expected: reference.target,
       note: 'the row this session exists for. Before the fix the panel summed to'
@@ -383,42 +385,42 @@ async function buildDivisionGroups({
         + " counted in every division its holder belonged to.",
     }),
     row({
-      label: 'Divisions sum = company — Achieved',
+      label: 'Divisions sum = company â€” Achieved',
       value: total((m) => m.achieved),
       expected: reference.achieved,
       note: 'deals are attributed STRICTLY by deals.division_id, with no owner'
-        + ' fallback — so a deal whose division is null belongs to no division'
-        + ' and this row reads short until the backfill is applied. A ✗ here'
+        + ' fallback â€” so a deal whose division is null belongs to no division'
+        + ' and this row reads short until the backfill is applied. A âœ— here'
         + ' names new NULL-division deals: only DealModal sets the column, and'
         + ' the BEFORE INSERT trigger in the migration is what closes the hole.',
     }),
     row({
-      label: 'Divisions sum = company — Planned (open plan)',
+      label: 'Divisions sum = company â€” Planned (open plan)',
       value: total((m) => m.planned),
       expected: planning.plannedOpen,
     }),
     row({
-      label: 'Divisions sum = company — Funnel dated into this period',
+      label: 'Divisions sum = company â€” Funnel dated into this period',
       value: total((m) => m.monthFunnel),
       expected: reference.funnelWindow,
     }),
   ];
 
-  // ── per division: the panel's planned gap against Planning's ─────────────
+  // â”€â”€ per division: the panel's planned gap against Planning's â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
   // Only where the division has exactly ONE supervisor, because that is the
   // only case where a Planning screen covers the same people: Planning scopes
   // by HIERARCHY (a supervisor and his subtree) and the panel scopes by
   // DIVISION, and the two coincide only when the division is that subtree.
   // Where they do not, the row would be comparing two different populations
-  // and a ✗ would mean nothing.
+  // and a âœ— would mean nothing.
   const gapRows = [];
   for (const { g, m } of perDivision) {
     const members = g.userIds.map((id) => users.find((u) => u.id === id)).filter(Boolean);
     const sups = members.filter((u) => u.role === 'supervisor' && u.is_active !== false);
     if (sups.length !== 1) {
       gapRows.push(row({
-        label: `${g.name} — planned gap (no single supervisor, info only)`,
+        label: `${g.name} â€” planned gap (no single supervisor, info only)`,
         value: n(m.plannedGap),
         note: `${sups.length} supervisors in this division, so there is no one`
           + ' Planning screen covering the same people to compare against.',
@@ -432,7 +434,7 @@ async function buildDivisionGroups({
       companyId, ownerIds: sc.ownerIds, start, end,
     });
     // The division scope includes everyone (it has to sum to a company total
-    // that does), and a supervisor's subtree is active-only — the two halves of
+    // that does), and a supervisor's subtree is active-only â€” the two halves of
     // the CEO's rule of 2026-10-07. So the two figures are the same arithmetic
     // over genuinely different populations whenever a division has ever had a
     // member who left.
@@ -449,8 +451,8 @@ async function buildDivisionGroups({
       && divAchievers.every((id) => sc.achieverIds.includes(id));
     gapRows.push(row({
       label: samePeople
-        ? `${g.name} — planned gap vs Planning for ${sup.full_name || sup.id}`
-        : `${g.name} — planned gap ${Math.round(n(m.plannedGap)).toLocaleString('en-US')}`
+        ? `${g.name} â€” planned gap vs Planning for ${sup.full_name || sup.id}`
+        : `${g.name} â€” planned gap ${Math.round(n(m.plannedGap)).toLocaleString('en-US')}`
           + ` vs Planning ${Math.round(n(sp.plannedGap)).toLocaleString('en-US')} (info only)`,
       value: n(m.plannedGap),
       expected: samePeople ? n(sp.plannedGap) : null,
@@ -458,9 +460,9 @@ async function buildDivisionGroups({
         ? 'the division and this supervisor\'s subtree are the same people, so'
           + ' the two screens must agree'
         : `DIFFERENT POPULATIONS BY RULE: ${divAchievers.length} in the division`
-          + ` (everyone, active or not — a division total has to sum to a company`
+          + ` (everyone, active or not â€” a division total has to sum to a company`
           + ` total) against ${sc.achieverIds.length} in ${sup.full_name || 'the'}`
-          + " subtree (active only — a team figure). Not comparable, so it is"
+          + " subtree (active only â€” a team figure). Not comparable, so it is"
           + ' reported rather than asserted.',
     }));
   }
@@ -472,12 +474,107 @@ async function buildDivisionGroups({
 }
 
 /**
+ * THE PLAN ACCOUNTED FOR ALL OF IT, OR SAID WHERE THE REST CAME FROM.
+ *
+ * Session 13 part B looks back at a completed month and splits its revenue by
+ * where it came from: invoiced deals that began as a plan item, and invoiced
+ * deals that did not. The two halves have to add to that month's Achieved â€”
+ * if they do not, one of them is counting something twice or dropping it, and
+ * a "plan hit rate" built on either is fiction.
+ *
+ * Asserted gross, and the net is checked against fetchAchieved separately:
+ * a credit note reduces Achieved without belonging to either half.
+ *
+ * WEEKLY PACING is checked where it must agree with the month: the last week
+ * that has happened carries the month's cumulative Achieved so far, which is
+ * the same figure the Achieved card shows. A separate bucketing of the same
+ * invoices is exactly the sort of thing that quietly loses one.
+ */
+async function buildPlanAccuracyRows({ companyId, bundle, start, end, reference }) {
+  const users = bundle.users || [];
+  const active = users.filter((u) => u.is_active !== false).map((u) => u.id);
+  if (!active.length) return [];
+
+  const monthKey = String(start).slice(0, 7);
+  const rows = [];
+
+  const acc = await computePlanAccuracy({
+    companyId, ownerIds: active, monthKey, users,
+  });
+  if (acc.failed) {
+    rows.push(row({
+      label: 'Plan accuracy: could not be read',
+      value: 0, expected: 1,
+    }));
+    return rows;
+  }
+
+  const t = acc.totals;
+  rows.push(row({
+    label: 'Plan accuracy â€” company: from the plan + unplanned = Achieved (gross)',
+    value: n(t.achievedFromPlan) + n(t.achievedUnplanned),
+    expected: t.achievedGross,
+    note: `from the plan ${Math.round(n(t.achievedFromPlan)).toLocaleString('en-US')}, unplanned ${Math.round(n(t.achievedUnplanned)).toLocaleString('en-US')} across ${t.unplannedInvoices} invoices`,
+  }));
+  rows.push(row({
+    label: 'Plan accuracy â€” company: Achieved net of credit notes = the shared rule',
+    value: t.achievedNet,
+    expected: reference.achieved,
+  }));
+  rows.push(row({
+    label: 'Plan accuracy â€” company: planned value',
+    value: t.plannedValue,
+    expected: null,
+    note: `${t.plannedItems} items planned, ${t.convertedItems} became deals, ${t.invoicedItems} invoiced â€” a hit rate of ${t.hitRate == null ? 'n/a' : `${t.hitRate.toFixed(1)}%`}`,
+  }));
+
+  // THE FUNNEL ONLY NARROWS. Each stage is a subset of the one above it, so
+  // its value can never exceed it. Asserted because the Won bar was drawn with
+  // the invoiced value for a while and nothing noticed: every won deal in this
+  // company happened to be invoiced, so the two were equal.
+  rows.push(row({
+    label: 'Plan accuracy â€” company: the funnel only narrows (won â‰¥ invoiced)',
+    value: n(t.wonValue) >= n(t.invoicedValue) ? 1 : 0,
+    expected: 1,
+    kind: 'count',
+    note: `won ${Math.round(n(t.wonValue)).toLocaleString('en-US')} over ${t.wonItems} items, invoiced ${Math.round(n(t.invoicedValue)).toLocaleString('en-US')} over ${t.invoicedItems}`,
+  }));
+
+  // Per person, which is where a mis-attribution actually shows up.
+  acc.people.forEach((person) => {
+    rows.push(row({
+      label: `Plan accuracy â€” ${person.name}: from the plan + unplanned = Achieved (gross)`,
+      value: n(person.achievedFromPlan) + n(person.achievedUnplanned),
+      expected: person.achievedGross,
+    }));
+  });
+
+  // Weekly pacing: the last week that has happened must carry the month's own
+  // Achieved. Outside a month in progress every week has happened, so the last
+  // bucket is the whole month.
+  const wp = await computeWeeklyPacing({
+    companyId, ownerIds: active, start, end, users, now: bundle.now || new Date(),
+  });
+  const past = (wp.totals?.series || []).filter((x) => x.inPast);
+  const last = past[past.length - 1];
+  if (last) {
+    rows.push(row({
+      label: 'Weekly pacing â€” company: the last elapsed week carries the month\'s Achieved (gross)',
+      value: last.achieved,
+      expected: t.achievedGross,
+      note: `${past.length} of ${wp.weeks.length} weeks elapsed; verdict ${wp.totals.verdict || 'none (not the current month)'}`,
+    }));
+  }
+
+  return rows;
+}
+/**
  * THE PLANNING CARDS OPEN ONTO THEIR OWN FIGURES.
  *
  * Four of the five cards can be clicked (session 13), and each opens a panel
  * whose header is supposed to be the card's own number. buildPlanningDrill
  * GROUPS the rows computePlanningPageSummary already read rather than
- * recomputing them, so the equality should hold by construction — which is
+ * recomputing them, so the equality should hold by construction â€” which is
  * exactly why it is asserted. Two rows per openable card:
  *
  *   panel total = card            the header matches the tile
@@ -488,7 +585,7 @@ async function buildDivisionGroups({
  *
  * THE TEAM BOARD. Its totals row is the viewer's own cards, NOT a sum of the
  * per-person rows, and the difference is real: a team's Required Plan is its
- * own remaining target ÷ its own conversion, which is not the sum of its
+ * own remaining target Ã· its own conversion, which is not the sum of its
  * members'. What DOES add up is Target, so that is asserted and Required Plan
  * is reported beside it.
  *
@@ -514,7 +611,7 @@ async function buildPlanningDrillRows({ companyId, bundle, start, end }) {
     });
     if (!sum.drill) {
       rows.push(row({
-        label: `Planning cards — ${subj.name}: the summary carries no rows`,
+        label: `Planning cards â€” ${subj.name}: the summary carries no rows`,
         value: 0, expected: 1,
         note: 'computePlanningPageSummary returned no drill payload, so the cards'
           + ' would open onto nothing',
@@ -526,7 +623,7 @@ async function buildPlanningDrillRows({ companyId, bundle, start, end }) {
     const cards = buildPlanningDrill(sum, { users });
     // INFORMATIONAL BRANCHES ARE SKIPPED. The coverage card lists converted
     // plan items beside the open ones so a worked plan is visible, but they
-    // are deals now and are counted in the funnel — adding them here would
+    // are deals now and are counted in the funnel â€” adding them here would
     // make the panel's rows exceed its own header by the amount of work the
     // team actually did, which is the opposite of what this row checks.
     const sumRows = (node) => {
@@ -544,13 +641,13 @@ async function buildPlanningDrillRows({ companyId, bundle, start, end }) {
     ];
     pairs.forEach(([label, node, expected, hasRows]) => {
       rows.push(row({
-        label: `Planning card — ${subj.name} — ${label}: panel total = card`,
+        label: `Planning card â€” ${subj.name} â€” ${label}: panel total = card`,
         value: node.total,
         expected,
       }));
       if (hasRows) {
         rows.push(row({
-          label: `Planning card — ${subj.name} — ${label}: rows add to the panel total`,
+          label: `Planning card â€” ${subj.name} â€” ${label}: rows add to the panel total`,
           value: sumRows(node),
           expected: node.total,
         }));
@@ -565,7 +662,7 @@ async function buildPlanningDrillRows({ companyId, bundle, start, end }) {
         gap: sum.plannedGap, users,
       });
       rows.push(row({
-        label: `Gap closer — ${subj.name}: the gap it ranks against = the Planned gap card`,
+        label: `Gap closer â€” ${subj.name}: the gap it ranks against = the Planned gap card`,
         value: gc.gap,
         expected: sum.plannedGap,
         note: `${gc.rows.length} candidates; ${gc.closesAt ? `the first ${gc.closesAt} would close it` : 'none close it'}`,
@@ -583,16 +680,16 @@ async function buildPlanningDrillRows({ companyId, bundle, start, end }) {
       });
       const perPersonTarget = board.rows.reduce((t, r) => t + n(r.target), 0);
       rows.push(row({
-        label: `Team plan board — ${subj.name}: the people\'s targets add to the totals row`,
+        label: `Team plan board â€” ${subj.name}: the people\'s targets add to the totals row`,
         value: perPersonTarget,
         expected: sum.target,
         note: `${board.rows.length} people`,
       }));
       rows.push(row({
-        label: `Team plan board — ${subj.name}: the people\'s required plans add to`,
+        label: `Team plan board â€” ${subj.name}: the people\'s required plans add to`,
         value: board.rows.reduce((t, r) => t + n(r.requiredPlan), 0),
         expected: null,
-        note: `the totals row shows ${Math.round(n(sum.requiredPlan)).toLocaleString('en-US')}, which is the TEAM\'s remaining target ÷ the TEAM\'s conversion — not the sum of the members\'. Reported, not asserted.`,
+        note: `the totals row shows ${Math.round(n(sum.requiredPlan)).toLocaleString('en-US')}, which is the TEAM\'s remaining target Ã· the TEAM\'s conversion â€” not the sum of the members\'. Reported, not asserted.`,
       }));
     }
   }
@@ -603,7 +700,7 @@ async function buildPlanningDrillRows({ companyId, bundle, start, end }) {
  *
  * The division figures only sum to the company while every row carries a
  * division. A row whose division_id is NULL falls back to its owner's PRIMARY
- * division on the way into Insights — so a NULL row with an owner who HAS a
+ * division on the way into Insights â€” so a NULL row with an owner who HAS a
  * primary is counted at company level and in no division, and the two stop
  * agreeing.
  *
@@ -611,12 +708,12 @@ async function buildPlanningDrillRows({ companyId, bundle, start, end }) {
  * its division by the BEFORE INSERT trigger at 16:08 on 2026-10-07 and edited
  * to NULL two minutes later, because DealModal sent
  * `division_id: formData.division_id || null` on the edit path. October's
- * divisions-sum row then failed by exactly 18,315 — which is how it was found.
+ * divisions-sum row then failed by exactly 18,315 â€” which is how it was found.
  * The app now omits the key instead of nulling it, and
  * migrations/division_on_update.sql adds the BEFORE UPDATE guard; this group is
  * what notices if either one is ever undone.
  *
- * Rows whose owner has NO primary division (Osman, Mueataz — both departed)
+ * Rows whose owner has NO primary division (Osman, Mueataz â€” both departed)
  * are REPORTED, not asserted: there is nothing to attribute them to, and the
  * company-level fallback is NULL for them too, so they cost no division
  * anything. Asserting zero there would fail forever for a condition nobody
@@ -651,7 +748,7 @@ async function buildDivisionAttributionRows({ companyId, bundle }) {
 
     if (error) {
       rows.push(row({
-        label: `${t.table} — rows with no division: not readable`,
+        label: `${t.table} â€” rows with no division: not readable`,
         value: 0,
         expected: null,
         note: `${t.table}.division_id could not be read (${error.message}).`
@@ -670,12 +767,12 @@ async function buildDivisionAttributionRows({ companyId, bundle }) {
     const what = repairable.slice(0, 3).map((r) => r[t.labelKey] || r.id).join(', ');
 
     rows.push(row({
-      label: `${t.table} — rows with no division whose owner HAS a primary`,
+      label: `${t.table} â€” rows with no division whose owner HAS a primary`,
       value: repairable.length,
       expected: 0,
       kind: 'count',
       note: repairable.length
-        ? `${what}${repairable.length > 3 ? ' …' : ''} — ${who.join(', ')}.`
+        ? `${what}${repairable.length > 3 ? ' â€¦' : ''} â€” ${who.join(', ')}.`
           + ' Each is counted at company level and in no division.'
           + ' migrations/division_on_update.sql repairs these and stops them recurring.'
         : 'every row carries a division, or its owner has none to give it',
@@ -734,7 +831,7 @@ async function buildRailDrillRows({ companyId, bundle, consoleData, start, end }
     const metrics = calcDivisionMetrics(scope, { ...consoleData, divisionId: null }) || {};
     if (!metrics.drill) {
       rows.push(row({
-        label: `Coverage rail drill-down — ${subj.name}: metrics carry no rows`,
+        label: `Coverage rail drill-down â€” ${subj.name}: metrics carry no rows`,
         value: 0,
         expected: 1,
         note: 'calcDivisionMetrics returned no drill payload, so the panel would'
@@ -764,7 +861,7 @@ async function buildRailDrillRows({ companyId, bundle, consoleData, start, end }
     RAIL_SEGMENTS.forEach((seg) => {
       const got = built.segments[seg.key] || { total: 0, peopleTotal: 0, people: [] };
       rows.push(row({
-        label: `Coverage rail — ${subj.name} — ${seg.label}: panel L1 total = rail value`,
+        label: `Coverage rail â€” ${subj.name} â€” ${seg.label}: panel L1 total = rail value`,
         value: got.total,
         expected: railValue[seg.key],
         note: seg.inCoverage ? null : 'drawn on the rail but NOT counted in coverage'
@@ -774,18 +871,18 @@ async function buildRailDrillRows({ companyId, bundle, consoleData, start, end }
       if (seg.key === 'shortfall') {
         const same = Math.abs(got.peopleTotal - got.total) <= 1;
         rows.push(row({
-          label: `Coverage rail — ${subj.name} — Shortfall: personal gaps add to`,
+          label: `Coverage rail â€” ${subj.name} â€” Shortfall: personal gaps add to`,
           value: got.peopleTotal,
           expected: same ? got.total : null,
           note: same
             ? 'equal here: nobody in this scope is over their target'
-            : `the scope is short ${Math.round(got.total).toLocaleString('en-US')} while personal gaps add to ${Math.round(got.peopleTotal).toLocaleString('en-US')} — someone is over, and an overshoot does not fill another person\'s gap. Reported, not asserted.`,
+            : `the scope is short ${Math.round(got.total).toLocaleString('en-US')} while personal gaps add to ${Math.round(got.peopleTotal).toLocaleString('en-US')} â€” someone is over, and an overshoot does not fill another person\'s gap. Reported, not asserted.`,
         }));
         return;
       }
 
       rows.push(row({
-        label: `Coverage rail — ${subj.name} — ${seg.label}: sum of person totals = L1 total`,
+        label: `Coverage rail â€” ${subj.name} â€” ${seg.label}: sum of person totals = L1 total`,
         value: got.peopleTotal,
         expected: got.total,
         note: `${got.people.length} ${got.people.length === 1 ? 'person' : 'people'}`,
@@ -795,12 +892,12 @@ async function buildRailDrillRows({ companyId, bundle, consoleData, start, end }
   return rows;
 }
 /**
- * FORWARD-LOOKING FIGURES EXCLUDE INACTIVE OWNERS — at every scope.
+ * FORWARD-LOOKING FIGURES EXCLUDE INACTIVE OWNERS â€” at every scope.
  *
  * CEO decision 2026-10-07. Planned, the open funnel and carry-in count active
  * owners only: a departed person's open plan will not convert, and counting it
  * overstates coverage and understates the pipeline still needed. Target and
- * Achieved go the OTHER way at company scope — they are history and include
+ * Achieved go the OTHER way at company scope â€” they are history and include
  * whoever was there.
  *
  * Two halves of one decision pulling opposite ways through the same bundle is
@@ -836,7 +933,7 @@ function buildForwardScopeRows({ bundle, planning, reference }) {
 
   return [
     row({
-      label: 'Planned / Funnel exclude inactive owners — Planned',
+      label: 'Planned / Funnel exclude inactive owners â€” Planned',
       value: planning.plannedOpen,
       expected: expectedPlanned,
       note: excluded > 0
@@ -846,12 +943,12 @@ function buildForwardScopeRows({ bundle, planning, reference }) {
           + ' rule changes nothing today; the row still guards it',
     }),
     row({
-      label: 'Planned / Funnel exclude inactive owners — open plan left out',
+      label: 'Planned / Funnel exclude inactive owners â€” open plan left out',
       value: excluded,
       note: names.length ? `held by ${names.join(', ')}` : 'nothing to leave out in this window',
     }),
     row({
-      label: 'Planned / Funnel exclude inactive owners — funnel owners all active',
+      label: 'Planned / Funnel exclude inactive owners â€” funnel owners all active',
       value: strayFunnel.length,
       expected: 0,
       note: 'a count of open deals in the reference funnel whose owner is not'
@@ -861,7 +958,7 @@ function buildForwardScopeRows({ bundle, planning, reference }) {
   ];
 }
 /**
- * ANNUAL ALLOCATION — the helper against a recomputation that shares no code
+ * ANNUAL ALLOCATION â€” the helper against a recomputation that shares no code
  * with it.
  *
  * CEO decision 2026-10-07: a manager's monthly rows, his team's and his own,
@@ -870,7 +967,7 @@ function buildForwardScopeRows({ bundle, planning, reference }) {
  * so a wrong figure here tells a manager the wrong amount to hand out.
  *
  * NOTE these rows measure the EVERYONE scope (departed people's rows included,
- * decision 2026-10-07). The "Annual view — Not yet assigned" row in the
+ * decision 2026-10-07). The "Annual view â€” Not yet assigned" row in the
  * Planning group above measures the same subtraction over the viewer's ACTIVE
  * achievers and reads 12,559,543 higher for 2026. Both are correct against
  * their own scope and both pass; the divergence is recorded in
@@ -879,8 +976,8 @@ function buildForwardScopeRows({ bundle, planning, reference }) {
  * THE INDEPENDENT SIDE walks the hierarchy from its own user read, sums the
  * bundle's own monthly rows, and takes the max of the yearly rows itself. It
  * reads users SEPARATELY from the bundle because the bundle's user rows are the
- * ACTIVE ones and this figure includes everyone (CEO decision 2026-10-07) —
- * reusing them would have quietly checked the active-only sum and passed. It shares targetPerPerson with the helper deliberately — that IS the
+ * ACTIVE ones and this figure includes everyone (CEO decision 2026-10-07) â€”
+ * reusing them would have quietly checked the active-only sum and passed. It shares targetPerPerson with the helper deliberately â€” that IS the
  * rule under test everywhere else in this file, and re-implementing a row's
  * value here would check this page against itself rather than the app. What it
  * does not share is the SCOPE resolution and the subtraction, which is what
@@ -901,7 +998,7 @@ async function buildAnnualAllocationRows({ companyId, bundle, year, planning = n
     .lte('period_end', `${year}-12-31`);
   if (error) {
     return [row({
-      label: 'Annual allocation remaining — could not read the yearly rows',
+      label: 'Annual allocation remaining â€” could not read the yearly rows',
       value: 0,
       note: error.message,
     })];
@@ -914,7 +1011,7 @@ async function buildAnnualAllocationRows({ companyId, bundle, year, planning = n
     .eq('company_id', companyId);
   if (everyoneErr) {
     return [row({
-      label: 'Annual allocation remaining — could not read the users',
+      label: 'Annual allocation remaining â€” could not read the users',
       value: 0,
       note: everyoneErr.message,
     })];
@@ -928,7 +1025,7 @@ async function buildAnnualAllocationRows({ companyId, bundle, year, planning = n
     .filter((id) => users.some((u) => u.id === id));
   if (!holders.length) {
     return [row({
-      label: `Annual allocation remaining — nobody holds a ${year} yearly row`,
+      label: `Annual allocation remaining â€” nobody holds a ${year} yearly row`,
       value: 0,
       note: 'nothing to check: the rule applies to a manager who has been given'
         + ' a yearly target, and no active user has one for this year',
@@ -943,7 +1040,7 @@ async function buildAnnualAllocationRows({ companyId, bundle, year, planning = n
     // eslint-disable-next-line no-await-in-loop
     const alloc = await computeAnnualAllocation({ companyId, managerId: id, year });
 
-    // ── independent ────────────────────────────────────────────────────────
+    // â”€â”€ independent â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // includeInactive, and over allUsers rather than the bundle's active-only
     // rows: an allocation given to someone who has left was still given, and
     // the month it sat in cannot be assigned again. Mueataz Mohammed Ahmed's
@@ -959,44 +1056,44 @@ async function buildAnnualAllocationRows({ companyId, bundle, year, planning = n
     const expRemaining = expAnnual - expAssigned;
 
     out.push(row({
-      label: `Annual allocation remaining — ${name} ${year}`,
+      label: `Annual allocation remaining â€” ${name} ${year}`,
       value: alloc.remaining,
       expected: expRemaining,
       note: `allocation ${Math.round(expAnnual).toLocaleString('en-US')}`
         + ` less ${Math.round(expAssigned).toLocaleString('en-US')} of monthly rows`
         + ` across ${scope.length} people, active or not (him and everyone who`
-        + ' has reported under him) — CEO decision 2026-10-07',
+        + ' has reported under him) â€” CEO decision 2026-10-07',
     }));
     out.push(row({
-      label: `Annual allocation assigned — ${name} ${year}`,
+      label: `Annual allocation assigned â€” ${name} ${year}`,
       value: alloc.assigned,
       expected: expAssigned,
     }));
     out.push(row({
-      label: `Annual allocation — ${name} ${year}: byMonth sums to assigned`,
+      label: `Annual allocation â€” ${name} ${year}: byMonth sums to assigned`,
       value: (alloc.byMonth || []).reduce((s, v) => s + v, 0),
       expected: alloc.assigned,
       note: 'the 12-month strip on the target-assignment banner is the same'
         + ' figure broken up, so it has to add back to it',
     }));
-    // ── THE CROSS-SCREEN ROW ───────────────────────────────────────────────
+    // â”€â”€ THE CROSS-SCREEN ROW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Planning's "Not yet assigned" against the BANNER's "remaining", compared
     // to EACH OTHER rather than each to its own reference.
     //
     // WHY THIS ROW EXISTS. For a few hours on 2026-10-07 those two figures read
-    // 27,852,189 and 15,292,646 — the same subtraction over two different
-    // populations — and every row on this page passed, because each was checked
+    // 27,852,189 and 15,292,646 â€” the same subtraction over two different
+    // populations â€” and every row on this page passed, because each was checked
     // against a reference built on its own scope. A per-screen reference cannot
     // catch two screens disagreeing with each other; only a row that puts them
     // side by side can. Same shape as the division sum that stayed correct
     // while the split was wrong.
     //
     // Only on an ANNUAL range, where Planning computes the figure at all, and
-    // only for the holder whose scope Planning's covers — at company scope that
+    // only for the holder whose scope Planning's covers â€” at company scope that
     // is whoever holds the yearly row.
     if (planning && planning.annualTarget !== null && planning.annualTarget !== undefined) {
       out.push(row({
-        label: `Annual allocation — ${name} ${year}: Planning "Not yet assigned" = the banner's "remaining"`,
+        label: `Annual allocation â€” ${name} ${year}: Planning "Not yet assigned" = the banner's "remaining"`,
         value: n(planning.unassignedAnnual),
         expected: Math.max(0, alloc.remaining),
         note: 'the two screens compared to EACH OTHER, not to a reference each.'
@@ -1006,18 +1103,18 @@ async function buildAnnualAllocationRows({ companyId, bundle, year, planning = n
           + ' Planning has always shown it.',
       }));
       out.push(row({
-        label: `Annual allocation — ${name} ${year}: Planning "assigned" = the banner's`,
+        label: `Annual allocation â€” ${name} ${year}: Planning "assigned" = the banner's`,
         value: n(planning.annualAssigned),
         expected: alloc.assigned,
       }));
     }
 
     out.push(row({
-      label: `Annual allocation — ${name} ${year}: months left to assign`,
+      label: `Annual allocation â€” ${name} ${year}: months left to assign`,
       value: alloc.monthsLeft,
       note: alloc.monthsLeft > 0
         ? `months with no rows yet, from this month on`
-          + ` → ${Math.round(alloc.perMonthNeeded || 0).toLocaleString('en-US')} per month`
+          + ` â†’ ${Math.round(alloc.perMonthNeeded || 0).toLocaleString('en-US')} per month`
         : 'every remaining month of the year already carries rows',
     }));
   }
@@ -1029,7 +1126,7 @@ async function buildAnnualAllocationRows({ companyId, bundle, year, planning = n
  *
  * Insights opened to supervisors and salesmen on 2026-10-07. A supervisor now
  * has two screens showing him the same five figures over the same people, and
- * a salesman has two showing him his own — so the only question that matters
+ * a salesman has two showing him his own â€” so the only question that matters
  * is whether they agree. These rows ask it directly, screen against screen,
  * rather than each against a reference of its own (the lesson of the annual
  * allocation, where both sides passed while disagreeing by 12.5M).
@@ -1059,7 +1156,7 @@ async function buildInsightsVsPlanningRows({
     if (!scope.length) continue;
 
     // INSIGHTS: the figures the page computes for its whole scope, which is
-    // what its totals row shows. divisionId is null — the person's page is
+    // what its totals row shows. divisionId is null â€” the person's page is
     // scoped by WHO, not by division, and the division breakdown underneath
     // sums to this.
     const ins = calcDivisionMetrics(scope, { ...consoleData, divisionId: null }) || {};
@@ -1070,7 +1167,7 @@ async function buildInsightsVsPlanningRows({
       companyId, ownerIds: scope, start, end,
     });
 
-    const label = (what) => `Insights as ${name} = Planning as ${name} — ${what}`;
+    const label = (what) => `Insights as ${name} = Planning as ${name} â€” ${what}`;
     rows.push(row({ label: label('target'), value: ins.target, expected: plan.target }));
     rows.push(row({ label: label('achieved'), value: ins.achieved, expected: plan.achieved }));
     rows.push(row({
@@ -1097,7 +1194,7 @@ async function buildInsightsVsPlanningRows({
  * @param {string} p.start  yyyy-MM-dd
  * @param {string} p.end    yyyy-MM-dd
  * @param {object} p.scope  { kind: 'company'|'team'|'person', userId? }
- * @param {object} p.viewer { id, role } — the signed-in admin/director, for the
+ * @param {object} p.viewer { id, role } â€” the signed-in admin/director, for the
  *                          two screens that scope themselves from the VIEWER
  *                          rather than from an id they are passed (Reports and
  *                          Forecast both do)
@@ -1117,7 +1214,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     ownerIds, achieverIds, contributorIds, label: scopeLabel, person,
   } = resolveScope({ users, scope });
 
-  // ── THE REFERENCE, computed once from the shared rules ───────────────────
+  // â”€â”€ THE REFERENCE, computed once from the shared rules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // FORWARD-LOOKING FIGURES ARE ACTIVE-ONLY at every scope, so the reference
   // funnel is measured over the ACTIVE achievers even at company scope, where
   // achieverIds itself includes the departed for Target and Achieved. Getting
@@ -1127,14 +1224,14 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
   const [refAchieved, refTargetRows, refFunnelNow, refFunnelWindow, refRate] = await Promise.all([
     fetchAchieved({ companyId, contributorIds: achieverIds, start, end }),
     fetchMonthlyTargets({ companyId, contributorIds: achieverIds, start, end }),
-    // No window — which is how every screen calls it, meaning the CURRENT month
+    // No window â€” which is how every screen calls it, meaning the CURRENT month
     // plus the undated deals (INCLUDE_UNDATED).
     fetchOpenFunnel({ companyId, scopeIds: forwardIds }),
     // The same function over the SELECTED period, for the screens that window it.
     fetchOpenFunnel({ companyId, scopeIds: forwardIds, start, end }),
     // The ACHIEVER scope (decision D4): the same people as Achieved and Target.
     // fetchWinRate3m narrows to it internally now, so passing ownerIds would give
-    // the same answer — the achievers are passed explicitly so this row states
+    // the same answer â€” the achievers are passed explicitly so this row states
     // the scope it is asserting rather than relying on the helper to pick it.
     fetchWinRate3m({ companyId, scopeIds: achieverIds }),
   ]);
@@ -1146,7 +1243,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     })
     : null;
   // Won-not-invoiced is a STATUS, not a monthly figure, so it is deliberately
-  // not windowed — exactly as the KPI strip treats it.
+  // not windowed â€” exactly as the KPI strip treats it.
   const wni = summarizeWonNotInvoiced(
     wonNotInvoicedList({ deals: bundle.deals, ownerIds: achieverIds }),
   );
@@ -1180,7 +1277,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
 
   const groups = [];
 
-  // ── KPI strip ────────────────────────────────────────────────────────────
+  // â”€â”€ KPI strip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const { totals: strip } = await computeKpiStripData({
     companyId, ownerIds, range: { start, end, isAnnual },
   });
@@ -1205,7 +1302,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
           : reference.gap,
       }),
       row({ label: 'Conversion (3m)', value: strip.winRate3m, expected: reference.conversion3m, kind: 'pct',
-        note: 'measured over the ACHIEVERS since 2026-10-05 — the same people as'
+        note: 'measured over the ACHIEVERS since 2026-10-05 â€” the same people as'
           + ' Achieved and Target (decision D4)' }),
       row({ label: 'Pipeline conversion (info only)', value: strip.pipelineConversion3m, expected: reference.pipelineConversion3m, kind: 'pct' }),
       row({
@@ -1231,7 +1328,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     ],
   });
 
-  // ── Monthly target cards and tiles ───────────────────────────────────────
+  // â”€â”€ Monthly target cards and tiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const monthlyRows = [];
   if (person && scope?.kind === 'person') {
     const card = await getMonthlyTarget({
@@ -1239,13 +1336,13 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     });
     monthlyRows.push(
       row({
-        label: 'Monthly Target card (own) — Target',
+        label: 'Monthly Target card (own) â€” Target',
         value: card?.amount ?? 0,
         expected: reference.target,
         note: card ? null : 'no card is drawn: this person holds no target row and invoiced nothing',
       }),
-      row({ label: 'Monthly Target card (own) — Achieved', value: card?.achieved ?? 0, expected: reference.achieved }),
-      row({ label: 'Monthly Target card (own) — Won, not invoiced', value: card?.wonNotInvoiced?.total ?? 0, expected: reference.wniTotal }),
+      row({ label: 'Monthly Target card (own) â€” Achieved', value: card?.achieved ?? 0, expected: reference.achieved }),
+      row({ label: 'Monthly Target card (own) â€” Won, not invoiced', value: card?.wonNotInvoiced?.total ?? 0, expected: reference.wniTotal }),
     );
   }
   const scopeTotals = await getScopeMonthlyTotals({ companyId, ownerIds, start, end });
@@ -1253,11 +1350,11 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     ? 'Director Company Monthly tile'
     : 'Manager Team Monthly tile';
   monthlyRows.push(
-    row({ label: `${tileName} — Target`, value: scopeTotals.target, expected: reference.target }),
-    row({ label: `${tileName} — Achieved`, value: scopeTotals.achieved, expected: reference.achieved }),
+    row({ label: `${tileName} â€” Target`, value: scopeTotals.target, expected: reference.target }),
+    row({ label: `${tileName} â€” Achieved`, value: scopeTotals.achieved, expected: reference.achieved }),
   );
   // The manager's own card plus the tile for everyone BELOW him must add up to
-  // the strip for the whole team — the double-counting test the brief asks for.
+  // the strip for the whole team â€” the double-counting test the brief asks for.
   if (scope?.kind === 'team') {
     const below = subtreeIdsOf({ users, rootId: scope.userId });
     const [own, teamOnly] = await Promise.all([
@@ -1286,7 +1383,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     rows: monthlyRows,
   });
 
-  // ── Target table ─────────────────────────────────────────────────────────
+  // â”€â”€ Target table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The rows a dashboard's target table lists for this scope: active monthly
   // rows overlapping the window, held by somebody whose revenue counts.
   const tableRows = (bundle.targets || []).filter((t) => achieverIds.includes(t.assigned_to));
@@ -1301,7 +1398,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
   // is what the allocation is for. So one row held by one manager can cover
   // every achiever beneath him. This check compared the table total against
   // Achieved for the ROW HOLDERS alone, which agreed only for as long as no
-  // manager had a monthly row — and the moment Mohamed Kamal was given an
+  // manager had a monthly row â€” and the moment Mohamed Kamal was given an
   // October target it reported a 38,528 discrepancy against an app that was
   // behaving exactly as designed.
   //
@@ -1321,11 +1418,11 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     fn: 'achievedForRows / withTargetRowProgress',
     rows: [
       row({
-        label: `Table Achieved total — ${tableRows.length} row(s) held by ${holderIds.length},`
+        label: `Table Achieved total â€” ${tableRows.length} row(s) held by ${holderIds.length},`
           + ` covering ${distinctPeople} ${distinctPeople === 1 ? 'person' : 'people'}`,
         value: achievedForRows(tableRows, { ...progressCtx, start, end }),
         expected: coveredAchieved,
-        note: 'summed over PEOPLE, not over rows — one person holding three rows'
+        note: 'summed over PEOPLE, not over rows â€” one person holding three rows'
           + ' counts once. "Covering" exceeds "held by" when a manager holds a'
           + ' team allocation, because that row\'s progress is his subtree\'s'
           + ' revenue, not his own.',
@@ -1334,7 +1431,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
         label: `Achieved by the ${Math.max(0, achieverIds.length - distinctPeople)} achiever(s) NO row covers (info only)`,
         value: reference.achieved - coveredAchieved,
         note: distinctPeople < achieverIds.length
-          ? 'this is why the table total above is below the scope Achieved — it is'
+          ? 'this is why the table total above is below the scope Achieved â€” it is'
             + ' revenue that no target row covers, not missing revenue'
           : 'every achiever in this scope is covered by some row in the table',
       }),
@@ -1348,12 +1445,12 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
         value: withProgress.reduce((s, r) => s + n(r.calculated_progress), 0),
         note: "each row shows its holder's Achieved for the ROW's own period, so this"
           + ' over-totals whenever one person holds several rows. That is why the total'
-          + ' above is taken over people — this is not a second opinion about Achieved.',
+          + ' above is taken over people â€” this is not a second opinion about Achieved.',
       }),
     ],
   });
 
-  // ── Director dashboard ───────────────────────────────────────────────────
+  // â”€â”€ Director dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const companyCard = computeAchieved({
     deals: bundle.deals, contributorIds: achieverIds, start, end, returns: bundle.returns,
   });
@@ -1372,13 +1469,13 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     screen: `Director dashboard (${year})`,
     fn: 'computeAchieved / performanceBars / achievedForBuckets',
     rows: [
-      row({ label: 'Company card — Achieved', value: companyCard.total, expected: reference.achieved }),
+      row({ label: 'Company card â€” Achieved', value: companyCard.total, expected: reference.achieved }),
       row({
-        label: 'Company card — performance %',
+        label: 'Company card â€” performance %',
         value: reference.target > 0 ? (companyCard.total / reference.target) * 100 : 0,
         expected: reference.target > 0 ? (reference.achieved / reference.target) * 100 : 0,
         kind: 'pct',
-        note: reference.target > 0 ? null : 'no target rows in this period — the card shows "No target set"',
+        note: reference.target > 0 ? null : 'no target rows in this period â€” the card shows "No target set"',
       }),
       row({
         label: 'Leaderboard total (sum of its per-person rows)',
@@ -1386,13 +1483,13 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
         expected: reference.achieved,
       }),
       row({
-        label: `Monthly trend bucket — ${trend[monthIndex]?.label || '—'}`,
+        label: `Monthly trend bucket â€” ${trend[monthIndex]?.label || 'â€”'}`,
         value: trend[monthIndex]?.revenue,
         expected: isWholeMonth ? reference.achieved : null,
         note: isWholeMonth ? null : 'compared only when the selected period is one whole month',
       }),
       row({
-        label: `Performance Summary — Total Revenue (the 12 bars of ${year})`,
+        label: `Performance Summary â€” Total Revenue (the 12 bars of ${year})`,
         value: barTotals.totalRevenue,
         expected: yearAchieved,
         note: 'against the same twelve months through achievedForBuckets, so the card'
@@ -1400,13 +1497,13 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
           + ' selected period is a single month',
       }),
       row({
-        label: "Performance Summary — Total Revenue vs the year's Achieved",
+        label: "Performance Summary â€” Total Revenue vs the year's Achieved",
         value: barTotals.totalRevenue,
         expected: isAnnual ? reference.achieved : null,
         note: isAnnual ? null : 'compared to the reference only in the annual view',
       }),
       row({
-        label: `Performance Summary — Total Target (the 12 bars of ${year})`,
+        label: `Performance Summary â€” Total Target (the 12 bars of ${year})`,
         value: barTotals.totalTarget,
         expected: isAnnual ? reference.target : null,
         note: isAnnual
@@ -1416,7 +1513,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     ],
   });
 
-  // ── Planning ─────────────────────────────────────────────────────────────
+  // â”€â”€ Planning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const planning = await computePlanningPageSummary({ companyId, ownerIds, start, end });
   const planningRows = [
     row({ label: 'Target', value: planning.target, expected: reference.target }),
@@ -1437,23 +1534,23 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     row({
       label: 'Required Plan',
       value: planning.requiredPlan,
-      note: 'remaining target ÷ conversion — no reference figure of its own; it is right'
+      note: 'remaining target Ã· conversion â€” no reference figure of its own; it is right'
         + ' exactly when the two rows it divides are',
     }),
   ];
   if (isAnnual) {
     planningRows.push(
-      row({ label: 'Annual view — Annual allocation', value: planning.annualTarget, expected: reference.annualTarget }),
-      row({ label: 'Annual view — Monthly targets assigned', value: planning.target, expected: reference.target }),
-      row({ label: 'Annual view — Not yet assigned', value: planning.unassignedAnnual, expected: reference.unassignedAnnual }),
-      row({ label: 'Annual view — Achieved', value: planning.achieved, expected: reference.achieved }),
+      row({ label: 'Annual view â€” Annual allocation', value: planning.annualTarget, expected: reference.annualTarget }),
+      row({ label: 'Annual view â€” Monthly targets assigned', value: planning.target, expected: reference.target }),
+      row({ label: 'Annual view â€” Not yet assigned', value: planning.unassignedAnnual, expected: reference.unassignedAnnual }),
+      row({ label: 'Annual view â€” Achieved', value: planning.achieved, expected: reference.achieved }),
     );
   }
   groups.push({ screen: 'Planning summary', fn: 'computePlanningPageSummary', rows: planningRows });
 
-  // ── Current Sales Plan tab ───────────────────────────────────────────────
+  // â”€â”€ Current Sales Plan tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The plan is FORWARD-LOOKING, so this tab counts active owners only (CEO
-  // decision 2026-10-07) — the same scope Planning's own Planned uses.
+  // decision 2026-10-07) â€” the same scope Planning's own Planned uses.
   const planScopeIds = ownerIds || forwardIds;
   const tabRows = (bundle.oppsAll || []).filter((o) => planScopeIds.includes(o.owner_id));
   const tabOpen = openPlanTotal(tabRows);
@@ -1465,13 +1562,13 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       row({
         label: `Rows set aside: ${tabRows.length - tabOpen.count} of ${tabRows.length} (info only)`,
         value: tabRows.length - tabOpen.count,
-        note: 'converted rows — already in the funnel as the deal they became — and'
+        note: 'converted rows â€” already in the funnel as the deal they became â€” and'
           + ' moved-to-future rows, which belong to a later month',
       }),
     ],
   });
 
-  // ── Coverage Console and Insights ────────────────────────────────────────
+  // â”€â”€ Coverage Console and Insights â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
   // Both take the bundle above, which is the bundle their own pages build. The
   // window flags come from the shared helpers, not from a guess about the dates.
@@ -1482,9 +1579,9 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
   };
   const cc = calcCoverageMetrics(achieverIds, consoleData) || {};
   const ins = calcDivisionMetrics(achieverIds, consoleData) || {};
-  // The reference coverage: the shared rule over the reference's OWN inputs —
+  // The reference coverage: the shared rule over the reference's OWN inputs â€”
   // Achieved, this period's funnel, the open plan and the reference conversion.
-  // A ✗ here is explained by whichever of those four rows is itself ✗, which is
+  // A âœ— here is explained by whichever of those four rows is itself âœ—, which is
   // why they all appear above it.
   const refCoverage = computeCoverage({
     invoiced: reference.achieved,
@@ -1506,7 +1603,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
         expected: reference.conversion3m,
         kind: 'pct',
         note: 'this screen computes every node of the tree from one read'
-          + ' (winRateFromDeals) — the same window, formula, scope and'
+          + ' (winRateFromDeals) â€” the same window, formula, scope and'
           + ' imported-history exclusion as fetchWinRate3m',
       }),
       row({ label: 'Planned (open plan)', value: cc.planning, expected: planning.plannedOpen }),
@@ -1527,7 +1624,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
         label: 'Coverage (computeCoverage)',
         value: ins.coverage,
         expected: refCoverage.coverage,
-        note: 'this page found this row disagreeing on 2026-10-05 —'
+        note: 'this page found this row disagreeing on 2026-10-05 â€”'
           + ' calcDivisionMetrics weighted EVERY open deal while the Coverage'
           + ' Console and the KPI strip weighted only the funnel dated INTO the'
           + ' period, reading 2,812,660 against 1,548,955 for JASCO PVC in'
@@ -1544,13 +1641,23 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     ],
   });
 
-  // ── Divisions sum to the company ─────────────────────────────────────────
+  // â”€â”€ Divisions sum to the company â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const divisionGroups = await buildDivisionGroups({
     companyId, consoleData, reference, planning, start, end, users,
   });
   divisionGroups.forEach((grp) => { if (grp.rows.length) groups.push(grp); });
 
-  // ── The Planning cards' panels (2026-10-08) ──────────────────────────────
+  // â”€â”€ Plan accuracy and weekly pacing (2026-10-08, part B) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const accuracyRows = await buildPlanAccuracyRows({ companyId, bundle, start, end, reference });
+  if (accuracyRows.length) {
+    groups.push({
+      screen: 'Plan accuracy',
+      fn: 'computePlanAccuracy',
+      rows: accuracyRows,
+    });
+  }
+
+  // â”€â”€ The Planning cards' panels (2026-10-08) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const planRows = await buildPlanningDrillRows({ companyId, bundle, start, end });
   if (planRows.length) {
     groups.push({
@@ -1560,7 +1667,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     });
   }
 
-  // ── Division attribution survives an UPDATE (2026-10-07) ────────────────
+  // â”€â”€ Division attribution survives an UPDATE (2026-10-07) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const attribRows = await buildDivisionAttributionRows({ companyId, bundle });
   if (attribRows.length) {
     groups.push({
@@ -1570,7 +1677,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     });
   }
 
-  // ── The coverage rail's drill-down (2026-10-07) ──────────────────────────
+  // â”€â”€ The coverage rail's drill-down (2026-10-07) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const railRows = await buildRailDrillRows({
     companyId, bundle, consoleData, start, end,
   });
@@ -1582,14 +1689,14 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     });
   }
 
-  // ── Forward-looking scope (CEO decision 2026-10-07) ──────────────────────
+  // â”€â”€ Forward-looking scope (CEO decision 2026-10-07) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   groups.push({
     screen: 'Forward-looking figures exclude inactive owners',
     fn: 'activeIdsFrom',
     rows: buildForwardScopeRows({ bundle, planning, reference }),
   });
 
-  // ── Insights for supervisors and salesmen (CEO decision 2026-10-07) ──────
+  // â”€â”€ Insights for supervisors and salesmen (CEO decision 2026-10-07) â”€â”€â”€â”€â”€â”€
   const insightsRows = await buildInsightsVsPlanningRows({
     companyId, bundle, consoleData, start, end,
   });
@@ -1601,7 +1708,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     });
   }
 
-  // ── Annual allocation (CEO decision 2026-10-07) ──────────────────────────
+  // â”€â”€ Annual allocation (CEO decision 2026-10-07) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const annualAllocRows = await buildAnnualAllocationRows({
     companyId, bundle, year, planning,
   });
@@ -1613,9 +1720,9 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     });
   }
 
-  // ── Known to differ — not yet unified ────────────────────────────────────
+  // â”€â”€ Known to differ â€” not yet unified â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
-  // These two screens answer a different question on purpose, so a ✗ here is
+  // These two screens answer a different question on purpose, so a âœ— here is
   // EXPECTED and is labelled as such. Unifying them is a business decision
   // nobody has taken; what matters is that the difference is visible and
   // explained rather than discovered by someone comparing two tabs.
@@ -1650,24 +1757,24 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     );
     forecastRows.push(
       row({
-        label: 'Forecast page — Committed',
+        label: 'Forecast page â€” Committed',
         value: forecast?.committed,
         expected: reference.achieved,
         note: 'the shared Achieved since 2026-10-05. It was won deals at `amount`'
-          + ' with no invoice test, no final_amount and no returns — 802,823 for'
+          + ' with no invoice test, no final_amount and no returns â€” 802,823 for'
           + ' a month whose Achieved was 0.',
       }),
       row({
-        label: 'Forecast page — Target',
+        label: 'Forecast page â€” Target',
         value: fc?.target?.target_amount ?? 0,
         expected: reference.target,
         note: 'the shared per-person rule since 2026-10-05, monthly rows only'
           + ' (the annual allocation on an annual view). It was a MAX over the'
-          + ' rows of every assignee, of any period_type — 43,861,779 for'
+          + ' rows of every assignee, of any period_type â€” 43,861,779 for'
           + ' October, because a manager yearly roll-up was summed into a month.',
       }),
       row({
-        label: 'Forecast page — Won, not yet invoiced',
+        label: 'Forecast page â€” Won, not yet invoiced',
         value: forecast?.wonNotInvoiced,
         expected: reference.wniTotal,
         note: 'carried as its own term: counted in Weighted and Best Case,'
@@ -1690,7 +1797,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     // Every label below is the wording ON THE SCREEN, so a reader can hold the
     // two side by side and match them one to one. That is the whole point of
     // this page, and it is what the old Reports row failed at: it measured
-    // reportWonTotal over getReportDeals — ReportKPIBar's formula — and
+    // reportWonTotal over getReportDeals â€” ReportKPIBar's formula â€” and
     // ReportKPIBar IS NOT MOUNTED ANYWHERE, so the check faithfully verified a
     // figure no user could reach while the By Value tile they do see went
     // unchecked. Do not add a row for ReportKPIBar unless somebody mounts it.
@@ -1706,7 +1813,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       row({
         // The tile wording is conditional on there being any returns, so this
         // follows it rather than hard-coding one of the two.
-        label: `Reports → By Value, "${tileLabel}" tile`,
+        label: `Reports â†’ By Value, "${tileLabel}" tile`,
         value: rptTotals.net,
         expected: reference.achieved,
         note: 'the shared Achieved since 2026-10-05: won AND invoiced, by'
@@ -1714,23 +1821,23 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
           + ' credit notes raised in the period. THIS is the figure on the screen.',
       }),
       row({
-        label: 'Reports → By Value, "Invoiced (before returns)" line',
+        label: 'Reports â†’ By Value, "Invoiced (before returns)" line',
         value: rptTotals.invoiced,
         expected: reference.achievedGross,
       }),
       row({
-        label: 'Reports → By Value, "Returns" line',
+        label: 'Reports â†’ By Value, "Returns" line',
         value: rptTotals.returns,
         expected: reference.returns,
         note: 'ALL FIVE credit notes in production are unmatched (deal_id IS NULL),'
-          + ' so they reduce nobody and this reads 0.00 — which is why the tile'
+          + ' so they reduce nobody and this reads 0.00 â€” which is why the tile'
           + ' above says "Revenue (invoiced)" and the breakdown lines are hidden.'
           + ' An unmatched return has no owner to charge;'
           + ' migrations/relink_returns_on_invoice_correction.sql (NOT APPLIED)'
           + ' is what links them.',
       }),
       row({
-        label: `Reports → By Salesman, "Revenue" column over `
+        label: `Reports â†’ By Salesman, "Revenue" column over `
           + `${Object.keys(rptTotals.perPerson).length} `
           + `${Object.keys(rptTotals.perPerson).length === 1 ? 'person' : 'people'}`,
         value: Object.values(rptTotals.perPerson).reduce((s, v) => s + v, 0),
@@ -1745,7 +1852,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     // INFO, not a comparison. It has no reference to be measured against: it
     // answers "what did we close this period", where Achieved answers "what did
     // we bill". Giving it `expected: reference.achieved` and labelling the
-    // result "known to differ" was the wrong shape — a row that can never agree
+    // result "known to differ" was the wrong shape â€” a row that can never agree
     // is not a failing check, it is a different measurement.
     //
     // It is NOT a ReportKPIBar row. That component is unmounted; this is the row
@@ -1757,9 +1864,9 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       `${start}T00:00:00`, `${end}T23:59:59`,
     );
     reportRows.push(row({
-      label: `Reports — value of deals WON in the period (${(reportDeals || []).length} deals, context only)`,
+      label: `Reports â€” value of deals WON in the period (${(reportDeals || []).length} deals, context only)`,
       value: reportWonTotal(reportDeals || []),
-      note: 'every won deal at `amount`, dated by CLOSED_AT, invoiced or not —'
+      note: 'every won deal at `amount`, dated by CLOSED_AT, invoiced or not â€”'
         + ' what the stage and velocity tables describe, and what the By Value'
         + ' tile deliberately is NOT. A deal closed in September and invoiced in'
         + ' October is September pipeline and October revenue, and both'
@@ -1789,11 +1896,11 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
   // The known-to-differ group is now EMPTY in the ordinary case, which is the
   // point of this session: every figure either agrees with the reference or is
   // an info row with no reference to agree with. The group is still pushed when
-  // something lands in it — the "no viewer was passed" case above — because an
+  // something lands in it â€” the "no viewer was passed" case above â€” because an
   // empty list must mean "nothing differs", never "nothing was looked at".
   if (knownRows.length) {
     groups.push({
-      screen: 'Known to differ — not yet unified',
+      screen: 'Known to differ â€” not yet unified',
       fn: 'forecastService.getForecastData / reportService.getReportDeals',
       knownToDiffer: true,
       rows: knownRows,
@@ -1834,14 +1941,14 @@ export function formatCheckAsText(result) {
   const fmtExp = (r) => (r.kind === 'pct' ? pct(r.expected) : money(r.expected));
 
   const lines = [
-    `NUMBERS CHECK  ${meta.start} .. ${meta.end}  (${meta.periodKind})  —  ${meta.scopeLabel}`,
+    `NUMBERS CHECK  ${meta.start} .. ${meta.end}  (${meta.periodKind})  â€”  ${meta.scopeLabel}`,
     `${meta.ok}/${meta.checked} unified rows agree`
-    + (meta.bad ? `  ·  ${meta.bad} DISAGREE` : '')
-    + (meta.badKnown ? `  ·  ${meta.badKnown} known to differ (expected)` : ''),
+    + (meta.bad ? `  Â·  ${meta.bad} DISAGREE` : '')
+    + (meta.badKnown ? `  Â·  ${meta.badKnown} known to differ (expected)` : ''),
     '',
-    'REFERENCE — the shared rules, computed once',
+    'REFERENCE â€” the shared rules, computed once',
     `  Achieved             ${money(reference.achieved)}`
-    + `   (gross ${money(reference.achievedGross)} − returns ${money(reference.returns)},`
+    + `   (gross ${money(reference.achievedGross)} âˆ’ returns ${money(reference.returns)},`
     + ` ${reference.dealCount} invoices)`,
     `  Target               ${money(reference.target)}`,
     `  Gap to target        ${money(reference.gap)}`,
@@ -1884,7 +1991,7 @@ export function formatCheckAsText(result) {
   lines.push(
     `Scope: ${meta.achieverCount} achievers, ${meta.contributorCount} contributors`
     + `${meta.ownerIdCount === null ? '' : `, ${meta.ownerIdCount} people in scope`}`
-    + `  ·  ${meta.dealsRead} deals read  ·  run ${meta.ranAt}`,
+    + `  Â·  ${meta.dealsRead} deals read  Â·  run ${meta.ranAt}`,
   );
   if (meta.loadError) lines.push(`LOAD ERROR: ${meta.loadError}`);
   lines.push(
@@ -1893,3 +2000,4 @@ export function formatCheckAsText(result) {
   );
   return lines.join('\n');
 }
+
