@@ -16,6 +16,19 @@ export function monthKeyOf(d = new Date()) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`;
 }
 
+/**
+ * yyyy-MM-01 for the month it is NOW in Riyadh — whatever zone the device is
+ * set to. monthKeyOf of the Riyadh calendar date, so the two cannot disagree
+ * except where the device clock is in another zone, which is the point.
+ */
+export function riyadhMonthKeyOf(now = new Date()) {
+  const ymd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now);
+  const [y, m, day] = ymd.split('-').map(Number);
+  return monthKeyOf(new Date(y, m - 1, day));
+}
+
 /** yyyy-MM-01 for the month after the one `d` falls in (rolls the year). */
 export function nextMonthKeyOf(d = new Date()) {
   return monthKeyOf(new Date(d.getFullYear(), d.getMonth() + 1, 1));

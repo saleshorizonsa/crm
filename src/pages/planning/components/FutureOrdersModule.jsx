@@ -6,6 +6,7 @@ import Icon from 'components/AppIcon';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
+import { riyadhMonthKeyOf, monthNameOf } from 'utils/planMonths';
 
 const DIRECTOR_ROLES = ['director', 'head', 'admin'];
 const TEAM_ROLES     = ['manager', 'supervisor'];
@@ -16,11 +17,9 @@ const STATUS_FILTERS = [
   { id: 'all',     label: 'All' },
 ];
 
-// First of the CURRENT month, as yyyy-MM-dd (the boundary a future order must beat).
-function currentMonthStart() {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-01`;
-}
+// First of the CURRENT month in Riyadh, yyyy-MM-01: the boundary a future order
+// must reach to auto-move, AND the month every moved plan item lands in.
+const currentMonthStart = () => riyadhMonthKeyOf();
 
 // A pending future order that has sat this long with no progress is "parked".
 const PARKED_THRESHOLD = 90; // days
@@ -54,6 +53,8 @@ export default function FutureOrdersModule({
   const [filterStatus, setFilterStatus] = useState('pending');
   const setFilterOwner = (id) => onFilterOwnerChange?.(id === 'all' ? 'all' : id);
   const [movingId, setMovingId]       = useState(null);
+  // "Moved to October plan" after a manual move, so the user knows where it went.
+  const [movedNotice, setMovedNotice] = useState(null);
   // One auto-move pass at a time. A ref, not state, because it must take effect
   // on the very next call rather than after a re-render.
   const autoMoveRunning = useRef(false);
@@ -74,7 +75,7 @@ export default function FutureOrdersModule({
         .from('future_orders')
         .select(`
           id, customer_name, planned_amount, expected_month, status,
-          opportunity_id, moved_at, created_at, contact_id, owner_id,
+          opportunity_id, moved_at, created_at, contact_id, owner_id, division_id,
           owner:users!owner_id(id, full_name, role, is_active)
         `)
         .eq('company_id', company.id)
@@ -129,8 +130,20 @@ export default function FutureOrdersModule({
   // lock alone cannot.
   //
   // Returns null when the order was already claimed by someone else.
+  //
+  // THE PLAN ITEM GOES INTO THE CURRENT MONTH (CEO, 2026-10-11), whatever the
+  // order's expected_month says. Copying expected_month put a November order
+  // into NOVEMBER's plan, invisible in October's, when the user had just asked
+  // for it in the current plan — and the auto-move, which picks up orders dated
+  // up to this month, put a September order into SEPTEMBER's plan.
+  //
+  // THE DIVISION IS THE ORDER'S. The plan item takes order.division_id when it
+  // has one; only an order with none is left for the BEFORE INSERT trigger to
+  // fill from the owner's primary division. Leaving it out sent SAFA PIPES, a
+  // PVC Compound order, into Export.
   const createOppFromOrder = useCallback(async (order) => {
     const now = new Date().toISOString();
+    const planMonth = currentMonthStart();
 
     const { data: claimed, error: claimErr } = await supabase
       .from('future_orders')
@@ -152,8 +165,9 @@ export default function FutureOrdersModule({
         customer_name:  order.customer_name,
         customer_type:  'existing',
         planned_amount: order.planned_amount,
-        expected_month: order.expected_month,
+        expected_month: planMonth,
         status:         'open',
+        ...(order.division_id ? { division_id: order.division_id } : {}),
       })
       .select()
       .single();
@@ -180,11 +194,15 @@ export default function FutureOrdersModule({
   async function moveToCurrentPlan(order) {
     if (movingId) return;              // no double-click
     setMovingId(order.id);
+    setMovedNotice(null);
     try {
       // null = the auto-move (or another tab) already moved it. Refresh so the
       // row stops offering a button for work that is already done.
       const opp = await createOppFromOrder(order);
       if (!opp) { fetchOrders(); return; }
+      setMovedNotice({ customer: order.customer_name, month: monthNameOf(opp.expected_month || currentMonthStart()) });
+      // Refreshes the page's plan figures and list, so the item is there the
+      // moment the plan tab is opened.
       fetchOrders();
       onOrderChange?.();
     } catch (err) {
@@ -205,7 +223,8 @@ export default function FutureOrdersModule({
         company_id: company?.id,
         type:       'future_order_moved',
         title:      '📅 Future Order Moved to Current Sales Plan',
-        message: `"${order.customer_name}" reached its planned month and was moved to your Current Sales Plan.`,
+        // The month it actually landed in — the current one, not the order's.
+        message: `"${order.customer_name}" reached its planned month and was moved to your ${monthNameOf(currentMonthStart())} sales plan.`,
         metadata:   { future_order_id: order.id },
         is_read:    false,
       });
@@ -273,6 +292,23 @@ export default function FutureOrdersModule({
             automatically move to Current Sales Plan.
           </p>
         </div>
+        {movedNotice && (
+          <div
+            role="status"
+            data-testid="future-order-moved-notice"
+            className="mb-4 flex items-center justify-between gap-3 flex-wrap rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200"
+          >
+            <span>Moved &ldquo;{movedNotice.customer}&rdquo; to {movedNotice.month} plan.</span>
+            <span className="flex items-center gap-2">
+              {onGoToOpportunities && (
+                <button type="button" onClick={onGoToOpportunities} className="underline font-medium">
+                  Open the {movedNotice.month} plan
+                </button>
+              )}
+              <button type="button" onClick={() => setMovedNotice(null)} aria-label="Dismiss" className="px-1">×</button>
+            </span>
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-3 flex-wrap">
           {/* Status filter tabs */}
