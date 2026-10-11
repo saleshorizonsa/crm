@@ -48,6 +48,14 @@ export async function buildTeamPlanBoard({
 }) {
   if (!companyId || !people?.length) return { rows: [], totals: null };
 
+  // plan_month is always yyyy-MM-01. A malformed key matches no row, and
+  // "no row" reads as "not submitted" — which is how the Planning page showed
+  // every October plan as unsubmitted while four were approved
+  // ('2026-10-01-01'). Fail loudly instead of answering wrongly.
+  if (!/^\d{4}-\d{2}-01$/.test(String(monthKey || ''))) {
+    throw new Error(`buildTeamPlanBoard: monthKey must be yyyy-MM-01, got ${JSON.stringify(monthKey)}`);
+  }
+
   const ids = people.map((u) => u.id);
 
   // Plan submissions for the month, for everybody at once.

@@ -40,6 +40,8 @@ import { fetchOpenFunnel } from './openFunnel';
 // "Is the selected range a whole calendar year?" — the same detector the
 // dashboards compare periods with.
 import { wholePeriodOf } from './dashboardDateUtils';
+// "Converted" means status converted AND the deal still there — one rule.
+import { isConvertedWithDeal } from './planningDrill';
 
 /**
  * Product groups are free text typed into the opportunity form, so the same
@@ -102,18 +104,19 @@ export async function fetchProductGroups({ companyId, ownerIds = null }) {
  * opportunity becomes a deal it is 'converted', and once it is pushed out it is
  * 'moved_to_future'.
  *
- * Exported because this IS the definition of plan_submissions.total_planned: the
- * submit path records computePlanningPageSummary().plannedOpen, which is this.
- * Anything that later rewrites that column has to agree with it exactly, so it
- * calls this rather than re-deriving the rule (status, month bounds, the
- * free-text group match) and drifting.
+ * Exported because it is the OPEN half of plan_submissions.total_planned: that
+ * column is fetchSubmissionPlanned below — this plus the items already converted
+ * into a live deal (submission gate only, CEO 2026-10-11). Anything that rewrites
+ * the column calls that function rather than re-deriving the rule (status, month
+ * bounds, the free-text group match) and drifting.
  */
 /**
  * The Current Sales Plan tab's "Total Planned", from rows already in hand.
  *
  * OPEN rows only, which is what the rest of the app means by "planned":
- * fetchPlannedOpen below, the KPI strip's Planned, the submit check and
- * plan_submissions.total_planned all filter status = 'open'. A converted
+ * fetchPlannedOpen below and the KPI strip's Planned filter status = 'open'.
+ * (The submission gate and total_planned also count converted-with-deal items;
+ * see fetchSubmissionPlanned — that is the one exception.) A converted
  * opportunity is already in the funnel as the deal it became, and a
  * moved_to_future row belongs to a later month.
  *
@@ -158,6 +161,53 @@ export async function fetchPlannedOpen({ companyId, ownerIds, start, end, produc
   // `rows` is exactly what `total` is the sum of — the same filter, not a
   // second one — so a panel built from them cannot disagree with the card.
   return { total, untagged, rows: counted };
+}
+
+/**
+ * WHAT A PLAN SUBMISSION COUNTS AS PLANNED — open items PLUS the ones already
+ * converted into a live deal, for one owner's month.
+ *
+ * FOR THE SUBMISSION GATE ONLY (CEO, 2026-10-11): the gate, the submit bar's
+ * shortfall, the pre-submit re-check, plan_submissions.total_planned and its
+ * resync. Planned, Planning coverage, Required plan and Planned gap stay on
+ * fetchPlannedOpen and are NOT this.
+ *
+ * Open-only made the gate unreachable for anyone who worked his plan before
+ * filing it: every item converted came off "planned". Mohamed Kamal's October
+ * read "Add 963,000 more (target 2,050,000, planned 1,087,000)" while 3 of his
+ * October items, 643,650, were already live deals — 319,350 short, not 963,000.
+ *
+ * Converted is isConvertedWithDeal, the board's and Plan accuracy's rule: an
+ * item whose deal has gone (DEAL MISSING) does not count toward the gate.
+ * No product group: a submission is the whole month's plan.
+ */
+export async function fetchSubmissionPlanned({ companyId, ownerIds, start, end }) {
+  const empty = { total: 0, open: 0, converted: 0, convertedCount: 0 };
+  if (!companyId || !ownerIds?.length) return empty;
+  const [open, conv] = await Promise.all([
+    fetchPlannedOpen({ companyId, ownerIds, start, end, productGroup: null }),
+    supabase
+      .from('opportunities')
+      .select('planned_amount, status, deal_id')
+      .eq('company_id', companyId)
+      .eq('status', 'converted')
+      .in('owner_id', ownerIds)
+      .gte('expected_month', start)
+      .lte('expected_month', end),
+  ]);
+  // Either read failing makes the whole figure unknown, never a smaller one.
+  if (open.failed || conv.error) {
+    if (conv.error) console.error('fetchSubmissionPlanned:', conv.error);
+    return { ...empty, failed: true };
+  }
+  const withDeal = (conv.data || []).filter(isConvertedWithDeal);
+  const converted = withDeal.reduce((s, o) => s + (parseFloat(o.planned_amount) || 0), 0);
+  return {
+    total: open.total + converted,
+    open: open.total,
+    converted,
+    convertedCount: withDeal.length,
+  };
 }
 
 /**

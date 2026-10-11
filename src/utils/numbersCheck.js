@@ -15,7 +15,7 @@ import {
 import { fetchOpenFunnel } from 'utils/openFunnel';
 import { fetchWinRate3m } from 'utils/winRate3m';
 import { computeKpiStripData } from 'utils/kpiStripData';
-import { computePlanningPageSummary, openPlanTotal } from 'utils/planningPageSummary';
+import { computePlanningPageSummary, openPlanTotal, fetchSubmissionPlanned } from 'utils/planningPageSummary';
 import {
   getMonthlyTarget,
   getScopeMonthlyTotals,
@@ -40,7 +40,7 @@ import { activeIdsFrom } from 'utils/achieverScope';
 import { buildCoverageDrill, RAIL_SEGMENTS } from 'utils/coverageDrill';
 import { buildPlanningDrill } from 'utils/planningDrill';
 import { computeGapCloser } from 'utils/gapCloser';
-import { buildTeamPlanBoard } from 'utils/teamPlanBoard';
+import { buildTeamPlanBoard, PLAN_STATUS } from 'utils/teamPlanBoard';
 import { computePlanAccuracy, monthRange } from 'utils/planAccuracy';
 import { computeWeeklyPacing } from 'utils/weeklyPacing';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
@@ -559,18 +559,95 @@ async function buildPlanAccuracyRows({ companyId, bundle, start, end, reference 
   const wholeMonth = String(start).endsWith('-01')
     && String(start).slice(0, 7) === String(end).slice(0, 7)
     && monthRange(String(start).slice(0, 7)).end === String(end);
+  const boardMonthKey = `${String(start).slice(0, 7)}-01`;
   const board = wholeMonth
     ? await buildTeamPlanBoard({
       companyId,
       people: users.filter((u) => u.is_active !== false),
       start,
       end,
-      monthKey: `${String(start).slice(0, 7)}-01`,
+      monthKey: boardMonthKey,
       flagCtx: { now: bundle.now || new Date(), monthEnd: end },
     })
     : { rows: [] };
   const boardRows = board.rows || [];
   if (boardRows.length) {
+    /**
+     * THE BOARD'S PLAN STATUS = plan_submissions, read here directly.
+     *
+     * The Planning page passed plan_month '2026-10-01-01' to the board — the
+     * month key with "-01" appended twice — so the query matched nothing and
+     * every person read "not submitted" while four October plans were
+     * approved. Nothing errored. This re-reads the table with its own query
+     * and requires every person's status to match it.
+     */
+    const { data: subs, error: subsErr } = await supabase
+      .from('plan_submissions')
+      .select('owner_id, is_submitted, approval_status')
+      .eq('company_id', companyId)
+      .in('owner_id', boardRows.map((r) => r.id))
+      .eq('plan_month', boardMonthKey);
+    if (subsErr) {
+      rows.push(row({
+        label: 'Team plan board: plan status = plan_submissions',
+        value: null,
+        expected: null,
+        note: `plan_submissions could not be read: ${subsErr.message}`,
+      }));
+    } else {
+      const subOf = new Map((subs || []).map((s) => [s.owner_id, s]));
+      const statusOf = (s) => {
+        if (!s || !s.is_submitted) return PLAN_STATUS.none;
+        return PLAN_STATUS[s.approval_status] || PLAN_STATUS.pending;
+      };
+      const matching = boardRows.filter((r) => r.planStatus === statusOf(subOf.get(r.id)));
+      const byStatus = {};
+      boardRows.forEach((r) => {
+        const want = statusOf(subOf.get(r.id));
+        (byStatus[want] = byStatus[want] || []).push(
+          r.planStatus === want ? r.name : `${r.name} (board: ${r.planStatus})`,
+        );
+      });
+      rows.push(row({
+        label: 'Team plan board: plan status = plan_submissions, person by person',
+        value: matching.length,
+        expected: boardRows.length,
+        kind: 'count',
+        note: Object.entries(byStatus)
+          .map(([k, names]) => `${k} ${names.length}: ${names.join(', ')}`)
+          .join(' | '),
+      }));
+    }
+
+    /**
+     * THE SUBMISSION GATE'S PLANNED = the board's Planned + Converted.
+     *
+     * The gate (and total_planned) count open items plus the ones already
+     * converted into a live deal; the board shows the same two figures in two
+     * columns. Per person, they must add up exactly.
+     */
+    const gate = await Promise.all(boardRows.map((r) => fetchSubmissionPlanned({
+      companyId, ownerIds: [r.id], start, end,
+    })));
+    const gateFailed = gate.some((g) => g.failed);
+    const off = boardRows.filter((r, i) => Math.abs(
+      n(gate[i].total) - (n(r.planned) + n(r.convertedValue)),
+    ) > MONEY_TOLERANCE);
+    const withConverted = boardRows
+      .map((r, i) => ({ r, g: gate[i] }))
+      .filter(({ g }) => n(g.converted) > 0)
+      .map(({ r, g }) => `${r.name} ${Math.round(n(g.total)).toLocaleString('en-US')} incl. ${Math.round(n(g.converted)).toLocaleString('en-US')} converted`);
+    rows.push(row({
+      label: 'Submission gate: planned (open + converted) = the board\'s Planned + Converted, per person',
+      value: gateFailed ? null : boardRows.length - off.length,
+      expected: gateFailed ? null : boardRows.length,
+      kind: 'count',
+      note: gateFailed
+        ? 'a submission-planned read failed — not compared'
+        : `${off.length ? `OFF: ${off.map((r) => r.name).join(', ')}. ` : ''}${withConverted.join('; ') || 'nobody has converted plan items this month'}`,
+    }));
+
+
     const boardConverted = boardRows.reduce((s, r) => s + n(r.convertedCount), 0);
     const boardMissing = boardRows.reduce((s, r) => s + n(r.dealMissingCount), 0);
     const accMissing = n(t.dealMissingItems);

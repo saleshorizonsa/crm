@@ -18,7 +18,7 @@ import {
   targetPerPerson,
   monthBounds,
 } from 'utils/planningCalculations';
-import { matchesGroup, fetchPlannedOpen, openPlanTotal } from 'utils/planningPageSummary';
+import { matchesGroup, fetchSubmissionPlanned, openPlanTotal } from 'utils/planningPageSummary';
 import { dealService } from 'services/supabaseService';
 
 const DIRECTOR_ROLES = ['director', 'head', 'admin'];
@@ -536,18 +536,19 @@ export default function OpportunitiesModule({
   // plan has actually been filed. An APPROVED plan is excluded by the same
   // clause, which is what makes adding to one safe.
   //
-  // fetchPlannedOpen is the same function the submit path's total comes from
-  // (utils/planningPageSummary.js), called with the same productGroup: null and
-  // the owner alone, which is the scope a salesman's own submission uses. A
-  // second hand-rolled sum here would be a different definition waiting to drift.
+  // fetchSubmissionPlanned is the same function the submit path's total comes
+  // from (utils/planningPageSummary.js) — open plus already converted — for the
+  // owner alone, which is the scope a salesman's own submission uses. With the
+  // open-only sum here, converting an item after submitting would have cut the
+  // filed total by that item's value. A second hand-rolled sum here would be a
+  // different definition waiting to drift.
   const resyncSubmittedTotal = useCallback(async (ownerId) => {
     if (!company?.id || !ownerId) return;
-    const { total, failed } = await fetchPlannedOpen({
+    const { total, failed } = await fetchSubmissionPlanned({
       companyId: company.id,
       ownerIds: [ownerId],
       start: targetMonth.start,
       end: targetMonth.end,
-      productGroup: null,
     });
     // Never write a total derived from a failed read. A dropped opportunities
     // query returns 0, which is indistinguishable from an empty plan once it is
@@ -572,9 +573,10 @@ export default function OpportunitiesModule({
   // ── Derived totals ────────────────────────────────────────────────────────
   //
   // OPEN rows only, which is what every other figure in the app already means
-  // by "planned": the Plan card (planningPageSummary.js fetchPlannedOpen), the
-  // KPI strip's Planned, the submit check and plan_submissions.total_planned all
-  // filter status = 'open'. This total did not, so a converted opportunity was
+  // by "planned": the Plan card (planningPageSummary.js fetchPlannedOpen) and the
+  // KPI strip's Planned filter status = 'open'. (Only the submission gate and
+  // total_planned add converted-with-deal items — fetchSubmissionPlanned.) This
+  // total did not, so a converted opportunity was
   // counted twice over — once here as plan, and again in the funnel as the deal
   // it became — which made Total Planned read above the plan that was actually
   // filed and made Remaining read lower than it is. 'moved_to_future' rows are

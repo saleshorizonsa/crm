@@ -55,7 +55,7 @@ const COLUMNS = [
 ];
 
 export default function TeamPlanBoard({
-  rows = [], totals = null, loading = false, onPickPerson, scopeLabel = "",
+  rows = [], totals = null, loading = false, error = null, onPickPerson, scopeLabel = "",
   // id -> "on pace" | "behind" | "far behind", and the scope's own verdict.
   pacingByPerson = {}, pacingTotal = null,
 }) {
@@ -78,6 +78,24 @@ export default function TeamPlanBoard({
       col;
     });
   }, [rows, sort]);
+
+  // A failed build is SAID, never rendered as an empty board or as rows of
+  // "not submitted" — that is the wrong answer the board once gave.
+  if (error) {
+    return (
+      <section
+        className="bg-card rounded-2xl border border-red-200 dark:border-red-900 px-4 py-3 mb-6"
+        data-testid="team-plan-board-error"
+        role="alert"
+      >
+        <h2 className="text-sm font-semibold text-foreground">Team plan board</h2>
+        <p className="text-xs text-red-700 dark:text-red-300">
+          Couldn&apos;t load the team&apos;s plans, so no status is shown. Refresh to try again.
+        </p>
+        <p className="text-[11px] text-muted-foreground mt-1 break-words">{error}</p>
+      </section>
+    );
+  }
 
   if (!loading && !rows.length) return null;
 

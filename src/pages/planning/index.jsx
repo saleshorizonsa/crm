@@ -8,7 +8,7 @@ import OpportunitiesModule from "./components/OpportunitiesModule";
 import FutureOrdersModule from "./components/FutureOrdersModule";
 import HistoricalDataModule from "./components/HistoricalDataModule";
 import SalesReturnsModule from "./components/SalesReturnsModule";
-import { computePlanningPageSummary, fetchProductGroups, fetchPlannedOpen } from "utils/planningPageSummary";
+import { computePlanningPageSummary, fetchProductGroups, fetchSubmissionPlanned } from "utils/planningPageSummary";
 import { fetchMonthlyTargets, targetPerPerson } from "utils/planningCalculations";
 // Percentages that cannot crash a render. planning/index.jsx:1305 took the
 // whole page down in production on 2026-10-05 by calling .toFixed on a figure
@@ -56,6 +56,9 @@ import {
 } from "utils/planApproval";
 
 const DIRECTOR_ROLES = ["director", "admin", "head"];
+// ownPlan / viewedPlan before their read lands. `planned` is the submission
+// figure (open + already converted); `loaded` keeps 0 >= 0 from reading as done.
+const EMPTY_OWN_PLAN = { target: 0, planned: 0, plannedConverted: 0, loaded: false, failed: false };
 const TEAM_ROLES = ["manager", "supervisor"];
 
 // Whole-SAR integer formatter for the summary bar (e.g. 1,500,990).
@@ -523,10 +526,19 @@ const PlanningPage = () => {
       people: scopePeople,
       start: planPeriod.start,
       end: planPeriod.end,
-      monthKey: activeMonthKey ? `${activeMonthKey}-01` : null,
+      // Already yyyy-MM-01 (planMonths.monthKeyOf). Appending another "-01"
+      // asked for plan_month '2026-10-01-01', matched nothing, and showed
+      // every person on the board as "not submitted".
+      monthKey: activeMonthKey,
       productGroup: filterProductGroup,
       flagCtx,
-    }).then((r) => { if (alive) setBoard({ rows: r.rows, loading: false }); });
+    }).then((r) => { if (alive) setBoard({ rows: r.rows, loading: false }); })
+      // Shown on the board itself. An empty board would hide the failure, and
+      // rows defaulted to "not submitted" would state something false.
+      .catch((err) => {
+        console.error("Team plan board:", err);
+        if (alive) setBoard({ rows: [], loading: false, error: err?.message || String(err) });
+      });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showBoard, companyId, boardPeopleKey, planPeriod.start, planPeriod.end, activeMonthKey, filterProductGroup]);
@@ -553,7 +565,7 @@ const PlanningPage = () => {
   // 0 >= 0 reads as "complete", which is how a plan was once filed at 0.00
   // against a real pipeline. `failed` is kept apart from a true zero for the same
   // reason.
-  const [ownPlan, setOwnPlan] = useState({ target: 0, plannedOpen: 0, loaded: false, failed: false });
+  const [ownPlan, setOwnPlan] = useState(EMPTY_OWN_PLAN);
 
   // Bumped by refreshPlanData() whenever this user's plan rows change — see
   // there for the full list of writers. The read below depends on it, so the
@@ -568,34 +580,42 @@ const PlanningPage = () => {
   const [planVersion, setPlanVersion] = useState(0);
 
   // One definition of "this person's own figures for ONE month": the monthly
-  // target rows assigned to him, and his own OPEN plan rows dated in that month.
-  // The gate below and the pre-submit re-check in handleSubmitPlan both call
-  // this, so they cannot measure the same thing two different ways.
+  // target rows assigned to him, and what his SUBMISSION counts as planned in
+  // that month — open items plus the ones already converted into a live deal
+  // (fetchSubmissionPlanned). The gate below, the bar's shortfall, the
+  // pre-submit re-check and total_planned all read this, so they cannot measure
+  // the same thing two different ways.
   //
   // Deliberately NOT computePlanningPageSummary: that narrows the scope to
   // CONTRIBUTOR_ROLES, so a manager filing his own plan would be judged against
-  // a target of 0.
-  const readOwnPlanFor = useCallback(async (monthKey) => {
+  // a target of 0. And the tiles' Planned stays open-only — converted counts
+  // toward the GATE, nowhere else (CEO, 2026-10-11).
+  const readPlanFor = useCallback(async (ownerId, monthKey) => {
     const bounds = monthBoundsOf(monthKey);
     const [rows, planned] = await Promise.all([
       fetchMonthlyTargets({
-        companyId, contributorIds: [user.id], start: bounds.start, end: bounds.end,
+        companyId, contributorIds: [ownerId], start: bounds.start, end: bounds.end,
       }),
-      fetchPlannedOpen({
-        companyId, ownerIds: [user.id], start: bounds.start, end: bounds.end, productGroup: null,
+      fetchSubmissionPlanned({
+        companyId, ownerIds: [ownerId], start: bounds.start, end: bounds.end,
       }),
     ]);
     return {
       target: Object.values(targetPerPerson(rows)).reduce((sum, v) => sum + v, 0),
-      plannedOpen: planned.total,
+      planned: planned.total,
+      plannedConverted: planned.converted,
       loaded: true,
       failed: !!planned.failed,
     };
-  }, [companyId, user?.id]);
+  }, [companyId]);
+  const readOwnPlanFor = useCallback(
+    (monthKey) => readPlanFor(user.id, monthKey),
+    [readPlanFor, user?.id],
+  );
 
   useEffect(() => {
     if (!companyId || !user?.id || !activeMonthKey) {
-      setOwnPlan({ target: 0, plannedOpen: 0, loaded: false, failed: false });
+      setOwnPlan(EMPTY_OWN_PLAN);
       return undefined;
     }
     let alive = true;
@@ -614,7 +634,7 @@ const PlanningPage = () => {
   // button — Amer could plan his target in full and still be refused. Required
   // Plan stays on the row and in the approval queue as the coverage view.
   const planComplete = ownPlan.loaded && !ownPlan.failed
-    && ownPlan.plannedOpen >= ownPlan.target;
+    && ownPlan.planned >= ownPlan.target;
 
   // Required Plan is Remaining Target ÷ win rate, and a month that has not
   // started has no invoiced revenue, so its ENTIRE target is still remaining.
@@ -634,8 +654,8 @@ const PlanningPage = () => {
   // total_planned vs required_plan, which is the coverage view (÷ win rate) and
   // so a larger number. That is the manager's question, not the salesman's.
   const underPlanned = ownPlan.loaded && ownPlan.target > 0
-    && ownPlan.plannedOpen < ownPlan.target;
-  const plannedShortfall = Math.max(0, ownPlan.target - ownPlan.plannedOpen);
+    && ownPlan.planned < ownPlan.target;
+  const plannedShortfall = Math.max(0, ownPlan.target - ownPlan.planned);
 
   // ── Whose figures the bar DESCRIBES, which is not whose it gates on ─────────
   //
@@ -651,45 +671,33 @@ const PlanningPage = () => {
   //
   // Fetched only when actually viewing someone else — otherwise this IS ownPlan,
   // so the ordinary case keeps its two queries.
-  const [viewedPlan, setViewedPlan] = useState({ target: 0, plannedOpen: 0, loaded: false, failed: false });
+  const [viewedPlan, setViewedPlan] = useState(EMPTY_OWN_PLAN);
   useEffect(() => {
     if (!isViewingOther || !companyId || !viewedOwnerId || !activeMonthKey) {
-      setViewedPlan({ target: 0, plannedOpen: 0, loaded: false, failed: false });
+      setViewedPlan(EMPTY_OWN_PLAN);
       return undefined;
     }
     let alive = true;
     (async () => {
-      const bounds = monthBoundsOf(activeMonthKey);
-      const [rows, planned] = await Promise.all([
-        fetchMonthlyTargets({
-          companyId, contributorIds: [viewedOwnerId], start: bounds.start, end: bounds.end,
-        }),
-        fetchPlannedOpen({
-          companyId, ownerIds: [viewedOwnerId], start: bounds.start, end: bounds.end, productGroup: null,
-        }),
-      ]);
+      // The same reader as ownPlan, pointed at the viewed owner.
+      const next = await readPlanFor(viewedOwnerId, activeMonthKey);
       if (!alive) return;
-      setViewedPlan({
-        target: Object.values(targetPerPerson(rows)).reduce((sum, v) => sum + v, 0),
-        plannedOpen: planned.total,
-        loaded: true,
-        failed: !!planned.failed,
-      });
+      setViewedPlan(next);
     })();
     return () => { alive = false; };
-  }, [isViewingOther, companyId, viewedOwnerId, activeMonthKey]);
+  }, [isViewingOther, companyId, viewedOwnerId, activeMonthKey, readPlanFor]);
 
   const subjectPlan = isViewingOther ? viewedPlan : ownPlan;
   // Identical to plannedShortfall for one's own plan — deliberately written as
   // the same expression on the same two numbers, so the figure the bar prints
   // cannot drift from the figure the gate uses.
   const subjectShortfall = isViewingOther
-    ? Math.max(0, viewedPlan.target - viewedPlan.plannedOpen)
+    ? Math.max(0, viewedPlan.target - viewedPlan.planned)
     : plannedShortfall;
   const subjectComplete = subjectPlan.loaded && !subjectPlan.failed
-    && subjectPlan.plannedOpen >= subjectPlan.target;
+    && subjectPlan.planned >= subjectPlan.target;
   const subjectUnderPlanned = subjectPlan.loaded && subjectPlan.target > 0
-    && subjectPlan.plannedOpen < subjectPlan.target;
+    && subjectPlan.planned < subjectPlan.target;
 
   // Nobody submits on someone else's behalf: the bar still shows, so a lead can
   // read where that person's plan stands, but the button is not theirs to press.
@@ -748,23 +756,32 @@ const PlanningPage = () => {
 
     const month = monthNameOf(activeMonthKey);
 
+    // The planned figure this bar quotes is the one that will be RECORDED as
+    // total_planned — open plus already converted — and it says how much of it
+    // is converted, because the Planned tile beside it is open-only and reads
+    // lower. Without the "incl." a salesman sees two different "planned"s.
+    const converted = subjectPlan.plannedConverted || 0;
+    const plannedText = `planned ${fmtSAR(subjectPlan.planned)}`
+      + (converted > 0 ? ` incl. ${fmtSAR(converted)} already converted` : "");
+    const convertedSuffix = converted > 0 ? ` (${plannedText})` : "";
+
     // Next month and the grace window may both be filed under-planned, so these
     // say what will happen rather than what is being withheld. The old single
     // branch told someone to "enable submission" beside an already-enabled
     // button all through the grace window.
     if (planningNextMonth && subjectUnderPlanned) {
-      return `${fmtSAR(subjectShortfall)} SAR under target — you can submit, your manager will see it flagged as under-planned`;
+      return `${fmtSAR(subjectShortfall)} SAR under target — you can submit, your manager will see it flagged as under-planned${convertedSuffix}`;
     }
     if (planningPrevMonth && subjectUnderPlanned) {
-      return `${fmtSAR(subjectShortfall)} SAR under target — you can still file this late ${month} plan`;
+      return `${fmtSAR(subjectShortfall)} SAR under target — you can still file this late ${month} plan${convertedSuffix}`;
     }
     if (!subjectComplete) {
-      const sides = `(target ${fmtSAR(subjectPlan.target)}, planned ${fmtSAR(subjectPlan.plannedOpen)})`;
+      const sides = `(target ${fmtSAR(subjectPlan.target)}, ${plannedText})`;
       return isViewingOther
         ? `Needs ${fmtSAR(subjectShortfall)} SAR more in the ${month} plan before it can be submitted ${sides}`
         : `Add ${fmtSAR(subjectShortfall)} SAR more to your ${month} plan to enable submission ${sides}`;
     }
-    return `Due ${deadlineDay.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`;
+    return `Due ${deadlineDay.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}${convertedSuffix}`;
   };
 
   // Every month that can be submitted right now, oldest first. Usually just this
@@ -832,19 +849,22 @@ const PlanningPage = () => {
       const atClick = await readOwnPlanFor(planMonth);
       setOwnPlan(atClick);          // so the bar and the button follow reality
       const gatedMonth = !planningNextMonth && !planningPrevMonth;
-      if (gatedMonth && atClick.loaded && !atClick.failed
-          && atClick.plannedOpen < atClick.target) {
-        const short = atClick.target - atClick.plannedOpen;
-        setSubmitRefused(true);
+      // Every month, not only the gated one: atClick.planned is also the figure
+      // recorded as total_planned below, and a failed read would record 0.
+      if (!atClick.loaded || atClick.failed) {
         setSubmitError(
-          `Your plan changed — it is now ${fmtSAR(atClick.plannedOpen)} SAR, below your target of ${fmtSAR(atClick.target)} SAR. `
-          + `Add ${fmtSAR(short)} SAR more to submit.`,
+          "Your figures could not be re-read just now, so the plan was not submitted. Please reload and try again.",
         );
         return;
       }
-      if (gatedMonth && (!atClick.loaded || atClick.failed)) {
+      if (gatedMonth && atClick.planned < atClick.target) {
+        const short = atClick.target - atClick.planned;
+        const incl = atClick.plannedConverted > 0
+          ? ` (incl. ${fmtSAR(atClick.plannedConverted)} already converted)` : "";
+        setSubmitRefused(true);
         setSubmitError(
-          "Your figures could not be re-read just now, so the plan was not submitted. Please reload and try again.",
+          `Your plan changed — it is now ${fmtSAR(atClick.planned)} SAR${incl}, below your target of ${fmtSAR(atClick.target)} SAR. `
+          + `Add ${fmtSAR(short)} SAR more to submit.`,
         );
         return;
       }
@@ -877,7 +897,11 @@ const PlanningPage = () => {
         owner_id: user?.id,
         plan_month: planMonth,
         submitted_at: stamp.toISOString(),
-        total_planned: summaryForMonth.plannedOpen,
+        // The gate figure, not the tiles' Planned: open plus already converted
+        // (fetchSubmissionPlanned), exactly what was just checked against the
+        // target. atClick is the submitter's own month — the same scope
+        // resolveSubmitterScope gives every role that files a plan.
+        total_planned: atClick.planned,
         required_plan: summaryForMonth.requiredPlan,
         is_submitted: true,
         is_late: isLateFor(planMonth, stamp),
@@ -916,7 +940,7 @@ const PlanningPage = () => {
         ownerId: user?.id,
         ownerName: userProfile?.full_name,
         planMonth,
-        totalPlanned: summaryForMonth.plannedOpen,
+        totalPlanned: atClick.planned,
         submissionId: saved?.id,
       });
       await fetchPlanSubmission();
@@ -1217,7 +1241,7 @@ const PlanningPage = () => {
             month's opportunities until a manager sends the plan back. */}
         {showSubmitBar && planSubmission?.is_locked && (
           <div className="flex items-center gap-2 px-5 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl mb-4">
-            <span className="text-base">ðŸ”’</span>
+            <span className="text-base">🔒</span>
             <div>
               <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                 {isViewingOther ? `${filterOwnerName || "Team member"}: Plan Locked` : "Plan Locked"}
@@ -1271,8 +1295,8 @@ const PlanningPage = () => {
                   {planSubmission?.is_submitted
                     ? `✅ ${monthNameOf(activeMonthKey)} Plan Submitted`
                     : isLate
-                      ? `ðŸš¨ ${monthNameOf(activeMonthKey)} Plan Overdue`
-                      : `ðŸ“‹ ${monthNameOf(activeMonthKey)} Plan Due by 25th`}
+                      ? `🚨 ${monthNameOf(activeMonthKey)} Plan Overdue`
+                      : `📋 ${monthNameOf(activeMonthKey)} Plan Due by 25th`}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {submitBarNote()}
@@ -1412,6 +1436,7 @@ const PlanningPage = () => {
             rows={board.rows}
             totals={summaryLoading ? null : summaryData}
             loading={board.loading}
+            error={board.error || null}
             onPickPerson={(id) => setFilterOwner(id)}
             scopeLabel={tilePeriodLabel}
             // The same verdicts the pacing panel above shows, computed once by
@@ -1739,7 +1764,7 @@ const PlanningPage = () => {
                     }`}>
                       {graceOpen
                         ? `⏳ ${monthNameOf(prevMonthKey)} can still be submitted`
-                        : `ðŸ—“ï¸ ${monthNameOf(nextMonthKey)} planning is open`}
+                        : `🗓️ ${monthNameOf(nextMonthKey)} planning is open`}
                     </p>
                     <p className={`text-xs ${
                       graceOpen ? "text-amber-700 dark:text-amber-300" : "text-blue-700 dark:text-blue-300"
@@ -1763,7 +1788,7 @@ const PlanningPage = () => {
                           }`}
                         >
                           {opt.label}
-                          {row?.is_locked ? " ðŸ”’" : row?.is_submitted ? " ✅" : ""}
+                          {row?.is_locked ? " 🔒" : row?.is_submitted ? " ✅" : ""}
                         </button>
                       );
                     })}
