@@ -1852,6 +1852,18 @@ const PlanningPage = () => {
               ownerIds={filterOwner !== "all" ? [filterOwner] : planScopeIds}
               users={scopePeople}
               scopeLabel={filterOwnerName || undefined}
+              // Forward-looking lists name active people only; scopePeople is
+              // already active-only, the scope ids are not (company scope
+              // includes departed people, whose revenue the history counts).
+              activeIds={(filterOwner !== "all" ? [filterOwner] : planScopeIds)
+                .filter((id) => scopePeople.some((u) => u.id === id))}
+              viewerId={user?.id || null}
+              history={flagData.history}
+              // The Gap closer's hand-off: prefill the plan form, write nothing.
+              onAddToPlan={(row) => {
+                setPlanPrefill({ customer: row.customer, value: row.value, contactId: row.contactId || null });
+                setActiveTab("opportunities");
+              }}
             />
           )}
 

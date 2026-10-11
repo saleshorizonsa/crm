@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Icon from "components/AppIcon";
 import DrillSheet from "components/DrillSheet";
+import PlanInsights from "./PlanInsights";
 import {
   computePlanAccuracy, lastCompletedMonths, monthRange, PLAN_ACCURACY_COLUMNS,
 } from "utils/planAccuracy";
@@ -50,6 +51,10 @@ function FunnelBar({ label, value, of, count, tone }) {
 
 export default function PlanAccuracyModule({
   companyId, ownerIds = [], users = [], scopeLabel = "",
+  // For the three sections below the month view (PlanInsights): who is
+  // active, who is looking, the Gap closer's usual-order history, and the
+  // same hand-off to the plan form the Gap closer uses.
+  activeIds = [], viewerId = null, history = null, onAddToPlan,
 }) {
   const months = useMemo(() => lastCompletedMonths(3), []);
   const [monthKey, setMonthKey] = useState(months[0]);
@@ -260,6 +265,16 @@ export default function PlanAccuracyModule({
           scopeLabel={monthLabel(monthKey)}
         />
       )}
+
+      <PlanInsights
+        companyId={companyId}
+        ownerIds={ownerIds}
+        activeIds={activeIds}
+        users={users}
+        viewerId={viewerId}
+        history={history}
+        onAddToPlan={onAddToPlan}
+      />
     </section>
   );
 }

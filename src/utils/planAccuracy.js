@@ -248,6 +248,10 @@ export async function computePlanAccuracy({
     people,
     totals: forOwner(ownerIds),
     items,
+    // The invoices behind achievedUnplanned, exactly — so Unplanned buyers
+    // (planInsights.js) groups the very rows this figure is the sum of, and
+    // cannot drift from it.
+    unplannedDeals: invoicedThisMonth.filter((d) => !plannedDealIds.has(d.id)),
     outcomes: OUTCOME,
     failed: false,
   };

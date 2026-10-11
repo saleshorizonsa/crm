@@ -42,6 +42,10 @@ import { buildPlanningDrill } from 'utils/planningDrill';
 import { computeGapCloser } from 'utils/gapCloser';
 import { buildTeamPlanBoard, PLAN_STATUS } from 'utils/teamPlanBoard';
 import { computePlanAccuracy, monthRange } from 'utils/planAccuracy';
+import {
+  computeSlippingDeals, fetchCompletedMonths, computePlanRealism, realismSentence,
+  computeUnplannedBuyers, PUSH_STATUSES,
+} from 'utils/planInsights';
 import { computeWeeklyPacing } from 'utils/weeklyPacing';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
@@ -490,6 +494,92 @@ async function buildDivisionGroups({
  * the same figure the Achieved card shows. A separate bucketing of the same
  * invoices is exactly the sort of thing that quietly loses one.
  */
+/**
+ * THE THREE LOOKS BACK RECONCILE TO THE SHARED RULES.
+ *
+ * Plan realism's invoiced is the month's Achieved, and it splits into from a
+ * plan + unplanned — per person and for the team, against fetchAchieved read
+ * on its own. The named people plus the unnamed departed figure make the team.
+ * Unplanned buyers' invoiced is exactly the active people's "Unplanned".
+ * Slipping deals counts every future_orders row it was given, against a
+ * separate count of the table.
+ */
+async function buildPlanInsightsRows({ companyId, bundle, start }) {
+  const users = bundle.users || [];
+  const everyone = users.map((u) => u.id);
+  const active = users.filter((u) => u.is_active !== false).map((u) => u.id);
+  if (!active.length) return [];
+  const monthKey = String(start).slice(0, 7);
+  const label = monthRange(monthKey).start.slice(0, 7);
+  const rows = [];
+  const money = (v) => Math.round(n(v)).toLocaleString('en-US');
+
+  const monthsData = await fetchCompletedMonths({ companyId, ownerIds: everyone, users, months: [monthKey] });
+  const realism = computePlanRealism({ monthsData, activeIds: active });
+  const team = realism.team.months[monthKey];
+
+  const teamAch = await fetchAchieved({ companyId, contributorIds: everyone, start: monthsData[0].start, end: monthsData[0].end });
+  rows.push(row({
+    label: `Plan realism — team ${label}: from a plan + unplanned = invoiced`,
+    value: n(team.fromPlan) + n(team.unplanned),
+    expected: team.invoiced,
+    note: `${realismSentence(team)}; from a plan ${money(team.fromPlan)}, unplanned ${money(team.unplanned)}`,
+  }));
+  rows.push(row({
+    label: `Plan realism — team ${label}: invoiced = Achieved gross (fetchAchieved)`,
+    value: team.invoiced,
+    expected: teamAch.grossTotal,
+  }));
+  const named = realism.people.reduce((s, p) => s + n(p.months[monthKey]?.invoiced), 0);
+  rows.push(row({
+    label: `Plan realism — team ${label}: named people + people no longer active = team invoiced`,
+    value: named + n(realism.team.departed[monthKey]?.invoiced),
+    expected: team.invoiced,
+    note: `named ${money(named)}, not active ${money(realism.team.departed[monthKey]?.invoiced)} (never shown by name)`,
+  }));
+
+  for (const p of realism.people) {
+    const c = p.months[monthKey];
+    if (!c) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const ach = await fetchAchieved({ companyId, contributorIds: [p.id], start: monthsData[0].start, end: monthsData[0].end });
+    rows.push(row({
+      label: `Plan realism — ${p.name} ${label}: from a plan + unplanned = invoiced = Achieved gross`,
+      value: n(c.fromPlan) + n(c.unplanned),
+      expected: ach.grossTotal,
+      note: `${realismSentence(c)}; from a plan ${money(c.fromPlan)}, unplanned ${money(c.unplanned)}, from this month's own plan ${money(c.ownPlan)}`,
+    }));
+  }
+
+  const buyers = await computeUnplannedBuyers({ companyId, monthsData, activeIds: active, users, thisMonth: null });
+  const activeUnplanned = (monthsData[0].people || [])
+    .filter((p) => active.includes(p.id))
+    .reduce((s, p) => s + n(p.achievedUnplanned), 0);
+  rows.push(row({
+    label: `Unplanned buyers ${label}: the customers' invoiced = Unplanned for the active people`,
+    value: buyers.total,
+    expected: activeUnplanned,
+    note: `${buyers.rows.length} customer/owner pairs; ${buyers.rows.filter((r) => !r.contactId).length} have no contact on the invoice (Add to plan opens with the amount, the customer still to be picked)`,
+  }));
+
+  const slip = await computeSlippingDeals({ companyId, ownerIds: active, users });
+  const { count: foCount, error: foErr } = await supabase.from('future_orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('company_id', companyId)
+    .in('owner_id', active)
+    .in('status', PUSH_STATUSES);
+  rows.push(row({
+    label: 'Slipping deals: pushes counted = future_orders rows (moved + pending), active owners',
+    value: slip.failed || foErr ? null : slip.all.reduce((s, g) => s + g.times, 0),
+    expected: slip.failed || foErr ? null : foCount,
+    kind: 'count',
+    note: slip.failed || foErr
+      ? 'future_orders could not be read'
+      : `${slip.rows.length} customers pushed 2+ times (${slip.listedPushes} pushes), worth ${money(slip.value)}`,
+  }));
+  return rows;
+}
+
 async function buildPlanAccuracyRows({ companyId, bundle, start, end, reference }) {
   const users = bundle.users || [];
   const active = users.filter((u) => u.is_active !== false).map((u) => u.id);
@@ -1781,6 +1871,16 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       screen: 'Plan accuracy',
       fn: 'computePlanAccuracy',
       rows: accuracyRows,
+    });
+  }
+
+  // ── Slipping deals, plan realism, unplanned buyers (session 16) ──────────
+  const insightRows = await buildPlanInsightsRows({ companyId, bundle, start });
+  if (insightRows.length) {
+    groups.push({
+      screen: 'Plan insights',
+      fn: 'planInsights',
+      rows: insightRows,
     });
   }
 
