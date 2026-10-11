@@ -3,7 +3,7 @@ import React from "react";
 // which carried a hand-copy of it until 2026-10-07.
 import CoverageRail from "components/CoverageRail";
 import DivisionPacingRail from "./DivisionPacingRail";
-import PacingDrill from "components/PacingDrill";
+import PacingRailBlock from "components/PacingRailBlock";
 // Percentages that cannot crash a render: a figure that has not arrived shows
 // "—" instead of taking the page down. See utils/formatPct.js.
 import { fmtPct } from "utils/formatPct";
@@ -163,16 +163,17 @@ export function DivisionCoverageHero({
               />
             );
             return pacing ? (
-              <PacingDrill
+              <PacingRailBlock
                 metrics={metrics}
                 scopeIds={pacing.scopeIds || []}
                 users={drill?.users || []}
                 companyId={pacing.companyId}
                 viewerId={pacing.viewerId}
+                role={pacing.role}
                 scopeLabel={title}
               >
                 {rail}
-              </PacingDrill>
+              </PacingRailBlock>
             ) : rail;
           })()}
         </div>

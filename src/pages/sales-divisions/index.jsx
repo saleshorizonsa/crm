@@ -1146,7 +1146,7 @@ export default function SalesDivisions() {
               }}
               /* The pacing rail opens onto the same level's people, with their
                  visits (session 17). */
-              pacing={{ scopeIds: levelIds, companyId: company?.id, viewerId: user?.id }}
+              pacing={{ scopeIds: levelIds, companyId: company?.id, viewerId: user?.id, role }}
             />
 
             {/* THE BENCHMARK (CEO decision 2026-10-07): the company conversion

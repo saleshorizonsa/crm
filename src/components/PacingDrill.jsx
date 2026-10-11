@@ -18,6 +18,10 @@ import { buildPacingDrill, PACING_COLUMNS, VISIT_COLUMNS } from "utils/pacingDri
  */
 export default function PacingDrill({
   metrics, scopeIds = [], users = [], companyId, viewerId, scopeLabel = "", children,
+  // A visit saved OUTSIDE the drill (the rail's own Log visit) bumps this, so
+  // an open drill re-reads; one saved INSIDE it is reported through
+  // onVisitSaved, so the rail's count follows.
+  refreshKey = 0, onVisitSaved,
 }) {
   const [open, setOpen] = useState(false);
   const [visits, setVisits] = useState(null);       // { rows, failed }
@@ -33,7 +37,7 @@ export default function PacingDrill({
     fetchVisits({ companyId, ownerIds: idKey.split(","), until: riyadhToday() })
       .then((r) => { if (alive) setVisits(r); });
     return () => { alive = false; };
-  }, [open, companyId, idKey, reload]);
+  }, [open, companyId, idKey, reload, refreshKey]);
 
   const built = useMemo(() => {
     if (!visits) return null;
@@ -43,7 +47,7 @@ export default function PacingDrill({
 
   const close = () => { setOpen(false); setPerson(null); };
   const logButton = viewerId ? (
-    <LogVisit companyId={companyId} userId={viewerId} testid="log-visit-drill" onSaved={() => setReload((n) => n + 1)} />
+    <LogVisit companyId={companyId} userId={viewerId} testid="log-visit-drill" onSaved={() => { setReload((n) => n + 1); onVisitSaved?.(); }} />
   ) : null;
 
   const footer = built && (

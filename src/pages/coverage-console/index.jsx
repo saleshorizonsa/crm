@@ -7,7 +7,7 @@ import Header from "components/ui/Header";
 // untenable and they became one component.
 import CoverageRail from "components/CoverageRail";
 import PacingRail from "./components/PacingRail";
-import PacingDrill from "components/PacingDrill";
+import PacingRailBlock from "components/PacingRailBlock";
 import OppHero from "./components/OppHero";
 import ExceptionFeed from "./components/ExceptionFeed";
 import QuickDateSelector from "components/QuickDateSelector";
@@ -986,12 +986,13 @@ export default function CoverageConsole() {
                   <div className="mt-4">
                     {/* The same pacing drill as Insights: this level's people,
                         their visits, and Log visit. */}
-                    <PacingDrill
+                    <PacingRailBlock
                       metrics={metrics}
                       scopeIds={levelIds}
                       users={raw?.users || []}
                       companyId={company?.id}
                       viewerId={user?.id}
+                      role={userProfile?.role}
                       scopeLabel={heroInfo?.title || ""}
                     >
                       <PacingRail
@@ -1001,7 +1002,7 @@ export default function CoverageConsole() {
                         totalDays={metrics.totalDays}
                         pctFmt={pctFmt}
                       />
-                    </PacingDrill>
+                    </PacingRailBlock>
                   </div>
                 ) : (
                   <p className="mt-4 text-[11px] text-gray-500">
