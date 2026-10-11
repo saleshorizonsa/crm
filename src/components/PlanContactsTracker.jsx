@@ -11,7 +11,11 @@ import { riyadhMonthKeyOf, monthBoundsOf } from "utils/planMonths";
  * on top; clicking a person narrows the customer list to him. Pending rows the
  * logged-in user owns get Log visit with that customer already chosen —
  * the Session 17 flow, so no new write path; anyone else's pending row says
- * whose it is to log. People who have left are never named.
+ * whose it is to log.
+ *
+ * ACTIVE OWNERS ONLY (CEO, 2026-10-11): this is forward-looking work, so a
+ * departed person's plan items are not listed or counted at all. They appear
+ * here once they are reassigned to an active owner.
  */
 const money = (v) => Math.round(Number(v) || 0).toLocaleString("en-US");
 const firstName = (n) => String(n || "").trim().split(/\s+/)[0] || "the owner";
@@ -19,7 +23,6 @@ const shortDate = (ymd) => {
   const [y, m, d] = String(ymd).split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 };
-const DEPARTED = "No longer active";
 const TH = "px-2 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-200";
 
 export default function PlanContactsTracker({
@@ -27,7 +30,9 @@ export default function PlanContactsTracker({
 }) {
   const [data, setData] = useState(null);
   const [owner, setOwner] = useState(null);
-  const idKey = scopeIds.join(",");
+  const byId = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
+  // The scope's ACTIVE owners — the only ones this list asks about.
+  const idKey = scopeIds.filter((id) => byId.get(id)?.is_active !== false).join(",");
 
   useEffect(() => {
     if (!companyId || !idKey) return undefined;
@@ -38,21 +43,14 @@ export default function PlanContactsTracker({
     return () => { alive = false; };
   }, [companyId, idKey, refreshKey]);
 
-  const byId = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
-  const gone = (id) => byId.get(id)?.is_active === false;
-  const nameOf = (id) => (gone(id) ? DEPARTED : byId.get(id)?.full_name || "Unknown");
+  const nameOf = (id) => byId.get(id)?.full_name || "Unknown";
 
   const summary = useMemo(() => {
     if (!data) return null;
     const per = summarisePlanContacts(data.rows);
     const named = [];
-    const departed = { customers: 0, contacted: 0, pending: 0 };
-    per.forEach((p, id) => {
-      if (gone(id)) { departed.customers += p.customers; departed.contacted += p.contacted; departed.pending += p.pending; return; }
-      named.push({ id, name: nameOf(id), ...p });
-    });
+    per.forEach((p, id) => { named.push({ id, name: nameOf(id), ...p }); });
     named.sort((a, b) => b.customers - a.customers || a.name.localeCompare(b.name));
-    if (departed.customers) named.push({ id: DEPARTED, name: DEPARTED, ...departed });
     const total = named.reduce((t, p) => ({
       customers: t.customers + p.customers, contacted: t.contacted + p.contacted, pending: t.pending + p.pending,
     }), { customers: 0, contacted: 0, pending: 0 });
@@ -63,7 +61,7 @@ export default function PlanContactsTracker({
   if (!data) return <p className="px-4 py-3 text-xs text-gray-500">Loading plan customers…</p>;
   if (data.failed) return <p className="px-4 py-3 text-xs text-gray-600">Plan customers could not be read — refresh to try again.</p>;
 
-  const rows = data.rows.filter((r) => !owner || (owner === DEPARTED ? gone(r.ownerId) : r.ownerId === owner));
+  const rows = data.rows.filter((r) => !owner || r.ownerId === owner);
   const pct = (p) => (p.customers ? `${Math.round((p.contacted / p.customers) * 100)}%` : "—");
 
   return (
@@ -108,7 +106,7 @@ export default function PlanContactsTracker({
 
       <div className="overflow-x-auto px-2 pb-3 mt-2">
         <p className="px-2 pb-1 text-[11px] text-gray-500">
-          {owner ? `${owner === DEPARTED ? DEPARTED : nameOf(owner)}'s plan customers` : "All plan customers"} · pending first, then largest planned
+          {owner ? `${nameOf(owner)}'s plan customers` : "All plan customers"} · pending first, then largest planned
           {owner && <button type="button" onClick={() => setOwner(null)} className="ml-2 underline">show everyone</button>}
         </p>
         <table className="w-full text-xs" data-testid="plan-contacts-list">
@@ -142,7 +140,7 @@ export default function PlanContactsTracker({
                         onSaved={onLogged}
                         className="text-[11px] px-2 py-0.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50 inline-flex items-center gap-1"
                       />
-                    ) : !gone(r.ownerId) && (
+                    ) : (
                       <span className="text-[10px] text-gray-500">{firstName(nameOf(r.ownerId))}&apos;s to log</span>
                     ))}
                   </td>

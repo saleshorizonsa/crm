@@ -1153,25 +1153,31 @@ async function buildPacingVisitsRows({ companyId, bundle, consoleData, start, en
  *
  * Per person, the helper's plan customers = the distinct customers (owner +
  * customerKey) in a SEPARATE read of the month's open and converted plan
- * items, and contacted + pending = plan customers. People who have left are
- * one unnamed row.
+ * items, and contacted + pending = plan customers.
+ *
+ * ACTIVE OWNERS ONLY (CEO, 2026-10-11): forward-looking work, so a departed
+ * person's items are not counted. What was left out is stated in one
+ * information row, unnamed, so the exclusion is visible rather than silent.
  */
 async function buildPlanContactRows({ companyId, bundle, start, end }) {
   const users = bundle.users || [];
-  const ids = users.map((u) => u.id);
+  const active = new Set(users.filter((u) => u.is_active !== false).map((u) => u.id));
+  const ids = [...active];
   const rows = [];
   const res = await fetchPlanContacts({ companyId, ownerIds: ids, start, end });
   if (res.failed) {
     rows.push(row({ label: 'Plan customers: could not be read', value: 0, expected: 1 }));
     return rows;
   }
-  const { data: items } = await supabase.from('opportunities')
-    .select('owner_id, contact_id, customer_name')
+  const { data: allItems } = await supabase.from('opportunities')
+    .select('owner_id, contact_id, customer_name, planned_amount')
     .eq('company_id', companyId)
     .in('status', ['open', 'converted'])
     .gte('expected_month', start)
     .lte('expected_month', end);
-  const cids = [...new Set((items || []).map((o) => o.contact_id).filter(Boolean))];
+  const items = (allItems || []).filter((o) => active.has(o.owner_id));
+  const leftOut = (allItems || []).filter((o) => !active.has(o.owner_id));
+  const cids = [...new Set(items.map((o) => o.contact_id).filter(Boolean))];
   const names = new Map();
   for (let i = 0; i < cids.length; i += 200) {
     // eslint-disable-next-line no-await-in-loop
@@ -1182,23 +1188,17 @@ async function buildPlanContactRows({ companyId, bundle, start, end }) {
     });
   }
   const distinct = new Map();
-  (items || []).forEach((o) => {
+  items.forEach((o) => {
     if (!distinct.has(o.owner_id)) distinct.set(o.owner_id, new Set());
     distinct.get(o.owner_id).add(customerKey(o, names));
   });
   const per = summarisePlanContacts(res.rows);
   const owners = [...new Set([...per.keys(), ...distinct.keys()])];
-  const active = (id) => users.find((u) => u.id === id)?.is_active !== false;
-  const sums = { helper: 0, indep: 0, contacted: 0, pending: 0 };
-  let gone = { helper: 0, indep: 0, contacted: 0, pending: 0 };
+  const sums = { helper: 0, contacted: 0, pending: 0 };
   owners.forEach((id) => {
     const p = per.get(id) || { customers: 0, contacted: 0, pending: 0 };
     const x = distinct.get(id)?.size || 0;
-    sums.helper += p.customers; sums.indep += x; sums.contacted += p.contacted; sums.pending += p.pending;
-    if (!active(id)) {
-      gone = { helper: gone.helper + p.customers, indep: gone.indep + x, contacted: gone.contacted + p.contacted, pending: gone.pending + p.pending };
-      return;
-    }
+    sums.helper += p.customers; sums.contacted += p.contacted; sums.pending += p.pending;
     const nm = users.find((u) => u.id === id)?.full_name || id;
     rows.push(row({
       label: `Plan customers — ${nm}: helper = distinct customers in open + converted plan items`,
@@ -1210,17 +1210,19 @@ async function buildPlanContactRows({ companyId, bundle, start, end }) {
       value: p.contacted + p.pending, expected: p.customers, kind: 'count',
     }));
   });
-  if (gone.helper || gone.indep) {
-    rows.push(row({
-      label: 'Plan customers — people no longer active: helper = distinct customers',
-      value: gone.helper, expected: gone.indep, kind: 'count',
-      note: `contacted ${gone.contacted}, pending ${gone.pending} (never shown by name)`,
-    }));
-  }
   rows.push(row({
-    label: 'Plan customers — company: contacted + pending = plan customers',
+    label: 'Plan customers — company: contacted + pending = plan customers (active owners)',
     value: sums.contacted + sums.pending, expected: sums.helper, kind: 'count',
     note: `Contacted ${sums.contacted} of ${sums.helper} planned customers`,
+  }));
+  rows.push(row({
+    label: 'Plan customers — items of people no longer active, left out until reassigned (info only)',
+    value: leftOut.length,
+    expected: null,
+    kind: 'count',
+    note: leftOut.length
+      ? `${leftOut.length} item(s) worth ${Math.round(leftOut.reduce((s, o) => s + (Number(o.planned_amount) || 0), 0)).toLocaleString('en-US')} — not named`
+      : 'none',
   }));
   return rows;
 }
