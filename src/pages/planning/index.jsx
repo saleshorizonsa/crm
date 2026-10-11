@@ -1859,6 +1859,7 @@ const PlanningPage = () => {
                 .filter((id) => scopePeople.some((u) => u.id === id))}
               viewerId={user?.id || null}
               history={flagData.history}
+              companyWide={filterOwner === "all" && (isManager || DIRECTOR_ROLES.includes(role))}
               // The Gap closer's hand-off: prefill the plan form, write nothing.
               onAddToPlan={(row) => {
                 setPlanPrefill({ customer: row.customer, value: row.value, contactId: row.contactId || null });

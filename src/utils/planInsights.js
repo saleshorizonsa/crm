@@ -206,6 +206,21 @@ export async function fetchCompletedMonths({ companyId, ownerIds, users = [], co
   return keys.map((k, i) => res[i]);
 }
 
+/**
+ * Departed people's ids, for a COMPANY-wide history. The page's company scope
+ * is active people only; their revenue and plans still belong in the company's
+ * totals (CEO, 2026-10-07: company includes everyone), unnamed. Only departed
+ * people are added — not active people outside the selling scope, whose figures
+ * would otherwise land in the unnamed remainder under the wrong description.
+ */
+export async function fetchDepartedIds(companyId) {
+  if (!companyId) return [];
+  const { data, error } = await supabase.from('users')
+    .select('id').eq('company_id', companyId).eq('is_active', false);
+  if (error) { console.error('fetchDepartedIds:', error); return []; }
+  return (data || []).map((u) => u.id);
+}
+
 /* ── 2. PLAN REALISM ────────────────────────────────────────────────────────── */
 
 /** Realism needs this many months of plan before it is judged with a colour. */

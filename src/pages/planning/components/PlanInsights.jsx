@@ -3,6 +3,7 @@ import DrillSheet from "components/DrillSheet";
 import {
   computeSlippingDeals, fetchCompletedMonths, computePlanRealism, realismSentence,
   computeUnplannedBuyers, currentMonthBounds, shortMonth, REALISM_MIN_MONTHS, SLIP_MIN_PUSHES,
+  fetchDepartedIds,
 } from "utils/planInsights";
 
 /**
@@ -61,6 +62,8 @@ function Trend({ monthKeys, cells, label }) {
 export default function PlanInsights({
   companyId, ownerIds = [], activeIds = [], users = [], viewerId = null,
   history = null, onAddToPlan,
+  // Manager and above on "All": the history adds departed people, unnamed.
+  companyWide = false,
 }) {
   const [slip, setSlip] = useState(null);
   const [realism, setRealism] = useState(null);
@@ -75,7 +78,9 @@ export default function PlanInsights({
     if (!companyId || !idKey) { setSlip(null); setRealism(null); setBuyers(null); return undefined; }
     setLoading(true);
     (async () => {
-      const ids = idKey.split(",");
+      // The history counts departed people in company totals; the lists do not.
+      const departed = companyWide ? await fetchDepartedIds(companyId) : [];
+      const ids = [...new Set([...idKey.split(","), ...departed])];
       const act = activeKey ? activeKey.split(",") : [];
       const [s, monthsData] = await Promise.all([
         computeSlippingDeals({ companyId, ownerIds: act, users }),
@@ -92,7 +97,7 @@ export default function PlanInsights({
     })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId, idKey, activeKey]);
+  }, [companyId, idKey, activeKey, companyWide]);
 
   const slipOpen = openSlip && slip ? slip.rows.find((r) => r.key === openSlip) : null;
   const slipDrillRows = useMemo(() => {
@@ -237,10 +242,11 @@ export default function PlanInsights({
             Planned = every item filed for the month, whatever became of it. Invoiced = that month&apos;s Achieved
             (gross), = from a plan + unplanned. &quot;From a plan&quot; counts an item from any month, so a deal planned
             in August and invoiced in September is from a plan in September.
-            {realism.monthKeys.some((k) => Math.round(realism.team.departed[k]?.invoiced || 0) !== 0) && (
+            {realism.monthKeys.some((k) => Math.round(realism.team.departed[k]?.invoiced || 0) !== 0
+              || Math.round(realism.team.departed[k]?.planned || 0) !== 0) && (
               <span data-testid="realism-departed">
-                {" "}The team row includes people no longer with the company:
-                {" "}{realism.monthKeys.map((k) => `${shortMonth(k)} ${money(realism.team.departed[k]?.invoiced)}`).join(", ")} invoiced.
+                {" "}The team row includes people no longer with the company, not named:
+                {" "}{realism.monthKeys.map((k) => `${shortMonth(k)} planned ${money(realism.team.departed[k]?.planned)}, invoiced ${money(realism.team.departed[k]?.invoiced)}`).join("; ")}.
               </span>
             )}
           </p>

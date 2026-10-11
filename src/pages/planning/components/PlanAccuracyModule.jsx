@@ -54,7 +54,7 @@ export default function PlanAccuracyModule({
   // For the three sections below the month view (PlanInsights): who is
   // active, who is looking, the Gap closer's usual-order history, and the
   // same hand-off to the plan form the Gap closer uses.
-  activeIds = [], viewerId = null, history = null, onAddToPlan,
+  activeIds = [], viewerId = null, history = null, onAddToPlan, companyWide = false,
 }) {
   const months = useMemo(() => lastCompletedMonths(3), []);
   const [monthKey, setMonthKey] = useState(months[0]);
@@ -274,6 +274,7 @@ export default function PlanAccuracyModule({
         viewerId={viewerId}
         history={history}
         onAddToPlan={onAddToPlan}
+        companyWide={companyWide}
       />
     </section>
   );
