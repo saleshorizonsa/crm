@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import DrillSheet from "components/DrillSheet";
 import LogVisit from "components/LogVisit";
+import PlanContactsTracker from "components/PlanContactsTracker";
 import { fetchVisits, summariseVisits, riyadhToday } from "utils/visits";
 import { buildPacingDrill, PACING_COLUMNS, VISIT_COLUMNS } from "utils/pacingDrill";
 
@@ -93,7 +94,20 @@ export default function PacingDrill({
           onClose={close}
           scopeLabel={scopeLabel}
           footerHint="first row is the total"
-          extra={footer}
+          extra={(
+            <>
+              {footer}
+              {/* Session 20: this month's plan customers, contacted or pending. */}
+              <PlanContactsTracker
+                companyId={companyId}
+                scopeIds={idKey ? idKey.split(",") : []}
+                users={users}
+                viewerId={viewerId}
+                refreshKey={reload + refreshKey}
+                onLogged={() => { setReload((n) => n + 1); onVisitSaved?.(); }}
+              />
+            </>
+          )}
         />
       )}
 

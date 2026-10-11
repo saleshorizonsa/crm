@@ -23,7 +23,13 @@ import { riyadhToday } from "utils/visits";
  */
 const contactName = (c) => c?.company_name || [c?.first_name, c?.last_name].filter(Boolean).join(" ") || "Unnamed customer";
 
-export default function LogVisit({ companyId, userId, onSaved, className = "", label = "Log visit", testid = "log-visit" }) {
+// presetContactId / presetQuery (optional): a plan customer's row opens this
+// with that customer already chosen — or, for a plan item typed by name with
+// no contact, with the search box filled in. The user still confirms.
+export default function LogVisit({
+  companyId, userId, onSaved, className = "", label = "Log visit", testid = "log-visit",
+  presetContactId = null, presetQuery = "",
+}) {
   const [open, setOpen] = useState(false);
   const [contacts, setContacts] = useState(null);   // null = still loading
   const [query, setQuery] = useState("");
@@ -42,9 +48,21 @@ export default function LogVisit({ companyId, userId, onSaved, className = "", l
       .select("id, company_name, first_name, last_name")
       .eq("owner_id", userId)
       .order("company_name", { ascending: true })
-      .then(({ data }) => { if (alive) setContacts(data || []); });
+      .then(async ({ data }) => {
+        let rows = data || [];
+        // A plan item can point at a contact the user does not own; it is still
+        // his plan customer, so it is added to his list rather than lost.
+        if (presetContactId && !rows.some((c) => c.id === presetContactId)) {
+          const { data: one } = await supabase.from("contacts")
+            .select("id, company_name, first_name, last_name").eq("id", presetContactId).maybeSingle();
+          if (one) rows = [one, ...rows];
+        }
+        if (!alive) return;
+        setContacts(rows);
+        if (presetContactId && rows.some((c) => c.id === presetContactId)) setContactId(presetContactId);
+      });
     return () => { alive = false; };
-  }, [open, companyId, userId]);
+  }, [open, companyId, userId, presetContactId]);
   const list = contacts || [];
 
   // The user's own open deal for this customer, newest first.
@@ -76,7 +94,7 @@ export default function LogVisit({ companyId, userId, onSaved, className = "", l
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => { setQuery(presetContactId ? "" : presetQuery || ""); setOpen(true); }}
         data-testid={testid}
         className={className || "flex items-center gap-1.5 text-xs font-medium border border-gray-300 rounded-lg px-3 py-1.5 bg-white hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"}
       >

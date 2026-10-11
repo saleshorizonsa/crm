@@ -38,7 +38,7 @@ import { activeIdsFrom } from 'utils/achieverScope';
 // wonNotInvoicedList and summarizeWonNotInvoiced are already imported above,
 // from the same module.
 import { buildCoverageDrill, RAIL_SEGMENTS } from 'utils/coverageDrill';
-import { buildPlanningDrill } from 'utils/planningDrill';
+import { buildPlanningDrill, customerKey } from 'utils/planningDrill';
 import { computeGapCloser } from 'utils/gapCloser';
 import { buildTeamPlanBoard, PLAN_STATUS } from 'utils/teamPlanBoard';
 import { computePlanAccuracy, monthRange } from 'utils/planAccuracy';
@@ -48,6 +48,7 @@ import {
 } from 'utils/planInsights';
 import { fetchVisits, summariseVisits } from 'utils/visits';
 import { buildPacingDrill, DEPARTED_ROW_ID } from 'utils/pacingDrill';
+import { fetchPlanContacts, summarisePlanContacts } from 'utils/planContacts';
 import { computeWeeklyPacing } from 'utils/weeklyPacing';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
@@ -1147,6 +1148,83 @@ async function buildPacingVisitsRows({ companyId, bundle, consoleData, start, en
   return rows;
 }
 
+/**
+ * PLAN CUSTOMERS: CONTACTED / PENDING (session 20).
+ *
+ * Per person, the helper's plan customers = the distinct customers (owner +
+ * customerKey) in a SEPARATE read of the month's open and converted plan
+ * items, and contacted + pending = plan customers. People who have left are
+ * one unnamed row.
+ */
+async function buildPlanContactRows({ companyId, bundle, start, end }) {
+  const users = bundle.users || [];
+  const ids = users.map((u) => u.id);
+  const rows = [];
+  const res = await fetchPlanContacts({ companyId, ownerIds: ids, start, end });
+  if (res.failed) {
+    rows.push(row({ label: 'Plan customers: could not be read', value: 0, expected: 1 }));
+    return rows;
+  }
+  const { data: items } = await supabase.from('opportunities')
+    .select('owner_id, contact_id, customer_name')
+    .eq('company_id', companyId)
+    .in('status', ['open', 'converted'])
+    .gte('expected_month', start)
+    .lte('expected_month', end);
+  const cids = [...new Set((items || []).map((o) => o.contact_id).filter(Boolean))];
+  const names = new Map();
+  for (let i = 0; i < cids.length; i += 200) {
+    // eslint-disable-next-line no-await-in-loop
+    const { data } = await supabase.from('contacts').select('id, company_name, first_name, last_name').in('id', cids.slice(i, i + 200));
+    (data || []).forEach((c) => {
+      const nm = c.company_name || [c.first_name, c.last_name].filter(Boolean).join(' ');
+      if (nm) names.set(c.id, nm);
+    });
+  }
+  const distinct = new Map();
+  (items || []).forEach((o) => {
+    if (!distinct.has(o.owner_id)) distinct.set(o.owner_id, new Set());
+    distinct.get(o.owner_id).add(customerKey(o, names));
+  });
+  const per = summarisePlanContacts(res.rows);
+  const owners = [...new Set([...per.keys(), ...distinct.keys()])];
+  const active = (id) => users.find((u) => u.id === id)?.is_active !== false;
+  const sums = { helper: 0, indep: 0, contacted: 0, pending: 0 };
+  let gone = { helper: 0, indep: 0, contacted: 0, pending: 0 };
+  owners.forEach((id) => {
+    const p = per.get(id) || { customers: 0, contacted: 0, pending: 0 };
+    const x = distinct.get(id)?.size || 0;
+    sums.helper += p.customers; sums.indep += x; sums.contacted += p.contacted; sums.pending += p.pending;
+    if (!active(id)) {
+      gone = { helper: gone.helper + p.customers, indep: gone.indep + x, contacted: gone.contacted + p.contacted, pending: gone.pending + p.pending };
+      return;
+    }
+    const nm = users.find((u) => u.id === id)?.full_name || id;
+    rows.push(row({
+      label: `Plan customers — ${nm}: helper = distinct customers in open + converted plan items`,
+      value: p.customers, expected: x, kind: 'count',
+      note: `contacted ${p.contacted}, pending ${p.pending}`,
+    }));
+    rows.push(row({
+      label: `Plan customers — ${nm}: contacted + pending = plan customers`,
+      value: p.contacted + p.pending, expected: p.customers, kind: 'count',
+    }));
+  });
+  if (gone.helper || gone.indep) {
+    rows.push(row({
+      label: 'Plan customers — people no longer active: helper = distinct customers',
+      value: gone.helper, expected: gone.indep, kind: 'count',
+      note: `contacted ${gone.contacted}, pending ${gone.pending} (never shown by name)`,
+    }));
+  }
+  rows.push(row({
+    label: 'Plan customers — company: contacted + pending = plan customers',
+    value: sums.contacted + sums.pending, expected: sums.helper, kind: 'count',
+    note: `Contacted ${sums.contacted} of ${sums.helper} planned customers`,
+  }));
+  return rows;
+}
+
 async function buildRailDrillRows({ companyId, bundle, consoleData, start, end }) {
   const users = bundle.users || [];
   const subjects = [
@@ -2037,6 +2115,12 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
   const pacingRows = await buildPacingVisitsRows({ companyId, bundle, consoleData, start, end });
   if (pacingRows.length) {
     groups.push({ screen: 'Visits and pacing drill', fn: 'fetchVisits / buildPacingDrill', rows: pacingRows });
+  }
+
+  // ── Plan customers: contacted / pending (session 20) ─────────────────────
+  const planContactRows = await buildPlanContactRows({ companyId, bundle, start, end });
+  if (planContactRows.length) {
+    groups.push({ screen: 'Plan customers contacted', fn: 'fetchPlanContacts', rows: planContactRows });
   }
 
   // ── Forward-looking scope (CEO decision 2026-10-07) ──────────────────────
