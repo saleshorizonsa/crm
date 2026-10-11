@@ -46,6 +46,8 @@ import {
   computeSlippingDeals, fetchCompletedMonths, computePlanRealism, realismSentence,
   computeUnplannedBuyers, PUSH_STATUSES,
 } from 'utils/planInsights';
+import { fetchVisits, summariseVisits } from 'utils/visits';
+import { buildPacingDrill, DEPARTED_ROW_ID } from 'utils/pacingDrill';
 import { computeWeeklyPacing } from 'utils/weeklyPacing';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
@@ -1030,6 +1032,121 @@ async function buildDivisionAttributionRows({ companyId, bundle }) {
  * not fill another's hole. Where they differ the row REPORTS both instead of
  * failing, and the panel tells the reader the same thing.
  */
+/**
+ * VISITS, AND THE PACING RAIL'S DRILL (session 17).
+ *
+ * Visits per person for the month = contact_reports visits + activities
+ * visits, counted here WITHOUT utils/visits.js: contact reports by a head
+ * count, activities dated by their own rule (completed, else due, else
+ * created) shifted to Riyadh by a fixed +3h rather than Intl. All-time, the
+ * helper's rows = the two tables' visit counts.
+ *
+ * The pacing drill, for the company and every active lead and salesman: its
+ * rows' Target and Achieved add up to the rail's own figures.
+ *
+ * Departed people are one unnamed row.
+ */
+async function buildPacingVisitsRows({ companyId, bundle, consoleData, start, end }) {
+  const users = bundle.users || [];
+  const everyone = users.map((u) => u.id);
+  const monthKey = String(start).slice(0, 7);
+  const rows = [];
+
+  const all = await fetchVisits({ companyId, ownerIds: everyone });
+  if (all.failed) {
+    rows.push(row({ label: 'Visits: could not be read', value: 0, expected: 1 }));
+    return rows;
+  }
+
+  const [crAll, acAll] = await Promise.all([
+    supabase.from('contact_reports').select('id, owner_id, contact_date')
+      .eq('company_id', companyId).eq('contact_type', 'visit'),
+    supabase.from('activities').select('id, owner_id, user_id, completed_at, due_date, created_at')
+      .eq('company_id', companyId).eq('type', 'visit'),
+  ]);
+  const plus3 = (v) => {
+    if (!v) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(v))) return String(v);
+    return new Date(new Date(v).getTime() + 3 * 3600 * 1000).toISOString().slice(0, 10);
+  };
+  const indep = new Map();
+  (crAll.data || []).forEach((r) => {
+    if (String(r.contact_date).slice(0, 7) !== monthKey) return;
+    indep.set(r.owner_id, (indep.get(r.owner_id) || 0) + 1);
+  });
+  (acAll.data || []).forEach((a) => {
+    const d = plus3(a.completed_at || a.due_date || a.created_at);
+    if (String(d).slice(0, 7) !== monthKey) return;
+    const who = everyone.includes(a.owner_id) ? a.owner_id : a.user_id;
+    indep.set(who, (indep.get(who) || 0) + 1);
+  });
+  rows.push(row({
+    label: 'Visits — all time: helper rows = contact_reports visits + activities visits',
+    value: all.rows.length,
+    expected: (crAll.data || []).length + (acAll.data || []).length,
+    kind: 'count',
+    note: `${(crAll.data || []).length} contact reports, ${(acAll.data || []).length} activities`,
+  }));
+
+  const summary = summariseVisits(all.rows, everyone, monthKey);
+  const isActive = (id) => users.find((u) => u.id === id)?.is_active !== false;
+  let departedHelper = 0;
+  let departedIndep = 0;
+  users.forEach((u) => {
+    const h = summary.get(u.id)?.thisMonth || 0;
+    const x = indep.get(u.id) || 0;
+    if (!isActive(u.id)) { departedHelper += h; departedIndep += x; return; }
+    if (!['manager', 'supervisor', 'salesman'].includes(u.role) && h === 0 && x === 0) return;
+    rows.push(row({
+      label: `Visits — ${u.full_name} ${monthKey}: helper = contact_reports + activities`,
+      value: h,
+      expected: x,
+      kind: 'count',
+    }));
+  });
+  rows.push(row({
+    label: `Visits — people no longer active ${monthKey}: helper = contact_reports + activities`,
+    value: departedHelper,
+    expected: departedIndep,
+    kind: 'count',
+    note: 'one unnamed row, as the drill shows them',
+  }));
+  const monthTotal = [...summary.values()].reduce((s, v) => s + v.thisMonth, 0);
+  rows.push(row({
+    label: `Visits — company ${monthKey}: total`,
+    value: monthTotal,
+    expected: [...indep.values()].reduce((s, v) => s + v, 0),
+    kind: 'count',
+    note: monthTotal === 0 ? '0 visits logged this month — shown as such, not as an error' : null,
+  }));
+
+  const subjects = [
+    { id: null, name: 'company', role: 'director' },
+    ...users.filter((u) => u.is_active !== false && ['manager', 'supervisor', 'salesman'].includes(u.role))
+      .map((u) => ({ id: u.id, name: u.full_name || u.id, role: u.role })),
+  ];
+  for (const subj of subjects) {
+    const scope = scopeUserIds({ users, viewerId: subj.id, role: subj.role });
+    if (!scope.length) continue;
+    const metrics = calcDivisionMetrics(scope, { ...consoleData, divisionId: null }) || {};
+    const built = buildPacingDrill({
+      metrics, scopeIds: scope, users, visitSummary: summariseVisits(all.rows, scope, monthKey),
+    });
+    rows.push(row({
+      label: `Pacing drill — ${subj.name}: people's targets add to the rail's Target`,
+      value: built.sumTarget,
+      expected: metrics.target,
+      note: `${built.rows.length} rows${built.rows.some((r) => r.id === DEPARTED_ROW_ID) ? ', one of them people no longer active (unnamed)' : ''}`,
+    }));
+    rows.push(row({
+      label: `Pacing drill — ${subj.name}: people's achieved adds to the rail's Achieved`,
+      value: built.sumAchieved,
+      expected: metrics.achieved,
+    }));
+  }
+  return rows;
+}
+
 async function buildRailDrillRows({ companyId, bundle, consoleData, start, end }) {
   const users = bundle.users || [];
   const subjects = [
@@ -1914,6 +2031,12 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       fn: 'buildCoverageDrill',
       rows: railRows,
     });
+  }
+
+  // ── Visits and the pacing rail's drill (session 17) ────────────────────
+  const pacingRows = await buildPacingVisitsRows({ companyId, bundle, consoleData, start, end });
+  if (pacingRows.length) {
+    groups.push({ screen: 'Visits and pacing drill', fn: 'fetchVisits / buildPacingDrill', rows: pacingRows });
   }
 
   // ── Forward-looking scope (CEO decision 2026-10-07) ──────────────────────

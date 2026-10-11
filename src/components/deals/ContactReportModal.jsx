@@ -37,11 +37,13 @@ const titleCase = (s) => (s || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.
 // Mandatory contact report. When `nextStage` is set the deal is advanced to that
 // stage after the report saves (report-gated stage change); otherwise it's a
 // standalone "Log Contact" entry.
-export default function ContactReportModal({ deal, onClose, onSaved, nextStage = null }) {
+// initialType / initialDate (optional): Log visit opens this with the type
+// already set to visit and the day chosen. Omitted, the form starts empty as before.
+export default function ContactReportModal({ deal, onClose, onSaved, nextStage = null, initialType = '', initialDate = null }) {
   const { user, company } = useAuth();
   const [form, setForm] = useState({
-    contact_type: '',
-    contact_date: today(),
+    contact_type: initialType || '',
+    contact_date: initialDate || today(),
     duration_minutes: '',
     customer_response: '',
     next_action: '',

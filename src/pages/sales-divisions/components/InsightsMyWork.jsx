@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import HotLeadsWidget from "pages/company-dashboard/components/HotLeadsWidget";
 import ActivityFeed from "pages/company-dashboard/components/ActivityFeed";
 import LogActivityModal from "components/LogActivityModal";
+import LogVisit from "components/LogVisit";
 import Icon from "components/AppIcon";
 import { activityService } from "services/supabaseService";
 
@@ -67,6 +68,10 @@ export default function InsightsMyWork({
             {scopeLabel ? `${scopeLabel} — hottest leads and the latest activity` : "Hottest leads and the latest activity"}
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        {/* Log visit: the customer and day first, then the existing contact
+            report (open deal) or activity form saves it — see LogVisit. */}
+        <LogVisit companyId={companyId} userId={userId} onSaved={load} />
         <button
           type="button"
           onClick={() => setShowLog(true)}
@@ -76,6 +81,7 @@ export default function InsightsMyWork({
           <Icon name="PlusCircle" size={14} />
           Log activity
         </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">

@@ -34,6 +34,7 @@ import DivisionExceptionFeed from "./components/DivisionExceptionFeed";
 import InsightsBanners from "./components/InsightsBanners";
 import InsightsMyWork from "./components/InsightsMyWork";
 import InsightsTargets from "./components/InsightsTargets";
+import DivisionPicker from "./components/DivisionPicker";
 // The Dashboard's own audit panel, unchanged — the component already scopes
 // itself by ownerIds.
 import ContactReportsAudit from "components/dashboard/ContactReportsAudit";
@@ -267,6 +268,9 @@ export default function SalesDivisions() {
   const role = userProfile?.role;
 
   const [nav, setNav] = useState(INIT_NAV);
+  // The "All Divisions" picker (session 17): manager and above only.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const canPick = ["manager", "director", "head", "admin"].includes(role);
   // "coverage" (everything this page has always shown) or "targets".
   const [section, setSection] = useState("coverage");
 
@@ -968,16 +972,33 @@ export default function SalesDivisions() {
           {crumbs.map((seg, i) => (
             <React.Fragment key={seg.key}>
               {i > 0 && <span className="text-gray-300 text-xs">&#9656;</span>}
+              <span className="relative">
               <button
-                onClick={() => go(seg.to)}
+                // Manager and above: "All Divisions" opens the picker, which can
+                // still jump to the company level. Everyone else: as before.
+                onClick={() => (seg.key === "company" && canPick ? setPickerOpen((o) => !o) : go(seg.to))}
+                data-testid={seg.key === "company" ? "crumb-all-divisions" : undefined}
+                aria-haspopup={seg.key === "company" && canPick ? "dialog" : undefined}
+                aria-expanded={seg.key === "company" && canPick ? pickerOpen : undefined}
                 className={`text-xs px-3 py-1.5 rounded-lg border font-mono transition-colors max-w-[14rem] truncate ${
                   i === crumbs.length - 1
                     ? "bg-gray-900 text-white border-gray-900"
                     : "border-gray-200 text-gray-600 hover:bg-gray-50"
                 }`}
               >
-                {seg.label}
+                {seg.label}{seg.key === "company" && canPick ? " ▾" : ""}
               </button>
+              {seg.key === "company" && canPick && pickerOpen && (
+                <DivisionPicker
+                  users={raw.users}
+                  groups={groups}
+                  viewerId={user?.id}
+                  role={role}
+                  onJump={go}
+                  onClose={() => setPickerOpen(false)}
+                />
+              )}
+              </span>
             </React.Fragment>
           ))}
           <span className="ml-auto text-[10px] text-gray-400 font-mono uppercase tracking-widest">{scopeLabel}</span>
@@ -1123,6 +1144,9 @@ export default function SalesDivisions() {
                 // inside fetchAll's scope. Same value, in scope here.
                 monthEnd: rangeEnd,
               }}
+              /* The pacing rail opens onto the same level's people, with their
+                 visits (session 17). */
+              pacing={{ scopeIds: levelIds, companyId: company?.id, viewerId: user?.id }}
             />
 
             {/* THE BENCHMARK (CEO decision 2026-10-07): the company conversion

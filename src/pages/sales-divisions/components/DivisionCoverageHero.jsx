@@ -3,6 +3,7 @@ import React from "react";
 // which carried a hand-copy of it until 2026-10-07.
 import CoverageRail from "components/CoverageRail";
 import DivisionPacingRail from "./DivisionPacingRail";
+import PacingDrill from "components/PacingDrill";
 // Percentages that cannot crash a render: a figure that has not arrived shows
 // "—" instead of taking the page down. See utils/formatPct.js.
 import { fmtPct } from "utils/formatPct";
@@ -53,6 +54,9 @@ export function DivisionCoverageHero({
   // names, divisions for a company-level grouping, and the month end for the
   // NOT CONVERTED flag. Absent, the rail renders read-only as it always did.
   drill,
+  // The pacing rail's drill: the level's people and who is looking. Absent,
+  // the rail is read-only as before.
+  pacing = null,
 }) {
   const chip = statusChipOf(metrics);
   return (
@@ -148,13 +152,29 @@ export function DivisionCoverageHero({
           month that has ended or not started. */}
       {metrics.pacingOk !== null ? (
         <div className="mt-4">
-          <DivisionPacingRail
-            pace={metrics.pace}
-            elapsed={metrics.elapsed}
-            dayOfMonth={metrics.dayOfMonth}
-            totalDays={metrics.totalDays}
-            pctFmt={pctFmt}
-          />
+          {(() => {
+            const rail = (
+              <DivisionPacingRail
+                pace={metrics.pace}
+                elapsed={metrics.elapsed}
+                dayOfMonth={metrics.dayOfMonth}
+                totalDays={metrics.totalDays}
+                pctFmt={pctFmt}
+              />
+            );
+            return pacing ? (
+              <PacingDrill
+                metrics={metrics}
+                scopeIds={pacing.scopeIds || []}
+                users={drill?.users || []}
+                companyId={pacing.companyId}
+                viewerId={pacing.viewerId}
+                scopeLabel={title}
+              >
+                {rail}
+              </PacingDrill>
+            ) : rail;
+          })()}
         </div>
       ) : (
         <p className="mt-4 text-[11px] text-gray-500">

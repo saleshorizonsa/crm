@@ -3032,7 +3032,10 @@ export const activityService = {
     return this.OUTCOMES.find(o => o.value === outcome) || null;
   },
 
-  async logActivity({ companyId, userId, contactId, dealId, activityType, description, outcome, nextAction, nextActionDate, durationMinutes }) {
+  // completedAt is optional: a visit logged for a past day carries that day, so
+  // utils/visits.js (completed_at, else due_date, else created_at) dates it
+  // right. Omitted, the row is exactly what it always was.
+  async logActivity({ companyId, userId, contactId, dealId, activityType, description, outcome, nextAction, nextActionDate, durationMinutes, completedAt }) {
     const { data, error } = await supabase
       .from('activities')
       .insert({
@@ -3046,6 +3049,7 @@ export const activityService = {
         next_action:      nextAction       || null,
         next_action_date: nextActionDate   || null,
         duration_minutes: durationMinutes  || null,
+        ...(completedAt ? { completed_at: completedAt } : {}),
         created_at:       new Date().toISOString(),
       })
       .select(`id, type, description, outcome, next_action, next_action_date, duration_minutes, created_at,

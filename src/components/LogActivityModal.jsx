@@ -4,7 +4,9 @@ import { activityService } from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import { format } from 'date-fns';
 
-export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, contactId, contactName, ownerId }) {
+// visitDate (yyyy-MM-dd, optional): the day a visit happened, from Log visit.
+// Saved as completed_at at noon Riyadh time, so the visit counts on that day.
+export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, contactId, contactName, ownerId, visitDate = null }) {
   const { user, company } = useAuth();
   // Owner of the activity. In a director's "View As" of a salesman this is the
   // salesman's id (passed via ownerId); otherwise it falls back to the
@@ -42,6 +44,7 @@ export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, con
       nextAction:      form.nextAction     || null,
       nextActionDate:  form.nextActionDate || null,
       durationMinutes: form.durationMinutes ? parseInt(form.durationMinutes) : null,
+      completedAt:     visitDate ? `${visitDate}T12:00:00+03:00` : null,
     });
     setSaving(false);
     if (err) { setError('Failed to save: ' + (err.message || String(err))); return; }
@@ -67,7 +70,7 @@ export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, con
             </div>
             <div>
               <h2 className="text-base font-semibold text-gray-900">Log Activity</h2>
-              {contactName && <p className="text-xs text-gray-400">{contactName}</p>}
+              {contactName && <p className="text-xs text-gray-400">{contactName}{visitDate ? ` · visit on ${visitDate}` : ""}</p>}
             </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400">
