@@ -208,7 +208,9 @@ export function generatePrediction(forecast, deals = [], targetAmount = 0, winRa
   const winRatePhrase = {
     own:     `the 3-month win rate of ${historicalWinRate.toFixed(1)}%`,
     history: `the all-time win rate of ${historicalWinRate.toFixed(1)}% (nothing closed in the last 3 months)`,
+    division: `the division's 3-month win rate of ${historicalWinRate.toFixed(1)}% (no history of its own yet)`,
     company: `the company average win rate of ${historicalWinRate.toFixed(1)}% (no history of its own yet)`,
+    assumed: `an assumed win rate of 50% (no rate available anywhere)`,
     none:    "no closed-deal history yet",
   }[winRateBasis];
 

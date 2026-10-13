@@ -387,7 +387,7 @@ export async function computePlanningPageSummary({
   const remainingTarget = Math.max(0, target - achieved);
 
   const {
-    winRatePct, isDefault,
+    winRatePct, isDefault, source: winRateSource = 'own', sourceNote: winRateNote = '',
     pipelineConversion3m = null, pipelineTotal3m = 0, importedExcluded = 0,
   } = await computeWinRate({
     companyId, ownerIds, withFallback: true,
@@ -492,6 +492,9 @@ export async function computePlanningPageSummary({
     attainmentPct: target > 0 ? (achieved / target) * 100 : null,
     remainingTarget,
     winRatePct, winRateIsDefault: isDefault,
+    // Which rate it is when not his own (session 24): division, company or
+    // assumed 50% — shown beside the figure, never silently.
+    winRateSource, winRateNote,
     requiredPlan,
     plannedOpen: planned.total,
     openFunnel: funnel.total,

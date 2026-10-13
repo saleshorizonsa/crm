@@ -20,6 +20,7 @@
 import {
   computeCoverage,
   computeRequiredRaw,
+  pickConversion,
   achievedAmount,
   returnAmount,
   targetPerPerson,
@@ -211,6 +212,23 @@ function rowsFor(segment, ownerId, drill, ctx) {
  * row's own, else its assignee's primary, the one fallback allowed), and his
  * invoices, returns, funnel and plan whose own division it is.
  */
+/**
+ * The conversion rate for ONE person's line (the one conversion rule,
+ * pickConversion): his own 3-month rate; with none, the division being
+ * measured (or, for a whole-person line, his main division), then the
+ * company. Falls back to the scope rate when the screen supplied no per-person
+ * rates.
+ */
+function rateFor(ownerId, drill, divisionId = null) {
+  const own = (drill.ratePerPerson || {})[ownerId];
+  if (!own) return num(drill.winRatePct);
+  if (own.source === 'own' || divisionId == null || !drill.companyCounts) return num(own.winRatePct);
+  return pickConversion({
+    division: (drill.divisionCounts || {})[divisionId] || null,
+    company: drill.companyCounts,
+  }).winRatePct;
+}
+
 function shortfallFor(ownerId, drill, divisionId = null) {
   const inThis = inDiv(divisionId);
   const target = divisionId == null
@@ -224,7 +242,7 @@ function shortfallFor(ownerId, drill, divisionId = null) {
       .reduce((s, d) => s + achievedAmount(d), 0)
       - (drill.returnRows || []).filter((r) => r.owner_id === ownerId && inThis(r))
         .reduce((s, r) => s + returnAmount(r), 0);
-  const rate = num(drill.winRatePct);
+  const rate = rateFor(ownerId, drill, divisionId);
   const mine = (rows, pick) => (rows || [])
     .filter((r) => r.owner_id === ownerId && inThis(r))
     .reduce((s, r) => s + pick(r), 0);
@@ -245,6 +263,7 @@ function shortfallFor(ownerId, drill, divisionId = null) {
     weightedFunnel,
     planned,
     value: gap,
+    winRatePct: rate,
     newPipelineNeeded: Math.max(0, computeRequiredRaw({ target: deficit, winRatePct: rate }) - (planned + mine(drill.funnelRows, (d) => num(d.amount)))),
   };
 }

@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { fetchWinRate3m } from './winRate3m';
+import { computeWinRate } from './planningCalculations';
 
 const fmtSAR = (n) => new Intl.NumberFormat('en-SA', { maximumFractionDigits: 0 }).format(Number(n) || 0);
 const monthLabel = (d) => {
@@ -30,8 +30,9 @@ export async function handleTargetChange({
   // Required Plan = Target ÷ Win Rate%
   let effectiveWinRate = winRate;
   if (effectiveWinRate == null) {
-    const { winRate3m, total3m } = await fetchWinRate3m({ companyId, ownerIds: [salesmanId] });
-    effectiveWinRate = total3m > 0 ? winRate3m : 50;
+    // The one conversion rule (computeWinRate → pickConversion): his own 3
+    // months, else his main division, else the company, else an assumed 50%.
+    ({ winRatePct: effectiveWinRate } = await computeWinRate({ companyId, ownerIds: [salesmanId] }));
   }
   if (!(effectiveWinRate > 0)) effectiveWinRate = 50;
 

@@ -383,7 +383,7 @@ async function buildDivisionGroups({
       futureOrders: divData.futureOrders || [], targets: divData.targets || [],
     }),
   }).map((g) => ({
-    g, m: calcDivisionMetrics(g.userIds, { ...divData, divisionId: g.id }) || {},
+    g, m: calcDivisionMetrics(g.userIds, { ...divData, divisionId: g.id, divisionRow: true }) || {},
   }));
 
   const total = (pick) => perDivision.reduce((s, { m }) => s + n(pick(m)), 0);

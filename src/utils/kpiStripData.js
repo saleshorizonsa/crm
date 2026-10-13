@@ -14,6 +14,8 @@ import {
   wonNotInvoicedList,
   summarizeWonNotInvoiced,
   computeCoverage,
+  pickConversion,
+  fetchConversionBaseOrDeals,
 } from 'utils/planningCalculations';
 import { fetchOpenFunnel, funnelInWindow } from 'utils/openFunnel';
 // Pacing is only meaningful for the current month — see where it is computed.
@@ -262,11 +264,9 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     if (d.stage === 'won') wrPer[d.owner_id].won += 1;
   });
 
-  // Company-wide 3-month conversion — the fallback for salesmen with zero
-  // history, and the scope figure shown on the strip.
+  // The scope's own 3-month counts — the scope figure on the strip.
   const total3 = (deals3 || []).length;
   const won3 = (deals3 || []).filter((d) => d.stage === 'won').length;
-  const companyWinRate3m = total3 > 0 ? (won3 / total3) * 100 : 0;
 
   // PIPELINE CONVERSION — INFORMATION ONLY (CEO decision D2, 2026-10-05).
   // The same window and scope as the rate above, minus orders created and
@@ -281,37 +281,29 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     : 0;
   const importedExcluded3m = (deals3Raw || []).length - (deals3 || []).length;
 
-  // New-salesman exception: anyone with NO deals in the 90-day window uses their
-  // ACTUAL win rate over all their history — however few deals (1 won of 2 = 50%,
-  // 0 of 1 = 0%). Only a salesman with zero deals ever falls back to the company
-  // average. Fetch all-history once for just those salesmen (usually new joiners).
+  // THE ONE CONVERSION RULE (pickConversion, CEO 2026-10-13): anyone with no
+  // deals of his own in the window borrows his MAIN division's 3-month rate
+  // (10+ deals), else the company's, else an assumed 50% that is named. The
+  // old "whole history" step is gone — it gave Hassan Ali Asiri 0%, which
+  // computeRequiredRaw turned into a silent × 2.
   const noWindowIds = achievedScopeIds.filter((id) => !wrPer[id] || wrPer[id].total === 0);
-  const allWrPer = {};
+  const mainDivisionOf = {};
   if (noWindowIds.length) {
-    const { data: allDealsRaw } = await queryDealsWithImportFlag((select) => supabase
-      .from('deals')
-      .select(select)
-      .eq('company_id', companyId)
-      .in('owner_id', noWindowIds), 'owner_id, stage, invoice_number');
-    // Imported history excluded here as well: a salesman whose only rows are
-    // loaded-in invoices would otherwise read 100%, and 100% makes Required
-    // Plan equal to the target.
-    const allDeals = (allDealsRaw || []).filter((d) => !isImportedDeal(d));
-    (allDeals || []).forEach((d) => {
-      if (!allWrPer[d.owner_id]) allWrPer[d.owner_id] = { won: 0, total: 0 };
-      allWrPer[d.owner_id].total += 1;
-      if (d.stage === 'won') allWrPer[d.owner_id].won += 1;
-    });
+    const { data: noWindowUsers } = await supabase
+      .from('users').select('id, sales_division_id').in('id', noWindowIds);
+    (noWindowUsers || []).forEach((u) => { mainDivisionOf[u.id] = u.sales_division_id || null; });
   }
+  const conversionBase = await fetchConversionBaseOrDeals({
+    companyId, divisionIds: Object.values(mainDivisionOf),
+  });
 
-  // 3-step win rate for a salesman: 90-day window → all history → company average.
-  // Only the last step is a "default" (no personal data at all).
   const resolveWinRate = (id) => {
-    const w = wrPer[id];
-    if (w && w.total > 0) return { rate: (w.won / w.total) * 100, isDefault: false };
-    const a = allWrPer[id];
-    if (a && a.total > 0) return { rate: (a.won / a.total) * 100, isDefault: false };
-    return { rate: companyWinRate3m, isDefault: true };
+    const pick = pickConversion({
+      own: wrPer[id] || null,
+      division: mainDivisionOf[id] ? conversionBase.divisions[mainDivisionOf[id]] : null,
+      company: conversionBase.company,
+    });
+    return { rate: pick.winRatePct, isDefault: pick.source !== 'own', source: pick.source };
   };
 
   // 5. Planned — open Current-Sales-Plan (opportunities) value for this month.
@@ -361,7 +353,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
       const target = targetPer[u.id] || 0;
       const achieved = achievedPer[u.id] || 0;
       const deficit = Math.max(0, target - achieved);
-      const { rate: winRate3m, isDefault: winRateIsDefault } = resolveWinRate(u.id);
+      const { rate: winRate3m, isDefault: winRateIsDefault, source: winRateSource } = resolveWinRate(u.id);
       const planned = plannedPer[u.id] || 0;
       // Over what is STILL MISSING (deficit), not the untouched target — the
       // same basis as planningPageSummary.js, the Coverage Console and Insights.
@@ -377,7 +369,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
       return {
         id: u.id, full_name: u.full_name, role: u.role,
         target, achieved, deficit,
-        winRate3m, winRateIsDefault,
+        winRate3m, winRateIsDefault, winRateSource,
         planned, required, requiredRaw, futureCarryover, plannedGap,
       };
     })
@@ -398,7 +390,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
       return {
         id: u.id, full_name: u.full_name, role: u.role, achievedOnly: true,
         target, achieved, deficit: Math.max(0, target - achieved),
-        winRate3m: wr.rate, winRateIsDefault: wr.isDefault,
+        winRate3m: wr.rate, winRateIsDefault: wr.isDefault, winRateSource: wr.source,
         planned: 0, required: 0, requiredRaw: 0, futureCarryover: 0, plannedGap: 0,
       };
     }))
@@ -414,9 +406,14 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
   // yearly allocation is never spread into the monthly Target, so attainment
   // can exceed 100% (business decision, 2026-09-28).
   const deficit = Math.max(0, target - achieved);
-  // Scope total win rate = company/team 3-month average (already computed above).
-  const winRateIsDefault = total3 === 0;
-  const winRate3m = companyWinRate3m;
+  // Scope win rate: the scope's own 3-month deals; one person with none takes
+  // his own rule above, a wider scope with none the company's (pickConversion).
+  const scopePick = achievedScopeIds.length === 1
+    ? resolveWinRate(achievedScopeIds[0])
+    : (() => { const p = pickConversion({ own: { won: won3, total: total3 }, company: conversionBase.company }); return { rate: p.winRatePct, isDefault: p.source !== 'own', source: p.source }; })();
+  const winRateIsDefault = scopePick.isDefault;
+  const winRateSource = scopePick.source;
+  const winRate3m = scopePick.rate;
   const planned = Object.values(plannedPer).reduce((s, v) => s + v, 0);
   // Over the scope's own deficit, matching the per-salesman rows above. Missing
   // this left the strip's headline card demanding pipeline (952,885.34 for
@@ -474,7 +471,7 @@ export async function computeKpiStripData({ companyId, ownerIds = null, range = 
     // deficit is 0 and attainment is 0 — so the strip used to report "Target
     // met ✓" and "0.0% of target" for a period nobody had set a target for.
     hasTarget: target > 0,
-    target, achieved, deficit, winRate3m, winRateIsDefault,
+    target, achieved, deficit, winRate3m, winRateIsDefault, winRateSource,
     // Information only; see where it is computed.
     pipelineConversion3m, pipelineWon3m: pipelineWon3, pipelineTotal3m: pipeline3.length,
     // How many loaded-in history rows were set aside from the rate, so the

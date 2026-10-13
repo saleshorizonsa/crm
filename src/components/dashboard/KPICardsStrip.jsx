@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from 'components/AppIcon';
 import { supabase } from 'lib/supabase';
-import { STALE_INVOICE_DAYS } from 'utils/planningCalculations';
+import { STALE_INVOICE_DAYS, conversionSourceNote } from 'utils/planningCalculations';
 import { capitalize } from 'utils/helper';
 // Percentages that cannot crash a render: a figure that has not arrived shows
 // "—" instead of taking the page down. See utils/formatPct.js.
@@ -61,7 +61,8 @@ function cardDefs(totals, opts = {}) {
   const winRateCard = {
     key: 'winRate', label: 'Conversion (3m)', strip: 'bg-purple-500',
     value: `${(t.winRate3m || 0).toFixed(1)}%`, valueClass: 'text-purple-600',
-    sub: `3 completed months${t.winRateIsDefault ? ' (default)' : ''}`,
+    // A borrowed rate says where it came from (the one conversion rule).
+    sub: `3 completed months${conversionSourceNote(t.winRateSource) ? ` (${conversionSourceNote(t.winRateSource)})` : (t.winRateIsDefault ? ' (default)' : '')}`,
     tooltip: CONVERSION_TOOLTIP,
     // INFORMATION ONLY (CEO decision D2, 2026-10-05): shown in grey beneath
     // the rate, and used in no calculation anywhere.

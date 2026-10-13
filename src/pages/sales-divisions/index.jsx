@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "lib/supabase";
 import { useAuth } from "contexts/AuthContext";
 import Header from "components/ui/Header";
-import { monthBounds, nextMonthBounds } from "utils/planningCalculations";
+import { monthBounds, nextMonthBounds, fetchConversionBaseOrDeals } from "utils/planningCalculations";
 import QuickDateSelector from "components/QuickDateSelector";
 import { useDateRange } from "contexts/DateRangeContext";
 import {
@@ -521,10 +521,21 @@ export default function SalesDivisions() {
         console.warn("Insights: company benchmark rate unavailable:", e?.message);
       }
 
+      // The company's and each division's 3-month counts for the one
+      // conversion rule (session 24), from SECURITY DEFINER functions: a
+      // salesman cannot read the deals they come from. A function that is
+      // missing falls back to the deals this viewer can read company-wide —
+      // the SAME helper Planning uses, so the two screens cannot disagree.
+      const conversionBase = await fetchConversionBaseOrDeals({
+        companyId: company.id,
+        divisionIds: (divisionsRes.data || []).map((d) => d.id),
+      });
+
       setRaw({
         users: scopedUsers,
         scopeIds,
         companyRate,
+        conversionBase,
         additionalByUser,
         divisions: divisionsRes.error ? [] : divisionsRes.data || [],
         deals: dealsRes.data || [],
@@ -640,7 +651,9 @@ export default function SalesDivisions() {
   const userName = (id) => userById.get(id)?.full_name || "Unknown";
   // divisionId scopes the DEALS to this division; omitted at company level so
   // the top-level view still counts everything exactly as before.
-  const metricsFor = (ids, divisionId = null) => calcDivisionMetrics(ids, { ...raw, divisionId });
+  // divisionRow: a DIVISION's figure, measured by the division rule even when
+  // the division has one member (session 24).
+  const metricsFor = (ids, divisionId = null, divisionRow = false) => calcDivisionMetrics(ids, { ...raw, divisionId, divisionRow });
 
   const currentGroup = nav.division ? groups.find((g) => g.id === nav.division) : null;
   const view = currentGroup ? divisionView({ group: currentGroup, users: raw.users }) : null;
@@ -668,7 +681,7 @@ export default function SalesDivisions() {
   // the deals are scoped to it. At company level nothing is scoped and the
   // totals are the same ones the page showed before multi-division.
   const navDivisionId = nav.level === "company" ? null : nav.division || null;
-  const metrics = metricsFor(levelIds, navDivisionId);
+  const metrics = metricsFor(levelIds, navDivisionId, nav.level === "division");
   const showExceptions = ["company", "division", "team"].includes(nav.level);
   const exceptions = showExceptions ? buildExceptions(levelIds, raw) : [];
 
@@ -764,7 +777,7 @@ export default function SalesDivisions() {
           sub: `${listedMembers({ users: raw.users, userIds: g.userIds }).length} members${
             g.id === UNASSIGNED ? " · no division set" : ""
           }`,
-          m: metricsFor(g.userIds, g.id),
+          m: metricsFor(g.userIds, g.id, true),
           onClick: () => openDivision(g),
         }))
       : [];

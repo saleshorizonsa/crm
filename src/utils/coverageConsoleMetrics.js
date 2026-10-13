@@ -22,6 +22,8 @@ import {
   computeCoverage,
   sumPlannedByOwner,
   computeRequiredRaw,
+  pickConversion,
+  conversionCounts,
   // Won but not yet invoiced: the rail's fourth part, carried on drill below.
   wonNotInvoicedList,
 } from 'utils/planningCalculations';
@@ -119,7 +121,32 @@ export function calcCoverageMetrics(userIds, data) {
     deals: deals3m,
     ownerIds: companyAchieverIds,
   });
-  const winRatePct = mine.total > 0 ? mine.winRatePct : companyWide.winRatePct;
+  // THE ONE CONVERSION RULE (pickConversion, CEO 2026-10-13): the node's own
+  // deals; with none, ONE person borrows his main division's rate (10+
+  // deals), anything wider the company's; with no company rate, an assumed
+  // 50% that is named. This screen holds the whole company's deals, so the
+  // division counts are read from deals3m directly.
+  const companyCounts = { won: Math.round((companyWide.winRatePct / 100) * companyWide.total), total: companyWide.total };
+  const mainDivisionOf = new Map((users || []).map((u) => [u.id, u.sales_division_id || null]));
+  const divisionCounts = (did) => (did
+    ? conversionCounts((deals3m || []).filter((d) => d.division_id === did), companyAchieverIds)
+    : null);
+  const conversionPick = pickConversion({
+    own: { won: Math.round((mine.winRatePct / 100) * mine.total), total: mine.total },
+    division: achieverIds.length === 1 ? divisionCounts(mainDivisionOf.get(achieverIds[0])) : null,
+    company: companyCounts,
+  });
+  const winRatePct = conversionPick.winRatePct;
+  const winRateSource = conversionPick.source;
+  // The same rule per PERSON, for the rail drill's per-person lines.
+  const ratePerPerson = {};
+  achieverIds.forEach((id) => {
+    ratePerPerson[id] = pickConversion({
+      own: conversionCounts(deals3m || [], [id]),
+      division: divisionCounts(mainDivisionOf.get(id)),
+      company: companyCounts,
+    });
+  });
   const winRate = winRatePct / 100; // this file weights in fractions
 
   // ── INVOICED (achieved) ── over achieverIds, declared once near the top.
@@ -233,6 +260,10 @@ export function calcCoverageMetrics(userIds, data) {
     // disagree with the bar above it. Same shape as calcDivisionMetrics.drill.
     drill: {
       winRatePct: winRate * 100,
+      ratePerPerson,
+      companyCounts,
+      divisionCounts: Object.fromEntries([...new Set((deals3m || []).map((d) => d.division_id).filter(Boolean))]
+        .map((did) => [did, divisionCounts(did)])),
       invoicedRows: invoicedDeals || [],
       invoicedPerPerson: achievedSplit.perPerson || {},
       returnRows: achievedSplit.returnRows || [],
@@ -253,6 +284,7 @@ export function calcCoverageMetrics(userIds, data) {
     weightedPlanning: coverageSplit.weightedPlanning,
     coverage,
     winRate,
+    winRateSource,
     requiredPlan,
     monthFunnel,
     monthCoverage,

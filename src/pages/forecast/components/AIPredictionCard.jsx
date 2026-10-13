@@ -86,7 +86,9 @@ const AIPredictionCard = ({ prediction }) => {
   const winRateLabel = {
     own:     "3-Month Average",
     history: "All-Time Average",
+    division: "Division rate — no own history",
     company: "Company Avg Win Rate",
+    assumed: "Assumed 50% — no rate available",
     none:    "No history available",
   }[winRateBasis];
 

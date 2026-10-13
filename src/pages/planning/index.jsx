@@ -1547,7 +1547,12 @@ const PlanningPage = () => {
               </p>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              3 completed months{summaryData.winRateIsDefault && " (default)"}
+              3 completed months
+              {summaryData.winRateNote ? (
+                <span className="block text-amber-700 dark:text-amber-300" data-testid="conversion-source-note">
+                  {summaryData.winRateNote}
+                </span>
+              ) : summaryData.winRateIsDefault && " (default)"}
             </p>
             {/* INFORMATION ONLY (CEO decision D2) — drives nothing. */}
             {!summaryLoading && hasFigure(summaryData.pipelineConversion3m) && (

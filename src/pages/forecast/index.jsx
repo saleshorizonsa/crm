@@ -6,9 +6,8 @@ import { format, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuart
 import { useAuth } from "../../contexts/AuthContext";
 import { useDateRange } from "../../contexts/DateRangeContext";
 import { forecastService, userService } from "../../services/supabaseService";
-import { supabase } from "../../lib/supabase";
 import { computeKpiStripData } from "../../utils/kpiStripData";
-import { fetchWinRate3m } from "../../utils/winRate3m";
+import { computeWinRate } from "../../utils/planningCalculations";
 import { isAnnualRange } from "../../utils/dashboardDateUtils";
 import { buildForecast, DEFAULT_STAGE_WEIGHTS } from "../../utils/forecastEngine";
 import { generateInsights, generatePrediction } from "../../utils/forecastInsights";
@@ -189,50 +188,24 @@ const ForecastPage = () => {
   }, [company?.id, user?.id, role, dateRange.from, dateRange.to, dateRange.isAllTime, selectedSalesman]);
 
   // The REAL win rate driving the AI Prediction card's confidence, which used to
-  // be a synthetic committed/target + deal-count score. Resolved with the same
-  // 3-step ladder as planning/index.jsx, using the shared fetchWinRate3m():
-  //   1. this scope's 3-month rolling rate (the drilled-into salesman, else the
-  //      whole company)
-  //   2. if the window is empty, this scope's ACTUAL rate over all history —
-  //      however few deals
-  //   3. only with no deals ever, the whole-company 3-month average
-  // Presence is decided by total3m/row count, never by "rate > 0": a rep who
-  // created deals and won none has a measured 0% rate, which is real data.
-  // Steps 1 and 3 are independent of the selected period — always the last 3
-  // completed months — so this refetches only on company or drill-down change.
+  // be a synthetic committed/target + deal-count score. THE ONE CONVERSION RULE
+  // (computeWinRate → pickConversion, CEO 2026-10-13), the same as Planning:
+  //   1. this scope's own 3 completed months (the drilled-into salesman, else
+  //      the whole company)
+  //   2. none: one salesman borrows his main division's rate (10+ deals)
+  //   3. then the company's
+  //   4. only with no company rate, an assumed 50%, labelled as such
+  // The old all-history step is gone with it. A rep who created deals and won
+  // none has a measured 0% rate, which is real data.
   const [winRate, setWinRate] = useState({ rate: null, basis: "none" });
   useEffect(() => {
     if (!company?.id) { setWinRate({ rate: null, basis: "none" }); return; }
     let cancelled = false;
     (async () => {
-      const companyId = company.id;
       const ownerIds = selectedSalesman !== "all" ? [selectedSalesman] : null;
-
-      const { winRate3m: raw, total3m } = await fetchWinRate3m({ companyId, ownerIds });
+      const r = await computeWinRate({ companyId: company.id, ownerIds });
       if (cancelled) return;
-      if (total3m > 0) { setWinRate({ rate: raw, basis: "own" }); return; }
-
-      // Step 2 — all-time history for this scope.
-      let histQuery = supabase.from("deals").select("stage").eq("company_id", companyId);
-      if (ownerIds) histQuery = histQuery.in("owner_id", ownerIds);
-      const { data: hist } = await histQuery;
-      if (cancelled) return;
-      if ((hist?.length || 0) > 0) {
-        const wonH = hist.filter((d) => d.stage === "won").length;
-        setWinRate({ rate: (wonH / hist.length) * 100, basis: "history" });
-        return;
-      }
-
-      // Step 3 — company average. For the company-wide view this is the same
-      // query that already came back empty, so there is nothing left to fall
-      // back to and the card reports no history.
-      if (!ownerIds) { setWinRate({ rate: null, basis: "none" }); return; }
-      const { winRate3m: companyAvg, total3m: companyTotal } =
-        await fetchWinRate3m({ companyId, ownerIds: null });
-      if (cancelled) return;
-      setWinRate(companyTotal > 0
-        ? { rate: companyAvg, basis: "company" }
-        : { rate: null, basis: "none" });
+      setWinRate(r.source ? { rate: r.winRatePct, basis: r.source } : { rate: null, basis: "none" });
     })();
     return () => { cancelled = true; };
   }, [company?.id, selectedSalesman]);

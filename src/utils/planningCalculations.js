@@ -1,6 +1,6 @@
 import { supabase } from 'lib/supabase';
 import { fetchWinRate3m } from 'utils/winRate3m';
-import { isImportedDeal, queryDealsWithImportFlag } from 'utils/importedDeals';
+import { isImportedDeal } from 'utils/importedDeals';
 // The one supervisor_id walk. It skips inactive users, which is exactly the
 // scope rule computeAnnualAllocation needs — see its doc comment.
 import { subtreeIdsOf } from 'utils/teamHierarchy';
@@ -389,9 +389,111 @@ export async function computeAnnualAllocation({
 
 // ── 2. WIN RATE ─────────────────────────────────────────────────────────────
 /**
- * 3-month rolling win rate for a scope, with the agreed 3-step fallback:
- * the 3 completed months -> this scope's whole history -> the company average.
- * Only the last step counts as a "default".
+ * ONE CONVERSION RULE FOR PEOPLE WITH NO HISTORY (CEO decision 2026-10-13).
+ *
+ *   1. his own 3-month conversion (won ÷ deals created in the last 3
+ *      completed months, Riyadh, imported excluded) — if he has any deals
+ *   2. else his DIVISION's 3-month conversion — the division of the row or
+ *      target being measured, or for a whole-person figure his main division —
+ *      if that division has at least DIVISION_MIN_SAMPLE deals in the window
+ *   3. else the COMPANY's 3-month conversion
+ *   4. only if the company has no rate either: ASSUMED 50% — the old hidden
+ *      "× 2" — and the screen says so
+ *
+ * Before this, each screen had its own fallback: Planning and the KPI strip
+ * took the person's whole history first, Insights and the Coverage Console
+ * the company rate. Hassan Ali Asiri, with no deals in the window, got 0%
+ * on Planning — which computeRequiredRaw turned into a silent × 2, a planned
+ * gap of 99,414 — and 67.8% on Insights, 48,940.
+ *
+ * Counts are { won, total }; a source is 'own' | 'division' | 'company' |
+ * 'assumed'.
+ */
+export const DIVISION_MIN_SAMPLE = 10;
+export const ASSUMED_RATE_PCT = 50;
+const rateOf = (c) => (c && c.total > 0 ? (c.won / c.total) * 100 : 0);
+
+export function pickConversion({ own = null, division = null, company = null } = {}) {
+  if (own && own.total > 0) return { winRatePct: rateOf(own), source: 'own', won: own.won, total: own.total };
+  if (division && division.total >= DIVISION_MIN_SAMPLE) {
+    return { winRatePct: rateOf(division), source: 'division', won: division.won, total: division.total };
+  }
+  if (company && company.total > 0) return { winRatePct: rateOf(company), source: 'company', won: company.won, total: company.total };
+  return { winRatePct: ASSUMED_RATE_PCT, source: 'assumed', won: 0, total: 0 };
+}
+
+/** What the screen says beside a rate that is not the person's own. */
+export function conversionSourceNote(source) {
+  if (source === 'division') return 'division rate — no own history';
+  if (source === 'company') return 'company rate — no own history';
+  if (source === 'assumed') return 'assumed 50% — no rate available';
+  return '';
+}
+
+/**
+ * The DIVISION and COMPANY counts behind steps 2 and 3, for any viewer.
+ *
+ * A salesman cannot read his colleagues' deals (RLS), so both come from
+ * SECURITY DEFINER functions that return four numbers and nothing else:
+ * company_conversion_3m (applied 2026-10-07) and division_conversion_3m
+ * (migrations/division_conversion_3m.sql). A function that is missing or
+ * refuses degrades that step to null — the rule then moves on to the next
+ * step, never to an invented number.
+ *
+ * @returns {Promise<{ company: {won,total}|null, divisions: Record<string, {won,total}|null> }>}
+ */
+export async function fetchConversionBase({ companyId, divisionIds = [] }) {
+  const out = { company: null, divisions: {} };
+  if (!companyId) return out;
+  const row = (data) => (Array.isArray(data) ? data[0] : data);
+  try {
+    const { data, error } = await supabase.rpc('company_conversion_3m', { p_company_id: companyId });
+    const r = row(data);
+    if (!error && r && Number.isFinite(Number(r.total))) out.company = { won: Number(r.won) || 0, total: Number(r.total) || 0 };
+  } catch { /* the step degrades */ }
+  await Promise.all([...new Set((divisionIds || []).filter(Boolean))].map(async (id) => {
+    try {
+      const { data, error } = await supabase.rpc('division_conversion_3m', { p_company_id: companyId, p_division_id: id });
+      const r = row(data);
+      out.divisions[id] = !error && r && Number.isFinite(Number(r.total))
+        ? { won: Number(r.won) || 0, total: Number(r.total) || 0 }
+        : null;
+    } catch { out.divisions[id] = null; }
+  }));
+  return out;
+}
+
+/**
+ * fetchConversionBase, with every missing answer (a function not applied yet,
+ * or refused) replaced by the counts of the deals this viewer can read — the
+ * same fallback calcDivisionMetrics uses, so Planning, the KPI strip and
+ * Insights agree whether or not the functions exist.
+ */
+export async function fetchConversionBaseOrDeals({ companyId, divisionIds = [] }) {
+  const base = await fetchConversionBase({ companyId, divisionIds });
+  const ids = [...new Set((divisionIds || []).filter(Boolean))];
+  const missing = ids.filter((id) => !base.divisions[id]);
+  if (!companyId || (base.company && !missing.length)) return base;
+  const companyAchievers = await fetchAchieverIds({ companyId });
+  if (!companyAchievers.length) return base;
+  const counts = (r) => ({ won: r.won3m || 0, total: r.total3m || 0 });
+  if (!base.company) base.company = counts(await fetchWinRate3m({ companyId, scopeIds: companyAchievers }));
+  await Promise.all(missing.map(async (id) => {
+    base.divisions[id] = counts(await fetchWinRate3m({ companyId, scopeIds: companyAchievers, divisionId: id }));
+  }));
+  return base;
+}
+
+/** { won, total } from deal rows — the window's own counts (imported excluded). */
+export function conversionCounts(deals, ownerIds = null) {
+  const { winRatePct, total } = winRateFromDeals({ deals, ownerIds });
+  return { won: Math.round((winRatePct / 100) * total), total };
+}
+
+/**
+ * 3-month rolling win rate for a scope, with the fallback above (pickConversion):
+ * own 3 completed months -> (one person only) his main division -> the company
+ * -> assumed 50%. Anything but 'own' is a "default".
  *
  * ALWAYS narrowed to the ACHIEVER scope, whatever `ownerIds` the caller passes:
  * you cannot count someone's revenue and target but ignore how much of what he
@@ -423,6 +525,8 @@ export async function computeWinRate({
     return {
       winRatePct: winRate3m,
       isDefault: false,
+      source: 'own',
+      sourceNote: '',
       // Information only (CEO decision D2) — carried through so a screen can
       // show it beside the rate without a second query. null on the fallback
       // paths below, where there is no 3-month window to measure it over.
@@ -431,34 +535,29 @@ export async function computeWinRate({
       importedExcluded: rate3m.importedExcluded,
     };
   }
-  // The KPI strip deliberately reports 0% for a scope with no deals in the
-  // window rather than borrowing another scope's rate; Planning walks the
-  // fallback chain instead. Same rule, two documented policies -- opt in.
-  if (!withFallback) return { winRatePct: 0, isDefault: true };
-
-  // Step 2 - this scope's whole history, achievers only, and with
-  // IMPORTED history excluded like every other rate (utils/importedDeals.js).
-  // This fallback is the one most exposed to it: a salesman whose only rows
-  // are loaded-in invoices would have read 100%, and 100% makes Required
-  // Plan equal to the target — no new pipeline needed, ever.
-  const { data: hist } = await queryDealsWithImportFlag((select) => supabase
-    .from('deals')
-    .select(select)
-    .eq('company_id', companyId)
-    .in('owner_id', scopeIds), 'stage, invoice_number');
-  const worked = (hist || []).filter((d) => !isImportedDeal(d));
-  if (worked.length) {
-    const won = worked.filter((d) => d.stage === 'won').length;
-    return { winRatePct: (won / worked.length) * 100, isDefault: false };
+  // No deals of his own in the window: pickConversion — his main division
+  // (one person only), then the company, then an assumed 50% that the screen
+  // names. The old "whole history" step is gone: the CEO rule (2026-10-13)
+  // replaced it, and it was why Planning read 0% for Hassan Ali Asiri.
+  // `withFallback` no longer changes anything: a 0% here became a silent
+  // "× 2" in computeRequiredRaw, which the rule forbids.
+  let mainDivision = null;
+  if (scopeIds.length === 1) {
+    const { data: u } = await supabase.from('users').select('sales_division_id').eq('id', scopeIds[0]).maybeSingle();
+    mainDivision = u?.sales_division_id || null;
   }
-
-  // Step 3 - the company average, also over the achiever scope.
-  const companyAchievers = await fetchAchieverIds({ companyId });
-  if (!companyAchievers.length) return { winRatePct: 0, isDefault: true };
-  const { winRate3m: companyAvg } = await fetchWinRate3m({
-    companyId, scopeIds: companyAchievers,
+  const base = await fetchConversionBaseOrDeals({ companyId, divisionIds: mainDivision ? [mainDivision] : [] });
+  const pick = pickConversion({
+    own: { won: 0, total: 0 },
+    division: mainDivision ? base.divisions[mainDivision] : null,
+    company: base.company,
   });
-  return { winRatePct: companyAvg, isDefault: true };
+  return {
+    winRatePct: pick.winRatePct,
+    isDefault: true,
+    source: pick.source,
+    sourceNote: conversionSourceNote(pick.source),
+  };
 }
 
 /**

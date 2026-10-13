@@ -27,6 +27,7 @@ import {
   sumPlannedByOwner,
   computeRequiredRaw,
   computePlannedGap,
+  conversionSourceNote,
   monthBounds,
   nextMonthBounds,
   wonNotInvoicedExceptions,
@@ -184,7 +185,7 @@ export default function CoverageConsole() {
         // rule, so no departed person appears in a list or a drill-down.
         supabase
           .from("users")
-          .select("id, full_name, role, supervisor_id, is_active, is_contributor")
+          .select("id, full_name, role, supervisor_id, is_active, is_contributor, sales_division_id")
           .eq("company_id", company.id),
 
         // Monthly targets overlapping this month. status=active matters: draft
@@ -213,7 +214,7 @@ export default function CoverageConsole() {
         // afterwards.
         supabase
           .from("deals")
-          .select("id, stage, owner_id, created_at, closed_at, invoice_number")
+          .select("id, stage, owner_id, division_id, created_at, closed_at, invoice_number")
           .eq("company_id", company.id)
           .gte(
             "created_at",
@@ -1066,7 +1067,7 @@ export default function CoverageConsole() {
                   [
                     "Win rate",
                     (metrics.winRate * 100).toFixed(1) + "%",
-                    "3-month average · to date",
+                    conversionSourceNote(metrics.winRateSource) || "3-month average · to date",
                   ],
                   ...(isAllTime
                     ? []

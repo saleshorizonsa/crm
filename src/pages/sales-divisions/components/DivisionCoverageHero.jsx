@@ -7,6 +7,7 @@ import PacingRailBlock from "components/PacingRailBlock";
 // Percentages that cannot crash a render: a figure that has not arrived shows
 // "—" instead of taking the page down. See utils/formatPct.js.
 import { fmtPct } from "utils/formatPct";
+import { conversionSourceNote } from "utils/planningCalculations";
 // One spelling of the coverage figure's name and of the Conversion (3m) label,
 // shared with the panel and the Coverage Console.
 import {
@@ -215,7 +216,10 @@ export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
     [
       conversionLabel(metrics),
       fmtPct(metrics.winRatePct),
-      metrics.winRateBorrowed ? "company rate (no deals in 3 months)" : "3-month average · to date",
+      // Which rate, when it is not this group's own (session 24).
+      metrics.winRateBorrowed
+        ? (metrics.winRateSource === "company-division" ? "company rate (too few deals in 3 months)" : conversionSourceNote(metrics.winRateSource))
+        : "3-month average · to date",
     ],
     ...(metrics.isAllTime
       ? []

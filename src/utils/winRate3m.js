@@ -48,7 +48,7 @@ import {
 // 65.4% on the same screen), while Planning and the Console narrowed to
 // contributor roles. A caller that has already resolved the scope passes
 // `scopeIds` to skip the lookup, the same contract as fetchOpenFunnel.
-export async function fetchWinRate3m({ companyId, ownerIds = null, scopeIds = null }) {
+export async function fetchWinRate3m({ companyId, ownerIds = null, scopeIds = null, divisionId = null }) {
   const empty = {
     winRate3m: 0, won3m: 0, total3m: 0,
     pipelineConversion3m: 0, pipelineWon3m: 0, pipelineTotal3m: 0,
@@ -76,6 +76,8 @@ export async function fetchWinRate3m({ companyId, ownerIds = null, scopeIds = nu
       .eq('company_id', companyId)
       .gte('created_at', start.toISOString())
       .lte('created_at', end.toISOString());
+    // A division's rate (session 24): only that division's rows.
+    if (divisionId) query = query.eq('division_id', divisionId);
     return query.in('owner_id', ids);
   }, 'id, stage, created_at, closed_at, owner_id, invoice_number');
 

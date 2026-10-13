@@ -20,6 +20,10 @@ import {
   computeAchieved,
   achieverIdsFrom,
   wonNotInvoicedExceptions,
+  pickConversion,
+  conversionSourceNote,
+  conversionCounts,
+  DIVISION_MIN_SAMPLE as SHARED_DIVISION_MIN_SAMPLE,
 } from 'utils/planningCalculations';
 
 // Pure logic behind the Insights page (/insights). Kept out of the
@@ -201,7 +205,9 @@ export const EXPECTED_PCT_TOOLTIP =
  * own documented fallback chain, and a salesman with four deals is a different
  * question from a division with four.
  */
-export const DIVISION_MIN_SAMPLE = 10;
+// The one constant, kept in planningCalculations with the rule that uses it
+// (pickConversion, session 24); re-exported so existing imports keep working.
+export const DIVISION_MIN_SAMPLE = SHARED_DIVISION_MIN_SAMPLE;
 
 /**
  * THE PACING TOLERANCE, in share-of-target points.
@@ -217,12 +223,19 @@ export const PACING_TOLERANCE = 0.15;
 /** The Conversion (3m) label, saying so when the rate is not this group's own. */
 export function conversionLabel(m) {
   if (!m?.winRateBorrowed) return 'Conversion (3m)';
+  // A person or team with no deals: which rate, and why (session 24).
+  if (m.winRateSource && m.winRateSource !== 'company-division') {
+    return `Conversion (3m) — ${conversionSourceNote(m.winRateSource)}`;
+  }
   return `Conversion (3m) — company rate (n=${m.winRateSampleN ?? 0})`;
 }
 
 /** The same thing at length, for a tooltip. */
 export function borrowedNote(m) {
   const n = m?.winRateSampleN ?? 0;
+  if (m?.winRateSource && m.winRateSource !== 'company-division') {
+    return `No deals of their own in the 3-month window, so the ${conversionSourceNote(m.winRateSource)} is used.`;
+  }
   return `This division closed ${n} deal${n === 1 ? '' : 's'} in the 3-month `
     + `window — fewer than ${DIVISION_MIN_SAMPLE}, too few to measure a rate `
     + 'from — so the company achiever rate is shown and used instead.';
@@ -529,15 +542,56 @@ export function calcDivisionMetrics(userIds, data) {
   const divisionDeals3m = (deals3m || []).filter(inThisDivision);
   const mine = winRateFromDeals({ deals: divisionDeals3m, ownerIds: [...isAchiever] });
   const companyAchieverIds = achieverIdsFrom(users);
-  // DIVISION_MIN_SAMPLE applies only when a DIVISION is being measured. A
-  // company-level or team-level call keeps the old condition — borrow only with
-  // no deals at all — because the threshold was reasoned about for divisions and
-  // nothing else, and the company's own rate is what would be borrowed anyway.
-  const minSample = data.divisionId ? DIVISION_MIN_SAMPLE : 1;
-  const winRateBorrowed = mine.total < minSample;
-  const winRatePct = winRateBorrowed
-    ? winRateFromDeals({ deals: deals3m || [], ownerIds: companyAchieverIds }).winRatePct
-    : mine.winRatePct;
+
+  // ── THE ONE CONVERSION RULE (pickConversion, session 24) ──
+  // Company and division counts: the SECURITY DEFINER functions' when the
+  // loader fetched them (data.conversionBase — a salesman cannot read the
+  // company's deals), else the deals this caller holds, which for a manager,
+  // a director and /numbers-check are the whole company's.
+  const base = data.conversionBase || {};
+  const companyCounts = base.company || conversionCounts(deals3m || [], companyAchieverIds);
+  const divisionCounts = (did) => {
+    if (!did || did === UNASSIGNED) return null;
+    if (base.divisions && base.divisions[did]) return base.divisions[did];
+    return conversionCounts((deals3m || []).filter((d) => d.division_id === did), companyAchieverIds);
+  };
+  const ownCounts = (ids, ds = deals3m || []) => conversionCounts(ds, ids);
+  // A division's own row (data.divisionRow) keeps the division rule even with
+  // a single member: it is the division's figure, not that person's.
+  const onePerson = !data.divisionRow && isAchiever.size === 1 ? [...isAchiever][0] : null;
+  let pick;
+  if (onePerson) {
+    // A PERSON: his own deals (all of them); with none, the division being
+    // measured — or, for a whole-person figure, his main division — then the
+    // company.
+    pick = pickConversion({
+      own: ownCounts([onePerson]),
+      division: divisionCounts(data.divisionId || primaryByUser[onePerson]),
+      company: companyCounts,
+    });
+  } else if (data.divisionId) {
+    // A DIVISION: its own deals if at least DIVISION_MIN_SAMPLE, else the
+    // company (unchanged rule).
+    pick = mine.total >= DIVISION_MIN_SAMPLE
+      ? { winRatePct: mine.winRatePct, source: 'own' }
+      : { ...pickConversion({ company: companyCounts }), source: companyCounts.total > 0 ? 'company-division' : 'assumed' };
+  } else {
+    // A TEAM or the company: its own deals, else the company.
+    pick = pickConversion({ own: ownCounts([...isAchiever], divisionDeals3m), company: companyCounts });
+  }
+  const winRateBorrowed = pick.source !== 'own';
+  const winRateSource = pick.source;
+  const winRatePct = pick.winRatePct;
+
+  // The same rule per PERSON, for the rail drill's per-person lines.
+  const ratePerPerson = {};
+  [...isAchiever].forEach((id) => {
+    ratePerPerson[id] = pickConversion({
+      own: ownCounts([id]),
+      division: divisionCounts(data.divisionId || primaryByUser[id]),
+      company: companyCounts,
+    });
+  });
 
   // The shared rule (utils/planningCalculations.js) rather than a local copy of
   // it, so Achieved here nets off sales returns exactly as every other screen
@@ -665,6 +719,8 @@ export function calcDivisionMetrics(userIds, data) {
     pacingOk: isCurrentMonth ? pace >= elapsed - PACING_TOLERANCE : null,
     winRatePct,
     winRateBorrowed,
+    // own | division | company | company-division | assumed (session 24)
+    winRateSource,
     // The DIVISION's own deal count in the window — the n in "company rate
     // (n=6)". Reported whether or not the rate was borrowed, so a reader can
     // also see how thin a rate that WAS used is.
@@ -713,6 +769,11 @@ export function calcDivisionMetrics(userIds, data) {
       }).filter(inThisDivision),
       // Per-person target and achieved, for the Shortfall level.
       targetPerPerson: targetPer,
+      // Each person's conversion by the one rule (session 24).
+      ratePerPerson,
+      companyCounts,
+      divisionCounts: Object.fromEntries([...new Set([...(deals3m || []).map((d) => d.division_id), ...Object.keys(base.divisions || {})].filter(Boolean))]
+        .map((did) => [did, divisionCounts(did)])),
       // The target rows behind targetPer, each with the division it counts in
       // (its own, else its assignee's primary — the one fallback allowed), so
       // a by-division Shortfall can use THAT division's target (session 23).
