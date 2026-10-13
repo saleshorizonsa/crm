@@ -435,13 +435,38 @@ const DealModal = ({
     contactId: formData?.contact_id || null,
     companyId: deal?.company_id || userProfile?.company_id || null,
   });
+  // What the lock replaced, so it can be put back (session 25).
+  const exportForcedRef = useRef(null);   // { exportId, previous }
   useEffect(() => {
+    // Only on a FINISHED answer about THIS customer — useExportCustomer
+    // reports nothing else as export.
+    if (exportCustomer.loading || exportCustomer.contactId !== (formData?.contact_id || null)) return;
     if (exportCustomer.isExport && exportCustomer.division?.id
         && formData?.division_id !== exportCustomer.division.id) {
+      if (!exportForcedRef.current) {
+        exportForcedRef.current = { exportId: exportCustomer.division.id, previous: formData?.division_id ?? null };
+      }
       setFormData((prev) => ({ ...prev, division_id: exportCustomer.division.id }));
+      return;
+    }
+    // The customer is NOT export, but the lock set Export earlier (another
+    // customer chosen first in this form): put back what was there — the
+    // stored division — and never leave Export behind.
+    const forced = exportForcedRef.current;
+    if (!exportCustomer.isExport && forced) {
+      exportForcedRef.current = null;
+      if (formData?.division_id === forced.exportId) {
+        const restore = forced.previous && forced.previous !== forced.exportId
+          ? forced.previous
+          : (deal?.division_id && deal.division_id !== forced.exportId ? deal.division_id : null);
+        setFormData((prev) => ({ ...prev, division_id: restore }));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exportCustomer.isExport, exportCustomer.division?.id, formData?.division_id]);
+  }, [exportCustomer.isExport, exportCustomer.loading, exportCustomer.contactId, exportCustomer.division?.id, formData?.division_id, formData?.contact_id]);
+  // A different deal opened in this modal starts clean: its form is reloaded
+  // from the deal, so nothing forced for the previous one applies.
+  useEffect(() => { exportForcedRef.current = null; }, [deal?.id]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);

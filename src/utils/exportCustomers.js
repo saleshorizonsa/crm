@@ -42,14 +42,27 @@ export async function fetchExportDivision(companyId) {
 
 /**
  * For a form: is the chosen customer export, and which division is Export?
- * { isExport, division: {id, name} | null, loading }
+ * { isExport, division: {id, name} | null, loading, contactId }
+ *
+ * AN ANSWER IS ONLY EVER ABOUT THE CURRENT CUSTOMER (session 25). This used to
+ * keep the previous customer's answer while the new lookup ran
+ * (setState(s => ({...s, loading: true}))), so a modal that went from Al BADAH
+ * (export) to QUALITY SUPPLY saw "export, division Export" for QUALITY SUPPLY
+ * for one render — long enough for DealModal to write Export into the new
+ * deal's form, which is how deal df1f266e… was saved as Export on 13 Oct.
+ * Now the answer carries the contact it is for, and until a lookup for THIS
+ * contact has finished the hook reports { isExport: false, loading: true }.
  */
 export function useExportCustomer({ contactId, companyId }) {
-  const [state, setState] = useState({ isExport: false, division: null, loading: false });
+  const [state, setState] = useState({ isExport: false, division: null, loading: false, contactId: null });
   useEffect(() => {
     let alive = true;
-    if (!contactId || !companyId) { setState({ isExport: false, division: null, loading: false }); return undefined; }
-    setState((s) => ({ ...s, loading: true }));
+    if (!contactId || !companyId) {
+      setState({ isExport: false, division: null, loading: false, contactId: contactId || null });
+      return undefined;
+    }
+    // Never carry the previous customer's answer.
+    setState({ isExport: false, division: null, loading: true, contactId });
     (async () => {
       const [{ ids }, division] = await Promise.all([
         fetchExportFlags([contactId]),
@@ -57,11 +70,16 @@ export function useExportCustomer({ contactId, companyId }) {
       ]);
       if (!alive) return;
       const isExport = ids.has(contactId) && !!division;
-      setState({ isExport, division: isExport ? division : null, loading: false });
+      setState({ isExport, division: isExport ? division : null, loading: false, contactId });
     })();
     return () => { alive = false; };
   }, [contactId, companyId]);
-  return state;
+  // Also guarded on read: in the render BEFORE the effect above has run for a
+  // new contact, state still holds the old one's answer.
+  const settled = !state.loading && state.contactId === (contactId || null);
+  return settled
+    ? state
+    : { isExport: false, division: null, loading: !!contactId, contactId: contactId || null };
 }
 
 /** For a list: the export contact ids among these rows' customers. */
@@ -108,14 +126,16 @@ function lookup(contactId) {
 
 /** Is this one customer export? (batched across everything rendered together) */
 export function useIsExportContact(contactId) {
-  const [isExport, setIsExport] = useState(() => (contactId ? known.get(contactId) === true : false));
+  const [state, setState] = useState(() => ({ contactId, value: contactId ? known.get(contactId) === true : false }));
   useEffect(() => {
     let alive = true;
-    if (!contactId) { setIsExport(false); return undefined; }
-    lookup(contactId).then((v) => { if (alive) setIsExport(v === true); });
+    if (!contactId) { setState({ contactId, value: false }); return undefined; }
+    lookup(contactId).then((v) => { if (alive) setState({ contactId, value: v === true }); });
     return () => { alive = false; };
   }, [contactId]);
-  return isExport;
+  // Only an answer about THIS contact (session 25); a card reused for another
+  // customer must not show the previous one's tag while it looks up.
+  return state.contactId === contactId ? state.value : (contactId ? known.get(contactId) === true : false);
 }
 
 /** After a manager changes a flag, cards show the new answer. */

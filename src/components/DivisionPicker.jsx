@@ -20,7 +20,7 @@
 // reason the figures live in utils/: five copies drift, and a division picker
 // that disagrees with itself puts the same business in two divisions again.
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { supabase } from "lib/supabase";
 import { fetchAdditionalDivisions, divisionIdsForUser } from "utils/divisionMembership";
 
@@ -107,8 +107,24 @@ export default function DivisionPicker({
 
   // LOCKED: report the locked division and show it read-only, whatever the
   // person belongs to.
+  //
+  // And when the lock LIFTS (the customer turned out not to be export, or a
+  // different one was chosen), put back what the lock replaced — never leave
+  // the row on Export (session 25).
+  const lockedFromRef = useRef(null);   // { lockedId, previous }
   useEffect(() => {
-    if (locked?.id && value !== locked.id) onChange(locked.id);
+    if (locked?.id) {
+      if (value !== locked.id) {
+        if (!lockedFromRef.current) lockedFromRef.current = { lockedId: locked.id, previous: value ?? null };
+        onChange(locked.id);
+      }
+      return;
+    }
+    const from = lockedFromRef.current;
+    if (from) {
+      lockedFromRef.current = null;
+      if (value === from.lockedId) onChange(from.previous !== from.lockedId ? from.previous : null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked?.id, value]);
 
