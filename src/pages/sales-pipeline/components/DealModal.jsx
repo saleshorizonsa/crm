@@ -16,6 +16,7 @@ import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { fetchAdditionalDivisions } from "utils/divisionMembership";
+import { useExportCustomer, EXPORT_LABEL } from "utils/exportCustomers";
 // Deleting a deal must put its plan item back, and the dialog must say so.
 import { planItemWarning, RELEASE_STATUS } from "utils/planItemRelease";
 import {
@@ -426,6 +427,22 @@ const DealModal = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deal?.id, deal?.owner_id, user?.id, userProfile?.company_id]);
 
+  // EXPORT CUSTOMER (session 22): the deal is Export, whatever the owner's
+  // divisions — the database trigger enforces it, and the form says so
+  // instead of offering a choice it would not honour. Al BADAH was marked Won
+  // by a two-division owner and saved as PVC Compound; that is what this stops.
+  const exportCustomer = useExportCustomer({
+    contactId: formData?.contact_id || null,
+    companyId: deal?.company_id || userProfile?.company_id || null,
+  });
+  useEffect(() => {
+    if (exportCustomer.isExport && exportCustomer.division?.id
+        && formData?.division_id !== exportCustomer.division.id) {
+      setFormData((prev) => ({ ...prev, division_id: exportCustomer.division.id }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exportCustomer.isExport, exportCustomer.division?.id, formData?.division_id]);
+
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errors, setErrors] = useState({});
@@ -595,6 +612,12 @@ const DealModal = ({
         lost_reason: deal?.lost_reason || "",
         lost_reason_code: deal?.lost_reason_code || "",
         lost_reason_notes: deal?.lost_reason_notes || "",
+        // KEPT on open (session 22). This reset used to drop division_id, so
+        // the owner-division lookup refilled it with the owner's PRIMARY and
+        // the next Save moved the deal there: a two-division owner's edit
+        // could silently switch a deal's division — the Al BADAH case of
+        // 13 Oct, Export → PVC Compound when it was marked Won.
+        division_id: deal?.division_id || null,
       });
 
       // Reload groups on every modal open so newly-added groups appear immediately
@@ -2096,7 +2119,14 @@ const DealModal = ({
               {/* Only shown when the owner is in more than one division. With
                   a single division there is nothing to choose, so it stays
                   hidden and pre-filled exactly as before. */}
-              {ownerDivisions.length > 1 && (
+              {exportCustomer.isExport ? (
+                <div data-testid="division-locked-export">
+                  <label className="block text-sm font-medium text-card-foreground mb-1">Division</label>
+                  <div className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-muted text-foreground" aria-readonly="true">
+                    {EXPORT_LABEL}
+                  </div>
+                </div>
+              ) : ownerDivisions.length > 1 && (
                 <Select
                   label="Division"
                   options={ownerDivisions.map((d) => ({ value: d.id, label: d.name }))}

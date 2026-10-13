@@ -6,6 +6,7 @@ import { contactService, activityService } from "../../../services/supabaseServi
 import { useLanguage } from "../../../i18n";
 import LogActivityModal from "../../../components/LogActivityModal";
 import ActivityTimeline from "../../../components/ActivityTimeline";
+import ExportCustomerToggle from "../../../components/ExportCustomerToggle";
 
 const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
   const { t } = useLanguage();
@@ -255,6 +256,9 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
                     <option value="inactive">{t("common.inactive")}</option>
                   </select>
                 </div>
+
+                {/* Manager and above only; saves on its own (session 22). */}
+                <ExportCustomerToggle contactId={contact?.id} />
               </div>
             </div>
 

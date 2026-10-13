@@ -90,6 +90,9 @@ export function useDivisionsForUser({ companyId, userId }) {
  * @param {function} p.onChange  (divisionId) => void — also called with the
  *                               default (the primary) when the person changes
  * @param {string} [p.label]
+ * @param {{id: string, label: string}} [p.locked]  the row's division is not
+ *        the person's to choose — an export customer's is always Export
+ *        (session 22). Shown read-only and reported as the value.
  */
 export default function DivisionPicker({
   companyId,
@@ -98,8 +101,16 @@ export default function DivisionPicker({
   onChange,
   label = "Division",
   className = "",
+  locked = null,
 }) {
   const { options, primaryId } = useDivisionsForUser({ companyId, userId });
+
+  // LOCKED: report the locked division and show it read-only, whatever the
+  // person belongs to.
+  useEffect(() => {
+    if (locked?.id && value !== locked.id) onChange(locked.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked?.id, value]);
 
   // Default to the primary, and re-default when the selected person changes or
   // when the current value is not one this person belongs to — otherwise
@@ -114,6 +125,7 @@ export default function DivisionPicker({
   // other insert path, including the ones with no form at all) the thing that
   // never fires. One rule, in one place.
   useEffect(() => {
+    if (locked?.id) return;
     if (options.length < 2) {
       if (value) onChange(null);
       return;
@@ -122,6 +134,17 @@ export default function DivisionPicker({
     if (!valid) onChange(primaryId || options[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options.map((o) => o.id).join(","), primaryId]);
+
+  if (locked?.id) {
+    return (
+      <div className={className} data-testid="division-locked-export">
+        <label className="block text-sm font-medium text-card-foreground mb-1">{label}</label>
+        <div className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-muted text-foreground" aria-readonly="true">
+          {locked.label}
+        </div>
+      </div>
+    );
+  }
 
   if (options.length < 2) return null;
 

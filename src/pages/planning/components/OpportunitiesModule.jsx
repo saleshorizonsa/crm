@@ -5,6 +5,8 @@ import { useCurrency } from 'contexts/CurrencyContext';
 import Icon from 'components/AppIcon';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
 import DivisionPicker from 'components/DivisionPicker';
+import { useExportCustomer, useExportIds, EXPORT_LABEL } from 'utils/exportCustomers';
+import ExportTag from 'components/ExportTag';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
 import { blockIfPlanLocked, blockIfPlanNotApproved, planMonthForDate } from 'utils/planApproval';
@@ -192,6 +194,11 @@ export default function OpportunitiesModule({
   const [flagFilter, setFlagFilter] = useState(null);
   const [editingOpp, setEditingOpp] = useState(null);
   const [form, setForm]             = useState(() => emptyForm(currentMonth));
+  // Export customers (session 22): the form's division is locked to Export for
+  // one, and the list tags them. Read on its own, so it degrades while the
+  // migration is not applied.
+  const formExport = useExportCustomer({ contactId: form.contact_id || null, companyId: company?.id });
+  const exportIds = useExportIds(opportunities.map((o) => o.contact_id));
 
   // ── Manager edit during review ────────────────────────────────────────────
   // The owners (other than the viewer) whose plan for the month on screen is
@@ -1150,6 +1157,7 @@ export default function OpportunitiesModule({
                         <h3 className="text-sm font-semibold text-foreground truncate">
                           {opp.customer_name}
                         </h3>
+                        {opp.contact_id && exportIds.has(opp.contact_id) && <ExportTag />}
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           isNew ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
                         }`}>
@@ -1489,6 +1497,8 @@ export default function OpportunitiesModule({
                   userId={editingOpp?.owner_id || user?.id}
                   value={form.division_id}
                   onChange={(id) => setForm((f) => ({ ...f, division_id: id }))}
+                  // An export customer's plan item is Export (session 22).
+                  locked={formExport.isExport ? { id: formExport.division.id, label: EXPORT_LABEL } : null}
                 />
 
                 {/* Notes */}

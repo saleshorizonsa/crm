@@ -11,6 +11,8 @@ import { getDealProductSummary, getDealOrigin, getOriginLabel, getWonDealOrigin 
 // Percentages that cannot crash a render: a figure that has not arrived shows
 // "—" instead of taking the page down. See utils/formatPct.js.
 import { fmtPct, hasFigure } from "utils/formatPct";
+import { useIsExportContact } from "utils/exportCustomers";
+import ExportTag from "components/ExportTag";
 
 // Fallback label map — kept in sync with the default seed list
 const LOST_CODE_LABELS = {
@@ -57,6 +59,8 @@ const leadDaysLeft = (deal) => {
 // stays so the interface with PipelineStage / DealsList is unchanged.
 const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onCorrectInvoice, canCorrectInvoice, onMoveToFuture, showProductSummary = false, periodFrom }) => {
   const isLeadStage = deal?.stage === 'lead';
+  // Export customer (session 22): tagged, batched with every other card.
+  const isExportCustomer = useIsExportContact(deal?.contact_id || null);
   const daysUntilExpiry = isLeadStage ? leadDaysLeft(deal) : null;
   const [productCount, setProductCount] = useState(0);
   const [contactCount, setContactCount] = useState(0);
@@ -156,6 +160,7 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onCorrectIn
             {deal?.contact
               ? `${deal.contact.first_name} ${deal.contact.last_name}`
               : t("deals.selectContact")}
+            {isExportCustomer && <ExportTag className="ml-1.5" />}
           </p>
           {showProductSummary && (() => {
             const summary = getDealProductSummary(deal);
