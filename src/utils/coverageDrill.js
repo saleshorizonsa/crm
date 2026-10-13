@@ -22,7 +22,23 @@ import {
   computeRequiredRaw,
   achievedAmount,
   returnAmount,
+  targetPerPerson,
 } from 'utils/planningCalculations';
+
+/**
+ * THE DIVISION A ROW COUNTS IN IS ITS OWN (session 23).
+ *
+ * deals.division_id, the return's deal's division, the plan item's own
+ * division — never the owner's main division. A person who works in two
+ * divisions therefore appears under BOTH, each with only that division's rows;
+ * a row with no division is Unassigned. Grouping PEOPLE by
+ * users.sales_division_id put all of Mohamed Kamal's rows under PVC Compound,
+ * his main division, so Export's Al BADAH (30,000 won, not invoiced) was
+ * missing from Export and counted in PVC Compound.
+ */
+export const UNASSIGNED_DIVISION = 'unassigned';
+const rowDivision = (r) => r?.division_id || UNASSIGNED_DIVISION;
+const inDiv = (divisionId) => (r) => divisionId == null || rowDivision(r) === divisionId;
 
 /** Days between two dates, floored, ignoring time of day. */
 function daysBetween(fromISO, to = new Date()) {
@@ -98,6 +114,7 @@ function rowsFor(segment, ownerId, drill, ctx) {
       .map((d) => ({
         kind: 'invoice',
         dealId: d.id,
+        divisionId: rowDivision(d),
         customer: dealCustomer(d),
         invoiceNo: d.invoice_number || '—',
         invoiceDate: d.invoice_date || null,
@@ -110,6 +127,7 @@ function rowsFor(segment, ownerId, drill, ctx) {
       .map((r) => ({
         kind: 'return',
         dealId: r.deal_id || null,
+        divisionId: rowDivision(r),
         customer: `Return · ${dealCustomer(r.deals || r)}`,
         invoiceNo: r.credit_note_number || r.invoice_number || '—',
         invoiceDate: r.return_date || null,
@@ -127,6 +145,7 @@ function rowsFor(segment, ownerId, drill, ctx) {
         return {
           kind: 'deal',
           dealId: d.id,
+          divisionId: rowDivision(d),
           customer: dealCustomer(d),
           stage: String(d.stage || '').replace(/_/g, ' '),
           amount: num(d.amount),
@@ -152,6 +171,7 @@ function rowsFor(segment, ownerId, drill, ctx) {
       .map((o) => ({
         kind: 'opportunity',
         oppId: o.id,
+        divisionId: rowDivision(o),
         customer: o.customer_name || '—',
         planned: num(o.planned_amount),
         value: num(o.planned_amount) * rate,
@@ -170,6 +190,7 @@ function rowsFor(segment, ownerId, drill, ctx) {
       .map((d) => ({
         kind: 'deal',
         dealId: d.id,
+        divisionId: rowDivision(d),
         customer: dealCustomer(d),
         wonDate: d.closed_at || null,
         value: achievedAmount(d),
@@ -182,19 +203,36 @@ function rowsFor(segment, ownerId, drill, ctx) {
   return [];
 }
 
-/** One person's SHORTFALL line: there are no rows, so this is the breakdown. */
-function shortfallFor(ownerId, drill) {
-  const target = num((drill.targetPerPerson || {})[ownerId]);
-  const achieved = num((drill.invoicedPerPerson || {})[ownerId]);
+/**
+ * One person's SHORTFALL line: there are no rows, so this is the breakdown.
+ *
+ * With divisionId, everything is that division's only: the person's target
+ * rows that count there (drill.targetRows' effective division — the target
+ * row's own, else its assignee's primary, the one fallback allowed), and his
+ * invoices, returns, funnel and plan whose own division it is.
+ */
+function shortfallFor(ownerId, drill, divisionId = null) {
+  const inThis = inDiv(divisionId);
+  const target = divisionId == null
+    ? num((drill.targetPerPerson || {})[ownerId])
+    : num(targetPerPerson((drill.targetRows || [])
+      .filter((t) => t.assigned_to === ownerId
+        && (t.effective_division_id || UNASSIGNED_DIVISION) === divisionId))[ownerId]);
+  const achieved = divisionId == null
+    ? num((drill.invoicedPerPerson || {})[ownerId])
+    : (drill.invoicedRows || []).filter((d) => d.owner_id === ownerId && inThis(d))
+      .reduce((s, d) => s + achievedAmount(d), 0)
+      - (drill.returnRows || []).filter((r) => r.owner_id === ownerId && inThis(r))
+        .reduce((s, r) => s + returnAmount(r), 0);
   const rate = num(drill.winRatePct);
   const mine = (rows, pick) => (rows || [])
-    .filter((r) => r.owner_id === ownerId)
+    .filter((r) => r.owner_id === ownerId && inThis(r))
     .reduce((s, r) => s + pick(r), 0);
 
   const weightedFunnel = mine(drill.funnelRows, (d) => d.forecast_amount || num(d.amount) * (rate / 100) || 0);
   const planned = mine(drill.planRows, (o) => num(o.planned_amount));
   const { coverage } = computeCoverage({
-    invoiced: achieved, openDeals: (drill.funnelRows || []).filter((d) => d.owner_id === ownerId),
+    invoiced: achieved, openDeals: (drill.funnelRows || []).filter((d) => d.owner_id === ownerId && inThis(d)),
     planned, winRatePct: rate,
   });
   const gap = Math.max(0, target - coverage);
@@ -258,10 +296,6 @@ export function buildCoverageDrill({
     ...Object.keys(drill.targetPerPerson || {}),
   ])].filter(Boolean);
 
-  const divisionOf = (id) => {
-    const u = (users || []).find((x) => x.id === id);
-    return u?.sales_division_id || null;
-  };
   const divName = (did) => (divisions || []).find((d) => d.id === did)?.name || 'Unassigned';
 
   const segments = {};
@@ -303,13 +337,40 @@ export function buildCoverageDrill({
     };
 
     if (byDivision) {
+      // Each ROW under its own division; a person in two divisions appears
+      // under both, each time with that division's rows only.
       const byId = {};
-      people.forEach((p) => {
-        const did = divisionOf(p.id) || 'unassigned';
+      const put = (did, entry) => {
         if (!byId[did]) byId[did] = { id: did, name: divName(did), total: 0, people: [] };
-        byId[did].people.push(p);
-        byId[did].total += p.total;
-      });
+        byId[did].people.push(entry);
+        byId[did].total += entry.total;
+      };
+      if (seg.key === 'shortfall') {
+        // Against THAT division's target: Kamal under PVC Compound against
+        // his PVC Compound row, under Export against his Export row.
+        ownerIds.forEach((id) => {
+          const divs = [...new Set((drill.targetRows || [])
+            .filter((t) => t.assigned_to === id)
+            .map((t) => t.effective_division_id || UNASSIGNED_DIVISION))];
+          divs.forEach((did) => {
+            const line = shortfallFor(id, drill, did);
+            if (line.target > 0) put(did, { id, name: nameOf(users, id), total: line.value, rows: [line] });
+          });
+        });
+      } else {
+        people.forEach((p) => {
+          const parts = {};
+          p.rows.forEach((r) => {
+            const did = r.divisionId || UNASSIGNED_DIVISION;
+            if (!parts[did]) parts[did] = [];
+            parts[did].push(r);
+          });
+          Object.entries(parts).forEach(([did, rows]) => put(did, {
+            id: p.id, name: p.name, total: rows.reduce((t, r) => t + num(r.value), 0), rows,
+          }));
+        });
+      }
+      Object.values(byId).forEach((d) => d.people.sort((a, b) => b.total - a.total));
       out.divisions = Object.values(byId).sort((a, b) => b.total - a.total);
     }
     segments[seg.key] = out;

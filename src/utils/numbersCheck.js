@@ -30,7 +30,7 @@ import { achievedForBuckets, monthBuckets, rangeYear } from 'utils/achievedSerie
 import { performanceBars, performanceTotals } from 'utils/performanceBarData';
 import { calcCoverageMetrics } from 'utils/coverageConsoleMetrics';
 import {
-  calcDivisionMetrics, groupByDivision, scopeUserIds,
+  calcDivisionMetrics, groupByDivision, divisionRowOwners, scopeUserIds,
 } from 'utils/salesDivisionMetrics';
 import { fetchAdditionalDivisions } from 'utils/divisionMembership';
 import { subtreeIdsOf } from 'utils/teamHierarchy';
@@ -377,6 +377,11 @@ async function buildDivisionGroups({
   const scopeIds = scopeUserIds({ users, viewerId: null, role: 'director' });
   const perDivision = groupByDivision({
     users, divisions, scopeIds, additionalByUser,
+    // The same rule as the page: rows in their own division (session 23).
+    rowOwners: divisionRowOwners({
+      users, deals: divData.deals || [], returns: divData.returns || [], opps: divData.opps || [],
+      futureOrders: divData.futureOrders || [], targets: divData.targets || [],
+    }),
   }).map((g) => ({
     g, m: calcDivisionMetrics(g.userIds, { ...divData, divisionId: g.id }) || {},
   }));
@@ -474,7 +479,35 @@ async function buildDivisionGroups({
     }));
   }
 
+  // ── The rail drill's "By division" view (session 23) ─────────────────────
+  // Every ROW under its own division: each division's segment totals must add
+  // to the rail's segment total (Shortfall excepted — a company gap is not the
+  // sum of its parts). The won-not-invoiced split is reported by division.
+  const companyMetrics = calcDivisionMetrics(scopeIds, { ...divData, divisionId: null }) || {};
+  const byDiv = buildCoverageDrill({
+    metrics: companyMetrics, users, divisions, byDivision: true, monthEnd: end,
+  });
+  const drillRows = [];
+  RAIL_SEGMENTS.filter((seg) => seg.key !== 'shortfall').forEach((seg) => {
+    const segOut = byDiv.segments[seg.key] || { total: 0, divisions: [] };
+    const parts = segOut.divisions || [];
+    drillRows.push(row({
+      label: `Rail drill by division — ${seg.label}: divisions add to the rail`,
+      value: parts.reduce((s, d) => s + n(d.total), 0),
+      expected: segOut.total,
+      note: parts.map((d) => `${d.name} ${Math.round(n(d.total)).toLocaleString('en-US')}`).join('; ') || 'nothing in this segment',
+    }));
+  });
+  const sf = byDiv.segments.shortfall || { divisions: [] };
+  drillRows.push(row({
+    label: 'Rail drill by division — Shortfall: per-division personal gaps (info only)',
+    value: (sf.divisions || []).reduce((s, d) => s + n(d.total), 0),
+    expected: null,
+    note: (sf.divisions || []).map((d) => `${d.name}: ${d.people.map((p) => `${p.name} ${Math.round(n(p.rows[0]?.target)).toLocaleString('en-US')} target`).join(', ')}`).join(' | '),
+  }));
+
   return [
+    { screen: 'Rail drill by division', fn: 'buildCoverageDrill (byDivision)', rows: drillRows },
     { screen: 'Divisions sum = company', fn: 'calcDivisionMetrics', rows: sumRows },
     { screen: 'Division planned gap vs Planning', fn: 'computePlanningPageSummary', rows: gapRows },
   ];

@@ -18,6 +18,7 @@ import {
   UNASSIGNED,
   scopeUserIds,
   groupByDivision,
+  divisionRowOwners,
   listedMembers,
   divisionView,
   teamRows,
@@ -587,6 +588,12 @@ export default function SalesDivisions() {
       const all = groupByDivision({
         users: raw.users, divisions: raw.divisions, scopeIds,
         additionalByUser: raw.additionalByUser || {},
+        // Each row in its OWN division: whoever has rows in a division is
+        // in it, member or not (session 23).
+        rowOwners: divisionRowOwners({
+          users: raw.users, deals: raw.deals, returns: raw.returns, opps: raw.opps,
+          futureOrders: raw.futureOrders, targets: raw.targets,
+        }),
       });
       const touched = all.filter((g) => (g.userIds || []).length > 0);
       // Never return nothing: somebody with a scope but no division membership

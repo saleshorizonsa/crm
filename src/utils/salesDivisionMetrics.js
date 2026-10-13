@@ -277,13 +277,38 @@ export function scopeUserIds({ users, viewerId, role }) {
 }
 
 /**
- * Partition the scope into the company's divisions (in sort order) plus a final
- * Unassigned group. Every scoped user lands in exactly one group, so additive
- * figures across the groups always add up to the company total. A user whose
- * sales_division_id points at a division this company doesn't have counts as
- * Unassigned rather than disappearing.
+ * WHO OWNS ROWS IN WHICH DIVISION — by each row's OWN division (session 23).
+ *
+ * Deals, returns, plan items and future orders count in their division_id
+ * (none = Unassigned). Target rows are the one exception the rule allows: a
+ * target row with no division counts in its assignee's primary division.
+ *
+ * @returns {Array<{ ownerId: string, divisionId: string }>}
  */
-export function groupByDivision({ users, divisions, scopeIds, additionalByUser = {} }) {
+export function divisionRowOwners({ users = [], deals = [], returns = [], opps = [], futureOrders = [], targets = [] }) {
+  const primary = primaryDivisionByUser(users);
+  const out = [];
+  const add = (ownerId, divisionId) => { if (ownerId) out.push({ ownerId, divisionId: divisionId || UNASSIGNED }); };
+  [...deals, ...returns, ...opps, ...futureOrders].forEach((r) => add(r.owner_id, r.division_id));
+  targets.forEach((t) => add(t.assigned_to, t.division_id || primary[t.assigned_to]));
+  return out;
+}
+
+/**
+ * Partition the scope into the company's divisions (in sort order) plus a final
+ * Unassigned group. A user whose sales_division_id points at a division this
+ * company doesn't have counts as Unassigned rather than disappearing.
+ *
+ * A division's people are its MEMBERS plus the owners of any row whose OWN
+ * division it is (`rowOwners`, from divisionRowOwners) — so a person who works
+ * in a division he is not formally a member of still brings that division's
+ * rows into it. On 13 Oct Mohamed Kamal's primary became PVC Compound with no
+ * Export membership left, and Export — 500,000 of target and the Al BADAH work
+ * — dropped out of every division view; "divisions sum = company" failed.
+ * A person can therefore be in several groups; the figures stay additive
+ * because calcDivisionMetrics filters every row by its own division.
+ */
+export function groupByDivision({ users, divisions, scopeIds, additionalByUser = {}, rowOwners = [] }) {
   const scope = new Set(scopeIds || []);
   const inScope = (users || []).filter((u) => scope.has(u.id));
   const known = new Set((divisions || []).map((d) => d.id));
@@ -298,17 +323,27 @@ export function groupByDivision({ users, divisions, scopeIds, additionalByUser =
     return [...new Set([u.sales_division_id, ...extra].filter((id) => id && known.has(id)))];
   };
 
+  // Owners of rows in each division (unknown division ids count as Unassigned).
+  const working = {};
+  (rowOwners || []).forEach(({ ownerId, divisionId }) => {
+    if (!scope.has(ownerId)) return;
+    const did = divisionId && known.has(divisionId) ? divisionId : UNASSIGNED;
+    if (!working[did]) working[did] = new Set();
+    working[did].add(ownerId);
+  });
+  const withWorkers = (did, ids) => [...new Set([...ids, ...(working[did] || [])])];
+
   const groups = (divisions || []).map((d) => ({
     id: d.id,
     name: d.name,
-    userIds: inScope.filter((u) => memberDivisions(u).includes(d.id)).map((u) => u.id),
+    userIds: withWorkers(d.id, inScope.filter((u) => memberDivisions(u).includes(d.id)).map((u) => u.id)),
   }));
   groups.push({
     id: UNASSIGNED,
     name: 'Unassigned',
     // Unassigned now means "in no KNOWN division by either route" — a user
     // whose only division came from the join table is no longer stranded here.
-    userIds: inScope.filter((u) => memberDivisions(u).length === 0).map((u) => u.id),
+    userIds: withWorkers(UNASSIGNED, inScope.filter((u) => memberDivisions(u).length === 0).map((u) => u.id)),
   });
   return groups;
 }
@@ -453,8 +488,10 @@ export function calcDivisionMetrics(userIds, data) {
   // migrations/division_attribution.sql is applied still lands somewhere
   // instead of vanishing.
   const primaryByUser = primaryDivisionByUser(users);
+  // Targets alone may fall back to the assignee's primary division, and only
+  // when the target row has none (session 23).
   const targetInDivision = rowInDivision(data.divisionId, {
-    primaryByUser, ownerKey: 'assigned_to',
+    primaryByUser, ownerKey: 'assigned_to', ownerFallback: true,
   });
   const planInDivision = rowInDivision(data.divisionId, { primaryByUser });
 
@@ -676,6 +713,12 @@ export function calcDivisionMetrics(userIds, data) {
       }).filter(inThisDivision),
       // Per-person target and achieved, for the Shortfall level.
       targetPerPerson: targetPer,
+      // The target rows behind targetPer, each with the division it counts in
+      // (its own, else its assignee's primary — the one fallback allowed), so
+      // a by-division Shortfall can use THAT division's target (session 23).
+      targetRows: monthlyTargetRows
+        .filter((t) => isAchiever.has(t.assigned_to))
+        .map((t) => ({ ...t, effective_division_id: t.division_id || primaryByUser[t.assigned_to] || null })),
       forwardIds,
       achieverIds,
     },

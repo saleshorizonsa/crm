@@ -105,20 +105,25 @@ export function primaryDivisionByUser(users) {
  * company target of 3.70M. Business decision 2026-10-06 (option 2): attribute
  * them by division, exactly the way deals already are.
  *
- * `row.division_id` wins. A row that has none falls back to its owner's PRIMARY
- * division, which is what the old per-person attribution effectively meant for
- * a single-division person — so nothing moves for anyone in one division, and a
- * row inserted before migrations/division_attribution.sql is applied still
- * lands somewhere rather than vanishing.
+ * `row.division_id` wins. ONLY A TARGET ROW that has none falls back to its
+ * assignee's PRIMARY division (ownerFallback: true) — a target is a commitment
+ * of the person, and a row assigned before migrations/division_attribution.sql
+ * still has to land somewhere. A plan item or a future order with no division
+ * is UNASSIGNED, like a deal: attributing it through its owner's main division
+ * is exactly what put Kamal's Export work under PVC Compound (session 23).
+ * (On 13 Oct no open plan item or pending future order lacked a division, so
+ * this moved nothing.)
  *
  * @param {string|null} divisionId  null = no filter (the company-level view)
  * @param {object} p
  * @param {object} p.primaryByUser  from primaryDivisionByUser()
  * @param {string} [p.ownerKey]     'owner_id', or 'assigned_to' for a target row
+ * @param {boolean} [p.ownerFallback] targets only: a row with no division takes
+ *                                  its assignee's primary
  */
-export function rowInDivision(divisionId, { primaryByUser = {}, ownerKey = 'owner_id' } = {}) {
+export function rowInDivision(divisionId, { primaryByUser = {}, ownerKey = 'owner_id', ownerFallback = false } = {}) {
   if (!divisionId) return () => true;
-  const effective = (row) => row?.division_id || primaryByUser[row?.[ownerKey]] || null;
+  const effective = (row) => row?.division_id || (ownerFallback ? primaryByUser[row?.[ownerKey]] : null) || null;
   if (divisionId === UNASSIGNED) return (row) => !effective(row);
   return (row) => effective(row) === divisionId;
 }
