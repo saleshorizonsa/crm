@@ -26,6 +26,10 @@ import { now } from "d3";
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { parseInvoiceNumbers, formatInvoiceNumbers } from '../../utils/invoiceNumber';
 import InvoiceModal, { validateInvoiceForm } from "./components/InvoiceModal";
+import BalancePromptModal from "./components/BalancePromptModal";
+import {
+  balanceOf, recordBalance, findInvoiceDuplicates, duplicateInvoiceMessage,
+} from "../../utils/invoiceBalance";
 import { formatLocalDateYMD } from "utils/dateFormat";
 import { resolveDateRange } from "../../components/ui/DateRangePicker";
 import { getDealOrigin } from "../../utils/dealGroupUtils";
@@ -79,6 +83,11 @@ const SalesPipeline = () => {
   const [invoiceErrors, setInvoiceErrors] = useState({});
   const [savingInvoice, setSavingInvoice] = useState(false);
   const [correctionResult, setCorrectionResult] = useState(null);
+  // A deal invoiced for less than its original value: what happens to the
+  // balance is asked every time (session 25, utils/invoiceBalance.js).
+  const [balancePrompt, setBalancePrompt] = useState(null);   // { deal, balance, invoiceDate }
+  const [balanceSaving, setBalanceSaving] = useState(false);
+  const [balanceError, setBalanceError] = useState("");
 
   const closeInvoiceModal = () => {
     setShowInvoiceModal(false);
@@ -127,6 +136,15 @@ const SalesPipeline = () => {
 
     setSavingInvoice(true);
     try {
+      // The same invoice number on another deal of the company: a WARNING,
+      // never a block. Leading zeros and spaces do not count.
+      const dups = await findInvoiceDuplicates({
+        companyId: invoicingDeal?.company_id || company?.id,
+        invoiceText: stored,
+        excludeDealId: invoicingDeal?.id,
+      });
+      if (dups.length && !window.confirm(duplicateInvoiceMessage(dups))) return;
+
       const nowIso = new Date().toISOString();
       const previousNumber = invoicingDeal?.invoice_number || "";
       const previousDate = String(invoicingDeal?.invoice_date || "").slice(0, 10);
@@ -162,6 +180,12 @@ const SalesPipeline = () => {
 
       if (!correcting) {
         closeInvoiceModal();
+        // Invoiced for less than it started at: ask what happens to the rest.
+        const balance = balanceOf(data);
+        if (balance > 0) {
+          setBalanceError("");
+          setBalancePrompt({ deal: data, balance, invoiceDate: invoiceForm.invoice_date });
+        }
         return;
       }
 
@@ -234,6 +258,25 @@ const SalesPipeline = () => {
     }
   };
   const [users, setUsers] = useState([]);
+
+  const confirmBalance = async ({ choice, month }) => {
+    if (!balancePrompt) return;
+    setBalanceSaving(true);
+    setBalanceError("");
+    try {
+      const res = await recordBalance({
+        choice, month, deal: balancePrompt.deal, invoiceDate: balancePrompt.invoiceDate, userId: user?.id,
+      });
+      // A new lead belongs on the board straight away.
+      if (res.written === "lead" && res.row) setDeals((prev) => [res.row, ...prev]);
+      setBalancePrompt(null);
+    } catch (err) {
+      console.error("Balance:", err);
+      setBalanceError(err?.message || "Could not save the balance");
+    } finally {
+      setBalanceSaving(false);
+    }
+  };
 
   // Who may correct a number: the owner, anyone above him in the supervisor_id
   // chain, and admin/director (utils/teamHierarchy.js). A PEER salesman may not
@@ -1183,6 +1226,17 @@ const SalesPipeline = () => {
           onChange={(patch) => setInvoiceForm((f) => ({ ...f, ...patch }))}
           onCancel={closeInvoiceModal}
           onConfirm={confirmInvoice}
+        />
+      )}
+
+      {balancePrompt && (
+        <BalancePromptModal
+          deal={balancePrompt.deal}
+          balance={balancePrompt.balance}
+          saving={balanceSaving}
+          error={balanceError}
+          onConfirm={confirmBalance}
+          onCancel={() => { if (!balanceSaving) setBalancePrompt(null); }}
         />
       )}
 

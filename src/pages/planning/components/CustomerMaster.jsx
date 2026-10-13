@@ -13,6 +13,7 @@ import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
 // local midnight to UTC first: in Riyadh (UTC+3) that is 21:00 the day BEFORE,
 // so the "first of this month" came out as the last day of the PREVIOUS one.
 import { monthKeyOf, monthBoundsOf } from 'utils/planMonths';
+import { fetchPlannedByOthers, isPlanBlocked } from 'utils/plannedMarker';
 
 function StatusBadge({ type }) {
   const map = {
@@ -107,6 +108,9 @@ export default function CustomerMaster({
   const [inlineAmount, setInlineAmount] = useState('');  // amount typed for the active row
   const [addedIds, setAddedIds] = useState(new Set());   // added this session
   const [existingOppIds, setExistingOppIds] = useState(new Set()); // already have an open opp this month
+  // The same, minus the viewer's OWN items (session 25); null until the
+  // owner-aware function is applied, which keeps today's rule.
+  const [plannedByOthers, setPlannedByOthers] = useState(null);
   const [savingId, setSavingId] = useState(null);        // row currently saving
   const inlineInputRef = useRef(null);
 
@@ -167,6 +171,10 @@ export default function CustomerMaster({
     // month's last day through to this month's second-to-last — it flagged the
     // wrong customers as "already planned" and missed the real ones.
     const { start: monthStart, end: monthEnd } = monthBoundsOf(monthKeyOf(new Date()));
+    // Who planned it, in parallel; a failure leaves it null (today's rule).
+    fetchPlannedByOthers({ companyId: adminCompany.id, monthStart, userId: user?.id })
+      .then(setPlannedByOthers)
+      .catch(() => setPlannedByOthers(null));
 
     // try/catch as well as the error object: a missing function comes back as
     // an error, but a network failure throws, and either must land on the
@@ -199,9 +207,22 @@ export default function CustomerMaster({
       .gte('expected_month', monthStart)
       .lte('expected_month', monthEnd);
     setExistingOppIds(new Set((data || []).map((o) => o.contact_id).filter(Boolean)));
-  }, [adminCompany?.id]);
+  }, [adminCompany?.id, user?.id]);
 
   useEffect(() => { fetchExistingOpps(); }, [fetchExistingOpps]);
+
+  // Blocked = planned this month by SOMEONE ELSE. The same owner may add
+  // another item for a customer he already has (the balance of a deal invoiced
+  // for less, for instance); another person's open or converted item still
+  // blocks, and so does any item when the new one would belong to someone other
+  // than the viewer.
+  const isBlocked = (customer) => isPlanBlocked({
+    customerId: customer.id,
+    plannedIds: existingOppIds,
+    plannedByOthers,
+    newItemOwnerId: customer.owner_id || user?.id,
+    viewerId: user?.id,
+  });
 
   // Close the "New This Month" modal on Escape.
   useEffect(() => {
@@ -497,7 +518,7 @@ export default function CustomerMaster({
   // Open the SAR input on a row. Rows already added this session or already in
   // Opportunities this month are inert. Clicking the open row again closes it.
   const handlePlanClick = (customer) => {
-    if (addedIds.has(customer.id) || existingOppIds.has(customer.id)) return;
+    if (addedIds.has(customer.id) || isBlocked(customer)) return;
     if (activeRow === customer.id) {
       setActiveRow(null);
       setInlineAmount('');
@@ -857,7 +878,9 @@ export default function CustomerMaster({
                     filtered.map((c) => {
                       const isRowActive = activeRow === c.id;
                       const isAdded = addedIds.has(c.id);
-                      const isExisting = existingOppIds.has(c.id) && !isAdded;
+                      const isExisting = isBlocked(c) && !isAdded;
+                      // Already in his own plan this month, and still his to add to.
+                      const isOwnPlanned = !isExisting && !isAdded && existingOppIds.has(c.id);
                       const isSaving = savingId === c.id;
                       return (
                       <tr
@@ -976,9 +999,11 @@ export default function CustomerMaster({
                           ) : (
                             <button
                               onClick={() => handlePlanClick(c)}
+                              data-testid={isOwnPlanned ? 'plan-again' : undefined}
+                              title={isOwnPlanned ? 'Already in your Current Sales Plan this month — this adds another item' : undefined}
                               className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary transition-colors"
                             >
-                              Click to plan
+                              {isOwnPlanned ? 'In your plan · add another' : 'Click to plan'}
                               <Icon name="ArrowRight" size={12} />
                             </button>
                           )}
