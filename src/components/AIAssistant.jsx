@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { buildAiContext } from "../utils/aiContext";
+import { callAiProxy } from "../utils/aiProxy";
 
 const PUBLIC_ROUTES = [
   "/login",
@@ -18,35 +20,17 @@ const SUGGESTED_PROMPTS = [
   "Why is my win rate changing?",
 ];
 
-// Calls the same-origin Vercel proxy — no CORS, no API key in browser.
+// The figures are rebuilt after this long, or on "Refresh data".
+const CONTEXT_MAX_AGE_MS = 5 * 60 * 1000;
+
+// Through utils/aiProxy.js: the same-origin proxy, with the user's session
+// token, which the proxy checks before it calls the model.
 async function callProxy(userMessage, history, systemPrompt) {
-  const response = await fetch("/api/ai-assistant", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      system: systemPrompt,
-      messages: [
-        ...history.slice(-6),
-        { role: "user", content: userMessage },
-      ],
-    }),
+  const data = await callAiProxy({
+    system: systemPrompt,
+    messages: [...history.slice(-6), { role: "user", content: userMessage }],
   });
-
-  if (!response.ok) {
-    let body = {};
-    try { body = await response.json(); } catch {}
-    console.error("[AIAssistant] Proxy error:", response.status, body);
-    if (response.status === 500 && body?.error === "AI service not configured") {
-      throw new Error("NOT_CONFIGURED");
-    }
-    throw new Error(`HTTP_${response.status}`);
-  }
-
-  const data = await response.json();
-  return (
-    data.content?.[0]?.text ||
-    "Sorry, I could not respond. Please try again."
-  );
+  return data.content?.[0]?.text || "Sorry, I could not respond. Please try again.";
 }
 
 const TypingIndicator = () => (
@@ -83,6 +67,11 @@ const AIAssistant = () => {
   const [loading, setLoading] = useState(false);
   const [sessionCount, setSessionCount] = useState(0);
   const [showPulse, setShowPulse] = useState(false);
+  // The user's own CRM figures (utils/aiContext.js), built when the panel
+  // opens. { text, at } once read; error when the read failed.
+  const [ctx, setCtx] = useState({ text: "", at: 0, loading: false, error: "" });
+  const ctxRef = useRef(ctx);
+  ctxRef.current = ctx;
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -104,6 +93,35 @@ const AIAssistant = () => {
     if (isOpen) setTimeout(() => inputRef.current?.focus(), 120);
   }, [isOpen]);
 
+  // Read the figures. Returns the text, so a send can wait for a fresh copy.
+  const loadContext = async () => {
+    if (!company?.id || !user?.id) return "";
+    setCtx((c) => ({ ...c, loading: true, error: "" }));
+    try {
+      const { text } = await buildAiContext({
+        companyId: company.id,
+        companyName: company.name,
+        userId: user.id,
+        userName: userProfile?.full_name || user.email,
+        role: userProfile?.role,
+      });
+      setCtx({ text, at: Date.now(), loading: false, error: "" });
+      return text;
+    } catch (e) {
+      console.error("[AIAssistant] context:", e);
+      setCtx((c) => ({ ...c, loading: false, error: "Your CRM figures could not be read just now." }));
+      return ctxRef.current.text || "";
+    }
+  };
+
+  // Once when the panel opens, and again whenever it reopens after 5 minutes.
+  useEffect(() => {
+    if (!isOpen) return;
+    const c = ctxRef.current;
+    if (!c.loading && (!c.text || Date.now() - c.at > CONTEXT_MAX_AGE_MS)) loadContext();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, company?.id, user?.id]);
+
   // Hide on public / auth-only routes
   if (PUBLIC_ROUTES.includes(location.pathname)) return null;
 
@@ -117,7 +135,7 @@ const AIAssistant = () => {
     ]);
   };
 
-  const buildSystemPrompt = () =>
+  const buildSystemPrompt = (contextText) =>
     `You are an AI assistant built into Jasco CRM — a sales CRM used by Steel, PVC and Trading companies in Saudi Arabia and the GCC region.
 
 You help salesmen and managers with:
@@ -130,7 +148,17 @@ You help salesmen and managers with:
 Current user: ${userProfile?.full_name || user?.email || "Unknown"}
 Role: ${userProfile?.role || "Unknown"}
 Company: ${company?.name || "Unknown"}
-Keep responses concise and actionable. Maximum 3-4 sentences unless drafting a message.`;
+Keep responses concise and actionable. Maximum 3-4 sentences unless drafting a message.
+
+${contextText
+    ? `The user's own CRM figures follow, from the same reads as his Insights page.
+Use ONLY these figures. If something is not in them, say so — never invent numbers, stages or customers.
+Stages are lead, contact made, proposal sent, negotiation, won, lost.
+Reply in the user's language (English or Arabic).
+
+${contextText}`
+    : `The user's CRM figures could not be read just now. Say so if asked about numbers, deals or customers — never invent them.
+Reply in the user's language (English or Arabic).`}`;
 
   const handleSend = async (text) => {
     const message = (text ?? input).trim();
@@ -147,15 +175,18 @@ Keep responses concise and actionable. Maximum 3-4 sentences unless drafting a m
       .map(({ role, content }) => ({ role, content }));
 
     try {
-      const reply = await callProxy(message, history, buildSystemPrompt());
+      // Fresh figures if these are more than 5 minutes old (or missing).
+      const c = ctxRef.current;
+      const contextText = !c.text || Date.now() - c.at > CONTEXT_MAX_AGE_MS
+        ? await loadContext()
+        : c.text;
+      const reply = await callProxy(message, history, buildSystemPrompt(contextText));
       appendMessage("assistant", reply);
     } catch (err) {
       console.error("[AIAssistant]", err);
-      if (err.message === "NOT_CONFIGURED") {
-        appendMessage("error", "AI Assistant not configured. Contact your administrator.");
-      } else {
-        appendMessage("error", "Could not connect to AI. Please try again.");
-      }
+      // utils/aiProxy.js words it for the user: sign in again, daily limit,
+      // or the AI service's own reason (e.g. credit balance).
+      appendMessage("error", err?.message || "Could not reach the AI service. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -193,6 +224,19 @@ Keep responses concise and actionable. Maximum 3-4 sentences unless drafting a m
               aria-label="Close AI Assistant"
             >
               ✕
+            </button>
+          </div>
+
+          {/* Whose figures the answers use, and how fresh they are */}
+          <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-gray-100 text-[10px] text-gray-500 flex-shrink-0" data-testid="ai-context-bar">
+            <span>
+              {ctx.loading ? "Reading your CRM figures…"
+                : ctx.error ? ctx.error
+                  : ctx.text ? `Using your CRM figures from ${new Date(ctx.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                    : "Your CRM figures are not loaded"}
+            </span>
+            <button type="button" onClick={loadContext} disabled={ctx.loading} className="underline hover:text-purple-700 disabled:opacity-50" data-testid="ai-refresh-data">
+              Refresh data
             </button>
           </div>
 

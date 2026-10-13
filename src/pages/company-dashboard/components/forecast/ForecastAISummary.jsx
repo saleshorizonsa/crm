@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import Icon from "../../../../components/AppIcon";
 import { format } from "date-fns";
 import { DEFAULT_STAGE_WEIGHTS } from "../../../../utils/forecastEngine";
+import { callAiProxy } from "../../../../utils/aiProxy";
 
 const OPEN_STAGES = new Set(["lead", "contact_made", "proposal_sent", "negotiation"]);
 const VISIBLE_ROLES = ["director", "manager", "supervisor"];
@@ -33,8 +34,7 @@ Analyse this sales pipeline data and write a concise forecast summary. Be direct
 ROLE CONTEXT:
 ${roleCtx}
 
-PIPELINE DATA:
-${JSON.stringify(pipelineData, null, 2)}
+The pipeline data is in the user's message, as JSON.
 
 Write exactly 3 paragraphs:
 
@@ -55,29 +55,17 @@ Rules:
   const timeout = setTimeout(() => controller.abort(), 30000);
 
   try {
-    const response = await fetch("/api/ai-assistant", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messages: [{ role: "user", content: prompt }],
-      }),
+    // Through utils/aiProxy.js, with the user's session token (the proxy
+    // refuses anyone not signed in). The instructions travel as the system
+    // prompt and the data as the message, which keeps each inside the proxy's
+    // limits (system 10,000 characters, a message 4,000).
+    const data = await callAiProxy({
+      system: prompt,
+      messages: [{ role: "user", content: `PIPELINE DATA:
+${JSON.stringify(pipelineData)}` }],
       signal: controller.signal,
     });
     clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errBody = await response.json().catch(() => ({}));
-      const detail =
-        errBody?.error?.message || errBody?.error || response.statusText;
-      console.error(
-        "[ForecastAISummary] Proxy error:",
-        response.status,
-        detail,
-      );
-      throw new Error(`API error ${response.status}: ${detail}`);
-    }
-
-    const data = await response.json();
     const text = (data.content || [])
       .filter((b) => b.type === "text")
       .map((b) => b.text)
