@@ -377,21 +377,21 @@ export default function DrillSheet({
               {fullTitle}
             </h2>
             {explanation && (
-              <p data-testid="drill-explain" className="mt-1 text-[13px] text-gray-700 leading-snug">{explanation}</p>
+              <p data-testid="drill-explain" className="mt-1 text-sm text-gray-700 leading-snug">{explanation}</p>
             )}
             {howToRead && (
-              <p data-testid="drill-how" className="mt-0.5 text-xs text-gray-500 leading-snug">{howToRead}</p>
+              <p data-testid="drill-how" className="mt-0.5 text-xs text-gray-600 leading-snug">{howToRead}</p>
             )}
-            <nav aria-label="Back to" className="mt-2 flex items-center gap-1 text-[11px] font-mono text-gray-400 flex-wrap">
+            <nav aria-label="Back to" className="mt-2 flex items-center gap-1 text-xs font-mono text-gray-600 flex-wrap">
               {crumbs.map((c, i) => (
                 <span key={`${c.label}-${i}`} className="flex items-center gap-1">
                   {i > 0 && <span>›</span>}
                   {c.onClick ? (
-                    <button type="button" onClick={c.onClick} className="hover:text-gray-700 underline decoration-dotted">
+                    <button type="button" onClick={c.onClick} className="hover:text-gray-900 underline decoration-dotted">
                       {c.label}
                     </button>
                   ) : (
-                    <span className="text-gray-700">{c.label}</span>
+                    <span className="text-gray-800">{c.label}</span>
                   )}
                 </span>
               ))}
@@ -461,7 +461,7 @@ export default function DrillSheet({
           )}
         </div>
 
-        <footer className="px-4 py-2 border-t border-gray-100 text-[10px] font-mono text-gray-400">
+        <footer className="px-4 py-2 border-t border-gray-100 text-[11px] font-mono text-gray-600">
           {atLeaf
             ? `${leafRows.length} rows${onOpenRecord ? " · click a row to open it" : ""}`
             : `${node.children.length} ${groupHint ? groupHint.toLowerCase() : "groups"}`}
