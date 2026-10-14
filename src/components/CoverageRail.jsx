@@ -46,10 +46,16 @@ import DrillSheet, { money } from "components/DrillSheet";
  *             or, with none, at the conversion rate.
  *   Won, not invoiced  a STATUS, not a period figure: every won deal not yet
  *             invoiced, whenever it was won.
- *   Invoiced  less the sales returns DATED in the period (by return date).
+ *   Invoiced  less the sales returns MATCHED to an invoiced deal and dated in
+ *             the period. An unmatched return (deal_id null) reduces nothing:
+ *             fetchReturns reads them through an inner join to their deal.
+ *
+ * Won, not invoiced is titled "as of today", never the page's period — it is
+ * a status, and the same list whatever period is selected.
  */
+export const AS_OF_TODAY = "as of today";
 export const SEGMENT_EXPLAIN = {
-  invoiced: "Won deals invoiced in this period, less sales returns dated in this period.",
+  invoiced: "Won deals invoiced in this period, less sales returns matched to an invoice and dated in this period.",
   funnel: "Open deals due in this period (or undated), each at its forecast — amount × stage probability — or at the conversion rate if it has none.",
   planning: "Open plan items this period, counted at the conversion rate.",
   wonNotInvoiced: "Deals marked won but not yet invoiced, whenever they were won. Not counted in coverage.",
@@ -104,7 +110,7 @@ function CoverageDrillPanel({ segment, drill, byDivision, onClose, onOpenRecord,
     <DrillSheet
       label={seg.label}
       title={seg.label}
-      period={periodLabel}
+      period={seg.key === "wonNotInvoiced" ? AS_OF_TODAY : periodLabel}
       explain={SEGMENT_EXPLAIN[seg.key] || null}
       levelHints={segmentLevelHints(seg.key, grouped)}
       total={seg.total}

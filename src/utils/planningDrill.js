@@ -239,7 +239,7 @@ export function buildPlanningDrill(summary, {
   // under the sheet's title, `levelHints` one per depth.
   cards.achieved = {
     label: 'Achieved',
-    explain: 'Won deals invoiced in this period, less sales returns dated in this period.',
+    explain: 'Won deals invoiced in this period, less sales returns matched to an invoice and dated in this period.',
     levelHints: ['Click a person to see the invoices and credit notes.', 'Click a row to open it.'],
     total: num(summary?.achieved),
     columns: PLAN_DRILL_COLUMNS.invoiced,
