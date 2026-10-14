@@ -41,6 +41,8 @@ export function PlanCardOpener({ card, label, onOpen, ready }) {
  */
 export default function PlanningCardPanel({
   card, cards, onClose, scopeLabel, onAddToPlan, gapCloser,
+  // The page's period label and who is selected, for the title (session 26).
+  period = "", place = [],
 }) {
   const navigate = useNavigate();
   if (!card || !cards?.[card]) return null;
@@ -58,6 +60,11 @@ export default function PlanningCardPanel({
   return (
     <DrillSheet
       label={node.label}
+      title={node.label}
+      period={period}
+      place={place}
+      explain={node.explain || null}
+      levelHints={node.levelHints || null}
       total={node.total}
       note={node.note}
       columns={node.columns}

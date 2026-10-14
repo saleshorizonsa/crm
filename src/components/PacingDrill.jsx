@@ -23,6 +23,8 @@ export default function PacingDrill({
   // an open drill re-reads; one saved INSIDE it is reported through
   // onVisitSaved, so the rail's count follows.
   refreshKey = 0, onVisitSaved,
+  // The page's period label, for the sheet's title (session 26).
+  periodLabel = "",
 }) {
   const [open, setOpen] = useState(false);
   const [visits, setVisits] = useState(null);       // { rows, failed }
@@ -85,6 +87,10 @@ export default function PacingDrill({
       {open && built && !sel && (
         <DrillSheet
           label="Pacing"
+          title="Pacing"
+          period={periodLabel}
+          explain="Each person's achieved against their target so far this month, with the visits they logged."
+          levelHints={["Click a person to see their visits. The first row is the total."]}
           total={built.total.achieved}
           note={`Achieved against target, by person, with visits (contact reports + activities, Riyadh dates). ${
             built.total.visitsThisMonth === 0 ? "0 visits logged this month." : ""}`}
@@ -114,6 +120,11 @@ export default function PacingDrill({
       {open && sel && (
         <DrillSheet
           label={`Pacing › ${sel.name}`}
+          title="Pacing"
+          period={periodLabel}
+          place={[sel.name]}
+          explain="The visits this person logged: contact reports and activities, by Riyadh date."
+          levelHints={["Use ← Everyone below to go back to the whole team."]}
           total={sel.achieved}
           note={`${sel.visitsThisMonth} visit${sel.visitsThisMonth === 1 ? "" : "s"} this month, ${sel.visitsLastMonth} last month. Last visit: ${sel.lastVisit}.`}
           columns={VISIT_COLUMNS}

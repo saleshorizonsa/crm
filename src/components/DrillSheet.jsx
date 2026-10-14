@@ -25,6 +25,18 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  * The breadcrumb is the path taken, so stepping back is free, and the export
  * always writes what is on screen — the group list at a group level, the rows
  * at a leaf.
+ *
+ * THE HEADER SAYS WHAT THIS IS (session 26, CEO 2026-10-14). The breadcrumb
+ * alone, 11px grey mono, did not read as a title: a list of "PVC Compound
+ * 152,500 / Pipes & Fittings 117,865 …" opened with nothing saying it was
+ * Invoiced for October. Every level now leads with
+ *
+ *   TITLE        "<What> — <Period>", then " · <place>" for each level opened
+ *   EXPLANATION  one plain sentence: what the figure is   (`explain`)
+ *   HOW TO READ  how it is grouped / what a click does     (`levelHints`)
+ *
+ * and the export's file name and first line carry the same title. `period`
+ * is the PAGE's own label (periodLabelFromRange), never worked out here.
  */
 
 export const money = (v) => Math.abs(Math.round(Number(v) || 0)).toLocaleString("en-US");
@@ -212,8 +224,16 @@ export function GroupList({ items, onPick, unit }) {
   );
 }
 
+/** A title made safe for a file name: "Invoiced — October 2026 · Export" → "invoiced-october-2026-export". */
+export function fileSlug(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "") || "export";
+}
+
 /** Rows → a worksheet, using the same columns the panel shows. */
-export function exportRows({ segment, columns, rows, scopeLabel }) {
+export function exportRows({ segment, columns, rows, scopeLabel, title = null }) {
   const header = columns.map((c) => c.label);
   const body = rows.map((r) => columns.map((c) => {
     const v = r[c.key];
@@ -221,7 +241,9 @@ export function exportRows({ segment, columns, rows, scopeLabel }) {
     if (typeof v === "number") return v;
     return v == null ? "" : String(v);
   }));
-  const csv = [header, ...body]
+  // With a title, it is the first line of the file and its name (session 26).
+  const lines = title ? [[title], header, ...body] : [header, ...body];
+  const csv = lines
     .map((line) => line.map((cell) => {
       const s = String(cell ?? "");
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -232,7 +254,9 @@ export function exportRows({ segment, columns, rows, scopeLabel }) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${segment}-${scopeLabel || "coverage"}.csv`.replace(/\s+/g, "-").toLowerCase();
+  a.download = title
+    ? `${fileSlug(title)}.csv`
+    : `${segment}-${scopeLabel || "coverage"}.csv`.replace(/\s+/g, "-").toLowerCase();
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -279,6 +303,12 @@ export default function DrillSheet({
   scopeLabel = "",
   footerHint = null,
   extra = null,
+  // ── session 26: the header ──
+  title = null,        // what this is; defaults to `label`
+  period = "",         // the page's own period label
+  place = [],          // where the sheet already starts, e.g. a person's name
+  explain = null,      // string, per-depth array, or ({ depth, node }) => string
+  levelHints = null,   // per-depth array: how this level is grouped / what a click does
 }) {
   const [path, setPath] = useState([]);
   const panelRef = useRef(null);
@@ -307,6 +337,23 @@ export default function DrillSheet({
 
   const groupHint = groupLabels[path.length] || null;
 
+  // THE TITLE: what, when, and every place opened on the way down.
+  const placeNames = [...(place || []), ...path.map((_, i) => nodeAt(root, path.slice(0, i + 1)).name)];
+  const what = title || label;
+  const fullTitle = [
+    period ? `${what} — ${period}` : what,
+    ...placeNames.filter(Boolean),
+  ].join(" · ");
+  const depth = path.length;
+  const explanation = node.explain
+    || (typeof explain === "function" ? explain({ depth, node, atLeaf })
+      : Array.isArray(explain) ? (explain[depth] ?? explain[explain.length - 1]) : explain)
+    || null;
+  const howToRead = (Array.isArray(levelHints) ? levelHints[depth] : null)
+    ?? (atLeaf
+      ? (onOpenRecord ? "Click a row to open it." : null)
+      : `Click ${groupHint ? `a ${groupHint.replace(/^By /i, "").toLowerCase()}` : "a group"} to see what is in it.`);
+
   return (
     <>
       {/* The page stays visible behind: the scrim covers it, and clicking
@@ -320,12 +367,22 @@ export default function DrillSheet({
         ref={panelRef}
         tabIndex={-1}
         role="dialog"
-        aria-label={`${label} breakdown`}
+        aria-label={fullTitle}
         className="fixed z-50 top-0 right-0 bottom-0 w-full sm:w-[min(640px,100vw)] bg-white shadow-2xl flex flex-col focus:outline-none"
       >
-        <header className="px-4 py-3 border-b border-gray-200 flex items-start gap-3">
+        {/* The header never scrolls: only the list below it does. */}
+        <header className="px-4 py-3 border-b border-gray-200 flex items-start gap-3 flex-shrink-0">
           <div className="min-w-0 flex-1">
-            <nav className="flex items-center gap-1 text-[11px] font-mono text-gray-400 flex-wrap">
+            <h2 data-testid="drill-title" className="text-base sm:text-lg font-semibold text-gray-900 leading-snug break-words">
+              {fullTitle}
+            </h2>
+            {explanation && (
+              <p data-testid="drill-explain" className="mt-1 text-[13px] text-gray-700 leading-snug">{explanation}</p>
+            )}
+            {howToRead && (
+              <p data-testid="drill-how" className="mt-0.5 text-xs text-gray-500 leading-snug">{howToRead}</p>
+            )}
+            <nav aria-label="Back to" className="mt-2 flex items-center gap-1 text-[11px] font-mono text-gray-400 flex-wrap">
               {crumbs.map((c, i) => (
                 <span key={`${c.label}-${i}`} className="flex items-center gap-1">
                   {i > 0 && <span>›</span>}
@@ -358,6 +415,7 @@ export default function DrillSheet({
             <button
               type="button"
               onClick={() => exportRows({
+                title: fullTitle,
                 segment: label,
                 columns: atLeaf
                   ? cols

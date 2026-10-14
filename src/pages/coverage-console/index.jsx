@@ -978,6 +978,7 @@ export default function CoverageConsole() {
                      inside the loader's scope. Same value, in scope here. */
                   monthEnd={rangeEnd}
                   scopeLabel={heroInfo?.title || ""}
+                  periodLabel={periodLabel}
                 />
                 {/* Pacing is a day-of-month verdict, so it is shown only while
                     the current month is what is selected. For any other period
@@ -995,6 +996,7 @@ export default function CoverageConsole() {
                       viewerId={user?.id}
                       role={userProfile?.role}
                       scopeLabel={heroInfo?.title || ""}
+                      periodLabel={periodLabel}
                     >
                       <PacingRail
                         pace={metrics.pace}

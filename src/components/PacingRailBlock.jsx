@@ -42,6 +42,7 @@ export function visitLine(summary) {
 
 export default function PacingRailBlock({
   metrics, scopeIds = [], users = [], companyId, viewerId, role, scopeLabel = "", children,
+  periodLabel = "",
 }) {
   const [version, setVersion] = useState(0);
   const [mine, setMine] = useState(null);       // null = loading; { failed } on error
@@ -71,6 +72,7 @@ export default function PacingRailBlock({
         companyId={companyId}
         viewerId={viewerId}
         scopeLabel={scopeLabel}
+        periodLabel={periodLabel}
         refreshKey={version}
         onVisitSaved={bump}
       >

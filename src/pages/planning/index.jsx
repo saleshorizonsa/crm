@@ -1892,6 +1892,8 @@ const PlanningPage = () => {
           cards={planCards}
           gapCloser={gapCloser}
           scopeLabel={filterOwnerName || tilePeriodLabel}
+          period={tilePeriodLabel}
+          place={filterOwnerName ? [filterOwnerName] : []}
           onClose={() => setOpenCard(null)}
           onAddToPlan={(row) => {
             setPlanPrefill({

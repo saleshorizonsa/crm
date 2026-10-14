@@ -235,8 +235,12 @@ export function buildPlanningDrill(summary, {
     invoiceDate: r.return_date || null,
     value: -Math.abs(num(r.return_amount)),
   }));
+  // Each card says what it is and how to read it (session 26): `explain`
+  // under the sheet's title, `levelHints` one per depth.
   cards.achieved = {
     label: 'Achieved',
+    explain: 'Won deals invoiced in this period, less sales returns dated in this period.',
+    levelHints: ['Click a person to see the invoices and credit notes.', 'Click a row to open it.'],
     total: num(summary?.achieved),
     columns: PLAN_DRILL_COLUMNS.invoiced,
     groupLabels: ['Person'],
@@ -275,6 +279,7 @@ export function buildPlanningDrill(summary, {
   const planGroup = {
     id: 'plan',
     name: 'Open plan items',
+    explain: 'Open plan items this period, at their planned value.',
     total: num(summary?.plannedOpen),
     columns: PLAN_DRILL_COLUMNS.planItems,
     children: byPerson(d.planRows || [], users, null, planRow),
@@ -282,6 +287,7 @@ export function buildPlanningDrill(summary, {
   const funnelGroup = {
     id: 'funnel',
     name: 'Funnel deals',
+    explain: 'Open deals due in this period (or undated), at their full amount.',
     total: num(summary?.openFunnel),
     columns: PLAN_DRILL_COLUMNS.funnel,
     children: byPerson(d.funnelRows || [], users, null, funnelRow),
@@ -309,6 +315,7 @@ export function buildPlanningDrill(summary, {
   const convertedGroup = convertedRows.length ? {
     id: 'converted',
     name: 'Converted to deals (not in the total)',
+    explain: 'Plan items that became deals. Counted in the funnel, so not added here again.',
     informational: true,
     total: convertedRows.reduce((s, o) => s + num(o.planned_amount), 0),
     columns: PLAN_DRILL_COLUMNS.planItems,
@@ -317,6 +324,7 @@ export function buildPlanningDrill(summary, {
   const orphanGroup = orphanRows.length ? {
     id: 'deal-missing',
     name: 'Converted, deal no longer exists (not in the total)',
+    explain: 'Plan items marked converted whose deal is gone. In no figure on this page.',
     informational: true,
     total: orphanRows.reduce((s, o) => s + num(o.planned_amount), 0),
     columns: PLAN_DRILL_COLUMNS.planItems,
@@ -325,6 +333,8 @@ export function buildPlanningDrill(summary, {
 
   cards.coverage = {
     label: 'Planning coverage',
+    explain: 'What is already lined up for this period: open plan items plus open deals, both at full value.',
+    levelHints: ['Click a group to see its people.', 'Click a person to see the rows.', 'Click a row to open it.'],
     total: num(summary?.plannedOpen) + num(summary?.openFunnel),
     columns: PLAN_DRILL_COLUMNS.planItems,
     groupLabels: ['What covers it', 'Person'],
@@ -343,6 +353,8 @@ export function buildPlanningDrill(summary, {
   const rate = num(summary?.winRatePct);
   cards.required = {
     label: 'Required plan',
+    explain: 'How much has to be planned: the target not yet achieved, divided by the conversion rate.',
+    levelHints: ['The arithmetic, step by step.'],
     total: num(summary?.requiredPlan),
     columns: [
       { key: 'customer', label: 'Step' },
@@ -361,6 +373,8 @@ export function buildPlanningDrill(summary, {
   // ── Planned gap → the gap, and who could close it ─────────────────────────
   cards.gap = {
     label: 'Planned gap',
+    explain: 'Required plan less what already covers it (open plan items and open deals).',
+    levelHints: ['Customers who usually buy, biggest usual order first. Use “Add to plan” below to plan one.'],
     total: num(summary?.plannedGap),
     columns: PLAN_DRILL_COLUMNS.gap,
     rows: gapCloser?.rows || [],

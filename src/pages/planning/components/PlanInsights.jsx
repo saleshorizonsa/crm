@@ -316,6 +316,10 @@ export default function PlanInsights({
       {slipOpen && (
         <DrillSheet
           label={`${slipOpen.person} · ${slipOpen.customer}`}
+          title="Slipping deal"
+          period="every push so far"
+          place={[slipOpen.person, slipOpen.customer]}
+          explain="An order pushed to a later month again and again: each push, the month it went to, and where it is now."
           total={slipOpen.value}
           note={`Pushed ${slipOpen.times} times (${slipOpen.months}). Now: ${slipOpen.now.label}.`}
           columns={[

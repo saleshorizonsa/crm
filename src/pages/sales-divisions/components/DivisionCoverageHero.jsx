@@ -147,6 +147,7 @@ export function DivisionCoverageHero({
         byDivision={!!drill?.byDivision}
         monthEnd={drill?.monthEnd || null}
         scopeLabel={title}
+        periodLabel={periodLabel}
       />
       {/* Pacing is a day-of-month verdict, so the rail is shown only while the
           current month is what is selected — hidden, not computed against a
@@ -172,6 +173,7 @@ export function DivisionCoverageHero({
                 viewerId={pacing.viewerId}
                 role={pacing.role}
                 scopeLabel={title}
+                periodLabel={periodLabel}
               >
                 {rail}
               </PacingRailBlock>

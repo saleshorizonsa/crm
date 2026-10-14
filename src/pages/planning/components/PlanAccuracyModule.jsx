@@ -257,6 +257,10 @@ export default function PlanAccuracyModule({
       {person && (
         <DrillSheet
           label={`${person.name} · ${monthLabel(monthKey)}`}
+          title="Plan accuracy"
+          period={monthLabel(monthKey)}
+          place={[person.name]}
+          explain="This person's plan items for the month, and which of them were invoiced."
           total={person.invoicedValue}
           note={`${person.plannedItems} items planned, worth ${money(person.plannedValue)}. ${person.invoicedItems} invoiced, worth ${money(person.invoicedValue)} — a hit rate of ${pct(person.hitRate)}.`}
           columns={PLAN_ACCURACY_COLUMNS}

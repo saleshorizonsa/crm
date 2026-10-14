@@ -36,7 +36,57 @@ import DrillSheet, { money } from "components/DrillSheet";
  * Shortfall keeps its own note, because a scope's gap is not the sum of the
  * personal gaps and the reader has to be told so.
  */
-function CoverageDrillPanel({ segment, drill, byDivision, onClose, onOpenRecord, scopeLabel }) {
+/**
+ * WHAT EACH PANEL SAYS IT IS (session 26). One sentence each, written to match
+ * how the figure is really calculated (utils/planningCalculations.js
+ * computeCoverage, computeAchieved, wonNotInvoicedList; utils/openFunnel.js):
+ *
+ *   Funnel    the deals are the period's open deals PLUS undated ones, and a
+ *             deal counts at its stored forecast (amount × stage probability)
+ *             or, with none, at the conversion rate.
+ *   Won, not invoiced  a STATUS, not a period figure: every won deal not yet
+ *             invoiced, whenever it was won.
+ *   Invoiced  less the sales returns DATED in the period (by return date).
+ */
+export const SEGMENT_EXPLAIN = {
+  invoiced: "Won deals invoiced in this period, less sales returns dated in this period.",
+  funnel: "Open deals due in this period (or undated), each at its forecast — amount × stage probability — or at the conversion rate if it has none.",
+  planning: "Open plan items this period, counted at the conversion rate.",
+  wonNotInvoiced: "Deals marked won but not yet invoiced, whenever they were won. Not counted in coverage.",
+  shortfall: "Target less invoiced, funnel and planning.",
+};
+
+// What the rows are, per segment, for "Click a person to see the …".
+const ROWS_ARE = {
+  invoiced: "invoices and credit notes",
+  funnel: "deals",
+  planning: "plan items",
+  wonNotInvoiced: "deals",
+  shortfall: null,
+};
+// What a division holds, for "(each … in its own division)".
+const DIVISION_OF = {
+  invoiced: "each invoice and credit note",
+  funnel: "each deal",
+  planning: "each plan item",
+  wonNotInvoiced: "each deal",
+  shortfall: "each target row and deal",
+};
+
+/** The how-to-read line at each depth of one segment's sheet. */
+export function segmentLevelHints(segment, grouped) {
+  const person = ROWS_ARE[segment]
+    ? `Click a person to see the ${ROWS_ARE[segment]}.`
+    : "Click a person to see how their gap is made up.";
+  const leaf = segment === "shortfall"
+    ? "This person's target, what covers it, and the gap left."
+    : "Click a row to open it.";
+  return grouped
+    ? [`Grouped by division (${DIVISION_OF[segment]} in its own division). Click a division to see its people.`, person, leaf]
+    : [person, leaf];
+}
+
+function CoverageDrillPanel({ segment, drill, byDivision, onClose, onOpenRecord, scopeLabel, periodLabel }) {
   if (!segment) return null;
   const seg = drill.segments[segment];
   if (!seg) return null;
@@ -49,9 +99,14 @@ function CoverageDrillPanel({ segment, drill, byDivision, onClose, onOpenRecord,
     ? `Personal gaps add to ${money(seg.peopleTotal)}. The rail shows the scope's own target less its own coverage — one person's overshoot does not fill another's gap.`
     : null;
 
+  const grouped = !!(byDivision && seg.divisions);
   return (
     <DrillSheet
       label={seg.label}
+      title={seg.label}
+      period={periodLabel}
+      explain={SEGMENT_EXPLAIN[seg.key] || null}
+      levelHints={segmentLevelHints(seg.key, grouped)}
       total={seg.total}
       badge={seg.inCoverage ? null : "not in coverage"}
       note={note}
@@ -83,6 +138,8 @@ const CoverageRail = ({
   monthEnd = null,
   onOpenRecord = null,
   scopeLabel = "",
+  // The page's own period label, for the drill sheet's title (session 26).
+  periodLabel = "",
 }) => {
   const [open, setOpen] = useState(null);
   const navigate = useNavigate();
@@ -275,6 +332,7 @@ const CoverageRail = ({
           onClose={() => setOpen(null)}
           onOpenRecord={openRecord}
           scopeLabel={scopeLabel}
+          periodLabel={periodLabel}
         />
       )}
     </div>
