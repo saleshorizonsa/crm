@@ -58,6 +58,8 @@ export function DivisionCoverageHero({
   // The pacing rail's drill: the level's people and who is looking. Absent,
   // the rail is read-only as before.
   pacing = null,
+  // Under the rails, inside this card: the Pre-sale effort row (session 27).
+  below = null,
 }) {
   const chip = statusChipOf(metrics);
   return (
@@ -187,6 +189,7 @@ export function DivisionCoverageHero({
           coverage only.
         </p>
       )}
+      {below}
     </div>
   );
 }

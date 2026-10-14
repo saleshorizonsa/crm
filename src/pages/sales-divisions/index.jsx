@@ -30,6 +30,7 @@ import {
 } from "utils/salesDivisionMetrics";
 import { fetchAdditionalDivisions } from "utils/divisionMembership";
 import { DivisionCoverageHero, DivisionCycleLedger } from "./components/DivisionCoverageHero";
+import { WithEffort, EffortRow, EffortVsResult } from "./components/PresaleEffort";
 import DivisionExceptionFeed from "./components/DivisionExceptionFeed";
 // What moved here from the Dashboard for the roles that no longer have one.
 import InsightsBanners from "./components/InsightsBanners";
@@ -1144,8 +1145,22 @@ export default function SalesDivisions() {
           </>
         ) : (
           <>
-            {/* ── HERO: status, coverage equation, coverage rail, pacing rail ── */}
+            {/* ── HERO: status, coverage equation, coverage rail, pacing rail,
+                and (session 27) the Pre-sale effort row; Effort vs Result
+                right below. Both read one computation over this level. ── */}
+            <WithEffort
+              companyId={company?.id}
+              levelIds={levelIds}
+              raw={raw}
+              divisionId={navDivisionId}
+              start={rangeStart}
+              end={rangeEnd}
+              enabled={!isAllTime}
+            >
+            {(effort) => (
+            <>
             <DivisionCoverageHero
+              below={<EffortRow effort={effort} periodLabel={periodLabel} names={userName} isAllTime={isAllTime} />}
               metrics={metrics}
               scope={scopeLabel}
               title={hero.title}
@@ -1168,6 +1183,28 @@ export default function SalesDivisions() {
                  visits (session 17). */
               pacing={{ scopeIds: levelIds, companyId: company?.id, viewerId: user?.id, role }}
             />
+
+            <EffortVsResult
+              effort={effort}
+              periodLabel={periodLabel}
+              names={userName}
+              start={rangeStart}
+              end={rangeEnd}
+              isAllTime={isAllTime}
+              // Invoiced and target per person: the page's own per-person figures.
+              resultFor={(id) => {
+                const m = metricsFor([id], navDivisionId) || {};
+                return { achieved: Number(m.achieved) || 0, target: Number(m.target) || 0 };
+              }}
+              // The existing person drill-down, inside the person's division.
+              onOpenPerson={(id) => {
+                const g = groups.find((x) => x.userIds.includes(id));
+                go({ level: "member", division: navDivisionId || g?.id || null, supervisor: null, member: id, deal: null });
+              }}
+            />
+            </>
+            )}
+            </WithEffort>
 
             {/* THE BENCHMARK (CEO decision 2026-10-07): the company conversion
                 RATE beside their own, for the two roles that cannot see the

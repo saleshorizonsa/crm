@@ -111,9 +111,12 @@ export async function fetchPlanContacts({ companyId, ownerIds, start, end }) {
         open: 0,
         converted: 0,
         lastContact: null,
+        // The plan items behind this customer (session 27: Day-7 counts items).
+        itemIds: [],
       });
     }
     const g = groups.get(key);
+    g.itemIds.push(o.id);
     g.planned += Number(o.planned_amount) || 0;
     g.items += 1;
     if (o.status === 'open') g.open += 1; else g.converted += 1;

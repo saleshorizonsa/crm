@@ -46,7 +46,10 @@ import {
   computeSlippingDeals, fetchCompletedMonths, computePlanRealism, realismSentence,
   computeUnplannedBuyers, PUSH_STATUSES,
 } from 'utils/planInsights';
-import { fetchVisits, summariseVisits } from 'utils/visits';
+import { fetchVisits, summariseVisits, riyadhDate, riyadhToday } from 'utils/visits';
+import {
+  effortPeople, fetchEffortRows, computeEffortFor, requiredPlanFor, monthsOf, INDICATORS,
+} from 'utils/presaleEffort';
 import { buildPacingDrill, DEPARTED_ROW_ID } from 'utils/pacingDrill';
 import { fetchPlanContacts, summarisePlanContacts } from 'utils/planContacts';
 import { computeWeeklyPacing } from 'utils/weeklyPacing';
@@ -1192,6 +1195,88 @@ async function buildPacingVisitsRows({ companyId, bundle, consoleData, start, en
  * person's items are not counted. What was left out is stated in one
  * information row, unnamed, so the exclusion is visible rather than silent.
  */
+/**
+ * PRE-SALE EFFORT (session 27). The page's four indicators — computeEffortFor,
+ * the function Insights calls — against a recount straight from the rows,
+ * written separately here, per person and for the company. Only the required
+ * plan is shared: it is the page's existing figure, not something this group
+ * is checking.
+ */
+async function buildEffortRows({ companyId, bundle, consoleData, start, end }) {
+  const out = [];
+  const today = riyadhToday();
+  const people = effortPeople((bundle.users || []).map((u) => u.id), bundle.users);
+  const rows = await fetchEffortRows({ companyId, ownerIds: people.map((p) => p.id), start, end, today });
+  if (rows.failed) {
+    out.push(row({ label: 'Effort: rows could not be read', value: 0, expected: 1, kind: 'count' }));
+    return out;
+  }
+  const page = computeEffortFor({ rows, people, raw: consoleData, divisionId: null, start, end, today });
+
+  // ── the recount ──
+  const months = monthsOf(start, end);
+  const requiredFor = requiredPlanFor(consoleData, null, today);
+  const day = (v) => riyadhDate(v) || '9999-99-99';
+  const withDeal = (o) => o.status === 'converted' && !!o.deal_id;
+  const recount = (ids) => {
+    const set = new Set(ids);
+    const t = { coverage: [0, 0, 0], day7: [0, 0, 0], replacement: [0, 0], planToFunnel: [0, 0] };
+    ids.forEach((id) => {
+      months.forEach((mo) => {
+        const items = rows.opps.filter((o) => o.owner_id === id && String(o.expected_month).slice(0, 7) === mo.key
+          && (o.status === 'open' || o.status === 'converted'));
+        const { target, required } = requiredFor(id, mo);
+        const value = items.filter((o) => o.status === 'open' || withDeal(o)).reduce((s, o) => s + Number(o.planned_amount || 0), 0);
+        if (target > 0 && required > 0) { t.coverage[0] += Math.min(value, required); t.coverage[1] += required; }
+        if (target > 0 && required <= 0) t.coverage[2] += 1;
+        if (mo.day7 <= today) {
+          items.filter((o) => day(o.created_at) <= mo.day7).forEach((o) => {
+            t.day7[1] += 1;
+            if ((withDeal(o) && day(o.converted_at) <= mo.day7) || rows.contactedItemIds.has(o.id)) t.day7[0] += 1;
+          });
+        } else t.day7[2] = 1;
+        items.forEach((o) => { t.planToFunnel[1] += 1; if (withDeal(o)) t.planToFunnel[0] += 1; });
+      });
+    });
+    rows.lostDeals.filter((d) => set.has(d.owner_id)).forEach((d) => {
+      t.replacement[1] += Number(d.amount || 0);
+      if (rows.replacedIds.has(d.id)) t.replacement[0] += Number(d.amount || 0);
+    });
+    return {
+      coverage: t.coverage[1] > 0 ? t.coverage[0] / t.coverage[1] : (t.coverage[2] > 0 ? 1 : null),
+      day7: t.day7[1] > 0 ? t.day7[0] / t.day7[1] : null,
+      replacement: t.replacement[1] > 0 ? t.replacement[0] / t.replacement[1] : null,
+      planToFunnel: t.planToFunnel[1] > 0 ? t.planToFunnel[0] / t.planToFunnel[1] : null,
+    };
+  };
+
+  const compare = (who, shown, ref) => {
+    INDICATORS.forEach((i) => {
+      const a = shown[i.key].pct;
+      const b = ref[i.key];
+      if (a === null && b === null) {
+        out.push(row({ label: `Effort — ${who} — ${i.label}`, value: 0, expected: 0, kind: 'pct', note: `n/a on both: ${shown[i.key].na}` }));
+      } else {
+        out.push(row({
+          label: `Effort — ${who} — ${i.label}`,
+          value: a === null ? -1 : a * 100,
+          expected: b === null ? -1 : b * 100,
+          kind: 'pct',
+          note: a === null || b === null ? 'one side has no figure (-1)' : null,
+        }));
+      }
+    });
+    // The score: the average of the available ones, from the recount.
+    const avail = INDICATORS.map((i) => ref[i.key]).filter((x) => x !== null);
+    const refScore = avail.length ? Math.round((avail.reduce((s, x) => s + x, 0) / avail.length) * 100) : null;
+    out.push(row({ label: `Effort — ${who} — score`, value: shown.score ?? -1, expected: refScore ?? -1, kind: 'count' }));
+  };
+
+  people.forEach((p) => compare(p.full_name || p.id, page.perPerson.get(p.id), recount([p.id])));
+  compare('company', page.total, recount(people.map((p) => p.id)));
+  return out;
+}
+
 async function buildPlanContactRows({ companyId, bundle, start, end }) {
   const users = bundle.users || [];
   const active = new Set(users.filter((u) => u.is_active !== false).map((u) => u.id));
@@ -2150,6 +2235,12 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
   const pacingRows = await buildPacingVisitsRows({ companyId, bundle, consoleData, start, end });
   if (pacingRows.length) {
     groups.push({ screen: 'Visits and pacing drill', fn: 'fetchVisits / buildPacingDrill', rows: pacingRows });
+  }
+
+  // ── Pre-sale effort (session 27) ──────────────────────────────────────────
+  const effortRows = await buildEffortRows({ companyId, bundle, consoleData, start, end });
+  if (effortRows.length) {
+    groups.push({ screen: 'Effort', fn: 'computeEffortFor', rows: effortRows });
   }
 
   // ── Plan customers: contacted / pending (session 20) ─────────────────────
