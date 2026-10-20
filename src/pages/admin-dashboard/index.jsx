@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
+import Header from "components/ui/Header";
 import { useAuth } from "contexts/AuthContext";
 import { contactService } from "services/supabaseService";
 import UserManagement from "./components/UserManagement";
@@ -19,7 +20,7 @@ import { useLanguage } from "../../i18n";
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState("users");
   const [adminCompany, setAdminCompany] = useState(null);
-  const { signOut, userProfile, company } = useAuth();
+  const { company } = useAuth();
   const { t } = useLanguage();
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [recalcMsg, setRecalcMsg] = useState(null);
@@ -51,18 +52,16 @@ const AdminDashboard = () => {
     { id: "settings",         label: t("admin.settings"),       icon: "Settings"    },
   ];
 
-  const handleLogout = async () => {
-    if (confirm(t("auth.confirmLogout"))) {
-      await signOut();
-    }
-  };
-
+  // The same top menu as every other page (it was missing here, leaving the
+  // browser's Back button as the only way out). The Header carries the user
+  // menu and the one Sign Out, so this page no longer has its own.
   return (
-    <div className="flex-1 overflow-hidden">
-      <div className="h-full flex flex-col">
-        {/* Header */}
-        <div className="bg-background border-b border-border px-6 py-4">
-          <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-background flex flex-col">
+      <Header />
+      <div className="flex-1 flex flex-col min-h-0">
+        {/* Page title, actions and tabs */}
+        <div className="bg-background border-b border-border px-4 sm:px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="text-2xl font-bold">{t("admin.title")}</h1>
               <p className="text-sm text-muted-foreground mt-1">
@@ -88,31 +87,16 @@ const AdminDashboard = () => {
                   : <Icon name="RefreshCw" size={14} />}
                 {isRecalculating ? t("admin.recalculating") : t("admin.recalcScores")}
               </Button>
-              <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-lg">
-                <Icon name="Shield" className="text-primary" size={20} />
-                <span className="text-sm font-medium">
-                  {userProfile?.full_name || "Admin"}
-                </span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLogout}
-                className="gap-2"
-              >
-                <Icon name="LogOut" size={16} />
-                {t("auth.logout")}
-              </Button>
             </div>
           </div>
 
-          {/* Tabs */}
-          <div className="flex gap-2 mt-4">
+          {/* Tabs — scroll sideways on a narrow screen instead of widening the page */}
+          <div className="flex gap-2 mt-4 overflow-x-auto pb-1">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap shrink-0 ${
                   activeTab === tab.id
                     ? "bg-primary text-primary-foreground"
                     : "bg-card text-foreground hover:bg-accent"

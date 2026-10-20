@@ -279,7 +279,12 @@ const Header = ({
                       <button
                         key={item?.path}
                         onClick={() => handleNavigation(item?.path)}
-                        className="flex items-center w-full px-3 py-2 text-sm text-popover-foreground hover:bg-muted transition-enterprise"
+                        aria-current={currentPath === item?.path ? "page" : undefined}
+                        className={`flex items-center w-full px-3 py-2 text-sm transition-enterprise ${
+                          currentPath === item?.path
+                            ? "bg-primary text-primary-foreground"
+                            : "text-popover-foreground hover:bg-muted"
+                        }`}
                       >
                         <Icon name={item?.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
                         {item?.label}
@@ -417,7 +422,12 @@ const Header = ({
                   <button
                     key={item?.path}
                     onClick={() => handleNavigation(item?.path)}
-                    className={`flex items-center w-full px-3 py-2 text-sm text-muted-foreground hover:bg-muted rounded-md transition-enterprise ${isRTL ? "flex-row-reverse" : ""}`}
+                    aria-current={currentPath === item?.path ? "page" : undefined}
+                    className={`flex items-center w-full px-3 py-2 text-sm rounded-md transition-enterprise ${isRTL ? "flex-row-reverse" : ""} ${
+                      currentPath === item?.path
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted"
+                    }`}
                   >
                     <Icon name={item?.icon} size={16} className={isRTL ? "ml-3" : "mr-3"} />
                     {item?.label}
