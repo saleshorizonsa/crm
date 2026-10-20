@@ -84,7 +84,8 @@ export default function CompanySwitcher() {
       >
         <CompanyAvatar company={company} size={6} />
         <span className="hidden sm:block text-sm font-medium text-foreground max-w-[120px] truncate">
-          {switching ? 'Switching…' : company?.name}
+          {/* An admin with no company of their own may have none loaded yet. */}
+          {switching ? 'Switching…' : company?.name || 'Select company'}
         </span>
         <svg
           className="w-3 h-3 text-muted-foreground flex-shrink-0"
