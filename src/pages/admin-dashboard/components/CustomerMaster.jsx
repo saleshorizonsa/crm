@@ -6,6 +6,7 @@ import {
   exportCustomersToExcel,
 } from "../../../utils/importExportUtils";
 import CustomerImportModal from "./CustomerImportModal";
+import { fetchAllRows } from "../../../utils/fetchAllRows";
 
 const CustomerMaster = ({ adminCompany }) => {
   const [contacts, setContacts]     = useState([]);
@@ -21,18 +22,20 @@ const CustomerMaster = ({ adminCompany }) => {
 
   async function loadContacts() {
     setLoading(true);
-    const { data, error } = await supabase
+    // Paged: IMDADAT alone has 1,713 customers, past the 1,000 a request returns.
+    const { data, error } = await fetchAllRows(() => supabase
       .from("contacts")
       .select(`
         id, company_name, first_name, last_name,
         email, phone, mobile, city, region,
         industry, status, created_at,
         owner:owner_id ( id, full_name, email )
-      `)
+      `, { count: "exact" })
       .eq("company_id", adminCompany.id)
-      .order("company_name");
+      .order("company_name"));
 
-    if (!error) setContacts(data || []);
+    if (error) console.error("Load customers failed:", error);
+    else setContacts(data || []);
     setLoading(false);
   }
 
@@ -50,17 +53,21 @@ const CustomerMaster = ({ adminCompany }) => {
   async function handleExportCurrentData() {
     setExporting(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await fetchAllRows(() => supabase
         .from("contacts")
         .select(`
           company_name, first_name, last_name,
           email, phone, mobile, city, region,
           country, industry, notes, status,
           owner:owner_id ( email )
-        `)
+        `, { count: "exact" })
         .eq("company_id", adminCompany.id)
-        .order("company_name");
+        .order("company_name"));
 
+      if (error) {
+        alert("Export failed: " + error.message);
+        return;
+      }
       if (!data?.length) {
         alert(`No customers found for ${adminCompany.name}`);
         return;

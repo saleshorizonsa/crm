@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from 'lib/supabase';
 import { useAuth } from 'contexts/AuthContext';
 import Icon from 'components/AppIcon';
-import AdminCompanySelector from 'pages/admin-dashboard/components/AdminCompanySelector';
 import CustomerDetailDrawer from './CustomerDetailDrawer';
 import AddCustomerModal from './AddCustomerModal';
 import SalesmanSelector from 'components/ui/SalesmanSelector';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
+import { fetchAllRows } from 'utils/fetchAllRows';
 import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
 // monthKeyOf / monthBoundsOf build yyyy-MM-dd from LOCAL date parts. Everything
 // here used `new Date(y, m, 1).toISOString().split('T')[0]`, which converts a
@@ -51,7 +51,6 @@ function MarketBadge({ market }) {
 
 export default function CustomerMaster({
   adminCompany,
-  onCompanyChange,
   onGoToOpportunities,
   // Called after a row is added to the Current Sales Plan from here. The page
   // owns what reads the plan — the summary tiles and the submit gate's own
@@ -139,11 +138,17 @@ export default function CustomerMaster({
   // now, and this effect also runs on mount, so re-entering this tab would have
   // silently cleared a selection made on another tab. The page clears it when
   // the company actually changes.
+  //
+  // The company is chosen at page level (Planning's selector), so the list
+  // filters reset here when it changes rather than in the selector's handler.
   useEffect(() => {
     setRecordOwners([]);
     setActiveRow(null);
     setInlineAmount('');
     setAddedIds(new Set());
+    setStatusFilter('all');
+    setSearch('');
+    setSelected(new Set());
   }, [adminCompany?.id]);
 
   // Which customers are already planned for the current month, so the list can
@@ -259,22 +264,24 @@ export default function CustomerMaster({
     const base = () =>
       supabase
         .from('contacts')
-        .select(COLS)
+        .select(COLS, { count: 'exact' })
         .gte('created_at', monthStart)
         .lte('created_at', monthEnd)
         .order('created_at', { ascending: false });
+    // An import can add more than one page (1,000) of customers in a month.
+    const all = async (narrow) => (await fetchAllRows(() => narrow(base()))).data || [];
 
     let rows = [];
     if (role === 'salesman') {
-      rows = (await base().eq('owner_id', user.id)).data || [];
+      rows = await all((q) => q.eq('owner_id', user.id));
     } else if (['manager', 'supervisor'].includes(role)) {
       const teamIds = [user.id, ...teamMembers.map((m) => m.id)].filter(Boolean);
-      rows = teamIds.length ? (await base().in('owner_id', teamIds)).data || [] : [];
+      rows = teamIds.length ? await all((q) => q.in('owner_id', teamIds)) : [];
     } else {
       // director / admin / head → company's assigned (owner in company) + unassigned
       const ownerIds = await getCompanyUserIds(adminCompany.id);
-      const owned = ownerIds.length ? (await base().in('owner_id', ownerIds)).data || [] : [];
-      const orphan = (await base().is('owner_id', null).eq('company_id', adminCompany.id)).data || [];
+      const owned = ownerIds.length ? await all((q) => q.in('owner_id', ownerIds)) : [];
+      const orphan = await all((q) => q.is('owner_id', null).eq('company_id', adminCompany.id));
       const merged = new Map();
       [...owned, ...orphan].forEach((r) => merged.set(r.id, r));
       rows = [...merged.values()].sort(
@@ -318,9 +325,15 @@ export default function CustomerMaster({
         return;
       }
 
+      // Owner ids are resolved once; the query itself is rebuilt for each page.
+      const ownerIds = !selectedSalesman && statusFilter !== 'unassigned'
+        && !['salesman', 'manager', 'supervisor'].includes(role)
+        ? await getCompanyUserIds(adminCompany.id)
+        : null;
+      const makeQuery = () => {
       let query = supabase
         .from('contacts')
-        .select(marketAvailable ? `${SELECT_COLS},market` : SELECT_COLS)
+        .select(marketAvailable ? `${SELECT_COLS},market` : SELECT_COLS, { count: 'exact' })
         .order('company_name', { ascending: true });
 
       if (statusFilter === 'unassigned') {
@@ -341,7 +354,6 @@ export default function CustomerMaster({
       } else {
         // admin / director / head → all of the company's assigned customers,
         // scoped by the owner's company.
-        const ownerIds = await getCompanyUserIds(adminCompany.id);
         query = query.in('owner_id', ownerIds.length ? ownerIds : ['00000000-0000-0000-0000-000000000000']);
         if (statusFilter !== 'all') query = query.eq('customer_type', statusFilter);
       }
@@ -349,8 +361,11 @@ export default function CustomerMaster({
       // Market narrows whichever list the branches above built, alongside the
       // status cards rather than instead of them.
       if (marketAvailable && marketFilter !== 'all') query = query.eq('market', marketFilter);
+      return query;
+      };
 
-      const { data, error } = await query;
+      // Paged: one request stops at 1,000 rows (IMDADAT has 1,713 unassigned).
+      const { data, error } = await fetchAllRows(makeQuery);
       if (error) console.error('fetchCustomers error:', error);
       setCustomers(data || []);
     } finally {
@@ -367,28 +382,27 @@ export default function CustomerMaster({
       return;
     }
     const COLS = 'id,owner_id,customer_type,owner:users!owner_id(id,full_name,role,is_active)';
-    const unassigned = async () =>
-      (await supabase.from('contacts').select(COLS).is('owner_id', null).eq('company_id', adminCompany.id)).data || [];
+    // Every read is paged, so the cards count every customer, not the first
+    // 1,000 a single request returns.
+    const all = async (narrow) =>
+      (await fetchAllRows(() => narrow(supabase.from('contacts').select(COLS, { count: 'exact' })))).data || [];
+    const unassigned = () => all((q) => q.is('owner_id', null).eq('company_id', adminCompany.id));
 
     let rows = [];
     if (selectedSalesman) {
       // Drilled into one salesman → their assigned book only (no unassigned).
-      rows = (await supabase.from('contacts').select(COLS).eq('owner_id', selectedSalesman)).data || [];
+      rows = await all((q) => q.eq('owner_id', selectedSalesman));
     } else if (role === 'salesman') {
-      rows = (await supabase.from('contacts').select(COLS).eq('owner_id', user.id)).data || [];
+      rows = await all((q) => q.eq('owner_id', user.id));
     } else if (['manager', 'supervisor'].includes(role)) {
       // Team lead → full downline (self + everyone below) plus unassigned.
       const scopeIds = [user.id, ...teamMembers.map((m) => m.id)].filter(Boolean);
-      const owned = scopeIds.length
-        ? (await supabase.from('contacts').select(COLS).in('owner_id', scopeIds)).data || []
-        : [];
+      const owned = scopeIds.length ? await all((q) => q.in('owner_id', scopeIds)) : [];
       rows = [...owned, ...(await unassigned())];
     } else {
       // admin / director / head → company's assigned (owner in company) + unassigned
       const ownerIds = await getCompanyUserIds(adminCompany.id);
-      const owned = ownerIds.length
-        ? (await supabase.from('contacts').select(COLS).in('owner_id', ownerIds)).data || []
-        : [];
+      const owned = ownerIds.length ? await all((q) => q.in('owner_id', ownerIds)) : [];
       rows = [...owned, ...(await unassigned())];
     }
     setAllCustomers(rows);
@@ -447,18 +461,40 @@ export default function CustomerMaster({
     prospect: allCustomers.filter((c) => c.customer_type === 'prospect').length,
   };
 
+  // Bulk updates go in batches: with lists past 1,000 rows a "select all" puts
+  // every id in the request URL, and ~1,700 uuids are far beyond what a URL
+  // can carry. Returns the ids the database actually changed.
+  const updateContactsInBatches = async (ids, patch, size = 200) => {
+    const changed = new Set();
+    let firstError = null;
+    for (let i = 0; i < ids.length; i += size) {
+      const { data, error } = await supabase
+        .from('contacts')
+        .update(patch)
+        .in('id', ids.slice(i, i + size))
+        .select('id');
+      if (error) firstError = firstError || error;
+      else (data || []).forEach((r) => changed.add(r.id));
+    }
+    return { changed, error: firstError };
+  };
+
   const handleBulkAssign = async () => {
     if (!bulkOwner || selected.size === 0) return;
-    await supabase
-      .from('contacts')
-      .update({
-        owner_id: bulkOwner,
-        assigned_by: user.id,
-        assigned_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .in('id', [...selected]);
-    setSelected(new Set());
+    const ids = [...selected];
+    const now = new Date().toISOString();
+    const { changed, error } = await updateContactsInBatches(ids, {
+      owner_id: bulkOwner,
+      assigned_by: user.id,
+      assigned_at: now,
+      updated_at: now,
+    });
+    const failedIds = ids.filter((id) => !changed.has(id));
+    if (failedIds.length) {
+      console.error('handleBulkAssign:', error || `${failedIds.length} rows not updated`, failedIds);
+      alert(`${changed.size} assigned · ${failedIds.length} couldn't be assigned${error ? ` (${error.message})` : ' (no permission to edit them)'}. They stay selected.`);
+    }
+    setSelected(new Set(failedIds));
     setBulkOwner('');
     fetchCustomers();
     fetchStats();
@@ -474,14 +510,10 @@ export default function CustomerMaster({
     const label = MARKET_LABEL[bulkMarket];
     setApplyingMarket(true);
     setMarketResult(null);
-    const { data, error } = await supabase
-      .from('contacts')
-      .update({ market: bulkMarket, updated_at: new Date().toISOString() })
-      .in('id', ids)
-      .select('id');
+    const { changed: changedIds, error } = await updateContactsInBatches(
+      ids, { market: bulkMarket, updated_at: new Date().toISOString() });
     setApplyingMarket(false);
 
-    const changedIds = new Set(error ? [] : (data || []).map((r) => r.id));
     const failedIds = ids.filter((id) => !changedIds.has(id));
     const changed = changedIds.size;
     const plural = (n) => `${n} customer${n === 1 ? '' : 's'}`;
@@ -599,19 +631,6 @@ export default function CustomerMaster({
 
   return (
     <div className="space-y-4">
-      {/* Company selector for admin/director */}
-      {['admin', 'director'].includes(role) && (
-        <AdminCompanySelector
-          value={adminCompany?.id}
-          onSelect={(co) => {
-            onCompanyChange(co);
-            setStatusFilter('all');
-            setSearch('');
-            setSelected(new Set());
-          }}
-        />
-      )}
-
       {!adminCompany ? (
         <div className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-3">
           <Icon name="Building2" size={40} className="opacity-30" />

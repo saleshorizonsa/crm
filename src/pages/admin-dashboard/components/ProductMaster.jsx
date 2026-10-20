@@ -14,6 +14,7 @@ import {
 } from "../../../utils/importExportUtils";
 import { useLanguage } from "../../../i18n";
 import { useAuth } from "contexts/AuthContext";
+import { fetchAllRows } from "../../../utils/fetchAllRows";
 
 const ProductMaster = ({ adminCompany }) => {
   const { t } = useLanguage();
@@ -118,13 +119,17 @@ const ProductMaster = ({ adminCompany }) => {
     if (!effectiveCompany?.id) return;
     setExporting(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await fetchAllRows(() => supabase
         .from("products")
-        .select("material, description, material_group, material_subgroup, base_unit_of_measure, unit_price, cost_price, price_per_ton, price_per_pc, price_per_meter, is_active")
+        .select("material, description, material_group, material_subgroup, base_unit_of_measure, unit_price, cost_price, price_per_ton, price_per_pc, price_per_meter, is_active", { count: "exact" })
         .eq("company_id", effectiveCompany.id)
         .order("material_group")
-        .order("material");
+        .order("material"));
 
+      if (error) {
+        alert("Export failed: " + error.message);
+        return;
+      }
       if (!data?.length) {
         alert(`No products found for ${effectiveCompany.name}`);
         return;
