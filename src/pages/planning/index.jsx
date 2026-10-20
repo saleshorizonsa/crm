@@ -30,6 +30,7 @@ import { useDateRange } from "contexts/DateRangeContext";
 import { periodLabelFromRange, isAnnualRange } from "utils/dashboardDateUtils";
 import QuickDateSelector from "components/QuickDateSelector";
 import PlanApprovalsModule from "./components/PlanApprovalsModule";
+import AdminCompanySelector from "pages/admin-dashboard/components/AdminCompanySelector";
 // Session 13 — the cards are openable, the gap has suggestions, the plan items
 // carry health flags and a team lead gets a board.
 import PlanningCardPanel, { PlanCardOpener } from "./components/PlanningCardPanel";
@@ -117,13 +118,15 @@ class TabErrorBoundary extends React.Component {
 const PlanningPage = () => {
   const { user, company, userProfile } = useAuth();
   const [activeTab, setActiveTab] = useState("customer_master");
-  const [adminCompany, setAdminCompany] = useState(null);
+  // The company every tab works on. Starts as the header company and follows
+  // it whenever it changes; an admin/director can pick another one with the
+  // selector above the tabs, and that choice holds across all tabs. (It used
+  // to be copied once, and could only be picked on Customer Master.)
+  const [adminCompany, setAdminCompany] = useState(company || null);
 
   useEffect(() => {
-    if (company && !adminCompany) {
-      setAdminCompany(company);
-    }
-  }, [company]);
+    if (company?.id) setAdminCompany(company);
+  }, [company?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const role = userProfile?.role;
   // Historical sales upload is a director/admin/head-only tool
@@ -1208,6 +1211,14 @@ const PlanningPage = () => {
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
       <main className="flex-1 px-4 lg:px-6 py-6 max-w-screen-2xl mx-auto w-full">
+        {/* Company for every tab (admin/director). An admin with no company of
+            their own (IT Support) starts here with none chosen. */}
+        {["admin", "director"].includes(role) && (
+          <div className="-mx-4 lg:-mx-6 -mt-6 mb-6">
+            <AdminCompanySelector value={adminCompany} onSelect={setAdminCompany} />
+          </div>
+        )}
+
         {/* Page heading */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground">Planning</h1>
@@ -1737,7 +1748,6 @@ const PlanningPage = () => {
           {activeTab === "customer_master" && (
             <CustomerMaster
               adminCompany={adminCompany}
-              onCompanyChange={setAdminCompany}
               onGoToOpportunities={() => setActiveTab("opportunities")}
               // "Add to plan" here writes an opportunity like any other plan
               // row, so it has to refresh what reads the plan.

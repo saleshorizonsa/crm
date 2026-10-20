@@ -27,6 +27,7 @@ import {
 // sales_targets query happens to return.
 import { fetchAchieverIds, totalsScopeOpts } from "../utils/achieverScope";
 import { wholePeriodOf } from "../utils/dashboardDateUtils";
+import { fetchAllRows } from "../utils/fetchAllRows";
 // The returns importer's own matcher, so correcting an invoice number re-matches
 // returns by exactly the rule that matched them on import.
 import { indexDealsByInvoice, dealsForInvoice } from "../utils/salesReturnsImport";
@@ -5060,16 +5061,18 @@ export const adminService = {
     }
   },
 
-  // Get all products (for product master)
+  // Get all products (for product master). Paged: a company can hold more
+  // than the 1,000 rows one request returns (IMDADAT has 4,268).
   async getAllProducts(companyId = null) {
     try {
-      let query = supabase
-        .from("products")
-        .select("*")
-        .order("material", { ascending: true });
-      if (companyId) query = query.eq("company_id", companyId);
-
-      const { data, error } = await query;
+      const { data, error } = await fetchAllRows(() => {
+        let query = supabase
+          .from("products")
+          .select("*", { count: "exact" })
+          .order("material", { ascending: true });
+        if (companyId) query = query.eq("company_id", companyId);
+        return query;
+      });
       return { data, error };
     } catch (error) {
       return { data: null, error };
