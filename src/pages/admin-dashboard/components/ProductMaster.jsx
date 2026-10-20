@@ -6,7 +6,6 @@ import { adminService } from "../../../services/supabaseService";
 import { supabase } from "../../../lib/supabase";
 import { useMaterialGroups } from "../../../hooks/useMaterialGroups";
 import ProductModal from "./ProductModal";
-import ProductUploadModal from "./ProductUploadModal";
 import ProductImportModal from "./ProductImportModal";
 import {
   downloadProductTemplate,
@@ -27,7 +26,6 @@ const ProductMaster = ({ adminCompany }) => {
 
   // ── existing CRUD state (untouched) ──────────────────────────────────────────
   const [showModal, setShowModal] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [viewingProduct, setViewingProduct] = useState(null);
@@ -95,11 +93,6 @@ const ProductMaster = ({ adminCompany }) => {
   const handleModalSuccess = () => {
     setShowModal(false);
     setEditingProduct(null);
-    loadProducts();
-  };
-
-  const handleUploadSuccess = () => {
-    setShowUploadModal(false);
     loadProducts();
   };
 
@@ -311,11 +304,7 @@ const ProductMaster = ({ adminCompany }) => {
           Import Products
         </button>
 
-        {/* Upload CSV & Add Product */}
-        <Button onClick={() => setShowUploadModal(true)} variant="outline">
-          <Icon name="Upload" size={16} />
-          {t("adminProductMaster.uploadCSV")}
-        </Button>
+        {/* Add Product */}
         <Button onClick={handleAdd}>
           <Icon name="Plus" size={16} />
           {t("adminProductMaster.addProduct")}
@@ -758,17 +747,10 @@ const ProductMaster = ({ adminCompany }) => {
         />
       )}
 
-      {showUploadModal && (
-        <ProductUploadModal
-          onClose={() => setShowUploadModal(false)}
-          onSuccess={handleUploadSuccess}
-        />
-      )}
-
       <ProductImportModal
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
-        onSuccess={() => { setShowImportModal(false); loadProducts(); }}
+        onSuccess={loadProducts}
         adminCompany={effectiveCompany}
       />
     </div>

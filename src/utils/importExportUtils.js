@@ -2,18 +2,21 @@ import * as XLSX from 'xlsx';
 
 // ── PRODUCT MASTER ─────────────────────────────────────────────────────────────
 
+// No column is mandatory: the import takes whatever columns a file has (see
+// utils/productImport.js). Headings are matched by name, so the order and
+// wording here are a convenience, not a contract.
 export const PRODUCT_TEMPLATE_COLUMNS = [
-  { header: 'Item Code *',          key: 'material',             example: 'UPIP-110-4M',            note: 'Required. Unique code per company.' },
-  { header: 'Item Description *',   key: 'description',          example: 'UPVC Pipe 110mm 4 Meter', note: 'Required. Full product name.' },
-  { header: 'Product Group *',      key: 'material_group',       example: 'UPIP',                   note: 'Required. Must match an existing group.' },
-  { header: 'Sub Group',            key: 'material_subgroup',    example: 'PRESSURE',               note: 'Optional.' },
-  { header: 'Unit of Measure *',    key: 'base_unit_of_measure', example: 'PC',                     note: 'Required. PC / KG / TON / METER / SQM' },
-  { header: 'Unit Price (SAR)',      key: 'unit_price',           example: '45.50',                  note: 'Optional. Numeric only.' },
-  { header: 'Cost Price (SAR)',      key: 'cost_price',           example: '32.00',                  note: 'Optional. Numeric only.' },
-  { header: 'Price Per Ton (SAR)',   key: 'price_per_ton',        example: '',                       note: 'Optional. Leave blank if not applicable.' },
-  { header: 'Price Per PC (SAR)',    key: 'price_per_pc',         example: '45.50',                  note: 'Optional.' },
-  { header: 'Price Per Meter (SAR)', key: 'price_per_meter',      example: '',                       note: 'Optional.' },
-  { header: 'Is Active',            key: 'is_active',            example: 'TRUE',                   note: 'TRUE or FALSE. Default TRUE.' },
+  { header: 'Item Code',             key: 'material',             example: 'UPIP-110-4M',            note: 'Matches an existing product. Without a code, the description is used to find it.' },
+  { header: 'Item Description',      key: 'description',          example: 'UPVC Pipe 110mm 4 Meter', note: 'Full product name.' },
+  { header: 'Product Group',         key: 'material_group',       example: 'UPIP',                   note: 'A new group name is created.' },
+  { header: 'Sub Group',             key: 'material_subgroup',    example: 'PRESSURE',               note: '' },
+  { header: 'Unit of Measure',       key: 'base_unit_of_measure', example: 'PC',                     note: 'PC / KG / TON / METER / SQM. New products default to PC.' },
+  { header: 'Unit Price (SAR)',      key: 'unit_price',           example: '45.50',                  note: 'Numbers such as 1,250.50 or SAR 1250.' },
+  { header: 'Cost Price (SAR)',      key: 'cost_price',           example: '32.00',                  note: '' },
+  { header: 'Price Per Ton (SAR)',   key: 'price_per_ton',        example: '',                       note: '' },
+  { header: 'Price Per PC (SAR)',    key: 'price_per_pc',         example: '45.50',                  note: '' },
+  { header: 'Price Per Meter (SAR)', key: 'price_per_meter',      example: '',                       note: '' },
+  { header: 'Is Active',             key: 'is_active',            example: 'TRUE',                   note: 'TRUE or FALSE. New products default to TRUE.' },
 ];
 
 export function downloadProductTemplate(companyName, existingGroups = []) {
@@ -40,21 +43,20 @@ export function downloadProductTemplate(companyName, existingGroups = []) {
     ['Company:', companyName],
     [''],
     ['INSTRUCTIONS'],
-    ['1. Fill in the Products sheet starting from row 2'],
-    ['2. Do not change or delete the header row (row 1)'],
-    ['3. Delete the 3 sample rows before importing'],
-    ['4. Required fields are marked with *'],
-    ['5. Product Group must match an existing group in CRM'],
-    ['6. Item Code must be unique within this company'],
-    ['7. Is Active: enter TRUE to make product available, FALSE to hide it'],
-    ['8. Save as .xlsx before uploading'],
+    ['1. Fill in the Products sheet starting from row 2, and delete the 3 sample rows'],
+    ['2. Keep only the columns you have. No column is mandatory; delete the rest or leave them blank'],
+    ['3. A blank cell never clears a value already in CRM; only filled cells are imported'],
+    ['4. Rows are matched by Item Code; a row without a code is matched by Item Description'],
+    ['5. Item Code must be unique within this company'],
+    ['6. Is Active: enter TRUE to make product available, FALSE to hide it'],
+    ['7. You will see what will be created, updated and skipped before anything is saved'],
     [''],
     ['COLUMN GUIDE'],
-    ...PRODUCT_TEMPLATE_COLUMNS.map(c => [c.header, c.note, `Example: ${c.example}`]),
+    ...PRODUCT_TEMPLATE_COLUMNS.map(c => [c.header, c.note, c.example ? `Example: ${c.example}` : '']),
   ];
   if (existingGroups.length > 0) {
     instructions.push(['']);
-    instructions.push([`VALID PRODUCT GROUPS FOR ${companyName.toUpperCase()}`]);
+    instructions.push([`EXISTING PRODUCT GROUPS FOR ${companyName.toUpperCase()}`]);
     existingGroups.forEach(g => instructions.push([g]));
   }
 
@@ -136,40 +138,6 @@ export function downloadCustomerTemplate(companyName, salesmen = []) {
 
 // ── IMPORT PARSERS ─────────────────────────────────────────────────────────────
 
-export function parseProductFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      try {
-        const wb   = XLSX.read(e.target.result, { type: 'binary' });
-        const ws   = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { raw: false, defval: '' });
-
-        const products = rows.map((row, i) => ({
-          rowNum:              i + 2,
-          material:            (row['Item Code *']          || row['Item Code']          || '').trim(),
-          description:         (row['Item Description *']   || row['Item Description']   || '').trim(),
-          material_group:      (row['Product Group *']      || row['Product Group']      || '').trim().toUpperCase(),
-          material_subgroup:   (row['Sub Group']            || '').trim(),
-          base_unit_of_measure:(row['Unit of Measure *']    || row['Unit of Measure']    || 'PC').trim().toUpperCase(),
-          unit_price:          parseFloat(row['Unit Price (SAR)'])       || null,
-          cost_price:          parseFloat(row['Cost Price (SAR)'])       || null,
-          price_per_ton:       parseFloat(row['Price Per Ton (SAR)'])    || null,
-          price_per_pc:        parseFloat(row['Price Per PC (SAR)'])     || null,
-          price_per_meter:     parseFloat(row['Price Per Meter (SAR)'])  || null,
-          is_active:           String(row['Is Active'] || 'TRUE').toUpperCase() !== 'FALSE',
-        }));
-
-        resolve(products);
-      } catch(err) {
-        reject(new Error('Could not read file: ' + err.message));
-      }
-    };
-    reader.onerror = () => reject(new Error('File read failed'));
-    reader.readAsBinaryString(file);
-  });
-}
-
 export function parseCustomerFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -229,46 +197,6 @@ export function parseCustomerFile(file) {
 
 // ── VALIDATORS ─────────────────────────────────────────────────────────────────
 
-export function validateProductRows(rows, validGroups = []) {
-  const errors   = [];
-  const warnings = [];
-  const valid    = [];
-  const seenCodes = new Set();
-
-  rows.forEach(row => {
-    const rowErrors = [];
-
-    if (!row.material) {
-      rowErrors.push('Item Code is required');
-    } else if (seenCodes.has(row.material.toLowerCase())) {
-      rowErrors.push(`Duplicate Item Code: ${row.material}`);
-    } else {
-      seenCodes.add(row.material.toLowerCase());
-    }
-
-    if (!row.description) rowErrors.push('Item Description is required');
-
-    if (!row.material_group) {
-      rowErrors.push('Product Group is required');
-    } else if (
-      validGroups.length > 0 &&
-      !validGroups.map(g => g.toUpperCase()).includes(row.material_group.toUpperCase())
-    ) {
-      warnings.push({ row: row.rowNum, message: `Group "${row.material_group}" not found — will be created` });
-    }
-
-    if (!row.base_unit_of_measure) rowErrors.push('Unit of Measure is required');
-
-    if (rowErrors.length > 0) {
-      errors.push({ row: row.rowNum, messages: rowErrors, data: row });
-    } else {
-      valid.push(row);
-    }
-  });
-
-  return { valid, errors, warnings };
-}
-
 const VALID_CUSTOMER_TYPES = ['active', 'inactive', 'dormant', 'prospect', 'blocked'];
 
 export function validateCustomerRows(rows) {
@@ -312,11 +240,11 @@ export function validateCustomerRows(rows) {
 
 export function exportProductsToExcel(products, companyName) {
   const rows = products.map(p => ({
-    'Item Code *':           p.material              || '',
-    'Item Description *':    p.description           || '',
-    'Product Group *':       p.material_group        || '',
+    'Item Code':             p.material              || '',
+    'Item Description':      p.description           || '',
+    'Product Group':         p.material_group        || '',
     'Sub Group':             p.material_subgroup     || '',
-    'Unit of Measure *':     p.base_unit_of_measure  || '',
+    'Unit of Measure':       p.base_unit_of_measure  || '',
     'Unit Price (SAR)':      p.unit_price            || '',
     'Cost Price (SAR)':      p.cost_price            || '',
     'Price Per Ton (SAR)':   p.price_per_ton         || '',

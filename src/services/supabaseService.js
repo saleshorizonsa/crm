@@ -5121,23 +5121,6 @@ export const adminService = {
     }
   },
 
-  // Bulk upsert products (for CSV upload)
-  async bulkUpsertProducts(products) {
-    try {
-      const { data, error } = await supabase
-        .from("products")
-        .upsert(products, {
-          onConflict: "material,company_id",
-          ignoreDuplicates: false,
-        })
-        .select();
-
-      return { data, error };
-    } catch (error) {
-      return { data: null, error };
-    }
-  },
-
   // Get users by company
   async getUsersByCompany(companyId) {
     try {
