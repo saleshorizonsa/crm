@@ -710,9 +710,12 @@ export function calcDivisionMetrics(userIds, data) {
   // function per scope and period, so Insights' Expected % (Most likely ÷
   // target) and the Forecast page's Most likely are one computation.
   //
-  // Achieved is the figure above; won-not-invoiced over the same people as
-  // Achieved (the KPI strip's rule); open deals and plan items over the ACTIVE
-  // achievers only, from the rows already narrowed to this division.
+  // Achieved is the figure above (its own scope, departed people included).
+  // Won-not-invoiced, open deals and plan items are FORWARD-LOOKING, so they
+  // are the ACTIVE achievers' only (decision 2026-10-21: a departed owner's
+  // uninvoiced deal — Osman Shoukat's Bahra Cables 32,500 — is not in the
+  // tiers, matching the coverage rail), from rows already narrowed to this
+  // division.
   // An All-Time view has no window, so it has no tiers.
   const tiers = (monthStart && monthEnd)
     ? computeTiers({
@@ -721,7 +724,7 @@ export function calcDivisionMetrics(userIds, data) {
       today: dayKey(now),
       achieved,
       wonDeals: deals,
-      wniOwnerIds: [...isAchiever],
+      wniOwnerIds: forwardIds,
       openDeals,
       planRows: divisionOpps.filter((o) => isForward.has(o.owner_id)),
       conversionPct: winRatePct,

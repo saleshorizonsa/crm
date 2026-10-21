@@ -1684,7 +1684,8 @@ function referenceTiers({ bundle, ids, divisionId, start, end, today, conversion
     if (d.is_invoiced === true) {
       const inv = day(d.invoice_date);
       if (inv && inv >= start && inv <= end) achieved += value(d);
-    } else if (containsToday) {
+    } else if (containsToday && active.has(d.owner_id)) {
+      // Won-not-invoiced is forward-looking: active owners only (2026-10-21).
       wni += value(d);
     }
   });

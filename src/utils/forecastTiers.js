@@ -20,8 +20,9 @@
 //   - PAST-DUE open deals (expected_close_date before today) are in NO tier.
 //     They are listed for re-dating instead.
 //   - Plan items of months already over are stale and count nowhere.
-//   - Open deals and plan items are the ACTIVE achievers' only (the caller
-//     passes rows already narrowed — calcDivisionMetrics' forward set).
+//   - Won-not-invoiced, open deals and plan items are FORWARD-LOOKING: the
+//     ACTIVE achievers' only (decision 2026-10-21; calcDivisionMetrics passes
+//     its forward set). Achieved keeps its own scope.
 //   - Outliers are FLAGGED, never removed.
 //
 // This module is pure: no reads. calcDivisionMetrics calls computeTiers, which
@@ -101,7 +102,7 @@ export function planItemCounts(item, { today }) {
  * @param {string}   p.today           yyyy-MM-dd
  * @param {number}   p.achieved        the shared Achieved for the scope and period
  * @param {object[]} p.wonDeals        deal rows in scope; won-not-invoiced is derived (shared helper)
- * @param {string[]} p.wniOwnerIds     whose won-not-invoiced counts (the Achieved people)
+ * @param {string[]} p.wniOwnerIds     whose won-not-invoiced counts (the ACTIVE achievers)
  * @param {object[]} p.openDeals       OPEN deal rows of the active achievers, any date
  * @param {object[]} p.planRows        OPEN plan items of the active achievers for the period
  * @param {number}   p.conversionPct   the scope's conversion rate (session 24 rule), 0–100
