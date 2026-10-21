@@ -42,7 +42,7 @@ import { calcCoverageMetrics } from "utils/coverageConsoleMetrics";
 // itself from calcCoverageMetrics, but it must not name it differently.
 import {
   EXPECTED_PCT_LABEL,
-  EXPECTED_PCT_TOOLTIP,
+  COVERAGE_PCT_TOOLTIP,
 } from "utils/salesDivisionMetrics";
 
 // ── STATE ────────────────────────────────────────────────────────────────────
@@ -1218,7 +1218,7 @@ export default function CoverageConsole() {
                           (h) => (
                             <th
                               key={h}
-                              title={h === EXPECTED_PCT_LABEL ? EXPECTED_PCT_TOOLTIP : undefined}
+                              title={h === EXPECTED_PCT_LABEL ? COVERAGE_PCT_TOOLTIP : undefined}
                               className={`text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100${
                                 h === EXPECTED_PCT_LABEL ? " cursor-help underline decoration-dotted" : ""
                               }`}

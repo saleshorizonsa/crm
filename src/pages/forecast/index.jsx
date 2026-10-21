@@ -1,29 +1,45 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import Icon from "../../components/AppIcon";
 import Header from "../../components/ui/Header";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
+import DrillSheet from "../../components/DrillSheet";
 import { format, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, startOfYear, endOfYear } from "date-fns";
 import { useAuth } from "../../contexts/AuthContext";
 import { useDateRange } from "../../contexts/DateRangeContext";
-import { forecastService, userService } from "../../services/supabaseService";
-import { computeKpiStripData } from "../../utils/kpiStripData";
-import { computeWinRate } from "../../utils/planningCalculations";
-import { isAnnualRange } from "../../utils/dashboardDateUtils";
-import { buildForecast, DEFAULT_STAGE_WEIGHTS } from "../../utils/forecastEngine";
-import { generateInsights, generatePrediction } from "../../utils/forecastInsights";
-import ForecastKPIBar     from "./components/ForecastKPIBar";
-import AIInsightsPanel    from "./components/AIInsightsPanel";
-import AIPredictionCard   from "./components/AIPredictionCard";
-import StageBreakdown     from "./components/StageBreakdown";
-import ForecastDealTable  from "./components/ForecastDealTable";
+import { useCurrency } from "../../contexts/CurrencyContext";
+import { useLanguage } from "../../i18n";
+import { periodLabelFromRange } from "../../utils/dashboardDateUtils";
+import {
+  loadForecastBundle, forecastFor, divisionGroupsOf, pickableAchievers, fetchDealLines,
+} from "../../utils/forecastData";
+import { buildForecastView, drillTree, DRILL_COLUMNS, targetLookup } from "../../utils/forecastView";
+import {
+  dayKey, phasedPeriods, addMonthsKey, monthBoundsOfKey, outlierReason, sinceSnapshot, accuracyOf,
+} from "../../utils/forecastTiers";
+import {
+  fetchSnapshots, takeSnapshot, ensureWeeklySnapshot, previousSnapshot, fetchDealStates,
+} from "../../utils/forecastSnapshots";
+import { COMPANY_SCOPE_ROLES } from "../../utils/salesDivisionMetrics";
+import StageBreakdown from "./components/StageBreakdown";
 import ForecastGroupBreakdown from "./components/ForecastGroupBreakdown";
-import SalesmanContribution   from "./components/SalesmanContribution";
-import ProjectionChart    from "../company-dashboard/components/forecast/ProjectionChart";
-import ForecastAISummary  from "../company-dashboard/components/forecast/ForecastAISummary";
-import { useCurrency }    from "../../contexts/CurrencyContext";
-import { useLanguage }   from "../../i18n";
+import ForecastAISummary from "../company-dashboard/components/forecast/ForecastAISummary";
+import {
+  TierCards, PhasedView, VsTargetTable, DealTable, SnapshotPanel, OutlierBanner,
+} from "./components/ForecastSections";
 
-// ── Period presets ──────────────────────────────────────────────────────────
+// ── THE FORECAST PAGE (session 31, CEO decisions 2026-10-21) ─────────────────
+//
+// One definition of the three tiers (utils/forecastTiers.js), computed through
+// calcDivisionMetrics — the function behind Insights — so this page's Most
+// likely and Insights' Expected are the same number for the same scope and
+// period. What this page used to show and no longer does:
+//   - every open deal in every period (Last Month / Quarter / Year all carried
+//     today's whole pipeline);
+//   - inactive owners' open deals;
+//   - a straight-line "12-week projection" (now: by close month);
+//   - an AI summary, prediction card and insights panel that each computed
+//     their own committed / weighted figures.
 
 const PERIOD_PRESETS = [
   { id: "this_month",   label: "This Month" },
@@ -31,9 +47,7 @@ const PERIOD_PRESETS = [
   { id: "this_quarter", label: "This Quarter" },
   { id: "this_year",    label: "This Year" },
 ];
-
 const ymd = (d) => format(d, "yyyy-MM-dd");
-
 function getPeriodDates(period) {
   const now = new Date();
   switch (period) {
@@ -44,8 +58,6 @@ function getPeriodDates(period) {
     default:             return { from: startOfMonth(now),   to: endOfMonth(now) };
   }
 }
-
-// Match the active date range back to a preset id (or "custom") for button highlight
 function matchPeriod(dateRange) {
   if (!dateRange?.from || !dateRange?.to) return "custom";
   for (const p of PERIOD_PRESETS) {
@@ -55,427 +67,336 @@ function matchPeriod(dateRange) {
   return "custom";
 }
 
-// Roles that oversee multiple salesmen and can drill into one
-const MULTI_REP_ROLES = ["director", "manager", "admin", "head"];
-
-// ── Skeleton ──────────────────────────────────────────────────────────────────
-
-const PageSkeleton = () => (
-  <div className="animate-pulse space-y-6">
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-      {[...Array(5)].map((_, i) => (
-        <div key={i} className="h-24 bg-muted rounded-lg" />
-      ))}
-    </div>
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2 h-64 bg-muted rounded-lg" />
-      <div className="h-64 bg-muted rounded-lg" />
-    </div>
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2 h-48 bg-muted rounded-lg" />
-      <div className="h-48 bg-muted rounded-lg" />
-    </div>
-    <div className="h-64 bg-muted rounded-lg" />
-  </div>
-);
-
-// ── Page ──────────────────────────────────────────────────────────────────────
+// Division picker for manager and above (as Insights); person picker for every
+// role that sees more than himself.
+const DIVISION_PICKER_ROLES = ["manager", "director", "head", "admin"];
+const PERSON_PICKER_ROLES = ["supervisor", "manager", "director", "head", "admin"];
+const DIRECTOR_VIEW_ROLES = ["manager", "director", "head", "admin"];
+const SNAPSHOT_ROLES = COMPANY_SCOPE_ROLES; // director, head, admin
 
 const ForecastPage = () => {
   const { t } = useLanguage();
+  const navigate = useNavigate();
   const { user, userProfile, company } = useAuth();
   const { preferredCurrency } = useCurrency();
-
   const { dateRange, setRange } = useDateRange();
-  // closedLost.count starts null — "not read yet", which the win rate reports as
-  // no figure rather than as a 0 denominator.
-  // Every key getForecastData returns, so a first render before the fetch
-  // resolves reads a real value rather than undefined.
-  const [rawData, setRawData] = useState({
-    deals: [], target: null,
-    achieved: 0, achievedGross: 0, returnsTotal: 0, invoiceCount: 0,
-    wonNotInvoiced: { total: 0, count: 0 },
-    closedLost: { count: null },
-  });
-  const [groupBreakdown, setGroupBreakdown] = useState([]);
-  const [isLoading, setIsLoading]     = useState(false);
-  const [fetchError, setFetchError]   = useState(null);
-
   const role = userProfile?.role;
-  const canFilterSalesman = MULTI_REP_ROLES.includes(role);
-
-  // Salesman filter (only meaningful for multi-rep roles)
-  const [selectedSalesman, setSelectedSalesman] = useState("all");
-  const [salesmen, setSalesmen] = useState([]);
-
-  // Active period preset (drives button highlight); derived from the shared range
   const activePeriod = matchPeriod(dateRange);
+  const applyPeriod = (id) => { const { from, to } = getPeriodDates(id); setRange({ from: ymd(from), to: ymd(to) }); };
 
-  const applyPeriod = (periodId) => {
-    const { from, to } = getPeriodDates(periodId);
-    setRange({ from: ymd(from), to: ymd(to) });
-  };
+  const [personId, setPersonId] = useState("all");
+  const [divisionId, setDivisionId] = useState("all");
+  const [bundle, setBundle] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState(null);
+  const [linesByDeal, setLinesByDeal] = useState({});
+  const [snap, setSnap] = useState({ applied: true, rows: [], message: "" });
+  const [dealStates, setDealStates] = useState({});
+  const [taking, setTaking] = useState(false);
+  const [drill, setDrill] = useState(null);
 
-  // Load the company's active salesmen for the drill-down dropdown
+  const today = dayKey(new Date());
+  const period = dateRange?.from && dateRange?.to ? { start: dateRange.from, end: dateRange.to } : null;
+  const periodLabel = period ? periodLabelFromRange(period.start, period.end) : "";
+
+  // ── LOAD: one bundle covering the selected period, last month, and the
+  //    phased months (this month, +1, +2, the quarter).
   useEffect(() => {
-    if (!company?.id || !canFilterSalesman) return;
+    if (!user?.id || !company?.id || !period) return;
     let cancelled = false;
     (async () => {
-      const { data } = await userService.getCompanyUsers(company.id, {
-        role: "salesman",
-        status: "active",
-      });
-      if (!cancelled) setSalesmen(data || []);
-    })();
-    return () => { cancelled = true; };
-  }, [company?.id, canFilterSalesman]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    if (!dateRange.isAllTime && !dateRange.from) return;
-
-    let cancelled = false;
-    const ownerId = selectedSalesman !== "all" ? selectedSalesman : null;
-
-    const load = async () => {
       setIsLoading(true);
       setFetchError(null);
-
-      const [forecastResult, groupResult] = await Promise.all([
-        forecastService.getForecastData({
-          companyId:   company?.id,
-          userId:      user.id,
-          role,
-          periodStart: dateRange.from || null,
-          periodEnd:   dateRange.to   || null,
-          ownerId,
-        }),
-        forecastService.getForecastGroupBreakdown({
-          companyId: company?.id,
-          userId:    user.id,
-          role,
-          ownerId,
-        }),
-      ]);
-
-      if (cancelled) return;
-
-      if (forecastResult.error) {
-        setFetchError(forecastResult.error);
-      } else {
-        // closedLost is the win rate's denominator — the lost half of the same
-        // scope and window. It is kept OUT of `deals` on purpose; see
-        // forecastService.getForecastData section 2b.
-        setRawData({
-          deals: forecastResult.deals || [],
-          target: forecastResult.target,
-          // The shared Achieved and won-not-invoiced for this scope and period.
-          achieved: forecastResult.achieved || 0,
-          achievedGross: forecastResult.achievedGross || 0,
-          returnsTotal: forecastResult.returnsTotal || 0,
-          invoiceCount: forecastResult.invoiceCount || 0,
-          wonNotInvoiced: forecastResult.wonNotInvoiced || { total: 0, count: 0 },
-          closedLost: forecastResult.closedLost || { count: null },
+      try {
+        const { months, quarter } = phasedPeriods(today);
+        const lastMonth = monthBoundsOfKey(addMonthsKey(today.slice(0, 7), -1));
+        const windowStart = [period.start, lastMonth.start, quarter.start].sort()[0];
+        const windowEnd = [period.end, months[2].end, quarter.end].sort().slice(-1)[0];
+        const b = await loadForecastBundle({
+          companyId: company.id, viewerId: user.id, role, windowStart, windowEnd, now: new Date(),
         });
+        if (!cancelled) setBundle(b);
+      } catch (e) {
+        if (!cancelled) setFetchError(e?.message || "Failed to load the forecast");
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
-      setGroupBreakdown(groupResult.groups || []);
-      setIsLoading(false);
-    };
-
-    load();
+    })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [company?.id, user?.id, role, dateRange.from, dateRange.to, dateRange.isAllTime, selectedSalesman]);
+  }, [company?.id, user?.id, role, period?.start, period?.end]);
 
-  // The REAL win rate driving the AI Prediction card's confidence, which used to
-  // be a synthetic committed/target + deal-count score. THE ONE CONVERSION RULE
-  // (computeWinRate → pickConversion, CEO 2026-10-13), the same as Planning:
-  //   1. this scope's own 3 completed months (the drilled-into salesman, else
-  //      the whole company)
-  //   2. none: one salesman borrows his main division's rate (10+ deals)
-  //   3. then the company's
-  //   4. only with no company rate, an assumed 50%, labelled as such
-  // The old all-history step is gone with it. A rep who created deals and won
-  // none has a measured 0% rate, which is real data.
-  const [winRate, setWinRate] = useState({ rate: null, basis: "none" });
+  // Filters reset when the company changes.
+  useEffect(() => { setPersonId("all"); setDivisionId("all"); }, [company?.id]);
+
+  const filters = useMemo(() => ({
+    personId: personId !== "all" ? personId : null,
+    divisionId: divisionId !== "all" ? divisionId : null,
+  }), [personId, divisionId]);
+
+  const view = useMemo(() => {
+    if (!bundle || !period) return null;
+    return buildForecastView({ bundle, period, filters, today, linesByDeal });
+  }, [bundle, period?.start, period?.end, filters, today, linesByDeal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Deal lines for the product-group breakdown (the deals counted in the period).
+  const countedIds = useMemo(() => (view?.tiers?.dealRows || []).map((r) => r.deal.id).sort().join(","), [view]);
   useEffect(() => {
-    if (!company?.id) { setWinRate({ rate: null, basis: "none" }); return; }
+    if (!countedIds) { setLinesByDeal({}); return; }
+    let cancelled = false;
+    fetchDealLines(countedIds.split(",")).then(({ linesByDeal: l }) => { if (!cancelled) setLinesByDeal(l || {}); });
+    return () => { cancelled = true; };
+  }, [countedIds]);
+
+  // ── SNAPSHOTS: read; the weekly one is taken here by a company-scope viewer.
+  const loadSnapshots = useCallback(async () => {
+    if (!company?.id) return;
+    const since = dayKey(new Date(Date.now() - 75 * 86400000));
+    const res = await fetchSnapshots({ companyId: company.id, since });
+    setSnap((s) => ({ ...s, applied: res.applied, rows: res.rows, message: res.error ? "Snapshots could not be read." : s.message }));
+  }, [company?.id]);
+  useEffect(() => {
+    if (!bundle || !company?.id) return;
     let cancelled = false;
     (async () => {
-      const ownerIds = selectedSalesman !== "all" ? [selectedSalesman] : null;
-      const r = await computeWinRate({ companyId: company.id, ownerIds });
-      if (cancelled) return;
-      setWinRate(r.source ? { rate: r.winRatePct, basis: r.source } : { rate: null, basis: "none" });
-    })();
-    return () => { cancelled = true; };
-  }, [company?.id, selectedSalesman]);
-
-  // The 5th argument is what stops this page having its own idea of revenue:
-  // Committed becomes the shared Achieved and won-not-invoiced is carried as
-  // its own term (utils/forecastEngine.js).
-  const forecast   = useMemo(() => buildForecast(
-    rawData.deals,
-    rawData.target?.target_amount ?? 0,
-    null,
-    null,
-    { achieved: rawData.achieved, wonNotInvoiced: rawData.wonNotInvoiced?.total || 0 },
-  ), [rawData]);
-  const insights   = useMemo(() => generateInsights(forecast, rawData.deals, rawData.target?.target_amount ?? 0, rawData.closedLost), [forecast, rawData]);
-  const prediction = useMemo(
-    () => generatePrediction(forecast, rawData.deals, rawData.target?.target_amount ?? 0, winRate),
-    [forecast, rawData, winRate],
-  );
-
-  const targetAmount = rawData.target?.target_amount ?? 0;
-
-  // Director view: the KPI bar mirrors the Director dashboard for the SELECTED
-  // period by reusing the exact same computeKpiStripData function — Committed =
-  // invoiced won by invoice_date (final value), Target/Attainment/Gap from the
-  // same source. This windows by invoice_date (not closed_at), so deals invoiced
-  // in a different year are never counted. Others keep the projection view.
-  const isDirectorView = ["director", "head", "admin"].includes(role) && selectedSalesman === "all";
-  const [kpiTotals, setKpiTotals] = useState(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!company?.id || !isDirectorView || !dateRange?.from || !dateRange?.to) { setKpiTotals(null); return; }
-      const range = {
-        start: dateRange.from,
-        end: dateRange.to,
-        isAnnual: isAnnualRange(dateRange.from, dateRange.to),
-      };
-      const { totals } = await computeKpiStripData({ companyId: company.id, ownerIds: null, range });
-      if (!cancelled) setKpiTotals(totals);
-    })();
-    return () => { cancelled = true; };
-  }, [company?.id, isDirectorView, dateRange?.from, dateRange?.to]);
-
-  // One target for every role: the service's, which is now the shared rule.
-  const kpiTarget = targetAmount;
-  // A visible disagreement rather than a silent override. The two are computed
-  // by the same shared helpers over the same scope and period, so they should
-  // be equal; if they are not, the page says so instead of picking one.
-  const targetDisagreement = (isDirectorView && kpiTotals
-    && Math.abs((kpiTotals.target || 0) - targetAmount) > 1)
-    ? { strip: kpiTotals.target, service: targetAmount }
-    : null;
-  // The director override that used to live here is GONE. It existed because
-  // this page computed its own Committed, Target, Attainment and Gap and only
-  // the director view was patched to the shared figures; every other role saw
-  // the page's own. getForecastData now returns the shared Achieved and the
-  // shared Target for EVERY role, so the override would be overwriting
-  // correct numbers with the same correct numbers — and silently hiding any
-  // future disagreement between the two.
-  //
-  // computeKpiStripData is still read (above) for one purpose: kpiTotals.target
-  // is compared against the service's target below, and a mismatch is shown
-  // rather than papered over.
-  const kpiForecast = forecast;
-
-  // Per-salesman share of the weighted OPEN pipeline. Derived from the deals
-  // already loaded (they carry owner info), so no extra fetch is needed and the
-  // weighting matches the forecast (DEFAULT_STAGE_WEIGHTS, same as buildForecast
-  // is called here without historical rates). Only meaningful in the company-wide
-  // "All Salesmen" view — hidden when a single salesman is selected.
-  const salesmanContribution = useMemo(() => {
-    if (selectedSalesman !== "all") return [];
-    const openDeals = (rawData.deals || []).filter(
-      (d) => !["won", "lost"].includes(d.stage) && d.owner_id,
-    );
-    const map = {};
-    openDeals.forEach((d) => {
-      const id = d.owner_id;
-      const weight = DEFAULT_STAGE_WEIGHTS[d.stage] ?? 0.1;
-      const value = parseFloat(d.amount) || 0;
-      if (!map[id]) {
-        map[id] = { id, name: d.owner?.full_name || "Unknown", dealCount: 0, totalValue: 0, weightedValue: 0 };
+      if (SNAPSHOT_ROLES.includes(role)) {
+        const r = await ensureWeeklySnapshot({ bundle, companyId: company.id, viewer: { id: user.id, role } });
+        if (!cancelled && r.taken) setSnap((s) => ({ ...s, message: "This week's snapshot was taken just now." }));
       }
-      map[id].dealCount += 1;
-      map[id].totalValue += value;
-      map[id].weightedValue += value * weight;
-    });
-    const totalWeighted = Object.values(map).reduce((s, x) => s + x.weightedValue, 0);
-    return Object.values(map)
-      .map((s) => ({ ...s, pct: totalWeighted > 0 ? (s.weightedValue / totalWeighted) * 100 : 0 }))
-      .sort((a, b) => b.weightedValue - a.weightedValue);
-  }, [rawData.deals, selectedSalesman]);
+      if (!cancelled) await loadSnapshots();
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bundle, company?.id]);
 
-  // Name of the drilled-into salesman ("" when viewing all) — labels the KPI cards
-  const selectedSalesmanName =
-    selectedSalesman !== "all"
-      ? salesmen.find((s) => s.id === selectedSalesman)?.full_name || ""
-      : "";
+  const takeNow = async () => {
+    setTaking(true);
+    const r = await takeSnapshot({ bundle, companyId: company.id, takenBy: user.id, manual: true });
+    setTaking(false);
+    setSnap((s) => ({ ...s, message: r.error ? `Snapshot failed: ${r.error.message}` : `Snapshot taken: ${r.written} rows (a second one on the same day is not stored).` }));
+    loadSnapshots();
+  };
+
+  // "Since last week" — this month, the page's scope.
+  const scopeKey = view ? (view.scope.kind === "person" ? ["person", filters.personId]
+    : view.scope.kind === "division" ? ["division", filters.divisionId]
+      : ["company", company?.id]) : null;
+  const thisMonth = view?.phased?.[0];
+  const prevSnap = useMemo(() => (scopeKey && thisMonth
+    ? previousSnapshot(snap.rows, { scopeType: scopeKey[0], scopeId: scopeKey[1], periodMonth: thisMonth.start, today })
+    : null), [snap.rows, scopeKey?.[0], scopeKey?.[1], thisMonth?.start, today]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!prevSnap || !bundle) { setDealStates({}); return; }
+    const known = new Map((bundle.deals || []).map((d) => [d.id, d]));
+    const missing = (prevSnap.open_deal_ids || []).map((r) => r.id).filter((id) => !known.has(id));
+    const base = Object.fromEntries([...known.entries()]);
+    if (!missing.length) { setDealStates(base); return; }
+    fetchDealStates(missing).then((m) => setDealStates({ ...base, ...m }));
+  }, [prevSnap, bundle]);
+  const since = useMemo(() => (prevSnap && thisMonth
+    ? sinceSnapshot({ snapshot: prevSnap, tiers: thisMonth.tiers, currentById: dealStates })
+    : null), [prevSnap, thisMonth, dealStates]);
+  const accuracy = useMemo(() => {
+    if (!bundle || !scopeKey) return null;
+    const lastKey = addMonthsKey(today.slice(0, 7), -1);
+    const lm = monthBoundsOfKey(lastKey);
+    const actual = forecastFor(bundle, { ids: view.scope.ids, start: lm.start, end: lm.end, divisionId: view.scope.divisionId, divisionRow: view.scope.divisionRow }).achieved;
+    return accuracyOf({
+      snapshots: snap.rows.filter((r) => r.scope_type === scopeKey[0] && String(r.scope_id) === String(scopeKey[1])),
+      lastMonthKey: lastKey, actualAchieved: actual, today,
+    });
+  }, [bundle, snap.rows, view, today]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Pickers (built from the bundle, not a second user read).
+  const divisionOptions = useMemo(() => (bundle && DIVISION_PICKER_ROLES.includes(role) ? divisionGroupsOf(bundle) : []), [bundle, role]);
+  const personOptions = useMemo(() => (bundle && PERSON_PICKER_ROLES.includes(role)
+    ? pickableAchievers(bundle, filters.divisionId) : []), [bundle, role, filters.divisionId]);
+
+  const openDeal = (dealId) => { if (dealId) navigate("/sales-pipeline", { state: { openDealId: dealId } }); };
+  const flagsFor = useMemo(() => {
+    if (!bundle) return () => [];
+    const targetOf = targetLookup(bundle, today);
+    return (d) => (outlierReason(d, targetOf(d)) ? ["CHECK VALUE"] : []);
+  }, [bundle, today]);
+  const openDrill = (metrics, tierKey, label, place = []) => {
+    const tree = drillTree({ metrics, tierKey, ownerName: view.ownerName, flagsOf: flagsFor });
+    setDrill({ ...tree, label, place });
+  };
 
   const breadcrumbs = [
     { label: t("forecastPage.breadcrumbDashboard"), path: "/company-dashboard" },
     { label: t("forecastPage.breadcrumbForecast") },
   ];
+  const scopeName = filters.personId
+    ? (view?.ownerName(filters.personId) || "")
+    : filters.divisionId ? (divisionOptions.find((d) => d.id === filters.divisionId)?.name || "") : "";
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
-
       <main className="max-w-screen-2xl mx-auto px-4 lg:px-8 py-6 space-y-6">
-        {/* Page header */}
         <div>
           <NavigationBreadcrumbs items={breadcrumbs} />
-
-          <div className="flex flex-wrap items-start justify-between gap-4 mt-3">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">{t("forecastPage.title")}</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {t("forecastPage.subtitle")}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {/* Target badge */}
-              {targetAmount > 0 && (
-                <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 border border-violet-200 text-xs font-medium text-violet-700">
-                  <Icon name="Target" size={12} />
-                  {t("forecastPage.targetActive")}
-                </div>
-              )}
-
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold text-foreground mt-3">{t("forecastPage.title")}</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Commit, Most likely and Best case for the period — the same Most likely Insights calls Expected.
+          </p>
         </div>
 
-        {/* Filters: period presets + salesman drill-down */}
+        {/* Filters */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">Period:</span>
           {PERIOD_PRESETS.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => applyPeriod(p.id)}
-              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors border ${
-                activePeriod === p.id
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "border-border text-muted-foreground hover:bg-muted/60"
-              }`}
-            >
+            <button key={p.id} onClick={() => applyPeriod(p.id)}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors border ${activePeriod === p.id ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted/60"}`}>
               {p.label}
             </button>
           ))}
-          {activePeriod === "custom" && (
-            <span className="text-xs px-3 py-1.5 rounded-lg font-medium border border-border bg-muted/40 text-muted-foreground">
-              Custom
-            </span>
+          {activePeriod === "custom" && period && (
+            <span className="text-xs px-3 py-1.5 rounded-lg font-medium border border-border bg-muted/40 text-muted-foreground">{periodLabel}</span>
           )}
-
-          {canFilterSalesman && salesmen.length > 0 && (
-            <div className="flex items-center gap-2 ml-auto">
-              <Icon name="User" size={13} className="text-muted-foreground" />
-              <select
-                value={selectedSalesman}
-                onChange={(e) => setSelectedSalesman(e.target.value)}
-                className="text-xs px-3 py-1.5 border border-border rounded-lg bg-card text-card-foreground focus:outline-none focus:border-primary"
-              >
-                <option value="all">All Salesmen</option>
-                {salesmen.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.full_name || s.email}
-                  </option>
-                ))}
+          <div className="flex flex-wrap items-center gap-2 ml-auto">
+            {divisionOptions.length > 1 && (
+              <select data-testid="division-picker" value={divisionId} onChange={(e) => { setDivisionId(e.target.value); setPersonId("all"); }}
+                className="text-xs px-3 py-1.5 border border-border rounded-lg bg-card">
+                <option value="all">All divisions</option>
+                {divisionOptions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
-            </div>
-          )}
+            )}
+            {personOptions.length > 0 && (
+              <select data-testid="person-picker" value={personId} onChange={(e) => setPersonId(e.target.value)}
+                className="text-xs px-3 py-1.5 border border-border rounded-lg bg-card">
+                <option value="all">Everyone</option>
+                {personOptions.map((u) => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
+              </select>
+            )}
+          </div>
         </div>
 
-        {/* No period */}
-        {!dateRange.from && !dateRange.isAllTime && !isLoading && (
+        {!period && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Icon name="Calendar" size={48} className="text-muted-foreground mb-3" />
-            <p className="text-lg font-medium text-card-foreground mb-1">{t("forecastPage.selectPeriod")}</p>
-            <p className="text-sm text-muted-foreground">
-              {t("forecastPage.selectPeriodHint")}
-            </p>
+            <p className="text-lg font-medium mb-1">{t("forecastPage.selectPeriod")}</p>
+            <p className="text-sm text-muted-foreground">A forecast needs a period; All Time has none.</p>
           </div>
         )}
-
-        {/* Loading */}
-        {isLoading && <PageSkeleton />}
-
-        {/* Error */}
+        {isLoading && <div className="h-64 bg-muted rounded-lg animate-pulse" />}
         {fetchError && !isLoading && (
           <div className="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
-            <Icon name="AlertCircle" size={20} className="flex-shrink-0" />
-            <div>
-              <p className="font-medium">{t("forecastPage.loadFailed")}</p>
-              <p className="text-sm opacity-80">
-                {typeof fetchError === "string" ? fetchError : t("forecastPage.tryRefreshing")}
-              </p>
-            </div>
+            <Icon name="AlertCircle" size={20} />
+            <div><p className="font-medium">{t("forecastPage.loadFailed")}</p><p className="text-sm opacity-80">{fetchError}</p></div>
           </div>
         )}
 
-        {/* Main content */}
-        {!isLoading && !fetchError && (dateRange.from || dateRange.isAllTime) && rawData.deals.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Icon name="TrendingUp" size={48} className="text-muted-foreground mb-3" />
-            <p className="text-lg font-medium text-card-foreground mb-1">{t("forecastPage.noDeals")}</p>
-            <p className="text-sm text-muted-foreground">{t("forecastPage.tryDifferentPeriod")}</p>
-          </div>
-        )}
+        {view && !isLoading && !fetchError && (
+          <div className="space-y-6" data-testid="forecast-body">
+            <OutlierBanner flagged={view.flagged} without={view.without} />
 
-        {!isLoading && !fetchError && (dateRange.from || dateRange.isAllTime) && rawData.deals.length > 0 && (
-          <div className="space-y-6">
-            {/* KPI Bar */}
-            <ForecastKPIBar
-              forecast={kpiForecast}
-              targetAmount={kpiTarget}
-              targetDisagreement={targetDisagreement}
-              salesmanName={selectedSalesmanName}
-              deals={rawData.deals}
-              periodLabel={PERIOD_PRESETS.find((p) => p.id === activePeriod)?.label || "Custom range"}
+            <TierCards
+              tiers={view.tiers}
+              target={view.target}
+              periodLabel={`${periodLabel}${scopeName ? ` · ${scopeName}` : ""}`}
+              onOpen={(k) => openDrill(view.main, k, `${k === "mostLikely" ? "Most likely" : k === "bestCase" ? "Best case" : k === "wni" ? "Won, not invoiced" : k[0].toUpperCase() + k.slice(1)}`, scopeName ? [scopeName] : [])}
             />
 
-            {/* AI Forecast Summary */}
             <ForecastAISummary
-              deals={rawData.deals}
-              target={targetAmount}
-              period={new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+              figures={{
+                target: view.target, achieved: view.tiers.achieved, wni: view.tiers.wni, commit: view.tiers.commit,
+                mostLikely: view.tiers.mostLikely, bestCase: view.tiers.bestCase,
+                pastDueCount: view.tiers.pastDue.length, pastDueTotal: view.tiers.pastDueTotal,
+                outliers: view.flagged, topDeals: view.top.map((r) => ({ title: r.title, amount: r.value, stage: r.stage, expected_close_date: r.due })),
+              }}
+              target={view.target}
+              period={`${periodLabel}${scopeName ? ` · ${scopeName}` : ""}`}
               companyName={company?.name}
-              role={userProfile?.role}
+              role={role}
               currency={preferredCurrency || "SAR"}
-              companyId={company?.id}
+              companyId={`${company?.id}-${scopeKey?.join(":")}`}
             />
 
-            {/* Row 1: Projection chart (+ salesman contribution below it) + AI Prediction */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
-                <ProjectionChart projection={forecast.projection} target={targetAmount} />
-                {/* Fills the empty left-column space below the chart, above
-                    Pipeline Insights (company-wide "All Salesmen" view only). */}
-                {salesmanContribution.length > 0 && (
-                  <SalesmanContribution contribution={salesmanContribution} />
-                )}
-              </div>
-              <div>
-                <AIPredictionCard prediction={prediction} />
-              </div>
-            </div>
+            <PhasedView rows={view.phased} onOpen={(r) => openDrill(r.metrics, "mostLikely", `Most likely — ${r.label}`, scopeName ? [scopeName] : [])} />
 
-            {/* Product Group breakdown — bar chart + table */}
-            {groupBreakdown.length > 0 && (
-              <ForecastGroupBreakdown groups={groupBreakdown} />
+            {DIRECTOR_VIEW_ROLES.includes(role) && (
+              <>
+                <VsTargetTable title="Forecast vs target by division" testid="by-division" rows={view.divisionRows}
+                  onOpen={(r) => openDrill(r.metrics, "mostLikely", "Most likely", [r.name])} />
+                <VsTargetTable title="Forecast vs target by salesperson" testid="by-person" rows={view.personRows}
+                  onOpen={(r) => openDrill(r.metrics, "mostLikely", "Most likely", [r.name])} />
+              </>
             )}
 
-            {/* Row 2: AI Insights + Stage Breakdown */}
+            <DealTable
+              title="Top 10 deals that decide the period" testid="top-deals" rows={view.top} onOpenDeal={openDeal}
+              explain="The open deals due in the period with the largest Most likely contribution."
+              empty="No open deals due in this period."
+              columns={[
+                { key: "title", label: "Deal" }, { key: "owner", label: "Owner" }, { key: "stage", label: "Stage" },
+                { key: "due", label: "Close date", date: true }, { key: "value", label: "Value", num: true, money: true },
+                { key: "mostLikely", label: "Most likely", num: true, money: true }, { key: "flags", label: "Flags" },
+              ]}
+            />
+
+            <DealTable
+              title={`Needs re-dating (${view.redating.length})`} testid="redating" rows={view.redating} onOpenDeal={openDeal}
+              explain="Open deals whose expected close date has passed. They are in no tier until they are re-dated, won or lost. Click one to open it."
+              empty="No past-due open deals."
+              columns={[
+                { key: "title", label: "Deal" }, { key: "owner", label: "Owner" }, { key: "stage", label: "Stage" },
+                { key: "due", label: "Was due", date: true }, { key: "daysOverdue", label: "Days overdue", num: true },
+                { key: "value", label: "Value", num: true, money: true }, { key: "flags", label: "Flags" },
+              ]}
+            />
+
+            {DIRECTOR_VIEW_ROLES.includes(role) && (
+              <DealTable
+                title={`Risk list (${view.risks.length})`} testid="risks" rows={view.risks} onOpenDeal={openDeal}
+                explain="Open deals that are past due, have no close date, have sat in the same stage for more than 14 days, or carry a value to check."
+                empty="Nothing at risk."
+                columns={[
+                  { key: "title", label: "Deal" }, { key: "owner", label: "Owner" }, { key: "stage", label: "Stage" },
+                  { key: "due", label: "Close date", date: true }, { key: "daysInStage", label: "Days in stage", num: true },
+                  { key: "value", label: "Value", num: true, money: true }, { key: "flags", label: "Why" },
+                ]}
+              />
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
-                <AIInsightsPanel insights={insights} />
+                {view.groups.length > 0 && <ForecastGroupBreakdown groups={view.groups} />}
               </div>
-              <div>
-                <StageBreakdown byStage={forecast.byStage} />
-              </div>
+              <StageBreakdown byStage={view.byStage} />
             </div>
 
-            {/* Row 3: Deal table (full width) */}
-            <ForecastDealTable deals={rawData.deals} />
+            <SnapshotPanel
+              state={snap}
+              since={since}
+              accuracy={accuracy}
+              canTake={SNAPSHOT_ROLES.includes(role)}
+              onTake={takeNow}
+              taking={taking}
+              periodLabel={periodLabel}
+            />
           </div>
         )}
       </main>
+
+      {drill && (
+        <DrillSheet
+          label={drill.label}
+          title={drill.title}
+          period={periodLabel}
+          place={drill.place}
+          explain={drill.explain}
+          total={drill.total}
+          columns={DRILL_COLUMNS}
+          rows={drill.rows}
+          onOpenRecord={(r) => openDeal(r.dealId)}
+          onClose={() => setDrill(null)}
+          scopeLabel={periodLabel}
+          // eslint-disable-next-line react/no-children-prop
+          children={drill.children}
+        />
+      )}
     </div>
   );
 };

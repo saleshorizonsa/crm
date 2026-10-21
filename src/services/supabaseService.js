@@ -26,6 +26,7 @@ import {
 // way every other screen does rather than taking whatever assignees a
 // sales_targets query happens to return.
 import { fetchAchieverIds, totalsScopeOpts } from "../utils/achieverScope";
+import { dealTiming, dayKey } from "../utils/forecastTiers";
 import { wholePeriodOf } from "../utils/dashboardDateUtils";
 import { fetchAllRows } from "../utils/fetchAllRows";
 // The returns importer's own matcher, so correcting an invoice number re-matches
@@ -6080,9 +6081,12 @@ export const forecastService = {
    *   supervisor → own + direct reports    (owner_id IN [userId, ...reportIds])
    *   manager / director / admin / head → all company deals (no owner filter)
    *
-   * Deals returned: non-lost deals whose expected_close_date falls within
-   * [periodStart, periodEnd], PLUS open (non-won) deals with no close date
-   * so unscheduled pipeline is never silently dropped.
+   * Deals returned (CEO 2026-10-21, utils/forecastTiers.js):
+   *   - won deals closed in [periodStart, periodEnd];
+   *   - OPEN deals of ACTIVE achievers due in the period; an undated open deal
+   *     only when the period contains today; a past-due open deal never.
+   * It used to return EVERY open deal whatever its date, so Last Month,
+   * This Quarter and This Year all carried today's whole pipeline.
    *
    * Target returned: the single active sales_target assigned to userId
    * whose period overlaps [periodStart, periodEnd], or null when none exists.
@@ -6133,7 +6137,8 @@ export const forecastService = {
       //                  We use closed_at (the actual close timestamp) rather than
       //                  expected_close_date because deals are often won without ever
       //                  setting an expected close date, or with a date in a different month.
-      //   • Open deals → ALL of them regardless of close date (needed for the 12-week projection)
+      //   • Open deals → narrowed below, after the read, by the forecast's
+      //                  date rule (dealTiming) and the active-achiever rule.
       // When isAllTime (no period), the outer .neq("stage","lost") already returns every non-lost deal.
       //
       // The window is a pair of instants from riyadhPeriodBounds(), with an
@@ -6150,8 +6155,19 @@ export const forecastService = {
       if (companyId) dealsQuery = dealsQuery.eq("company_id", companyId);
       if (ownerIds)  dealsQuery = dealsQuery.in("owner_id", ownerIds);
 
-      const { data: deals, error: dealsError } = await dealsQuery;
+      const { data: dealsRead, error: dealsError } = await dealsQuery;
       if (dealsError) throw dealsError;
+
+      // Forward-looking = ACTIVE achievers only (salesman, supervisor,
+      // is_contributor), as everywhere else; an open deal counts only in the
+      // period of its close date. Won deals are history and are kept as read.
+      const activeAchievers = new Set(await fetchAchieverIds({ companyId, ownerIds }));
+      const today = dayKey(new Date());
+      const pStart = periodStart || "0000-01-01";
+      const pEnd = periodEnd || "9999-12-31";
+      const deals = (dealsRead || []).filter((d) => d.stage === "won"
+        || (activeAchievers.has(d.owner_id)
+          && dealTiming(d, { start: pStart, end: pEnd, today }) === "in"));
 
       // ── 2b. How many deals were LOST in the same scope and window ──────────
       //
@@ -6316,91 +6332,11 @@ export const forecastService = {
       };
     }
   },
-
-  /**
-   * getForecastGroupBreakdown({ companyId, userId, role, ownerId })
-   *
-   * Weighted open-pipeline value grouped by product material group.
-   * Scoping mirrors getForecastData (salesman → own, supervisor → team,
-   * manager+ → all company). Only OPEN deals (not won/lost) are considered,
-   * weighted by DEFAULT_STAGE_WEIGHTS. material_group lives on the related
-   * product, so each deal_products line is attributed to its product's group.
-   *
-   * @returns {{ groups: Array<{name,dealCount,totalValue,weightedValue}>, error }}
-   */
-  async getForecastGroupBreakdown({ companyId, userId, role, ownerId = null }) {
-    // Stage weights kept local to avoid a circular import from forecastEngine.
-    const STAGE_WEIGHTS = {
-      lead: 0.10, contact_made: 0.25, proposal_sent: 0.50, negotiation: 0.75,
-    };
-    try {
-      // Resolve owner scope (same rules as getForecastData)
-      let ownerIds = null;
-      if (role === "salesman") {
-        ownerIds = [userId];
-      } else if (role === "supervisor") {
-        const { data: reports } = await supabase
-          .from("users")
-          .select("id")
-          .eq("supervisor_id", userId)
-          .eq("is_active", true);
-        ownerIds = [userId, ...(reports || []).map((u) => u.id)];
-      }
-      if (ownerId) ownerIds = [ownerId];
-
-      let query = supabase
-        .from("deals")
-        .select(
-          `id, stage, owner_id, company_id,
-           deal_products(
-             id, line_total, uom_value, unit_price,
-             product:products(id, material_group)
-           )`,
-        )
-        .not("stage", "in", '("won","lost")');
-
-      if (companyId) query = query.eq("company_id", companyId);
-      if (ownerIds)  query = query.in("owner_id", ownerIds);
-
-      const { data: deals, error } = await query;
-      if (error) throw error;
-
-      // Aggregate line values by material group, weighted by deal stage.
-      const groupMap = {};
-      (deals || []).forEach((deal) => {
-        const stagePct = STAGE_WEIGHTS[deal.stage] ?? 0.10;
-        (deal.deal_products || []).forEach((dp) => {
-          const group = dp.product?.material_group || "Uncategorized";
-          const lineVal = parseFloat(dp.line_total || 0);
-          if (!groupMap[group]) {
-            groupMap[group] = {
-              name: group,
-              dealIds: new Set(),
-              totalValue: 0,
-              weightedValue: 0,
-            };
-          }
-          groupMap[group].dealIds.add(deal.id);
-          groupMap[group].totalValue    += lineVal;
-          groupMap[group].weightedValue += lineVal * stagePct;
-        });
-      });
-
-      const groups = Object.values(groupMap)
-        .map((g) => ({
-          name:          g.name,
-          dealCount:     g.dealIds.size,
-          totalValue:    Math.round(g.totalValue * 100) / 100,
-          weightedValue: Math.round(g.weightedValue * 100) / 100,
-        }))
-        .sort((a, b) => b.weightedValue - a.weightedValue);
-
-      return { groups, error: null };
-    } catch (error) {
-      console.error("Error in getForecastGroupBreakdown:", error);
-      return { groups: [], error };
-    }
-  },
+  // getForecastGroupBreakdown was removed on 2026-10-21. It weighted every
+  // open deal whatever its date and summed deal_products.line_total, which
+  // does not add up to deal amounts. The Forecast page now computes the
+  // breakdown from its own period-scoped rows (utils/forecastTiers.js
+  // groupBreakdown: each deal's amount allocated across its lines).
 };
 
 // ============================================================

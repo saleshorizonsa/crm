@@ -80,7 +80,7 @@ export function DivisionCoverageHero({
               </span>{" "}
               <span className={metrics.coverageOk ? "text-emerald-600 font-semibold" : "text-red-600 font-semibold"}>
                 {metrics.coverageOk ? "PASS" : "FAIL"}{" "}
-                {((metrics.coverage / Math.max(metrics.target, 1)) * 100).toFixed(0)}%
+                {((metrics.expected ?? metrics.coverage) / Math.max(metrics.target, 1) * 100).toFixed(0)}%
               </span>
             </div>
             {/* Pacing is a day-of-month verdict — hidden, not substituted,

@@ -52,6 +52,9 @@ import { fetchPlanContacts, summarisePlanContacts } from 'utils/planContacts';
 import { computeWeeklyPacing } from 'utils/weeklyPacing';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
+import { loadForecastBundle, forecastFor, divisionGroupsOf, pickableAchievers } from 'utils/forecastData';
+import { dayKey, addMonthsKey, monthBoundsOfKey, monthLabelOf, outlierReason } from 'utils/forecastTiers';
+import { targetLookup } from 'utils/forecastView';
 import {
   reportService,
   reportWonTotal,
@@ -1647,6 +1650,139 @@ async function buildInsightsVsPlanningRows({
  *                          Forecast both do)
  * @returns {{ reference, groups, meta }}
  */
+// ── FORECAST TIERS, RECOMPUTED FROM THE ROWS (session 31) ───────────────────
+//
+// The Forecast page's Commit / Most likely / Best case (forecastFor →
+// calcDivisionMetrics → computeTiers) against a SEPARATE recount written here
+// with plain loops over the same rows, per company, division and person, for
+// last month and this month. The recount shares no code with the page except
+// the conversion rate, which it takes from the page (Conversion is checked by
+// its own rows above) and the target, which is not a tier.
+const REF_PROB = { lead: 0.10, contact_made: 0.25, proposal_sent: 0.50, negotiation: 0.75 };
+const REF_CONTRIB = ['salesman', 'supervisor'];
+
+function referenceTiers({ bundle, ids, divisionId, start, end, today, conversionPct }) {
+  const users = bundle.users || [];
+  const inIds = new Set(ids || []);
+  // Achieved / won-not-invoiced people: contributors (any state) + flagged, active.
+  const achievers = new Set(users.filter((u) => inIds.has(u.id)
+    && (REF_CONTRIB.includes(u.role) || (u.is_contributor === true && u.is_active === true))).map((u) => u.id));
+  // Forward-looking people: the same, active only.
+  const active = new Set(users.filter((u) => achievers.has(u.id) && u.is_active !== false).map((u) => u.id));
+  // Every row in its OWN division, none = Unassigned (session 23). Only target
+  // rows fall back to the owner's primary division, and targets are not a tier.
+  const dealDiv = (d) => (!divisionId ? true : divisionId === 'unassigned' ? !d.division_id : d.division_id === divisionId);
+  const planDiv = dealDiv;
+  const value = (d) => n(d.final_amount ?? d.amount);
+  const day = (v) => (v ? String(v).slice(0, 10) : null);
+  const containsToday = start <= today && today <= end;
+
+  let achieved = 0;
+  let wni = 0;
+  (bundle.deals || []).forEach((d) => {
+    if (!achievers.has(d.owner_id) || !dealDiv(d) || d.stage !== 'won') return;
+    if (d.is_invoiced === true) {
+      const inv = day(d.invoice_date);
+      if (inv && inv >= start && inv <= end) achieved += value(d);
+    } else if (containsToday) {
+      wni += value(d);
+    }
+  });
+  (bundle.returns || []).forEach((r) => {
+    const rd = day(r.return_date);
+    if (achievers.has(r.owner_id) && dealDiv(r) && rd && rd >= start && rd <= end) achieved -= Math.abs(n(r.return_amount));
+  });
+
+  let negotiation = 0;
+  let weighted = 0;
+  let full = 0;
+  (bundle.deals || []).forEach((d) => {
+    if (!active.has(d.owner_id) || !dealDiv(d) || d.stage === 'won' || d.stage === 'lost') return;
+    const due = day(d.expected_close_date);
+    const counts = due ? (due >= today && due >= start && due <= end) : containsToday;
+    if (!counts) return;
+    const a = n(d.amount);
+    full += a;
+    weighted += a * (REF_PROB[d.stage] || 0);
+    if (d.stage === 'negotiation') negotiation += a;
+  });
+  let plan = 0;
+  (bundle.opps || []).forEach((o) => {
+    const m = day(o.expected_month);
+    if (!active.has(o.owner_id) || !planDiv(o) || !m || m < start || m > end) return;
+    if (m.slice(0, 7) < today.slice(0, 7)) return;
+    plan += n(o.planned_amount);
+  });
+  const base = achieved + wni;
+  const conv = n(conversionPct) / 100;
+  return {
+    commit: base + negotiation,
+    mostLikely: base + weighted + plan * conv,
+    bestCase: base + full + plan,
+  };
+}
+
+async function buildForecastTierRows({ companyId, viewer, start, end, scope, insightsExpected }) {
+  const today = dayKey(new Date());
+  const thisKey = today.slice(0, 7);
+  const months = [addMonthsKey(thisKey, -1), thisKey].map((k) => ({ key: k, label: monthLabelOf(k), ...monthBoundsOfKey(k) }));
+  const windowStart = [months[0].start, start].sort()[0];
+  const windowEnd = [months[1].end, end].sort().slice(-1)[0];
+  let bundle;
+  try {
+    bundle = await loadForecastBundle({
+      companyId, viewerId: viewer?.id || null, role: viewer?.role || 'admin', windowStart, windowEnd,
+    });
+  } catch (e) {
+    return [row({ label: 'Forecast tiers: could not load the rows', value: 0, expected: 1, note: e?.message || String(e) })];
+  }
+  const scopes = [
+    { name: 'Company', kind: 'company', ids: bundle.scopeIds, divisionId: null, divisionRow: false },
+    ...divisionGroupsOf(bundle).map((g) => ({ name: `Division ${g.name}`, kind: 'division', ids: g.userIds, divisionId: g.id, divisionRow: true })),
+    ...pickableAchievers(bundle).map((u) => ({ name: u.full_name || u.id, kind: 'person', ids: [u.id], divisionId: null, divisionRow: false })),
+  ];
+  const targetOf = targetLookup(bundle, today);
+  const rows = [];
+  months.forEach((mo) => {
+    scopes.forEach((s) => {
+      const m = forecastFor(bundle, { ids: s.ids, start: mo.start, end: mo.end, divisionId: s.divisionId, divisionRow: s.divisionRow });
+      const t = m?.tiers;
+      if (!t) return;
+      const ref = referenceTiers({ bundle, ids: s.ids, divisionId: s.divisionId, start: mo.start, end: mo.end, today, conversionPct: t.conversionPct });
+      rows.push(
+        row({ label: `${s.name} — ${mo.label} — Commit`, value: t.commit, expected: ref.commit }),
+        row({ label: `${s.name} — ${mo.label} — Most likely`, value: t.mostLikely, expected: ref.mostLikely,
+          note: s.name === 'Company' ? `conversion ${t.conversionPct.toFixed(1)}% (the page's, by the session-24 rule)` : null }),
+        row({ label: `${s.name} — ${mo.label} — Best case`, value: t.bestCase, expected: ref.bestCase }),
+      );
+      // The same figures WITHOUT the deals flagged "check value" (info only):
+      // what the forecast would read if a flagged value turned out to be wrong.
+      if (mo.key === thisKey && s.kind !== 'person') {
+        const flagged = t.dealRows.filter((r) => outlierReason(r.deal, targetOf(r.deal)));
+        if (flagged.length) {
+          const less = (k) => flagged.reduce((acc, r) => acc + r[k], 0);
+          const names = flagged.map((r) => `${r.deal.title || r.deal.id} ${Math.round(r.value).toLocaleString('en-US')}`).join(', ');
+          rows.push(
+            row({ label: `${s.name} — ${mo.label} — Most likely without flagged deals (info only)`, value: t.mostLikely - less('mostLikely'), note: `flagged: ${names}` }),
+            row({ label: `${s.name} — ${mo.label} — Commit without flagged deals (info only)`, value: t.commit - less('commit'), note: `Best case without them: ${Math.round(t.bestCase - less('bestCase')).toLocaleString('en-US')}` }),
+          );
+        }
+      }
+    });
+  });
+  // One answer: Forecast Most likely = Insights Expected, same company and period.
+  if ((scope?.kind || 'company') === 'company' && insightsExpected !== null && insightsExpected !== undefined) {
+    const fc = forecastFor(bundle, { ids: bundle.scopeIds, start, end });
+    rows.push(row({
+      label: 'Forecast Most likely (selected period) = Insights Expected',
+      value: fc?.tiers?.mostLikely ?? 0,
+      expected: insightsExpected,
+      note: 'both are calcDivisionMetrics → computeTiers; they can only differ if the two pages read different rows',
+    }));
+  }
+  return rows;
+}
+
 export async function runNumbersCheck({ companyId, start, end, scope, viewer = null }) {
   if (!companyId || !start || !end) throw new Error('company, start and end are required');
 
@@ -2373,6 +2509,18 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       fn: 'forecastService.getForecastData / reportService.getReportDeals',
       knownToDiffer: true,
       rows: knownRows,
+    });
+  }
+
+  // ── Forecast tiers (session 31) ──────────────────────────────────────────
+  const tierRows = await buildForecastTierRows({
+    companyId, viewer, start, end, scope, insightsExpected: ins.expected,
+  });
+  if (tierRows.length) {
+    groups.push({
+      screen: 'Forecast (Commit / Most likely / Best case)',
+      fn: 'forecastFor → calcDivisionMetrics → computeTiers',
+      rows: tierRows,
     });
   }
 

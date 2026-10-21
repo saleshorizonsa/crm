@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "lib/supabase";
+import { fetchAllRows } from "utils/fetchAllRows";
 import { useAuth } from "contexts/AuthContext";
 import Header from "components/ui/Header";
 import { monthBounds, nextMonthBounds, fetchConversionBaseOrDeals } from "utils/planningCalculations";
@@ -375,14 +376,19 @@ export default function SalesDivisions() {
       // ── PHASE 2: the figures, every one filtered to the scope ────────────
       const [dealsRes, targetsRes, deals3mRes, oppsRes, futureRes, flagsRes, escalationsRes, returnsRes] =
         await Promise.all([
-          supabase
+          // Paged (utils/fetchAllRows): every non-lost deal of all time — won
+          // history included — is far past the 1,000 rows one request returns,
+          // and a cut-off list would make Achieved, the funnel and Expected %
+          // disagree with the Forecast page, which reads the same rows paged.
+          fetchAllRows(() => supabase
             .from("deals")
             .select(
-              "id, title, stage, amount, final_amount, is_invoiced, invoice_date, owner_id, division_id, forecast_amount, expected_close_date, stage_changed_at, created_at, contacts!contact_id(first_name, last_name, company_name)"
+              "id, title, stage, amount, final_amount, is_invoiced, invoice_date, owner_id, division_id, forecast_amount, expected_close_date, stage_changed_at, created_at, closed_at, contacts!contact_id(first_name, last_name, company_name)",
+              { count: "exact" }
             )
             .eq("company_id", company.id)
             .in("owner_id", scopeIds)
-            .not("stage", "eq", "lost"),
+            .not("stage", "eq", "lost")),
           // division_id, or every target row falls back to its assignee's PRIMARY
           // division and Kamal's 1,550,000 total_value row lands on Export
           // instead of PVC Compound. The divisions would still SUM to the
@@ -423,7 +429,7 @@ export default function SalesDivisions() {
           // exists to remove, reappearing one table at a time.
           supabase
             .from("opportunities")
-            .select("id, owner_id, planned_amount, division_id")
+            .select("id, owner_id, planned_amount, division_id, expected_month")
             .eq("company_id", company.id)
             .in("owner_id", scopeIds)
             .eq("status", "open")

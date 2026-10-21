@@ -4,6 +4,7 @@ import {
   primaryDivisionByUser,
 } from 'utils/divisionMembership';
 import { partitionOpenFunnel } from 'utils/openFunnel';
+import { computeTiers, dayKey } from 'utils/forecastTiers';
 // activeIdsFrom comes from the leaf module directly: planningCalculations
 // re-exports the older achiever-scope names but not this one, and a leaf
 // import cannot create the cycle that re-export list exists to avoid.
@@ -184,7 +185,17 @@ export function targetSpanLabel(start, end) {
  * drift apart again.
  */
 export const EXPECTED_PCT_LABEL = 'Expected % of target';
+// Insights' Expected % is the Forecast page's MOST LIKELY ÷ target (CEO
+// 2026-10-21, utils/forecastTiers.js), so the two screens give one answer.
 export const EXPECTED_PCT_TOOLTIP =
+  'The Forecast page\'s Most likely ÷ target: invoiced, plus won not yet'
+  + ' invoiced, plus open deals due in this period at their stage probability'
+  + ' (past-due deals left out), plus open plan items at the conversion rate.';
+// The Coverage Console's figure under the same label is still the older
+// coverage formula (no won-not-invoiced, past-due deals included, deals at
+// their stored forecast). It keeps its own wording so it does not claim to be
+// the Forecast figure.
+export const COVERAGE_PCT_TOOLTIP =
   'If open deals close at their stage probability and plan items convert at the'
   + " team's conversion rate, this is the share of the target expected to be"
   + ' invoiced: (invoiced + open deals at forecast + plan × conversion) ÷ target.';
@@ -692,6 +703,32 @@ export function calcDivisionMetrics(userIds, data) {
 
   // Pacing, exactly as the Coverage Console derives it: achieved share of target
   // against the share of the month elapsed, with a 15-point tolerance.
+  // ── THE FORECAST TIERS (CEO 2026-10-21) ─────────────────────────────────
+  //
+  // Commit / Most likely / Best case for this scope and window, by the one
+  // definition in utils/forecastTiers.js. The Forecast page calls THIS
+  // function per scope and period, so Insights' Expected % (Most likely ÷
+  // target) and the Forecast page's Most likely are one computation.
+  //
+  // Achieved is the figure above; won-not-invoiced over the same people as
+  // Achieved (the KPI strip's rule); open deals and plan items over the ACTIVE
+  // achievers only, from the rows already narrowed to this division.
+  // An All-Time view has no window, so it has no tiers.
+  const tiers = (monthStart && monthEnd)
+    ? computeTiers({
+      start: monthStart,
+      end: monthEnd,
+      today: dayKey(now),
+      achieved,
+      wonDeals: deals,
+      wniOwnerIds: [...isAchiever],
+      openDeals,
+      planRows: divisionOpps.filter((o) => isForward.has(o.owner_id)),
+      conversionPct: winRatePct,
+    })
+    : null;
+  const expected = tiers ? tiers.mostLikely : coverage;
+
   const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const dayOfMonth = now.getDate();
   const elapsed = dayOfMonth / totalDays;
@@ -715,7 +752,9 @@ export function calcDivisionMetrics(userIds, data) {
     totalDays: isCurrentMonth ? totalDays : null,
     isCurrentMonth,
     isAllTime,
-    coverageOk: coverage >= target,
+    // The verdict reads the figure the screen shows beside it: Expected
+    // (Most likely), not the older coverage sum.
+    coverageOk: expected >= target,
     pacingOk: isCurrentMonth ? pace >= elapsed - PACING_TOLERANCE : null,
     winRatePct,
     winRateBorrowed,
@@ -739,7 +778,10 @@ export function calcDivisionMetrics(userIds, data) {
     coverage,
     weightedFunnel,
     weightedPlanning,
-    covRatio: target > 0 ? coverage / target : 0,
+    // Expected % of target = Most likely ÷ target (see EXPECTED_PCT_TOOLTIP).
+    covRatio: target > 0 ? expected / target : 0,
+    expected,
+    tiers,
     contributorIds,
     // ── THE ROWS BEHIND EACH RAIL FIGURE ──────────────────────────────────
     //

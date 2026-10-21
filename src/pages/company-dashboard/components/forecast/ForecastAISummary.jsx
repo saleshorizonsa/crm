@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import Icon from "../../../../components/AppIcon";
 import { format } from "date-fns";
 import { DEFAULT_STAGE_WEIGHTS } from "../../../../utils/forecastEngine";
+import { aiConfigured, aiPost } from "../../../../utils/aiEndpoint";
 
 const OPEN_STAGES = new Set(["lead", "contact_made", "proposal_sent", "negotiation"]);
 const VISIBLE_ROLES = ["director", "manager", "supervisor"];
@@ -26,6 +27,13 @@ const ROLE_CONTEXT = {
 async function callAnthropicAPI(pipelineData, role, currency) {
   const roleCtx = ROLE_CONTEXT[role] || ROLE_CONTEXT.manager;
 
+  // The Forecast page passes its OWN tiers (pipelineData.source = "page"):
+  // the summary must restate those figures, never compute its own.
+  const figureRule = pipelineData.source === "page"
+    ? `
+The figures are final and come from the Forecast page: achieved, wonNotInvoiced, commit, mostLikely and bestCase are for the period "${pipelineData.period}". Use them exactly as given; do not recompute or add them up yourself. pastDue deals are excluded from every figure and need re-dating; flagged deals are counted but need their value checked.`
+    : "";
+
   const prompt = `You are a sales performance analyst for a CRM used by a Steel, PVC, and Trading company in Saudi Arabia and the GCC region.
 
 Analyse this sales pipeline data and write a concise forecast summary. Be direct, specific, and actionable. Use the actual numbers from the data.
@@ -35,6 +43,7 @@ ${roleCtx}
 
 PIPELINE DATA:
 ${JSON.stringify(pipelineData, null, 2)}
+${figureRule}
 
 Write exactly 3 paragraphs:
 
@@ -55,14 +64,11 @@ Rules:
   const timeout = setTimeout(() => controller.abort(), 30000);
 
   try {
-    const response = await fetch("/api/ai-assistant", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messages: [{ role: "user", content: prompt }],
-      }),
-      signal: controller.signal,
-    });
+    // Signed-in only: aiPost carries the Supabase access token.
+    const response = await aiPost(
+      { messages: [{ role: "user", content: prompt }] },
+      { signal: controller.signal },
+    );
     clearTimeout(timeout);
 
     if (!response.ok) {
@@ -156,6 +162,32 @@ function buildPipelineSnapshot(deals, target, companyName, period, currency) {
   };
 }
 
+/**
+ * The Forecast page's own figures, as the AI is to see them. Nothing is
+ * derived here: every number is the page's.
+ */
+function pipelineFromFigures(f, companyName, period, currency) {
+  const r = (v) => Math.round(Number(v) || 0);
+  return {
+    source: "page",
+    company: companyName || "Company",
+    period,
+    currency,
+    target: r(f.target),
+    achieved: r(f.achieved),
+    wonNotInvoiced: r(f.wni),
+    commit: r(f.commit),
+    mostLikely: r(f.mostLikely),
+    bestCase: r(f.bestCase),
+    gapToMostLikely: f.target > 0 ? r(f.target - f.mostLikely) : null,
+    pastDue: { count: f.pastDueCount || 0, value: r(f.pastDueTotal) },
+    flaggedForValueCheck: (f.outliers || []).map((d) => ({ title: d.title, amount: r(d.amount) })),
+    topDeals: (f.topDeals || []).slice(0, 5).map((d) => ({
+      title: d.title, amount: r(d.amount), stage: d.stage, expectedClose: d.expected_close_date || null,
+    })),
+  };
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const ForecastAISummary = ({
@@ -166,19 +198,33 @@ const ForecastAISummary = ({
   role,
   currency = "SAR",
   companyId,
+  // The Forecast page passes its own tiers; the dashboards do not (yet).
+  figures = null,
 }) => {
   if (!VISIBLE_ROLES.includes(role)) return null;
 
   const displayPeriod = period || format(new Date(), "MMMM yyyy");
 
   const pipelineData = useMemo(
-    () => buildPipelineSnapshot(deals, target, companyName, displayPeriod, currency),
+    () => (figures
+      ? pipelineFromFigures(figures, companyName, displayPeriod, currency)
+      : buildPipelineSnapshot(deals, target, companyName, displayPeriod, currency)),
     // Round weighted to nearest 1000 so minor deal edits don't bust the cache key
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [deals.length, Math.round((target || 0) / 1000), displayPeriod, companyId],
+    [figures ? Math.round((figures.mostLikely || 0) / 1000) : deals.length,
+      Math.round((target || 0) / 1000), displayPeriod, companyId],
   );
 
-  const cacheKey = `forecast_summary_${companyId || "x"}_${displayPeriod}_${Math.round((pipelineData.weighted || 0) / 1000)}`;
+  const cacheKey = `forecast_summary_${companyId || "x"}_${displayPeriod}_${Math.round(((figures ? pipelineData.mostLikely : pipelineData.weighted) || 0) / 1000)}`;
+
+  // Shown only when the AI endpoint is configured on this deployment; until
+  // it says so (or if it says no) the panel is not rendered at all.
+  const [configured, setConfigured] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    aiConfigured().then((ok) => { if (!cancelled) setConfigured(ok); });
+    return () => { cancelled = true; };
+  }, []);
 
   const [summary,     setSummary]     = useState("");
   const [loading,     setLoading]     = useState(false);
@@ -188,10 +234,11 @@ const ForecastAISummary = ({
 
   // Generate or load from cache on mount / when key changes
   useEffect(() => {
-    if (!deals.length) return;
+    if (configured !== true) return;
+    if (!figures && !deals.length) return;
     tryLoadCache();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cacheKey]);
+  }, [cacheKey, configured]);
 
   function tryLoadCache() {
     try {
@@ -243,6 +290,8 @@ const ForecastAISummary = ({
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
+
+  if (configured !== true) return null;
 
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden enterprise-shadow">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { aiPost } from "utils/aiEndpoint";
 
 const PUBLIC_ROUTES = [
   "/login",
@@ -20,16 +21,13 @@ const SUGGESTED_PROMPTS = [
 
 // Calls the same-origin Vercel proxy — no CORS, no API key in browser.
 async function callProxy(userMessage, history, systemPrompt) {
-  const response = await fetch("/api/ai-assistant", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      system: systemPrompt,
-      messages: [
-        ...history.slice(-6),
-        { role: "user", content: userMessage },
-      ],
-    }),
+  // Signed-in only: aiPost adds the Supabase access token.
+  const response = await aiPost({
+    system: systemPrompt,
+    messages: [
+      ...history.slice(-6),
+      { role: "user", content: userMessage },
+    ],
   });
 
   if (!response.ok) {
