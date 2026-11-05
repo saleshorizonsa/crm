@@ -25,6 +25,7 @@ import FunnelChart from "./FunnelChart";
 import { useLanguage } from "../../../i18n";
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { groupDealsByMaterialGroup, classifyDealsByOrigin } from "../../../utils/dealGroupUtils";
+import { achievedAmount } from "../../../utils/planningCalculations";
 
 const LOST_CODE_LABELS = {
   PRICE_HIGH:        "Price too high",
@@ -192,7 +193,10 @@ const PipelineAnalytics = ({
   };
 
   const wonList = wonColumnDeals ?? (deals || []).filter((d) => d?.stage === "won");
-  const wonListValue = wonList.reduce((sum, d) => sum + (d?.amount || 0), 0);
+  // Following the column means the column's value too: Achieved's
+  // final_amount ?? amount, as on Insights. Under All Time, deal.amount as before.
+  const wonValueOf = (d) => (wonColumnDeals ? achievedAmount(d) : (d?.amount || 0));
+  const wonListValue = wonList.reduce((sum, d) => sum + wonValueOf(d), 0);
 
   const getWonDeals = () => {
     return wonList.length;
@@ -538,7 +542,12 @@ const PipelineAnalytics = ({
               const periodTo = activePeriodTo || format(endOfMonth(new Date(periodFrom)), 'yyyy-MM-dd');
               const classified = classifyDealsByOrigin(
                 wonColumnDeals
-                  ? [...(deals || []).filter((d) => d?.stage !== "won"), ...wonColumnDeals]
+                  // Won deals valued as the column values them; the classifier
+                  // sums `amount`, and only won rows carry the substitute.
+                  ? [
+                    ...(deals || []).filter((d) => d?.stage !== "won"),
+                    ...wonColumnDeals.map((d) => ({ ...d, amount: achievedAmount(d) })),
+                  ]
                   : (deals || []),
                 periodFrom,
                 {

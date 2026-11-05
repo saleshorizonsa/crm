@@ -16,7 +16,7 @@
  *                which files 00:00–03:00 Riyadh under the previous day)
  *   invoice_date DATE        → already a calendar day, sliced, never parsed
  */
-import { isAchievedDeal } from './planningCalculations';
+import { isAchievedDeal, achievedAmount } from './planningCalculations';
 
 const RIYADH_DAY = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -52,15 +52,15 @@ export function wonPeriodMatch(deal, { start, end }) {
   return { wonHere, invoicedHere, shown: wonHere || invoicedHere };
 }
 
-const amountOf = (d) => Number(d?.amount) || 0;
-
 /**
  * The Won column's header split. Every shown deal falls in exactly one bucket,
  * so the two always add back to the total:
  *   invoiced    — invoiced in the period (whenever it was won)
- *   notInvoiced — won in the period and NOT invoiced in it: still uninvoiced,
- *                 or invoiced after the period ended
- * Amounts are deal.amount, the figure the column already totals.
+ *   notInvoiced — won in the period and NOT invoiced in it: invoiced after the
+ *                 period ended, or not yet invoiced
+ * Values are achievedAmount (final_amount ?? amount) — Insights' value — so
+ * the column's "invoiced" figure reads the same as that month's Achieved.
+ * The cards keep showing their own amount line.
  */
 export function splitWonColumn(deals, period) {
   const out = {
@@ -74,9 +74,9 @@ export function splitWonColumn(deals, period) {
     if (!m.shown) continue;
     const bucket = m.invoicedHere ? out.invoiced : out.notInvoiced;
     bucket.count += 1;
-    bucket.value += amountOf(d);
+    bucket.value += achievedAmount(d);
     out.total.count += 1;
-    out.total.value += amountOf(d);
+    out.total.value += achievedAmount(d);
   }
   return out;
 }
