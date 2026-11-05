@@ -25,6 +25,7 @@ import FunnelChart from "./FunnelChart";
 import { useLanguage } from "../../../i18n";
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { groupDealsByMaterialGroup, classifyDealsByOrigin } from "../../../utils/dealGroupUtils";
+import { achievedAmount } from "../../../utils/planningCalculations";
 
 const LOST_CODE_LABELS = {
   PRICE_HIGH:        "Price too high",
@@ -56,6 +57,13 @@ const PipelineAnalytics = ({
   // does not supply them.
   sharedFunnel = { total: 0, dealCount: 0, loaded: false },
   isFiltered = false,
+  // The Won column's deals while a period is selected — won OR invoiced in it
+  // (utils/funnelWonPeriod.js). `deals` dates a won deal by closed_at only.
+  // Won COUNTS and TOTALS read this list so they agree with the column;
+  // rates (win rate, stage conversion) and the other figures keep reading
+  // `deals`, so none of them moved with the 2026-11-05 change. Null under
+  // All Time, where the two are the same.
+  wonColumnDeals = null,
 }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [collapseToggle, setCollapseToggle] = useState(false);
@@ -184,8 +192,14 @@ const PipelineAnalytics = ({
     return deals?.length > 0 ? getTotalPipelineValue() / deals?.length : 0;
   };
 
+  const wonList = wonColumnDeals ?? (deals || []).filter((d) => d?.stage === "won");
+  // Following the column means the column's value too: Achieved's
+  // final_amount ?? amount, as on Insights. Under All Time, deal.amount as before.
+  const wonValueOf = (d) => (wonColumnDeals ? achievedAmount(d) : (d?.amount || 0));
+  const wonListValue = wonList.reduce((sum, d) => sum + wonValueOf(d), 0);
+
   const getWonDeals = () => {
-    return deals?.filter((d) => d?.stage === "won")?.length || 0;
+    return wonList.length;
   };
 
   const getTotalDeals = () => {
@@ -245,11 +259,8 @@ const PipelineAnalytics = ({
     },
     {
       name: t("deals.won"),
-      deals: deals?.filter((d) => d?.stage === "won")?.length || 0,
-      value:
-        deals
-          ?.filter((d) => d?.stage === "won")
-          ?.reduce((sum, d) => sum + (d?.amount || 0), 0) || 0,
+      deals: wonList.length,
+      value: wonListValue,
     },
   ];
 
@@ -529,11 +540,27 @@ const PipelineAnalytics = ({
             {(() => {
               const periodFrom = activePeriodFrom || format(startOfMonth(new Date()), 'yyyy-MM-dd');
               const periodTo = activePeriodTo || format(endOfMonth(new Date(periodFrom)), 'yyyy-MM-dd');
-              const origin = classifyDealsByOrigin(deals || [], periodFrom, {
-                periodTo,
-                linkedOpportunities: linkedOpps,
-                closeDateChanges: closeMoves,
-              });
+              const classified = classifyDealsByOrigin(
+                wonColumnDeals
+                  // Won deals valued as the column values them; the classifier
+                  // sums `amount`, and only won rows carry the substitute.
+                  ? [
+                    ...(deals || []).filter((d) => d?.stage !== "won"),
+                    ...wonColumnDeals.map((d) => ({ ...d, amount: achievedAmount(d) })),
+                  ]
+                  : (deals || []),
+                periodFrom,
+                {
+                  periodTo,
+                  linkedOpportunities: linkedOpps,
+                  closeDateChanges: closeMoves,
+                },
+              );
+              // With a period selected, "Total Won This Period" is the Won
+              // column itself — won or invoiced in the period, each once.
+              const origin = wonColumnDeals
+                ? { ...classified, wonThisPeriodCount: wonList.length, wonThisPeriodValue: wonListValue }
+                : classified;
               return (
                 <div className="mt-5 pt-5 border-t border-border-tertiary">
                   <h4 className="text-sm font-semibold text-card-foreground mb-4">Pipeline Origin Breakdown</h4>
@@ -733,6 +760,15 @@ const PipelineAnalytics = ({
                 {t("pipeline.switchVisualization")}
               </p>
               <FunnelChart funnelData={funnelData} showSwitcher onStageClick={onStageFilter} />
+              {/* The funnel and the rates below count a won deal in the month
+                  it was WON, so a conversion rate never moves because of an
+                  invoice date. Say so whenever that differs from the column. */}
+              {wonColumnDeals && funnelData[4]?.count !== wonList.length && (
+                <p className="text-xs text-muted-foreground text-center mt-2" data-testid="funnel-won-note">
+                  Won here: {funnelData[4]?.count || 0} won in this period. The Won column shows {wonList.length},
+                  including deals won earlier and invoiced in this period.
+                </p>
+              )}
               {onStageFilter && (
                 <p className="text-xs text-muted-foreground text-center mt-3 flex items-center justify-center gap-1">
                   <Icon name="MousePointerClick" size={11} />

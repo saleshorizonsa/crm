@@ -4,6 +4,7 @@ import Button from "../../../components/ui/Button";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { Edit2Icon } from "lucide-react";
 import { useLanguage } from "../../../i18n";
+import { wonInvoicedLabel } from "../../../utils/funnelWonPeriod";
 
 const STAGE_WEIGHTS = {
   lead:          0.10,
@@ -321,6 +322,13 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
                 </td>
                 <td className="px-4 py-3 text-gray-700">
                   {formatDate(deal.expected_close_date)}
+                  {/* Same line as the board card: a won deal shown in a month
+                      it was only won or only invoiced in says which. */}
+                  {wonInvoicedLabel(deal) && (
+                    <span className="block text-[11px] text-gray-500" data-testid="list-won-invoiced">
+                      {wonInvoicedLabel(deal)}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-sm text-gray-600">

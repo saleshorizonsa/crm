@@ -8,6 +8,7 @@ import { supabase } from "../../../lib/supabase";
 import ContactReportModal from "../../../components/deals/ContactReportModal";
 import { useLanguage } from "../../../i18n";
 import { getDealProductSummary, getDealOrigin, getOriginLabel, getWonDealOrigin } from "../../../utils/dealGroupUtils";
+import { wonInvoicedLabel } from "../../../utils/funnelWonPeriod";
 // Percentages that cannot crash a render: a figure that has not arrived shows
 // "—" instead of taking the page down. See utils/formatPct.js.
 import { fmtPct, hasFigure } from "utils/formatPct";
@@ -117,6 +118,9 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onCorrectIn
   const daysUntilClose = isClosedDeal
     ? null
     : getDaysUntilClose(deal?.expected_close_date);
+  // Won and invoiced in different months: both dates, because the board shows
+  // the deal in either month (utils/funnelWonPeriod.js). Null otherwise.
+  const wonInvoiced = wonInvoicedLabel(deal);
 
   const getUrgencyColor = () => {
     if (isClosedDeal) return "text-gray-500";
@@ -280,8 +284,8 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onCorrectIn
         </div>
         <div className="flex items-center space-x-1">
           <Icon name="Calendar" size={12} className="text-gray-400" />
-          <span className={getUrgencyColor()}>
-            {formatDate(displayDate)}
+          <span className={getUrgencyColor()} data-testid="deal-card-date">
+            {wonInvoiced || formatDate(displayDate)}
             {!isClosedDeal && daysUntilClose <= 7 && daysUntilClose >= 0
               ? ` (${daysUntilClose}d)`
               : ""}

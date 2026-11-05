@@ -106,6 +106,12 @@ const PipelineStage = ({
   onDragOver,
   onDrop,
   activePeriodFrom,
+  // Won column only, while a period is selected: the deals shown split into
+  // invoiced in the period vs won in it and invoiced later or not yet
+  // (utils/funnelWonPeriod.js splitWonColumn). The two add up to the header,
+  // and the header's value becomes the Achieved value (final_amount ?? amount)
+  // so it reads the same as Insights. Null everywhere else: unchanged.
+  wonSplit = null,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
@@ -137,7 +143,7 @@ const PipelineStage = ({
     return map[stageId] || "bg-gray-400";
   };
 
-  const totalValue = deals.reduce((sum, d) => {
+  const totalValue = wonSplit ? wonSplit.total.value : deals.reduce((sum, d) => {
     const convertedAmount = d?.amount || 0;
     return sum + convertedAmount;
   }, 0);
@@ -152,7 +158,8 @@ const PipelineStage = ({
     lost: 0,
   };
 
-  const weightedValue = deals.reduce((sum, d) => {
+  // Won weighs 1.0, so with the split the Won column's weighted value is its total.
+  const weightedValue = wonSplit ? wonSplit.total.value : deals.reduce((sum, d) => {
     const convertedAmount = d?.amount || 0;
     const weight = stageWeights[d?.stage] || 0;
     return sum + convertedAmount * weight;
@@ -189,6 +196,19 @@ const PipelineStage = ({
             <p className="text-xs text-gray-500">
               {deals.length} {t("common.deals").toLowerCase()}
             </p>
+            {wonSplit && (
+              <p
+                className="text-[11px] text-gray-500 leading-snug mt-0.5"
+                data-testid="won-split"
+                title="Invoiced this period: invoice date in the period, whenever the deal was won. Won this period, invoiced later or not yet: won in the period with no invoice dated in it. Values are the invoiced (Achieved) value, as on Insights."
+              >
+                Invoiced this period: {wonSplit.invoiced.count}
+                {" ("}{formatCurrency(wonSplit.invoiced.value, preferredCurrency)}{")"}
+                {" · "}
+                Won this period, invoiced later or not yet: {wonSplit.notInvoiced.count}
+                {" ("}{formatCurrency(wonSplit.notInvoiced.value, preferredCurrency)}{")"}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-1">
