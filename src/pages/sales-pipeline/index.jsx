@@ -35,6 +35,7 @@ import { resolveDateRange } from "../../components/ui/DateRangePicker";
 import { getDealOrigin } from "../../utils/dealGroupUtils";
 import { fetchOpenFunnel, currentMonthBounds } from "../../utils/openFunnel";
 import { fetchTeamHierarchy, canCorrectInvoice } from "../../utils/teamHierarchy";
+import { wonPeriodMatch, splitWonColumn, wonDayOf, invoiceDayOf } from "../../utils/funnelWonPeriod";
 
 const SalesPipeline = () => {
   const { t } = useLanguage();
@@ -68,6 +69,12 @@ const SalesPipeline = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [deals, setDeals] = useState([]);
   const [filteredDeals, setFilteredDeals] = useState([]);
+  // The same filters with a won deal dated by closed_at ONLY — the rule before
+  // 2026-11-05. Funnel Analytics keeps reading this for every figure that is
+  // not a won count or total (conversion and win rates, weighted value, ...),
+  // so none of them moves because the Won column now also shows deals
+  // invoiced in the period. Identical to filteredDeals under All Time.
+  const [closedAtDeals, setClosedAtDeals] = useState([]);
   const [sharedFunnel, setSharedFunnel] = useState({ total: 0, dealCount: 0, loaded: false });
   const [contacts, setContacts] = useState([]);
 
@@ -481,6 +488,14 @@ const SalesPipeline = () => {
 
   const hasActiveFilters = nonDateFiltersActive || !dateIsCurrentMonth;
 
+  // The selected period as Riyadh days, or null for All Time. A won deal is in
+  // it when it was won OR invoiced in it (utils/funnelWonPeriod.js).
+  const wonPeriod = (() => {
+    const dr = filters.dateRange;
+    if (!dr || typeof dr !== 'object' || !dr.from || !dr.to) return null;
+    return { start: dr.from, end: dr.to };
+  })();
+
   const applyFilters = () => {
     let filtered = [...deals];
 
@@ -518,7 +533,11 @@ const SalesPipeline = () => {
       filtered = filtered.filter((deal) => deal.amount <= maxVal);
     }
 
-    // Date range filter (uses centralized resolver from DateRangePicker)
+    // Date range filter (uses centralized resolver from DateRangePicker).
+    // Run twice: once with the board's rule, once with closed_at only for won
+    // deals (closedAtDeals, above). Lost and open deals are dated the same way
+    // in both.
+    let closedAtOnly = filtered;
     if (filters.dateRange) {
       const resolved = resolveDateRange(
         filters.dateRange,
@@ -526,7 +545,7 @@ const SalesPipeline = () => {
       );
 
       if (resolved.startDate && resolved.endDate) {
-        filtered = filtered.filter((deal) => {
+        const inRangeByDate = (deal) => {
           // Won → closed_at, Lost → closed_at/lost_at, Open → expected_close_date fallback created_at
           const dateField =
             deal.stage === 'won'
@@ -537,35 +556,48 @@ const SalesPipeline = () => {
           if (!dateField) return false;
           const dealDate = new Date(dateField);
           return dealDate >= resolved.startDate && dealDate <= resolved.endDate;
-        });
+        };
+        closedAtOnly = filtered.filter(inRangeByDate);
+        // Won: won OR invoiced in the period (CEO decision, 2026-11-05).
+        filtered = filtered.filter((deal) =>
+          deal.stage === 'won' && wonPeriod
+            ? wonPeriodMatch(deal, wonPeriod).shown
+            : inRangeByDate(deal));
       }
     }
 
-    // Overdue filter
-    if (filters.showOverdue) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      filtered = filtered.filter((deal) => {
-        // Only include deals that are not won or lost
-        if (deal.stage === "won" || deal.stage === "lost") return false;
-        if (!deal.expected_close_date) return false;
-        const closeDate = new Date(deal.expected_close_date);
-        return closeDate < today;
-      });
-    }
+    const finish = (list) => {
+      // Overdue filter
+      if (filters.showOverdue) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        list = list.filter((deal) => {
+          // Only include deals that are not won or lost
+          if (deal.stage === "won" || deal.stage === "lost") return false;
+          if (!deal.expected_close_date) return false;
+          const closeDate = new Date(deal.expected_close_date);
+          return closeDate < today;
+        });
+      }
 
-    // Origin filter (skips won/lost)
-    if (originFilter !== 'all') {
-      const periodFrom = filters.customDateRange?.from
-        || format(startOfMonth(new Date()), 'yyyy-MM-dd');
-      filtered = filtered.filter(deal => {
-        if (deal.stage === 'won' || deal.stage === 'lost') return true;
-        return getDealOrigin(deal, periodFrom) === originFilter;
-      });
-    }
+      // Origin filter (skips won/lost)
+      if (originFilter !== 'all') {
+        const periodFrom = filters.customDateRange?.from
+          || format(startOfMonth(new Date()), 'yyyy-MM-dd');
+        list = list.filter(deal => {
+          if (deal.stage === 'won' || deal.stage === 'lost') return true;
+          return getDealOrigin(deal, periodFrom) === originFilter;
+        });
+      }
+      return list;
+    };
 
-    setFilteredDeals(filtered);
+    setFilteredDeals(finish(filtered));
+    setClosedAtDeals(finish(closedAtOnly));
   };
+
+  // The Won column's header split, only while a period is selected.
+  const wonSplit = wonPeriod ? splitWonColumn(filteredDeals, wonPeriod) : null;
 
   const handleExportToCSV = () => {
     if (!filteredDeals || filteredDeals.length === 0) {
@@ -583,6 +615,8 @@ const SalesPipeline = () => {
       "Stage",
       "Owner",
       "Expected Close Date",
+      "Won Date",
+      "Invoice Date",
       "Created Date",
       "Last Updated",
     ];
@@ -600,6 +634,9 @@ const SalesPipeline = () => {
         deal.stage || "",
         deal.owner ? deal.owner.full_name || deal.owner.email : "",
         deal.expected_close_date || "",
+        // Why a won deal is in the period: won in it, invoiced in it, or both.
+        deal.stage === "won" ? wonDayOf(deal) || "" : "",
+        deal.stage === "won" ? invoiceDayOf(deal) || "" : "",
         deal.created_at ? new Date(deal.created_at).toLocaleDateString() : "",
         deal.updated_at ? new Date(deal.updated_at).toLocaleDateString() : "",
       ];
@@ -654,6 +691,8 @@ const SalesPipeline = () => {
       Currency:         d.currency || "SAR",
       Owner:            d.owner?.full_name || d.owner?.email || "",
       "Expected Close": d.expected_close_date || "",
+      "Won Date":       d.stage === "won" ? wonDayOf(d) || "" : "",
+      "Invoice Date":   d.stage === "won" ? invoiceDayOf(d) || "" : "",
       "Created At":     d.created_at ? new Date(d.created_at).toLocaleDateString() : "",
     }));
     exportToExcel([{ name: "Pipeline", data: rows }], `pipeline-deals-${formatLocalDateYMD(new Date())}`);
@@ -1098,6 +1137,7 @@ const SalesPipeline = () => {
                       console.log("Dragging over:", stageId)
                     }
                     onDrop={handleDealStageChange}
+                    wonSplit={stage.id === "won" ? wonSplit : null}
                     activePeriodFrom={
                       filters.customDateRange?.from ||
                       format(startOfMonth(new Date()), 'yyyy-MM-dd')
@@ -1116,7 +1156,11 @@ const SalesPipeline = () => {
         </div>
         <div className="mt-20">
           <PipelineAnalytics
-            deals={filteredDeals}
+            deals={closedAtDeals}
+            // The Won column's own deals, for the won counts and totals on the
+            // analytics, so none of them contradicts the column. Null under
+            // All Time, where the two lists are the same.
+            wonColumnDeals={wonPeriod ? filteredDeals.filter((d) => d.stage === "won") : null}
             // With no filter active the headline funnel comes from the shared
             // definition, so this card agrees with Planning and the KPI strip.
             // With a filter active the card keeps describing the filtered list —

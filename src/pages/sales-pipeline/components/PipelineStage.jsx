@@ -106,6 +106,10 @@ const PipelineStage = ({
   onDragOver,
   onDrop,
   activePeriodFrom,
+  // Won column only, while a period is selected: the deals shown split into
+  // invoiced in the period vs won in it and not invoiced in it
+  // (utils/funnelWonPeriod.js splitWonColumn). The two add up to the header.
+  wonSplit = null,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { formatCurrency, preferredCurrency } = useCurrency();
@@ -189,6 +193,17 @@ const PipelineStage = ({
             <p className="text-xs text-gray-500">
               {deals.length} {t("common.deals").toLowerCase()}
             </p>
+            {wonSplit && (
+              <p
+                className="text-[11px] text-gray-500 leading-snug mt-0.5"
+                data-testid="won-split"
+                title="Invoiced this period: invoice date in the period, whenever the deal was won. Won this period, not invoiced: won in the period with no invoice dated in it."
+              >
+                Invoiced this period: {wonSplit.invoiced.count}
+                {" · "}
+                Won this period, not invoiced: {wonSplit.notInvoiced.count}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-1">
