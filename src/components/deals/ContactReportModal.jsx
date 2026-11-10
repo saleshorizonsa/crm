@@ -3,6 +3,8 @@ import { format } from 'date-fns';
 import { supabase } from '../../lib/supabase';
 import { dealService } from '../../services/supabaseService';
 import { useAuth } from '../../contexts/AuthContext';
+import CustomerPicker from '../CustomerPicker';
+import { isMissingColumn } from '../../utils/missingColumn';
 import {
   Phone, MapPin, MessageCircle, Mail, X, CheckCircle,
   Calendar, Clock, ArrowRight,
@@ -32,6 +34,9 @@ const NEXT_ACTIONS = [
 // and 03:00 in Riyadh, so an early-morning call was filed against the day before
 // and the picker refused to accept the real today.
 const today = () => format(new Date(), 'yyyy-MM-dd');
+// The contacts that must name their customer (session 34). Email is left as
+// it was.
+const NEEDS_CUSTOMER = ['visit', 'call', 'whatsapp'];
 const titleCase = (s) => (s || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 // Mandatory contact report. When `nextStage` is set the deal is advanced to that
@@ -50,6 +55,9 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
     follow_up_date: '',
     notes: '',
   });
+  // THE CUSTOMER (session 34): every visit, call and WhatsApp names one. It is
+  // the deal's own customer; only a deal that names none asks for it here.
+  const [customerId, setCustomerId] = useState(deal?.contact_id || null);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   // Shown when the save got part-way. Previously every failure here was only
@@ -66,6 +74,7 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
   const validate = () => {
     const e = {};
     if (!form.contact_type) e.contact_type = 'Select contact type';
+    if (!customerId && NEEDS_CUSTOMER.includes(form.contact_type)) e.customer = 'Select the customer';
     if (!form.contact_date) e.contact_date = 'Select contact date';
     if (!form.duration_minutes || isNaN(form.duration_minutes)) e.duration_minutes = 'Enter duration in minutes';
     if (!form.customer_response) e.customer_response = 'Select customer response';
@@ -82,7 +91,7 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
     try {
       const now = new Date().toISOString();
       if (!reportSaved.current) {
-        const { error } = await supabase.from('contact_reports').insert({
+        const payload = {
           company_id: company?.id,
           deal_id: deal.id,
           owner_id: user?.id,
@@ -95,7 +104,13 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
           notes: form.notes.trim() || null,
           is_audited: false,
           created_at: now,
-        });
+        };
+        // contact_id arrives with migrations/contact_reports_contact_id.sql.
+        // Until it is applied the column does not exist and PostgREST refuses
+        // the whole insert, so the same report is saved without it — the
+        // customer is still reachable through the deal, as before.
+        let { error } = await supabase.from('contact_reports').insert({ ...payload, contact_id: customerId || null });
+        if (isMissingColumn(error)) ({ error } = await supabase.from('contact_reports').insert(payload));
         if (error) throw error;
         reportSaved.current = true;
       }
@@ -186,6 +201,17 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
               </div>
               {errText('contact_type')}
             </div>
+
+            {/* The customer, asked for only when the deal names none */}
+            {!deal?.contact_id && NEEDS_CUSTOMER.includes(form.contact_type) && (
+              <CustomerPicker
+                ownerId={user?.id}
+                value={customerId}
+                onChange={(v) => { setCustomerId(v); setErrors((er) => ({ ...er, customer: undefined })); }}
+                error={errors.customer}
+                id="contact-report-customer"
+              />
+            )}
 
             {/* Contact Date + Duration */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

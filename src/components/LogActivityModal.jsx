@@ -3,6 +3,12 @@ import Icon from './AppIcon';
 import { activityService } from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import { format } from 'date-fns';
+import CustomerPicker from './CustomerPicker';
+
+// A visit, call or WhatsApp names its customer (session 34). Opened from a
+// customer or a deal, the customer is already known; opened from a quick
+// "Log activity" button with none, the form asks for one.
+const NEEDS_CUSTOMER = ['visit', 'call', 'whatsapp'];
 
 // visitDate (yyyy-MM-dd, optional): the day a visit happened, from Log visit.
 // Saved as completed_at at noon Riyadh time, so the visit counts on that day.
@@ -16,6 +22,7 @@ export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, con
     activityType: 'visit', description: '', outcome: '',
     nextAction: '', nextActionDate: '', durationMinutes: '',
   });
+  const [pickedContactId, setPickedContactId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState('');
 
@@ -23,6 +30,7 @@ export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, con
     if (isOpen) {
       setForm({ activityType: 'visit', description: '', outcome: '', nextAction: '', nextActionDate: '', durationMinutes: '' });
       setError('');
+      setPickedContactId(null);
     }
   }, [isOpen]);
 
@@ -31,12 +39,14 @@ export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, con
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
   async function handleSave() {
+    const customerId = contactId || pickedContactId || null;
+    if (!customerId && NEEDS_CUSTOMER.includes(form.activityType)) { setError('Choose the customer for this visit, call or WhatsApp'); return; }
     if (!form.description.trim()) { setError('Please add a description'); return; }
     setSaving(true);
     const { data, error: err } = await activityService.logActivity({
       companyId:       company.id,
       userId:          effectiveOwnerId,
-      contactId,
+      contactId:       customerId,
       dealId,
       activityType:    form.activityType,
       description:     form.description,
@@ -96,6 +106,16 @@ export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, con
               ))}
             </div>
           </div>
+
+          {/* The customer, when the form was opened without one */}
+          {!contactId && NEEDS_CUSTOMER.includes(form.activityType) && (
+            <CustomerPicker
+              ownerId={effectiveOwnerId}
+              value={pickedContactId}
+              onChange={(v) => { setPickedContactId(v); setError(''); }}
+              id="log-activity-customer"
+            />
+          )}
 
           {/* Description */}
           <div>
