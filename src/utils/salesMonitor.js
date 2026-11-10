@@ -526,6 +526,11 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     const split = splitInvoiced(m.drill.invoicedRows || []);
     const sub = isDeparted ? null : subByOwner.get(id) || null;
     const planStatus = !isDeparted && contributors.has(id) && subs ? classifyPlanStatus(sub) : null;
+    const requiredOf = isDeparted || !contributors.has(id) || !subs
+      ? { value: null, source: null }
+      : sub?.is_submitted
+        ? { value: num(sub.required_plan), source: 'submitted' }
+        : { value: num(m.requiredRaw), source: 'estimated' };
     const wni = (m.drill.wonNotInvoicedRows || []);
     const myContacts = mtdContacts.filter((c) => owners.has(c.ownerId));
     const openPlan = num(m.planned);
@@ -540,14 +545,20 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
       target: m.target,
       achieved: m.achieved,
       achievedPct: pct(m.achieved, m.target),
-      requiredPlan: m.requiredRaw,
+      // REQUIRED, per person, from ONE source each (never mixed):
+      //   submitted  the plan's own required_plan, frozen when it was filed
+      //   estimated  no submitted plan: today's gap to target ÷ the person's
+      //              conversion rate — Planning's rule (computeRequiredRaw over
+      //              calcDivisionMetrics' deficit and pickConversion rate)
+      requiredPlan: requiredOf.value,
+      requiredSource: requiredOf.source,
       planned: plannedTotal,
       // "Submitted": what the plan said when it was filed (its own total_planned);
       // null when nothing was submitted. "Plan now" is `planned` above.
       submittedPlanned: sub?.is_submitted ? num(sub.total_planned) : null,
       plannedOpen: openPlan,
       plannedPctOfTarget: pct(plannedTotal, m.target),
-      plannedPctOfRequired: pct(plannedTotal, m.requiredRaw),
+      plannedPctOfRequired: pct(plannedTotal, requiredOf.value),
       planStatus,
       submission: sub,
       fromPlan: split.fromPlan,
@@ -617,6 +628,15 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     p.exceptions = group.reduce((s, id) => s + (excByOwner.get(id) || 0), 0);
   });
 
+  const holderRows = people.filter((p) => p.requiredSource);
+  const lineFor = (source) => {
+    const rows = holderRows.filter((p) => p.requiredSource === source);
+    const required = sumBy(rows, (p) => p.requiredPlan);
+    const planNow = sumBy(rows, (p) => p.planned);
+    return { count: rows.length, people: rows.map((p) => p.name), required, planNow, pct: pct(planNow, required) };
+  };
+  const requiredLines = subs ? { submitted: lineFor('submitted'), estimated: lineFor('estimated') } : null;
+
   const cards = {
     target: { total: metrics.target, span: metrics.targetSpan },
     planned: {
@@ -624,8 +644,16 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
       open: sumBy(plannedRows.filter((r) => r.status === 'open'), (r) => r.planned),
       converted: sumBy(plannedRows.filter((r) => r.status !== 'open'), (r) => r.planned),
       pctOfTarget: pct(plannedTotal, metrics.target),
-      requiredPlan: metrics.requiredRaw,
-      pctOfRequired: pct(plannedTotal, metrics.requiredRaw),
+      // Required, in two lines that are never added into one figure:
+      required: requiredLines,
+      // Insights' company "Required pipeline", for reconciliation only: the
+      // company gap today ÷ the company conversion rate, in one step over
+      // everyone whose target counts (departed included). It is not the sum
+      // of anybody's plan, and the card no longer divides by it.
+      companyRequired: {
+        value: metrics.requiredRaw, target: metrics.target, achieved: metrics.achieved,
+        gap: metrics.deficit, winRatePct: metrics.winRatePct, winRateSource: metrics.winRateSource,
+      },
       // "Submitted": the plan-holders' filed total_planned, summed over those
       // who submitted. It does not follow the division picker below the
       // person: a submission is one person's whole month.

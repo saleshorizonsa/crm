@@ -292,8 +292,22 @@ export default function SalesMonitor() {
             <Line label={`Submitted (${c.planned.submittedPeople} of ${c.planned.planHolders} plans)`} value={c.planned.submitted === null ? NO_FIGURE : money(c.planned.submitted)} />
             <Line label="Plan now (open + live deal)" value={money(c.planned.total)} />
             <Line label="Plan now, % of target" value={fmtPct(c.planned.pctOfTarget, 0)} />
-            <Line label={`Plan now, % of required (${money(c.planned.requiredPlan)})`} value={fmtPct(c.planned.pctOfRequired, 0)} />
-            <p className="text-[11px] text-gray-500 pt-1" data-testid="planned-explain">Submitted = the total on each plan when it was filed. Plan now = the month's plan items today that are still open or became a live deal.</p>
+            {c.planned.required ? (
+              <>
+                <div data-testid="required-submitted">
+                  <Line label={`Required, from ${c.planned.required.submitted.count} submitted plan${c.planned.required.submitted.count === 1 ? "" : "s"}`} value={money(c.planned.required.submitted.required)} />
+                  <Line label="… their plan now, % of it" value={fmtPct(c.planned.required.submitted.pct, 0)} />
+                </div>
+                {c.planned.required.estimated.count > 0 && (
+                  <div data-testid="required-estimated">
+                    <Line label={`Required (estimated for ${c.planned.required.estimated.count} not submitted)`} value={money(c.planned.required.estimated.required)} />
+                    <Line label="… their plan now, % of it" value={fmtPct(c.planned.required.estimated.pct, 0)} />
+                  </div>
+                )}
+              </>
+            ) : <Line label="Required" value={NO_FIGURE} />}
+            <p className="text-[11px] text-gray-500 pt-1" data-testid="planned-explain">Submitted = the total on each plan when it was filed. Plan now = the month's plan items today that are still open or became a live deal. Required from submitted plans = each plan's own required plan, as filed. Estimated = for each person with no submitted plan, today's gap to target ÷ their conversion rate.</p>
+            <p className="text-[11px] text-gray-500" data-testid="company-required">Insights' company required pipeline, for comparison only: {money(c.planned.companyRequired.value)} = (target {money(c.planned.companyRequired.target)} − achieved {money(c.planned.companyRequired.achieved)}) ÷ {fmtPct(c.planned.companyRequired.winRatePct, 1)} conversion.</p>
           </Card>
           <Card testid="card-plan-status" title="Plan submission" value={c.planStatus.loaded ? `${c.planStatus.onTime + c.planStatus.late} of ${c.planStatus.people}` : NO_FIGURE} sub="submitted" onOpen={() => openCard("planStatus")}>
             {c.planStatus.loaded ? (
@@ -339,7 +353,7 @@ export default function SalesMonitor() {
         <section className="bg-white border border-gray-200 rounded-xl" aria-label="Salesman scoreboard">
           <div className="px-4 py-3 border-b border-gray-100">
             <h2 className="text-base font-semibold text-gray-900">Salesman scoreboard</h2>
-            <p className="text-xs text-gray-600">Exceptions first. Click a column to sort, a row to open the salesman. Submitted plan = the total on the plan as filed; Plan now = its items today (open or a live deal). Coverage = (open deals due + open plan) ÷ (target − achieved).</p>
+            <p className="text-xs text-gray-600">Exceptions first. Click a column to sort, a row to open the salesman. Submitted plan = the total on the plan as filed; Plan now = its items today (open or a live deal), as % of the submitted required plan, or of an estimate ("est.") where none was submitted. Coverage = (open deals due + open plan) ÷ (target − achieved).</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1420px] text-xs" data-testid="monitor-scoreboard">
@@ -369,7 +383,7 @@ export default function SalesMonitor() {
                     <td className="px-2 py-2 text-right text-gray-600">{p.division}</td>
                     <td className="px-2 py-2 text-right font-mono">{money(p.target)}</td>
                     <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title="total_planned on the plan as filed">{p.submittedPlanned === null ? NO_FIGURE : money(p.submittedPlanned)}</td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title="open + converted-with-a-live-deal plan items today">{money(p.planned)} <span className="text-gray-500">({fmtPct(p.plannedPctOfRequired, 0)})</span></td>
+                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title={p.requiredSource === "submitted" ? `open + live-deal plan items today, as % of the submitted required plan ${money(p.requiredPlan)}` : p.requiredSource === "estimated" ? `open + live-deal plan items today, as % of an ESTIMATED required plan ${money(p.requiredPlan)} (no submitted plan): gap to target ÷ conversion rate` : "open + live-deal plan items today"}>{money(p.planned)} <span className="text-gray-500">({fmtPct(p.plannedPctOfRequired, 0)}{p.requiredSource === "estimated" ? " est." : ""})</span></td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       {p.planStatus ? (
                         <span className={p.planStatus.submitted ? (p.planStatus.approval === "rejected" ? "text-red-700" : "text-gray-700") : "text-red-700"}>

@@ -1693,7 +1693,7 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
       .select('id, owner_id, planned_amount, status, deal_id, expected_month')
       .eq('company_id', companyId).gte('expected_month', start).lte('expected_month', end),
     supabase.from('plan_submissions')
-      .select('owner_id, is_submitted, is_late, approval_status')
+      .select('owner_id, is_submitted, is_late, approval_status, required_plan')
       .eq('company_id', companyId).eq('plan_month', start),
   ]);
   const monthItems = items || [];
@@ -1736,6 +1736,30 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
       expected: model.metrics.planned,
       note: `no-target sellers' open plan ${Math.round(c.planned.openLeftOut).toLocaleString('en-US')} is in Insights' Planned, not here`,
     }),
+    ...(subErr ? [] : (() => {
+      const filed = contributors.filter((id) => subBy.get(id)?.is_submitted);
+      const notFiled = contributors.filter((id) => !subBy.get(id)?.is_submitted);
+      const r = c.planned.required;
+      return [
+        row({
+          label: 'Sales Monitor — 2 Required, from submitted plans = their required_plan',
+          value: r.submitted.required,
+          expected: filed.reduce((t, id) => t + n(subBy.get(id).required_plan), 0),
+          note: `${filed.length} plan(s)`,
+        }),
+        row({ label: 'Sales Monitor — 2 Required, estimated: people with no submitted plan', value: r.estimated.count, expected: notFiled.length, kind: 'count', note: r.estimated.people.join(', ') || 'none' }),
+        row({
+          label: 'Sales Monitor — 2 Required, estimated = sum of those people’s own estimates',
+          value: r.estimated.required,
+          expected: model.people.filter((x) => x.requiredSource === 'estimated').reduce((t, x) => t + n(x.requiredPlan), 0),
+        }),
+        row({
+          label: 'Sales Monitor — Insights company required pipeline (context only, not on the card)',
+          value: c.planned.companyRequired.value,
+          note: `= (target ${Math.round(c.planned.companyRequired.target).toLocaleString('en-US')} − achieved ${Math.round(c.planned.companyRequired.achieved).toLocaleString('en-US')}) ÷ ${n(c.planned.companyRequired.winRatePct).toFixed(1)}% conversion (${c.planned.companyRequired.winRateSource})`,
+        }),
+      ];
+    })()),
     ...(subErr ? [] : [row({
       label: 'Sales Monitor — 2 Submitted (company): total_planned of the filed plans',
       value: c.planned.submitted,
