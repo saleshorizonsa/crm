@@ -10,7 +10,8 @@ import {
   personDrill,
   MONITOR_PICKER_ROLES,
   OUTCOME,
-  OUTCOME_ORDER,
+  OUTCOME_HELP,
+  outcomeLabelsFor,
   DEPARTED_ID,
   NO_CUSTOMER,
 } from "utils/salesMonitor";
@@ -85,6 +86,10 @@ const SORTS = {
   wni: (p) => p.wonNotInvoiced,
   visits: (p) => p.visitsMtd,
   lastVisit: (p) => p.lastVisit || "",
+  outAchieved: (p) => p.outcomes.Achieved.count,
+  outBounced: (p) => p.outcomes.Bounced.count,
+  outFailed: (p) => p.outcomes.Failed.count,
+  outPending: (p) => p.outcomes.Pending.count,
   coverage: (p) => (p.coverageMet ? Infinity : p.coverageRatio ?? -1),
 };
 
@@ -103,6 +108,7 @@ export default function SalesMonitor() {
   const [drill, setDrill] = useState(null);       // a DrillSheet tree + header
   const [sort, setSort] = useState({ key: "exceptions", dir: "desc" });
   const [sevFilter, setSevFilter] = useState("all");
+  const [tip, setTip] = useState(null);           // the open outcome definition (tap)
 
   const load = useCallback(async () => {
     if (!company?.id || !user?.id) return;
@@ -192,15 +198,37 @@ export default function SalesMonitor() {
     return primary || a.name.localeCompare(b.name);
   });
   const toggleSort = (key) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "name" ? "asc" : "desc" }));
-  const Th = ({ k, children, left = false }) => (
-    <th scope="col" className={`px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500 border-b border-gray-200 align-bottom ${left ? "text-left sticky left-0 bg-gray-50 z-10" : "text-right"}`}>
+  const Th = ({ k, children, left = false, help = null }) => (
+    <th scope="col" title={help || undefined} className={`relative px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500 border-b border-gray-200 align-bottom ${left ? "text-left sticky left-0 bg-gray-50 z-10" : "text-right"}`}>
       {k ? (
-        <button type="button" onClick={() => toggleSort(k)} className="uppercase tracking-wide hover:text-gray-800">
+        <button type="button" onClick={() => toggleSort(k)} title={help || undefined} className="uppercase tracking-wide hover:text-gray-800">
           {children}{sort.key === k ? (sort.dir === "asc" ? " ↑" : " ↓") : ""}
         </button>
       ) : children}
+      {help && (
+        <>
+          {/* Tap target for touch screens, where a hover title never shows. */}
+          <button
+            type="button"
+            aria-label={`What ${children} means`}
+            aria-expanded={tip === k}
+            data-testid={`help-${k}`}
+            onClick={(e) => { e.stopPropagation(); setTip(tip === k ? null : k); }}
+            className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-[9px] normal-case text-gray-500 hover:bg-gray-100"
+          >
+            i
+          </button>
+          {tip === k && (
+            <span role="tooltip" data-testid={`tip-${k}`} className="absolute right-0 top-full mt-1 z-30 w-48 normal-case tracking-normal font-normal text-[11px] text-left text-gray-800 bg-white border border-gray-200 rounded-lg shadow-lg px-2 py-1.5">
+              {help}
+            </span>
+          )}
+        </>
+      )}
     </th>
   );
+  const outcomeLabels = outcomeLabelsFor(model.closed);
+  const OUTCOME_KEY = { Achieved: "outAchieved", Bounced: "outBounced", Failed: "outFailed", Pending: "outPending" };
 
   const byPerson = new Map();
   model.dayContacts.forEach((r) => {
@@ -287,9 +315,14 @@ export default function SalesMonitor() {
             {c.fromPlan.returns > 0 && <Line label="Returns" value={`−${money(c.fromPlan.returns)}`} />}
           </Card>
           <Card testid="card-outcomes" title="Plan outcomes" value={`${c.outcomes.total.count} items`} sub={`achieved from plan ${fmtPct(c.outcomes.achievedFromPlanPct, 0)}`} onOpen={() => openCard("outcomes")}>
-            {OUTCOME_ORDER.map((l) => (
-              <Line key={l} label={l} value={`${c.outcomes[l].count} · ${money(c.outcomes[l].value)}`} cls={OUTCOME_STYLE[l]} />
+            {outcomeLabels.map((l) => (
+              <div key={l} title={OUTCOME_HELP[l]}>
+                <Line label={l} value={`${c.outcomes[l].count} · ${money(c.outcomes[l].value)}`} cls={OUTCOME_STYLE[l]} />
+              </div>
             ))}
+            <p className="text-[11px] text-gray-500 pt-1" data-testid="outcomes-explain">
+              {outcomeLabels.map((l) => `${l}: ${OUTCOME_HELP[l].toLowerCase()}`).join(" · ")}.
+            </p>
           </Card>
           <Card testid="card-visits" title="Visits" value={`${c.visits.today.count} · ${c.visits.mtd.count}`} sub={`${shortDay(c.visits.day)} · month to date`} onOpen={() => openCard("visits")}>
             <Line label="To planned customers (MTD)" value={fmtPct(c.visits.mtd.inPlanPct, 0)} />
@@ -309,7 +342,7 @@ export default function SalesMonitor() {
             <p className="text-xs text-gray-600">Exceptions first. Click a column to sort, a row to open the salesman. Submitted plan = the total on the plan as filed; Plan now = its items today (open or a live deal). Coverage = (open deals due + open plan) ÷ (target − achieved).</p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1260px] text-xs" data-testid="monitor-scoreboard">
+            <table className="w-full min-w-[1420px] text-xs" data-testid="monitor-scoreboard">
               <thead className="bg-gray-50">
                 <tr>
                   <Th k="name" left>Salesman</Th>
@@ -321,7 +354,7 @@ export default function SalesMonitor() {
                   <Th k="achieved">Achieved</Th>
                   <Th k="achievedPct">% target</Th>
                   <Th k="fromPlan">From / outside plan</Th>
-                  <Th>A / B / F / P</Th>
+                  {outcomeLabels.map((l) => <Th key={l} k={OUTCOME_KEY[l]} help={OUTCOME_HELP[l]}>{l}</Th>)}
                   <Th k="wni">Won not invoiced</Th>
                   <Th k="visits">Visits MTD (% planned)</Th>
                   <Th k="lastVisit">Last visit</Th>
@@ -347,11 +380,9 @@ export default function SalesMonitor() {
                     <td className="px-2 py-2 text-right font-mono">{money(p.achieved)}</td>
                     <td className="px-2 py-2 text-right font-mono">{fmtPct(p.achievedPct, 0)}</td>
                     <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{money(p.fromPlan)} / {money(p.outsidePlan)}</td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap">
-                      {OUTCOME_ORDER.map((l, i) => (
-                        <span key={l} className={OUTCOME_STYLE[l]} title={`${l}: ${money(p.outcomes[l].value)}`}>{i ? " / " : ""}{p.outcomes[l].count}</span>
-                      ))}
-                    </td>
+                    {outcomeLabels.map((l) => (
+                      <td key={l} data-testid={`out-${l}`} className={`px-2 py-2 text-right font-mono ${p.outcomes[l].count ? OUTCOME_STYLE[l] : "text-gray-300"}`} title={`${l}: ${money(p.outcomes[l].value)} planned`}>{p.outcomes[l].count}</td>
+                    ))}
                     <td className="px-2 py-2 text-right font-mono">{money(p.wonNotInvoiced)}</td>
                     <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{p.visitsMtd} <span className="text-gray-500">({fmtPct(p.visitsMtdInPlanPct, 0)})</span></td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">{shortDay(p.lastVisit)}</td>
@@ -360,7 +391,7 @@ export default function SalesMonitor() {
                   </tr>
                 ))}
                 {!people.length && (
-                  <tr><td colSpan={15} className="px-4 py-8 text-center text-sm text-gray-400">Nobody in this view carries a target.</td></tr>
+                  <tr><td colSpan={14 + outcomeLabels.length} className="px-4 py-8 text-center text-sm text-gray-400">Nobody in this view carries a target.</td></tr>
                 )}
               </tbody>
             </table>

@@ -84,6 +84,15 @@ export const OUTCOME = {
   achieved: 'Achieved', bounced: 'Bounced', failed: 'Failed', pending: 'Pending',
 };
 export const OUTCOME_ORDER = [OUTCOME.achieved, OUTCOME.bounced, OUTCOME.failed, OUTCOME.pending];
+/** One line per label, for the tooltips (CEO wording, 2026-11-10). */
+export const OUTCOME_HELP = {
+  [OUTCOME.achieved]: 'Invoiced in the plan month',
+  [OUTCOME.bounced]: 'Moved to or closed in a later month',
+  [OUTCOME.failed]: 'Lost, or never converted by month end',
+  [OUTCOME.pending]: 'Month not over, not yet resolved',
+};
+/** The labels a month shows: Pending only while the month is not over. */
+export const outcomeLabelsFor = (closed) => OUTCOME_ORDER.filter((l) => !closed || l !== OUTCOME.pending);
 
 export const PLAN_STATUS = {
   onTime: 'submitted on time',
