@@ -78,6 +78,7 @@ const SORTS = {
   name: (p) => p.name,
   target: (p) => p.target,
   planned: (p) => p.planned,
+  submitted: (p) => p.submittedPlanned ?? -1,
   achieved: (p) => p.achieved,
   achievedPct: (p) => p.achievedPct ?? -1,
   fromPlan: (p) => p.fromPlan,
@@ -259,9 +260,12 @@ export default function SalesMonitor() {
           <Card testid="card-target" title="Target" value={money(c.target.total)} sub={c.target.span} onOpen={() => openCard("target")}>
             <Line label="People with a target" value={model.people.filter((p) => p.target > 0).length} />
           </Card>
-          <Card testid="card-planned" title="Planned" value={money(c.planned.total)} sub="open + became a live deal" onOpen={() => openCard("planned")}>
-            <Line label="% of target" value={fmtPct(c.planned.pctOfTarget, 0)} />
-            <Line label={`% of required (${money(c.planned.requiredPlan)})`} value={fmtPct(c.planned.pctOfRequired, 0)} />
+          <Card testid="card-planned" title="Planned" value={`${c.planned.submitted === null ? NO_FIGURE : money(c.planned.submitted)} · ${money(c.planned.total)}`} sub="submitted · plan now" onOpen={() => openCard("planned")}>
+            <Line label={`Submitted (${c.planned.submittedPeople} of ${c.planned.planHolders} plans)`} value={c.planned.submitted === null ? NO_FIGURE : money(c.planned.submitted)} />
+            <Line label="Plan now (open + live deal)" value={money(c.planned.total)} />
+            <Line label="Plan now, % of target" value={fmtPct(c.planned.pctOfTarget, 0)} />
+            <Line label={`Plan now, % of required (${money(c.planned.requiredPlan)})`} value={fmtPct(c.planned.pctOfRequired, 0)} />
+            <p className="text-[11px] text-gray-500 pt-1" data-testid="planned-explain">Submitted = the total on each plan when it was filed. Plan now = the month's plan items today that are still open or became a live deal.</p>
           </Card>
           <Card testid="card-plan-status" title="Plan submission" value={c.planStatus.loaded ? `${c.planStatus.onTime + c.planStatus.late} of ${c.planStatus.people}` : NO_FIGURE} sub="submitted" onOpen={() => openCard("planStatus")}>
             {c.planStatus.loaded ? (
@@ -302,16 +306,17 @@ export default function SalesMonitor() {
         <section className="bg-white border border-gray-200 rounded-xl" aria-label="Salesman scoreboard">
           <div className="px-4 py-3 border-b border-gray-100">
             <h2 className="text-base font-semibold text-gray-900">Salesman scoreboard</h2>
-            <p className="text-xs text-gray-600">Exceptions first. Click a column to sort, a row to open the salesman. Coverage = (open deals due + open plan) ÷ (target − achieved).</p>
+            <p className="text-xs text-gray-600">Exceptions first. Click a column to sort, a row to open the salesman. Submitted plan = the total on the plan as filed; Plan now = its items today (open or a live deal). Coverage = (open deals due + open plan) ÷ (target − achieved).</p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] text-xs" data-testid="monitor-scoreboard">
+            <table className="w-full min-w-[1260px] text-xs" data-testid="monitor-scoreboard">
               <thead className="bg-gray-50">
                 <tr>
                   <Th k="name" left>Salesman</Th>
                   <Th>Division</Th>
                   <Th k="target">Target</Th>
-                  <Th k="planned">Planned (% req.)</Th>
+                  <Th k="submitted">Submitted plan</Th>
+                  <Th k="planned">Plan now (% req.)</Th>
                   <Th>Plan status</Th>
                   <Th k="achieved">Achieved</Th>
                   <Th k="achievedPct">% target</Th>
@@ -330,7 +335,8 @@ export default function SalesMonitor() {
                     <td className="px-2 py-2 sticky left-0 bg-white group-hover:bg-gray-50 font-medium text-gray-900 whitespace-nowrap">{p.name}</td>
                     <td className="px-2 py-2 text-right text-gray-600">{p.division}</td>
                     <td className="px-2 py-2 text-right font-mono">{money(p.target)}</td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{money(p.planned)} <span className="text-gray-500">({fmtPct(p.plannedPctOfRequired, 0)})</span></td>
+                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title="total_planned on the plan as filed">{p.submittedPlanned === null ? NO_FIGURE : money(p.submittedPlanned)}</td>
+                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title="open + converted-with-a-live-deal plan items today">{money(p.planned)} <span className="text-gray-500">({fmtPct(p.plannedPctOfRequired, 0)})</span></td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       {p.planStatus ? (
                         <span className={p.planStatus.submitted ? (p.planStatus.approval === "rejected" ? "text-red-700" : "text-gray-700") : "text-red-700"}>
@@ -354,7 +360,7 @@ export default function SalesMonitor() {
                   </tr>
                 ))}
                 {!people.length && (
-                  <tr><td colSpan={14} className="px-4 py-8 text-center text-sm text-gray-400">Nobody in this view carries a target.</td></tr>
+                  <tr><td colSpan={15} className="px-4 py-8 text-center text-sm text-gray-400">Nobody in this view carries a target.</td></tr>
                 )}
               </tbody>
             </table>

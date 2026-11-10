@@ -43,6 +43,13 @@ export const THRESHOLDS = {
   largeDealShareOfTarget: 0.5,
   /** A plan item bounced this many times or more. */
   bouncedTimes: 2,
+
+  // ── Data ──
+  /**
+   * A submission's required_plan above this many times the person's target
+   * for the month looks wrong (a yearly figure, a typo, a rate of ~0%).
+   */
+  requiredPlanTargetMultiple: 3,
 };
 
 /** Which severity each rule raises. One table, read by every rule. */
@@ -64,6 +71,7 @@ export const RULE_SEVERITY = {
   deal_no_division: SEVERITY.low,
   departed_open_work: SEVERITY.medium,
   report_no_customer: SEVERITY.low,
+  required_plan_wrong: SEVERITY.medium,
 };
 
 /** The group each rule is listed under in the feed. */
@@ -85,4 +93,5 @@ export const RULE_GROUP = {
   deal_no_division: 'Data',
   departed_open_work: 'Data',
   report_no_customer: 'Data',
+  required_plan_wrong: 'Data',
 };

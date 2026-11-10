@@ -96,6 +96,9 @@ export const PLAN_STATUS = {
 
 export const DEPARTED_ID = '__departed__';
 const DEPARTED_NAME = 'People no longer active';
+/** Selling managers with no target this month: one row, so Achieved still adds up. */
+export const NO_TARGET_ID = '__no_target__';
+const NO_TARGET_NAME = 'Selling without a target this month';
 export const NO_CUSTOMER = 'customer not recorded';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -242,7 +245,7 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
 
   const users = raw.users || [];
   const userById = new Map(users.map((u) => [u.id, u]));
-  const nameOf = (id) => (id === DEPARTED_ID ? DEPARTED_NAME : userById.get(id)?.full_name || 'Unknown');
+  const nameOf = (id) => (id === DEPARTED_ID ? DEPARTED_NAME : id === NO_TARGET_ID ? NO_TARGET_NAME : userById.get(id)?.full_name || 'Unknown');
   const isActive = (id) => userById.get(id)?.is_active !== false;
   const contactName = new Map((raw.contacts || []).map((c) => [
     c.id, c.company_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || null,
@@ -282,21 +285,39 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
   const viewUsers = users.filter((u) => viewSet.has(u.id));
   const activeAchievers = achieverIdsFrom(viewUsers);              // active only
   const allAchievers = achieverIdsFrom(viewUsers, { includeInactive: true });
-  const contributors = new Set(contributorIdsFrom(viewUsers));     // active, plan-holders
+  const contributorRoles = new Set(contributorIdsFrom(viewUsers)); // active salesmen + supervisors
   const departedAchievers = allAchievers.filter((id) => !isActive(id));
-  const personIds = activeAchievers
+  // WHO IS A SALESMAN ON THIS PAGE (follow-up, 2026-11-10): every active
+  // salesman and supervisor, plus anyone else whose target counts (a manager
+  // flagged as selling, e.g. Mohamed Kamal) WHEN HE CARRIES A TARGET FOR THE
+  // MONTH. Their plan items count in Planned, the outcomes and from-plan,
+  // their plan status comes from plan_submissions, and they get a row.
+  // The target is Insights' own per-person figure for the month.
+  const targetPer = metrics.drill.targetPerPerson || {};
+  const carriesTarget = (id) => num(targetPer[id]) > 0;
+  const planPeople = activeAchievers.filter((id) => contributorRoles.has(id) || carriesTarget(id));
+  const contributors = new Set(planPeople);                         // the plan-holders
+  // A selling manager with NO target this month stays off the plan side. His
+  // invoices still count in Achieved (Insights' rule), so they get one
+  // combined row rather than vanishing from the scoreboard's sum.
+  const noTargetSellers = activeAchievers.filter((id) => !contributors.has(id));
+  const personIds = planPeople
     .slice()
     .sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
 
   // ── plan items of the month ──
-  // Over the achievers, departed included — the people the scoreboard lists —
-  // so the salesmen's outcome rows add up to the card. A plain manager's own
-  // plan item belongs to nobody on the board and is left out, as it is from
-  // Planned.
-  const achieverSet = new Set(allAchievers);
+  // Over the plan-holders, departed included — the people the scoreboard
+  // lists by name — so the outcome rows add up to the card. A manager with no
+  // target (selling or not) belongs to nobody on the board and is left out.
+  const achieverSet = new Set([...planPeople, ...departedAchievers]);
   const planItems = (raw.planItems || [])
     .filter((o) => viewSet.has(o.owner_id) && achieverSet.has(o.owner_id))
     .filter(planInView);
+  // Open plan of active people left out above — the whole of the difference
+  // between this page's open Planned and Insights' (which counts every
+  // active achiever's open items).
+  const openLeftOut = sumBy((raw.planItems || []).filter((o) => !o.movedOutOfMonth
+    && noTargetSellers.includes(o.owner_id) && (o.status || 'open') === 'open').filter(planInView), (o) => o.planned_amount);
   const inMonthItems = planItems.filter((o) => !o.movedOutOfMonth);
   const keyOf = (ownerId, row) => `${ownerId}|${customerKey(row, contactName)}`;
   const customerOf = (row) => (row?.contact_id && contactName.get(row.contact_id)) || row?.customer_name || row?.title || '—';
@@ -338,10 +359,11 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
   });
   const outcomeOfItem = new Map(itemRows.map((r) => [r.oppId, r]));
 
-  // CARD 2 rows: open + converted-with-deal, in the month, over the ACTIVE
-  // ACHIEVERS — the forward scope Insights' Planned uses (forwardIds), so a
-  // plain manager's own plan items count here exactly as little as there.
-  const forwardSet = new Set(activeAchievers);
+  // CARD 2 rows ("Plan now"): open + converted-with-deal, in the month, over
+  // the ACTIVE plan-holders. Insights' Planned counts open items of every
+  // active achiever; the two differ by converted-with-deal items and by
+  // `openLeftOut` (selling managers with no target this month).
+  const forwardSet = new Set(planPeople);
   const plannedRows = itemRows.filter((r) => !r.movedOutOfMonth && forwardSet.has(r.ownerId)
     && (r.status === 'open' || isConvertedWithDeal(r.item)));
 
@@ -486,8 +508,9 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
   };
 
   const personFigures = (id, m) => {
-    const isDeparted = id === DEPARTED_ID;
-    const owners = isDeparted ? new Set(departedAchievers) : new Set([id]);
+    const isDeparted = id === DEPARTED_ID || id === NO_TARGET_ID;
+    const owners = id === DEPARTED_ID ? new Set(departedAchievers)
+      : id === NO_TARGET_ID ? new Set(noTargetSellers) : new Set([id]);
     const myPlanned = plannedRows.filter((r) => owners.has(r.ownerId));
     const myItems = itemRows.filter((r) => owners.has(r.ownerId));
     const plannedTotal = sumBy(myPlanned, (r) => r.planned);
@@ -510,6 +533,9 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
       achievedPct: pct(m.achieved, m.target),
       requiredPlan: m.requiredRaw,
       planned: plannedTotal,
+      // "Submitted": what the plan said when it was filed (its own total_planned);
+      // null when nothing was submitted. "Plan now" is `planned` above.
+      submittedPlanned: sub?.is_submitted ? num(sub.total_planned) : null,
       plannedOpen: openPlan,
       plannedPctOfTarget: pct(plannedTotal, m.target),
       plannedPctOfRequired: pct(plannedTotal, m.requiredRaw),
@@ -538,6 +564,11 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     const dm = dataFor(departedAchievers);
     const hasAny = num(dm.target) || num(dm.achieved) || itemRows.some((r) => departedAchievers.includes(r.ownerId));
     if (hasAny) people.push(personFigures(DEPARTED_ID, dm));
+  }
+  if (noTargetSellers.length) {
+    const nm = dataFor(noTargetSellers);
+    const wniNt = sumBy(nm.drill.wonNotInvoicedRows || [], achievedAmount);
+    if (num(nm.achieved) || num(nm.target) || wniNt) people.push(personFigures(NO_TARGET_ID, nm));
   }
 
   // ── the cards ──
@@ -573,9 +604,8 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
   const excByOwner = new Map();
   exceptions.forEach((e) => { if (e.ownerId) excByOwner.set(e.ownerId, (excByOwner.get(e.ownerId) || 0) + 1); });
   people.forEach((p) => {
-    p.exceptions = p.id === DEPARTED_ID
-      ? departedAchievers.reduce((s, id) => s + (excByOwner.get(id) || 0), 0)
-      : excByOwner.get(p.id) || 0;
+    const group = p.id === DEPARTED_ID ? departedAchievers : p.id === NO_TARGET_ID ? noTargetSellers : [p.id];
+    p.exceptions = group.reduce((s, id) => s + (excByOwner.get(id) || 0), 0);
   });
 
   const cards = {
@@ -587,6 +617,15 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
       pctOfTarget: pct(plannedTotal, metrics.target),
       requiredPlan: metrics.requiredRaw,
       pctOfRequired: pct(plannedTotal, metrics.requiredRaw),
+      // "Submitted": the plan-holders' filed total_planned, summed over those
+      // who submitted. It does not follow the division picker below the
+      // person: a submission is one person's whole month.
+      submitted: subs ? sumBy(planHolders.map((id) => subByOwner.get(id)).filter((x) => x?.is_submitted), (x) => x.total_planned) : null,
+      submittedPeople: subs ? planHolders.filter((id) => subByOwner.get(id)?.is_submitted).length : 0,
+      planHolders: planHolders.length,
+      // Open plan of selling managers with no target this month: counted by
+      // Insights' Planned, not here.
+      openLeftOut,
     },
     planStatus: {
       loaded: !!subs,
@@ -666,6 +705,8 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     exceptions,
     outcomeOfItem,
     customerOfDeal,
+    departedIds: departedAchievers,
+    noTargetIds: noTargetSellers,
     contactIdColumn: raw.contactIdColumn !== false,
     notes: raw.notes || [],
     drills: buildDrills(ctx),
@@ -854,6 +895,23 @@ export function buildExceptions(c) {
       ownerId: id, date: c.today, record: { kind: 'person', personId: id },
     });
   });
+  // A required plan that cannot be right: more than N times the month's target.
+  if (c.subsLoaded) {
+    const targetOfPerson = new Map(c.people.map((p) => [p.id, num(p.target)]));
+    c.planHolders.forEach((id) => {
+      const s = c.subByOwner.get(id);
+      const req = num(s?.required_plan);
+      const tgt = targetOfPerson.get(id) || 0;
+      if (req > 0 && req > T.requiredPlanTargetMultiple * tgt) {
+        add('required_plan_wrong', id, {
+          title: 'Required plan looks wrong',
+          detail: `required ${Math.round(req).toLocaleString('en-US')} against a target of ${Math.round(tgt).toLocaleString('en-US')}${tgt > 0 ? ` (${(req / tgt).toFixed(1)}×)` : ''}`,
+          ownerId: id, date: riyadhDate(s.submitted_at) || riyadhDate(s.updated_at) || c.monthStart,
+          record: { kind: 'person', personId: id },
+        });
+      }
+    });
+  }
   c.mtdContacts.filter((r) => !r.customerKnown && r.source === 'contact report')
     .forEach((r) => add('report_no_customer', r.id, {
       title: 'Contact report without a customer', detail: `${r.kindLabel} · ${dayLabel(r.date)}`,
@@ -1018,8 +1076,8 @@ function buildDrills(ctx) {
       children: drillTree(targetRows, { ...base, value: (r) => r.value, divisionOf: (r) => r.divisionId, personOf: (r) => r.personId }),
     },
     planned: {
-      label: 'Planned',
-      explain: 'Plan items for the month that are still open or have become a live deal, active owners only.',
+      label: 'Plan now',
+      explain: 'Plan now: the month\'s plan items today that are still open or became a live deal, for everyone who carries a target. (Submitted, on the card, is the total on each plan when it was filed.)',
       total: sumBy(plannedRows, (r) => r.planned),
       columns: DRILL_COLUMNS.planned,
       groupLabels: ['By division', 'By salesman', 'By customer'],
@@ -1092,7 +1150,8 @@ function buildDrills(ctx) {
 export function personDrill(model, personId) {
   const p = model.people.find((x) => x.id === personId);
   if (!p) return null;
-  const mine = (id) => (personId === DEPARTED_ID ? !model.people.some((x) => x.id === id) : id === personId);
+  const mine = (id) => (personId === DEPARTED_ID ? model.departedIds.includes(id)
+    : personId === NO_TARGET_ID ? model.noTargetIds.includes(id) : id === personId);
   const items = model.itemRows.filter((r) => mine(r.ownerId));
   const contacts = model.mtdContacts.filter((c) => mine(c.ownerId));
   const exc = model.exceptions.filter((e) => mine(e.ownerId));

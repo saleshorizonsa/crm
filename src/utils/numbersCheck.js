@@ -55,7 +55,7 @@ import { computeWeeklyPacing } from 'utils/weeklyPacing';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
 import { loadSalesMonitor } from 'utils/salesMonitorData';
-import { computeSalesMonitor, OUTCOME_ORDER, DEPARTED_ID } from 'utils/salesMonitor';
+import { computeSalesMonitor, OUTCOME_ORDER, DEPARTED_ID, NO_TARGET_ID } from 'utils/salesMonitor';
 import {
   reportService,
   reportWonTotal,
@@ -1679,7 +1679,13 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
   const c = model.cards;
   const achievers = achieverIdsFrom(users, { includeInactive: true });
   const forward = activeIdsFrom(achievers, users);
-  const contributors = contributorIdsFrom(users);
+  // The page's plan-holders, rebuilt here: active salesmen and supervisors,
+  // plus any other active achiever carrying a target for the month.
+  const roleHolders = contributorIdsFrom(users);
+  const tgtBy = targetPerPerson((bundle.targets || []).filter((t) => forward.includes(t.assigned_to)));
+  const contributors = forward.filter((id) => roleHolders.includes(id) || n(tgtBy[id]) > 0);
+  const noTarget = forward.filter((id) => !contributors.includes(id));
+  const outcomeOwners = [...contributors, ...achievers.filter((id) => !forward.includes(id))];
 
   // Separate reads: every plan item of the month, and the month's submissions.
   const [{ data: items }, { data: subs, error: subErr }] = await Promise.all([
@@ -1723,8 +1729,18 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
       value: c.wonNotInvoiced.total,
       expected: summarizeWonNotInvoiced(wonNotInvoicedList({ deals: bundle.deals, ownerIds: forward })).total,
     }),
-    row({ label: 'Sales Monitor — 2 Planned (company): open + converted with a deal', value: c.planned.total, expected: plannedOf(forward) }),
-    row({ label: 'Sales Monitor — 2 Planned, open part = Insights Planned', value: c.planned.open, expected: model.metrics.planned }),
+    row({ label: 'Sales Monitor — 2 Plan now (company): open + converted with a deal', value: c.planned.total, expected: plannedOf(contributors) }),
+    row({
+      label: 'Sales Monitor — 2 Plan now, open part + open plan of no-target sellers = Insights Planned',
+      value: c.planned.open + c.planned.openLeftOut,
+      expected: model.metrics.planned,
+      note: `no-target sellers' open plan ${Math.round(c.planned.openLeftOut).toLocaleString('en-US')} is in Insights' Planned, not here`,
+    }),
+    ...(subErr ? [] : [row({
+      label: 'Sales Monitor — 2 Submitted (company): total_planned of the filed plans',
+      value: c.planned.submitted,
+      expected: contributors.map((id) => subBy.get(id)).filter((x) => x?.is_submitted).reduce((t, x) => t + n(x.total_planned), 0),
+    })]),
     row({ label: 'Sales Monitor — 5 From this month\'s plan (company)', value: c.fromPlan.fromPlan, expected: fromPlanOf(achievers) }),
     row({ label: 'Sales Monitor — 5 Outside plan (company)', value: c.fromPlan.outsidePlan, expected: outsideOf(achievers) }),
     row({
@@ -1735,7 +1751,7 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
     row({
       label: 'Sales Monitor — 6 Outcome items = achievers\' plan items of the month (+ moved out)',
       value: c.outcomes.total.count,
-      expected: monthItems.filter((o) => achievers.includes(o.owner_id)).length + model.itemRows.filter((r) => r.movedOutOfMonth).length,
+      expected: monthItems.filter((o) => outcomeOwners.includes(o.owner_id)).length + model.itemRows.filter((r) => r.movedOutOfMonth).length,
       kind: 'count',
     }),
     row({
@@ -1765,7 +1781,8 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
   let sumTarget = 0;
   let sumAchieved = 0;
   model.people.forEach((p) => {
-    const ids = p.id === DEPARTED_ID ? achievers.filter((id) => !forward.includes(id)) : [p.id];
+    const ids = p.id === DEPARTED_ID ? achievers.filter((id) => !forward.includes(id))
+      : p.id === NO_TARGET_ID ? noTarget : [p.id];
     const label = (what) => `Sales Monitor — ${p.name}: ${what}`;
     const tgt = sum(targetPerPerson((bundle.targets || []).filter((t) => ids.includes(t.assigned_to))));
     const ach = computeAchieved({ deals: bundle.deals, contributorIds: ids, start, end, returns: bundle.returns }).total;
@@ -1774,7 +1791,7 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
     rows.push(
       row({ label: label('1 Target'), value: p.target, expected: tgt }),
       row({ label: label('4 Achieved'), value: p.achieved, expected: ach }),
-      row({ label: label('2 Planned'), value: p.planned, expected: plannedOf(ids.filter((id) => forward.includes(id))) }),
+      row({ label: label('2 Plan now'), value: p.planned, expected: plannedOf(ids.filter((id) => contributors.includes(id))) }),
       row({ label: label('5 From plan'), value: p.fromPlan, expected: fromPlanOf(ids) }),
       row({ label: label('5 Outside plan'), value: p.outsidePlan, expected: outsideOf(ids) }),
       row({
@@ -1785,6 +1802,9 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
         note: OUTCOME_ORDER.map((l) => `${l[0]} ${p.outcomes[l].count}`).join(' · '),
       }),
     );
+    if (p.submittedPlanned !== null && p.submittedPlanned !== undefined) {
+      rows.push(row({ label: label('2 Submitted'), value: p.submittedPlanned, expected: n(subBy.get(p.id)?.total_planned) }));
+    }
     if (p.planStatus && !subErr) {
       const sc = statusCounts([p.id]);
       const expected = sc.missing ? 'not submitted' : (sc.late ? 'submitted late' : 'submitted on time');
