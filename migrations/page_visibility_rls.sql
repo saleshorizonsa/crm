@@ -1,12 +1,13 @@
 -- ============================================================================
--- NOT APPLIED. Written 2026-11-12 (session 35, per-user page visibility).
--- Claude Code never runs SQL: a person runs this, block by block, in the
--- Supabase SQL editor.
+-- APPLIED in production on 2026-11-12 by the user (the APPLY block below is
+-- the version that was run). Written 2026-11-12 (session 35, per-user page
+-- visibility). Claude Code never runs SQL: a person runs this, block by block,
+-- in the Supabase SQL editor.
 --
 -- user_page_permissions: WHO MAY READ AND WRITE IT.
 --
--- WHY. The table's only policy today is "Admins manage permissions",
--- FOR ALL USING (true) WITH CHECK (true): any signed-in user can read every
+-- WHY. The table's only policy was "Admins manage permissions",
+-- FOR ALL USING (true) WITH CHECK (true): any signed-in user could read every
 -- user's rows and insert, change or delete anyone's — including un-hiding a
 -- page the admin hid from them, or hiding pages from colleagues. The app now
 -- READS this table to decide what each user sees (utils/pageAccess.js), so
@@ -14,24 +15,25 @@
 --
 -- WHAT IT DOES
 --   (1) drops "Admins manage permissions";
---   (2) SELECT: a user reads his OWN rows (that is all the app reads for him);
---   (3) SELECT, INSERT, UPDATE, DELETE of ANY row: admin and director only,
---       and only for a company they belong to — their own users.company_id,
---       or a company they direct through director_companies (Nader directs
---       PVC, IMDADAT and Steels). On INSERT/UPDATE the row's user must also
---       belong to that company, so nobody can file a row for a user of another
---       company under their own.
+--   (2) SELECT: every user reads his OWN rows (all the app reads for him);
+--   (3) SELECT, INSERT, UPDATE, DELETE of any row:
+--         ADMIN    — any company;
+--         DIRECTOR — his own company (users.company_id) and the companies he
+--                    directs (director_companies; Nader directs PVC, IMDADAT
+--                    and Steels).
+--       On INSERT / UPDATE the row's USER must belong to the row's company —
+--       through users.company_id OR director_companies — so a row cannot be
+--       filed under a company its user has nothing to do with.
 --
 -- ROLE HELPER USED: public.current_user_role() — the function the users
 -- policies already use (and migrations/add_deal_stage_history.sql and
--- export_customers.sql depend on). PREVIEW P1 stops the run if it is missing.
--- Company membership uses the same users ∪ director_companies subquery as the
+-- export_customers.sql depend on). APPLY stops if it is missing. Company
+-- membership uses the same users ∪ director_companies subquery as the
 -- opportunities / future_orders policies in migrations/insights_rls.sql.
 --
--- WHAT IT DOES NOT CHANGE: the table, its columns, its rows (0 today), and
--- every other table's policies. Head is NOT given write access (the brief
--- names admin and director only). The screen that writes is on the Admin
--- Dashboard, which only the admin role can open today.
+-- WHAT IT DOES NOT CHANGE: the table, its columns, its rows, and every other
+-- table's policies. Head is NOT given write access. The screen that writes is
+-- on the Admin Dashboard, which only the admin role can open.
 --
 -- THE APP BEFORE AND AFTER: unchanged either way while the table is empty.
 -- If a read is ever refused, the app treats it as "nothing hidden".
@@ -83,7 +85,7 @@ BEGIN;
 DO $$
 BEGIN
   IF to_regprocedure('public.current_user_role()') IS NULL THEN
-    RAISE EXCEPTION 'current_user_role() not found in schema public — stop: the policies below depend on it.';
+    RAISE EXCEPTION 'current_user_role() not found — stop.';
   END IF;
 END $$;
 
@@ -93,32 +95,36 @@ DROP POLICY IF EXISTS "Admins manage permissions" ON public.user_page_permission
 DROP POLICY IF EXISTS user_page_permissions_select_own ON public.user_page_permissions;
 DROP POLICY IF EXISTS user_page_permissions_admin_all ON public.user_page_permissions;
 
--- (2) Everyone: his own rows, read-only.
+-- Everyone: reads his own rows only.
 CREATE POLICY user_page_permissions_select_own ON public.user_page_permissions
   FOR SELECT USING (user_id = auth.uid());
 
--- (3) Admin and director: every row of a company they belong to.
+-- Admin: any company. Director: his own company and the companies he directs.
+-- The target user must belong to the row's company (own company or directed).
 CREATE POLICY user_page_permissions_admin_all ON public.user_page_permissions
   FOR ALL
   USING (
-    COALESCE(public.current_user_role(), '') IN ('admin', 'director')
-    AND company_id IN (
-      SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
-      UNION
-      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
-    )
+    public.current_user_role() = 'admin'
+    OR (public.current_user_role() = 'director'
+        AND company_id IN (
+          SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
+          UNION
+          SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()))
   )
   WITH CHECK (
-    COALESCE(public.current_user_role(), '') IN ('admin', 'director')
-    AND company_id IN (
-      SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
-      UNION
-      SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid()
-    )
-    AND EXISTS (
-      SELECT 1 FROM public.users t
-       WHERE t.id = user_page_permissions.user_id
-         AND t.company_id = user_page_permissions.company_id
+    (public.current_user_role() = 'admin'
+     OR (public.current_user_role() = 'director'
+         AND company_id IN (
+           SELECT u.company_id FROM public.users u WHERE u.id = auth.uid()
+           UNION
+           SELECT dc.company_id FROM public.director_companies dc WHERE dc.user_id = auth.uid())))
+    AND (
+      EXISTS (SELECT 1 FROM public.users t
+               WHERE t.id = user_page_permissions.user_id
+                 AND t.company_id = user_page_permissions.company_id)
+      OR EXISTS (SELECT 1 FROM public.director_companies d
+               WHERE d.user_id = user_page_permissions.user_id
+                 AND d.company_id = user_page_permissions.company_id)
     )
   );
 
