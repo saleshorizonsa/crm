@@ -8,6 +8,8 @@ import {
   computeAchieved,
   computeCoverage,
   achieverIdsFrom,
+  isAchievedDeal,
+  achievedAmount,
   contributorIdsFrom,
   wonNotInvoicedList,
   summarizeWonNotInvoiced,
@@ -38,7 +40,7 @@ import { activeIdsFrom } from 'utils/achieverScope';
 // wonNotInvoicedList and summarizeWonNotInvoiced are already imported above,
 // from the same module.
 import { buildCoverageDrill, RAIL_SEGMENTS } from 'utils/coverageDrill';
-import { buildPlanningDrill, customerKey } from 'utils/planningDrill';
+import { buildPlanningDrill, customerKey, isConvertedWithDeal } from 'utils/planningDrill';
 import { computeGapCloser } from 'utils/gapCloser';
 import { buildTeamPlanBoard, PLAN_STATUS } from 'utils/teamPlanBoard';
 import { computePlanAccuracy, monthRange } from 'utils/planAccuracy';
@@ -52,6 +54,8 @@ import { fetchPlanContacts, summarisePlanContacts } from 'utils/planContacts';
 import { computeWeeklyPacing } from 'utils/weeklyPacing';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
+import { loadSalesMonitor } from 'utils/salesMonitorData';
+import { computeSalesMonitor, OUTCOME_ORDER, DEPARTED_ID, NO_TARGET_ID } from 'utils/salesMonitor';
 import {
   reportService,
   reportWonTotal,
@@ -1647,6 +1651,203 @@ async function buildInsightsVsPlanningRows({
  *                          Forecast both do)
  * @returns {{ reference, groups, meta }}
  */
+/**
+ * SALES MONITOR (session 34) — cards 1–6, per salesman and for the company.
+ *
+ * The figures are the SCREEN's: loadSalesMonitor + computeSalesMonitor, the two
+ * functions /sales-monitor calls, at company scope. Each is held against a
+ * figure rebuilt here from rows read separately — targets, deals and returns
+ * from the bundle, plan items and plan submissions in their own reads —
+ * through the shared rules (targetPerPerson, computeAchieved, isAchievedDeal,
+ * isConvertedWithDeal), never through the Monitor's own code.
+ *
+ * Whole months only: the page is a monthly page.
+ */
+async function buildSalesMonitorRows({ companyId, bundle, start, end, reference, viewer }) {
+  const rows = [];
+  const users = bundle.users || [];
+  let model;
+  try {
+    const raw = await loadSalesMonitor({
+      companyId, viewerId: viewer?.id || null, role: 'director', monthKey: String(start).slice(0, 7), now: bundle.now,
+    });
+    model = computeSalesMonitor(raw);
+  } catch (e) {
+    rows.push(row({ label: `Sales Monitor: could not load (${e?.message || e})`, value: 0, expected: 1 }));
+    return rows;
+  }
+  const c = model.cards;
+  const achievers = achieverIdsFrom(users, { includeInactive: true });
+  const forward = activeIdsFrom(achievers, users);
+  // The page's plan-holders, rebuilt here: active salesmen and supervisors,
+  // plus any other active achiever carrying a target for the month.
+  const roleHolders = contributorIdsFrom(users);
+  const tgtBy = targetPerPerson((bundle.targets || []).filter((t) => forward.includes(t.assigned_to)));
+  const contributors = forward.filter((id) => roleHolders.includes(id) || n(tgtBy[id]) > 0);
+  const noTarget = forward.filter((id) => !contributors.includes(id));
+  const outcomeOwners = [...contributors, ...achievers.filter((id) => !forward.includes(id))];
+
+  // Separate reads: every plan item of the month, and the month's submissions.
+  const [{ data: items }, { data: subs, error: subErr }] = await Promise.all([
+    supabase.from('opportunities')
+      .select('id, owner_id, planned_amount, status, deal_id, expected_month')
+      .eq('company_id', companyId).gte('expected_month', start).lte('expected_month', end),
+    supabase.from('plan_submissions')
+      .select('owner_id, is_submitted, is_late, approval_status, required_plan')
+      .eq('company_id', companyId).eq('plan_month', start),
+  ]);
+  const monthItems = items || [];
+  const plannedOf = (ids) => monthItems
+    .filter((o) => ids.includes(o.owner_id) && (o.status === 'open' || isConvertedWithDeal(o)))
+    .reduce((s, o) => s + n(o.planned_amount), 0);
+  const planDealIds = new Set(monthItems.map((o) => o.deal_id).filter(Boolean));
+  const invoicedOf = (ids) => (bundle.deals || [])
+    .filter((d) => ids.includes(d.owner_id) && isAchievedDeal(d, { start, end }));
+  const fromPlanOf = (ids) => invoicedOf(ids).filter((d) => planDealIds.has(d.id))
+    .reduce((s, d) => s + achievedAmount(d), 0);
+  const outsideOf = (ids) => invoicedOf(ids).filter((d) => !planDealIds.has(d.id))
+    .reduce((s, d) => s + achievedAmount(d), 0);
+  const subBy = new Map((subs || []).map((s) => [s.owner_id, s]));
+  const statusCounts = (ids) => {
+    const out = { onTime: 0, late: 0, missing: 0, approved: 0, rejected: 0 };
+    ids.forEach((id) => {
+      const s = subBy.get(id);
+      if (!s || !s.is_submitted) { out.missing += 1; return; }
+      if (s.is_late) out.late += 1; else out.onTime += 1;
+      if (s.approval_status === 'approved') out.approved += 1;
+      if (s.approval_status === 'rejected') out.rejected += 1;
+    });
+    return out;
+  };
+
+  // ── company ──
+  rows.push(
+    row({ label: 'Sales Monitor — 1 Target (company)', value: c.target.total, expected: reference.target }),
+    row({ label: 'Sales Monitor — 4 Achieved (company)', value: c.achieved.total, expected: reference.achieved }),
+    row({
+      label: 'Sales Monitor — Won not invoiced (company, active owners)',
+      value: c.wonNotInvoiced.total,
+      expected: summarizeWonNotInvoiced(wonNotInvoicedList({ deals: bundle.deals, ownerIds: forward })).total,
+    }),
+    row({ label: 'Sales Monitor — 2 Plan now (company): open + converted with a deal', value: c.planned.total, expected: plannedOf(contributors) }),
+    row({
+      label: 'Sales Monitor — 2 Plan now, open part + open plan of no-target sellers = Insights Planned',
+      value: c.planned.open + c.planned.openLeftOut,
+      expected: model.metrics.planned,
+      note: `no-target sellers' open plan ${Math.round(c.planned.openLeftOut).toLocaleString('en-US')} is in Insights' Planned, not here`,
+    }),
+    ...(subErr ? [] : (() => {
+      const filed = contributors.filter((id) => subBy.get(id)?.is_submitted);
+      const notFiled = contributors.filter((id) => !subBy.get(id)?.is_submitted);
+      const r = c.planned.required;
+      return [
+        row({
+          label: 'Sales Monitor — 2 Required, from submitted plans = their required_plan',
+          value: r.submitted.required,
+          expected: filed.reduce((t, id) => t + n(subBy.get(id).required_plan), 0),
+          note: `${filed.length} plan(s)`,
+        }),
+        row({ label: 'Sales Monitor — 2 Required, estimated: people with no submitted plan', value: r.estimated.count, expected: notFiled.length, kind: 'count', note: r.estimated.people.join(', ') || 'none' }),
+        row({
+          label: 'Sales Monitor — 2 Required, estimated = sum of those people’s own estimates',
+          value: r.estimated.required,
+          expected: model.people.filter((x) => x.requiredSource === 'estimated').reduce((t, x) => t + n(x.requiredPlan), 0),
+        }),
+        row({
+          label: 'Sales Monitor — Insights company required pipeline (context only, not on the card)',
+          value: c.planned.companyRequired.value,
+          note: `= (target ${Math.round(c.planned.companyRequired.target).toLocaleString('en-US')} − achieved ${Math.round(c.planned.companyRequired.achieved).toLocaleString('en-US')}) ÷ ${n(c.planned.companyRequired.winRatePct).toFixed(1)}% conversion (${c.planned.companyRequired.winRateSource})`,
+        }),
+      ];
+    })()),
+    ...(subErr ? [] : [row({
+      label: 'Sales Monitor — 2 Submitted (company): total_planned of the filed plans',
+      value: c.planned.submitted,
+      expected: contributors.map((id) => subBy.get(id)).filter((x) => x?.is_submitted).reduce((t, x) => t + n(x.total_planned), 0),
+    })]),
+    row({ label: 'Sales Monitor — 5 From this month\'s plan (company)', value: c.fromPlan.fromPlan, expected: fromPlanOf(achievers) }),
+    row({ label: 'Sales Monitor — 5 Outside plan (company)', value: c.fromPlan.outsidePlan, expected: outsideOf(achievers) }),
+    row({
+      label: 'Sales Monitor — 5 From + outside − returns = Achieved',
+      value: c.fromPlan.fromPlan + c.fromPlan.outsidePlan - c.fromPlan.returns,
+      expected: reference.achieved,
+    }),
+    row({
+      label: 'Sales Monitor — 6 Outcome items = achievers\' plan items of the month (+ moved out)',
+      value: c.outcomes.total.count,
+      expected: monthItems.filter((o) => outcomeOwners.includes(o.owner_id)).length + model.itemRows.filter((r) => r.movedOutOfMonth).length,
+      kind: 'count',
+    }),
+    row({
+      label: 'Sales Monitor — 6 A + B + F + P = all items',
+      value: OUTCOME_ORDER.reduce((s, l) => s + c.outcomes[l].count, 0),
+      expected: c.outcomes.total.count,
+      kind: 'count',
+    }),
+    row({
+      label: 'Sales Monitor — 6 Achieved items invoiced in the month = From plan',
+      value: model.itemRows.filter((r) => r.invoicedInMonth && achievers.includes(r.ownerId))
+        .reduce((s, r) => s + r.invoiced, 0),
+      expected: c.fromPlan.fromPlan,
+    }),
+  );
+  if (subErr) {
+    rows.push(row({ label: 'Sales Monitor — 3 Plan submissions could not be read', value: 0, expected: 1 }));
+  } else {
+    const sc = statusCounts(contributors);
+    [['onTime', 'on time'], ['late', 'late'], ['missing', 'not submitted'], ['approved', 'approved'], ['rejected', 'rejected']]
+      .forEach(([k, label]) => rows.push(row({
+        label: `Sales Monitor — 3 Plans ${label} (company)`, value: c.planStatus[k], expected: sc[k], kind: 'count',
+      })));
+  }
+
+  // ── per salesman ──
+  let sumTarget = 0;
+  let sumAchieved = 0;
+  model.people.forEach((p) => {
+    const ids = p.id === DEPARTED_ID ? achievers.filter((id) => !forward.includes(id))
+      : p.id === NO_TARGET_ID ? noTarget : [p.id];
+    const label = (what) => `Sales Monitor — ${p.name}: ${what}`;
+    const tgt = sum(targetPerPerson((bundle.targets || []).filter((t) => ids.includes(t.assigned_to))));
+    const ach = computeAchieved({ deals: bundle.deals, contributorIds: ids, start, end, returns: bundle.returns }).total;
+    sumTarget += n(p.target);
+    sumAchieved += n(p.achieved);
+    rows.push(
+      row({ label: label('1 Target'), value: p.target, expected: tgt }),
+      row({ label: label('4 Achieved'), value: p.achieved, expected: ach }),
+      row({ label: label('2 Plan now'), value: p.planned, expected: plannedOf(ids.filter((id) => contributors.includes(id))) }),
+      row({ label: label('5 From plan'), value: p.fromPlan, expected: fromPlanOf(ids) }),
+      row({ label: label('5 Outside plan'), value: p.outsidePlan, expected: outsideOf(ids) }),
+      row({
+        label: label('6 Outcome items'),
+        value: p.outcomes.total.count,
+        expected: model.itemRows.filter((r) => ids.includes(r.ownerId)).length,
+        kind: 'count',
+        note: OUTCOME_ORDER.map((l) => `${l[0]} ${p.outcomes[l].count}`).join(' · '),
+      }),
+    );
+    if (p.submittedPlanned !== null && p.submittedPlanned !== undefined) {
+      rows.push(row({ label: label('2 Submitted'), value: p.submittedPlanned, expected: n(subBy.get(p.id)?.total_planned) }));
+    }
+    if (p.planStatus && !subErr) {
+      const sc = statusCounts([p.id]);
+      const expected = sc.missing ? 'not submitted' : (sc.late ? 'submitted late' : 'submitted on time');
+      rows.push(row({
+        label: label(`3 Plan status "${p.planStatus.timing}" matches the submission`),
+        value: p.planStatus.timing === expected ? 1 : 0,
+        expected: 1,
+        kind: 'count',
+        note: p.planStatus.label,
+      }));
+    }
+  });
+  rows.push(
+    row({ label: 'Sales Monitor — people\'s targets add to the company Target', value: sumTarget, expected: c.target.total }),
+    row({ label: 'Sales Monitor — people\'s achieved adds to the company Achieved', value: sumAchieved, expected: c.achieved.total }),
+  );
+  return rows;
+}
+
 export async function runNumbersCheck({ companyId, start, end, scope, viewer = null }) {
   if (!companyId || !start || !end) throw new Error('company, start and end are required');
 
@@ -2374,6 +2575,13 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       knownToDiffer: true,
       rows: knownRows,
     });
+  }
+
+  // Sales Monitor (session 34) — appended LAST so every group above reads
+  // exactly as it did before it existed.
+  if (isWholeMonth) {
+    const monitorRows = await buildSalesMonitorRows({ companyId, bundle, start, end, reference, viewer });
+    groups.push({ screen: 'Sales Monitor (session 34)', fn: 'loadSalesMonitor + computeSalesMonitor', rows: monitorRows });
   }
 
   const allRows = groups.flatMap((g) => g.rows);

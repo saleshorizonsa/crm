@@ -45,6 +45,9 @@ import {
 import TargetsPage from "./pages/targets";
 import ReassignRecords from "./pages/reassign-records";
 import NumbersCheck from "./pages/numbers-check";
+import SalesMonitor from "./pages/sales-monitor";
+// Who may open the Sales Monitor: one list, shared with the menu entry.
+import { SALES_MONITOR_ROLES } from "./utils/salesMonitor";
 // The roles the numbers check is for, imported from the page's own util so the
 // route guard and the nav entry cannot drift from each other.
 import { NUMBERS_CHECK_ROLES } from "./utils/numbersCheck";
@@ -235,6 +238,19 @@ const Routes = () => {
                   element={
                     <ProtectedRoute allowedRoles={DIVISION_PAGE_ROLES}>
                       <SalesDivisions />
+                    </ProtectedRoute>
+                  }
+                />
+                {/* Sales Monitor (session 34): director, head, admin, manager and
+                    supervisor. Salesmen do not get it (CEO, 2026-11-10). */}
+                <Route
+                  path="/sales-monitor"
+                  element={
+                    <ProtectedRoute
+                      allowedRoles={SALES_MONITOR_ROLES}
+                      denyNotice="This page is not enabled for your account."
+                    >
+                      <SalesMonitor />
                     </ProtectedRoute>
                   }
                 />

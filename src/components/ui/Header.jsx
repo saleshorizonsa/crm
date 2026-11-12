@@ -10,6 +10,8 @@ import { useNavigate } from "react-router-dom";
 // The same list the route guard uses, so hiding the entry and refusing the
 // route can never disagree.
 import { NUMBERS_CHECK_ROLES } from "utils/numbersCheck";
+// The Sales Monitor's roles, shared with its route guard.
+import { SALES_MONITOR_ROLES } from "utils/salesMonitor";
 // One list of who may open Insights, and one of who may open the Coverage
 // Console — both shared with Routes.jsx.
 import {
@@ -105,6 +107,11 @@ const Header = ({
           path: "/coverage-console",
           icon: "LayoutGrid",
         }]
+      : []),
+    // SALES MONITOR (session 34): target → plan → visits → result for the
+    // people who manage salesmen. The route reads the same constant.
+    ...(SALES_MONITOR_ROLES.includes(userProfile?.role)
+      ? [{ label: "Sales Monitor", path: "/sales-monitor", icon: "Gauge" }]
       : []),
     { label: t("nav.pipeline"), path: "/sales-pipeline", icon: "TrendingUp" },
     { label: t("nav.leads"),    path: "/lead-management", icon: "UserPlus"   },
