@@ -101,7 +101,10 @@ import {
   Bar,
 } from "recharts";
 
-const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
+// targetsOnly (session 35): /targets renders this component with only its
+// two target tabs, so a director, head or admin assigns targets there with
+// the very same state, reads and rules as here. Without it: unchanged.
+const DirectorDashboard = ({ company: propCompany, onCompanyChange, targetsOnly = false }) => {
   const { user, userProfile } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { dateRange, setRange, hasSelection } = useDateRange();
@@ -132,7 +135,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [allEmployees, setAllEmployees] = useState([]);
   const [companies, setCompanies] = useState([]);
-  const [activeView, setActiveView] = useState("overview");
+  const [activeView, setActiveView] = useState(targetsOnly ? "targets" : "overview");
 
   // Separate filter states for month, quarter, and year
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -2343,6 +2346,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
 
   return (
     <div className={`director-dashboard transition-opacity duration-200 ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
+      {!targetsOnly && (<>
       <KPICardsStrip
         salesmanData={kpiStrip.salesmanData}
         totals={kpiStrip.totals}
@@ -2450,6 +2454,8 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         </div>
       </div>
 
+      </>)}
+
       {/* Conditional Dashboard Rendering */}
       {selectedEmployee ? (
         // Render employee-specific dashboard based on their role
@@ -2484,6 +2490,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
         <>
           {/* Navigation Tabs */}
           <div className="flex space-x-1 mb-6 border-b border-gray-200">
+            {!targetsOnly && (<>
             <button
               onClick={() => setActiveView("overview")}
               className={`px-4 py-2 text-sm font-medium rounded-t-lg ${
@@ -2504,6 +2511,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             >
               {t("dashboard.teamManagement")}
             </button>
+            </>)}
             <button
               onClick={() => setActiveView("targets")}
               className={`px-4 py-2 text-sm font-medium rounded-t-lg ${
@@ -2514,6 +2522,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
             >
               {t("dashboard.salesTargets")}
             </button>
+            {!targetsOnly && (<>
             <button
               onClick={() => setActiveView("users")}
               className={`px-4 py-2 text-sm font-medium rounded-t-lg ${
@@ -2536,6 +2545,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange }) => {
               <Icon name="Package" size={16} className="inline mr-1" />
               {t("dashboard.productMaster")}
             </button>
+            </>)}
             <button
               onClick={() => setActiveView("sales-targets")}
               className={`px-4 py-2 text-sm font-medium rounded-t-lg ${

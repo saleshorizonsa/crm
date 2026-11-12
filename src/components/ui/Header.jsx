@@ -12,6 +12,8 @@ import { useNavigate } from "react-router-dom";
 import { NUMBERS_CHECK_ROLES } from "utils/numbersCheck";
 // The Sales Monitor's roles, shared with its route guard.
 import { SALES_MONITOR_ROLES } from "utils/salesMonitor";
+// Per-user page visibility (session 35): the same access ProtectedRoute uses.
+import { usePageAccess } from "contexts/PageAccessContext";
 // One list of who may open Insights, and one of who may open the Coverage
 // Console — both shared with Routes.jsx.
 import {
@@ -29,6 +31,11 @@ const Header = ({
   const { user, userProfile, company, signOut } = useAuth();
   const { t, language, setLanguage, isRTL } = useLanguage();
   const navigate = useNavigate();
+  // A page the admin hid for this user is not offered, here or in the mobile
+  // drawer (both render the two lists below). The role conditions inside the
+  // lists are unchanged: the role is the ceiling, the setting only hides.
+  const access = usePageAccess();
+  const showInMenu = (item) => access.canSeePath(item?.path);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   // Two separate UIs, two separate flags. They shared one boolean until a
   // mobile-navigation bug traced back to exactly that: the click-outside guard
@@ -120,7 +127,7 @@ const Header = ({
     { label: t("nav.reports"),  path: "/reports",  icon: "FileBarChart" },
     { label: t("nav.clients"), path: "/contact-management", icon: "Users" },
     { label: t("nav.planning"), path: "/planning", icon: "ClipboardList" },
-  ];
+  ].filter(showInMenu);
 
   // Add user management for admins and managers only
   const adminItems = [];
@@ -150,7 +157,7 @@ const Header = ({
           },
         ]
       : []),
-  ];
+  ].filter(showInMenu);
 
   useEffect(() => {
     const handleClickOutside = (event) => {

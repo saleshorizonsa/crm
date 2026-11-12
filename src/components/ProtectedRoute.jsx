@@ -3,6 +3,8 @@ import { useAuth } from "../contexts/AuthContext";
 import { capitalize } from "../utils/helper";
 import { landingPathForRole } from "../utils/landingPath";
 import RouteNotice from "./RouteNotice";
+import { usePageAccess } from "../contexts/PageAccessContext";
+import { HIDDEN_PAGE_NOTICE } from "../utils/pageAccess";
 
 const Spinner = () => (
   <div className="flex items-center justify-center h-screen">
@@ -20,9 +22,14 @@ const Spinner = () => (
 // does not offer their role: the Coverage Console stops at manager now, and a
 // supervisor whose old bookmark points there should land somewhere useful with
 // an explanation, not on a dead end that names roles at them.
-export const ProtectedRoute = ({ children, requiredRole, allowedRoles, denyNotice }) => {
+// `page` (session 35) is the page's key in utils/pageAccess.js. When the
+// admin has hidden it for this user, its URL redirects to the user's landing
+// page with one line of explanation. The role checks above it are unchanged:
+// the role is the ceiling, the per-user setting can only hide within it.
+export const ProtectedRoute = ({ children, requiredRole, allowedRoles, denyNotice, page = null }) => {
   const { user, userProfile, loading } = useAuth();
   const location = useLocation();
+  const access = usePageAccess();
 
   if (loading) {
     return <Spinner />;
@@ -105,6 +112,15 @@ export const ProtectedRoute = ({ children, requiredRole, allowedRoles, denyNotic
         </div>
       </div>
     );
+  }
+
+  // HIDDEN FOR THIS USER (session 35). Waits for the access read rather than
+  // showing the page for a moment and then taking it away.
+  if (page && userProfile && userProfile.role !== "viewer") {
+    if (!access.ready) return <Spinner />;
+    if (!access.canSee(page) && access.landing !== location.pathname) {
+      return <Navigate to={access.landing} replace state={{ notice: HIDDEN_PAGE_NOTICE }} />;
+    }
   }
 
   // The notice travels with the redirect and is shown wherever it landed, so it

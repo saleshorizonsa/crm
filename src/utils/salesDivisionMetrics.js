@@ -89,13 +89,15 @@ export const COVERAGE_CONSOLE_ROLES = ['manager', 'director', 'head', 'admin'];
 export const DASHBOARD_ROLES = ['manager', 'director', 'head', 'admin'];
 
 /**
- * Who gets /targets, where a supervisor assigns targets to his salesmen.
+ * Who gets /targets, where targets are assigned.
  *
- * Supervisors only, for now. Managers assign through
- * ManagerSalesTargetAssignment on a Dashboard they keep, so sending them here
- * as well would give them two places instead of one.
+ * Supervisors since 2026-10-07. Director, head, admin and manager joined on
+ * 2026-11-12 (session 35) so the Dashboard can be hidden without losing
+ * target assignment: /targets renders THEIR Dashboard's own targets view
+ * (DirectorDashboard / EnhancedManagerDashboard with targetsOnly), the same
+ * components, reads and rules, not a second copy.
  */
-export const TARGETS_PAGE_ROLES = ['supervisor'];
+export const TARGETS_PAGE_ROLES = ['supervisor', 'manager', 'director', 'head', 'admin'];
 
 /**
  * Who sees the Contact Reports audit on Insights.

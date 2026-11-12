@@ -1,9 +1,11 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { landingPathForRole } from "../utils/landingPath";
+import { usePageAccess } from "../contexts/PageAccessContext";
 
 export const HomeRedirect = () => {
   const { userProfile, loading } = useAuth();
+  // The landing page, or the first visible page when the admin hid it.
+  const access = usePageAccess();
 
   if (loading) {
     return (
@@ -16,6 +18,8 @@ export const HomeRedirect = () => {
     );
   }
 
-  // Every role's landing page lives in one place — viewer included.
-  return <Navigate to={landingPathForRole(userProfile?.role)} replace />;
+  // Every role's landing page lives in one place — viewer included — and a
+  // page hidden for this user is skipped (utils/pageAccess.js).
+  if (!access.ready) return null;
+  return <Navigate to={access.landing} replace />;
 };

@@ -13,6 +13,8 @@ import { HomeRedirect } from "./components/HomeRedirect";
 import { AuthProvider } from "./contexts/AuthContext";
 import { CurrencyProvider } from "./contexts/CurrencyContext";
 import { DateRangeProvider } from "./contexts/DateRangeContext";
+// Per-user page visibility (session 35), read once at sign-in.
+import { PageAccessProvider } from "./contexts/PageAccessContext";
 import { LanguageProvider } from "./i18n";
 import NotFound from "./pages/NotFound";
 import CompanyDashboard from "./pages/company-dashboard";
@@ -59,6 +61,7 @@ const Routes = () => {
       <ErrorBoundary>
         <LanguageProvider>
           <AuthProvider>
+            <PageAccessProvider>
             <CurrencyProvider>
               <DateRangeProvider>
               <ScrollToTop />
@@ -85,7 +88,7 @@ const Routes = () => {
                     // worked from here now lives on Insights, which is where
                     // this sends them — with the same one-line notice the
                     // Console uses, because an old bookmark is not a trespass.
-                    <ProtectedRoute
+                    <ProtectedRoute page="company-dashboard"
                       allowedRoles={DASHBOARD_ROLES}
                       denyNotice="This page is not enabled for your account."
                     >
@@ -96,7 +99,7 @@ const Routes = () => {
                 <Route
                   path="/targets"
                   element={
-                    <ProtectedRoute
+                    <ProtectedRoute page="targets"
                       allowedRoles={TARGETS_PAGE_ROLES}
                       denyNotice="This page is not enabled for your account."
                     >
@@ -107,7 +110,7 @@ const Routes = () => {
                 <Route
                   path="/sales-pipeline"
                   element={
-                    <ProtectedRoute>
+                    <ProtectedRoute page="sales-pipeline">
                       <SalesPipeline />
                     </ProtectedRoute>
                   }
@@ -115,7 +118,7 @@ const Routes = () => {
                 <Route
                   path="/lead-management"
                   element={
-                    <ProtectedRoute>
+                    <ProtectedRoute page="lead-management">
                       <LeadManagement />
                     </ProtectedRoute>
                   }
@@ -123,7 +126,7 @@ const Routes = () => {
                 <Route
                   path="/contact-management"
                   element={
-                    <ProtectedRoute>
+                    <ProtectedRoute page="contact-management">
                       <ContactManagement />
                     </ProtectedRoute>
                   }
@@ -131,7 +134,7 @@ const Routes = () => {
                 <Route
                   path="/task-management"
                   element={
-                    <ProtectedRoute>
+                    <ProtectedRoute page="task-management">
                       <TaskManagement />
                     </ProtectedRoute>
                   }
@@ -179,7 +182,7 @@ const Routes = () => {
                 <Route
                   path="/calendar"
                   element={
-                    <ProtectedRoute>
+                    <ProtectedRoute page="calendar">
                       <CalendarPage />
                     </ProtectedRoute>
                   }
@@ -187,7 +190,7 @@ const Routes = () => {
                 <Route
                   path="/forecast"
                   element={
-                    <ProtectedRoute>
+                    <ProtectedRoute page="forecast">
                       <ForecastPage />
                     </ProtectedRoute>
                   }
@@ -195,7 +198,7 @@ const Routes = () => {
                 <Route
                   path="/reports"
                   element={
-                    <ProtectedRoute>
+                    <ProtectedRoute page="reports">
                       <ReportsPage />
                     </ProtectedRoute>
                   }
@@ -211,7 +214,7 @@ const Routes = () => {
                 <Route
                   path="/planning"
                   element={
-                    <ProtectedRoute>
+                    <ProtectedRoute page="planning">
                       <PlanningPage />
                     </ProtectedRoute>
                   }
@@ -225,7 +228,7 @@ const Routes = () => {
                     // to their landing page with one line of explanation rather
                     // than an Access Denied screen — an old bookmark is not a
                     // trespass. Same constant as the menu entry in Header.jsx.
-                    <ProtectedRoute
+                    <ProtectedRoute page="coverage-console"
                       allowedRoles={COVERAGE_CONSOLE_ROLES}
                       denyNotice="This page is not enabled for your account."
                     >
@@ -236,7 +239,7 @@ const Routes = () => {
                 <Route
                   path="/insights"
                   element={
-                    <ProtectedRoute allowedRoles={DIVISION_PAGE_ROLES}>
+                    <ProtectedRoute page="insights" allowedRoles={DIVISION_PAGE_ROLES}>
                       <SalesDivisions />
                     </ProtectedRoute>
                   }
@@ -246,7 +249,7 @@ const Routes = () => {
                 <Route
                   path="/sales-monitor"
                   element={
-                    <ProtectedRoute
+                    <ProtectedRoute page="sales-monitor"
                       allowedRoles={SALES_MONITOR_ROLES}
                       denyNotice="This page is not enabled for your account."
                     >
@@ -259,7 +262,7 @@ const Routes = () => {
                 <Route
                   path="/numbers-check"
                   element={
-                    <ProtectedRoute allowedRoles={NUMBERS_CHECK_ROLES}>
+                    <ProtectedRoute page="numbers-check" allowedRoles={NUMBERS_CHECK_ROLES}>
                       <NumbersCheck />
                     </ProtectedRoute>
                   }
@@ -267,7 +270,7 @@ const Routes = () => {
                 <Route
                   path="/reassign-records"
                   element={
-                    <ProtectedRoute allowedRoles={REASSIGN_ROLES}>
+                    <ProtectedRoute page="reassign-records" allowedRoles={REASSIGN_ROLES}>
                       <ReassignRecords />
                     </ProtectedRoute>
                   }
@@ -277,6 +280,7 @@ const Routes = () => {
               <AIAssistant />
               </DateRangeProvider>
             </CurrencyProvider>
+            </PageAccessProvider>
           </AuthProvider>
         </LanguageProvider>
       </ErrorBoundary>
