@@ -213,13 +213,13 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
     // because "last visit" and "not contacted in 14 days" look back past the
     // 1st. contact_id is NOT named here (see the guarded read below).
     soft('Contact reports', () => supabase.from('contact_reports')
-      .select('id, owner_id, deal_id, contact_type, contact_date, customer_response, next_action, follow_up_date, notes, created_at', { count: 'exact' })
+      .select('id, owner_id, deal_id, contact_type, contact_date, duration_minutes, customer_response, next_action, follow_up_date, notes, is_audited, created_at', { count: 'exact' })
       .eq('company_id', companyId)
       .in('owner_id', scopeIds)
       .in('contact_type', CONTACT_KINDS)
       .lte('contact_date', monthEnd)),
     soft('Activities', () => supabase.from('activities')
-      .select('id, type, owner_id, user_id, contact_id, deal_id, title, description, outcome, next_action, completed_at, due_date, created_at', { count: 'exact' })
+      .select('id, type, owner_id, user_id, contact_id, deal_id, title, description, outcome, next_action, next_action_date, duration_minutes, completed_at, due_date, created_at', { count: 'exact' })
       .eq('company_id', companyId)
       .in('type', ACTIVITY_CONTACT_KINDS)
       .or(`owner_id.in.(${scopeIds.join(',')}),user_id.in.(${scopeIds.join(',')})`)),
@@ -278,7 +278,24 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
   if (!contactIdColumn) {
     base.notes.push('Visits name their customer through the deal only: contact_reports.contact_id is not in the database yet (migrations/contact_reports_contact_id.sql).');
   }
-  const reports = contactReports.map((r) => ({ ...r, contact_id: reportContact.get(r.id) || null }));
+  // Who audited a report, and when — for the read-only Visit sheet. The
+  // audit writes these two columns (ContactReportsAudit) but no screen has
+  // read them yet, so they are read apart from everything else: if either is
+  // missing the sheet simply says "audited" without the who and when.
+  const auditBy = new Map();
+  const audited = contactReports.filter((r) => r.is_audited).map((r) => r.id);
+  for (const part of chunks(audited)) {
+    // eslint-disable-next-line no-await-in-loop
+    const { data, error } = await supabase.from('contact_reports').select('id, audited_by, audited_at').in('id', part);
+    if (error) { console.warn('Sales Monitor: audit details not read:', error.message); break; }
+    (data || []).forEach((r) => auditBy.set(r.id, r));
+  }
+  const reports = contactReports.map((r) => ({
+    ...r,
+    contact_id: reportContact.get(r.id) || null,
+    audited_by: auditBy.get(r.id)?.audited_by || null,
+    audited_at: auditBy.get(r.id)?.audited_at || null,
+  }));
 
   // ── customer names, for every contact any row points at ──
   const dealContact = new Map([...allDeals, ...extraDeals].map((d) => [d.id, d.contact_id]));

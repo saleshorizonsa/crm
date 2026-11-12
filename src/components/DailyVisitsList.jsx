@@ -1,5 +1,5 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useCallback, useState } from "react";
+import VisitSheet from "components/VisitSheet";
 import { money } from "components/DrillSheet";
 import { NO_CUSTOMER, isDayOff } from "utils/salesMonitor";
 
@@ -13,7 +13,9 @@ import { NO_CUSTOMER, isDayOff } from "utils/salesMonitor";
  *   no contact    the target-holders in scope with nothing that day. On a day
  *                 off (Friday, Saturday) they are listed but not flagged.
  *
- * A row opens its deal in the pipeline, else its customer's record.
+ * A row opens the read-only Visit sheet (components/VisitSheet.jsx). It never
+ * opens a deal or a customer by itself: the sheet's two links do, when pressed
+ * (CEO, 2026-11-12 — a director wants to see the visit, not edit a deal).
  */
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export const shortDay = (d) => {
@@ -22,12 +24,9 @@ export const shortDay = (d) => {
 };
 
 export default function DailyVisitsList({ model, onOpenPerson = null, noContactTestid = "monitor-no-visit", showOutcome = true }) {
-  const navigate = useNavigate();
   const dayOff = isDayOff(model.day);
-  const openRow = (r) => {
-    if (r.dealId) navigate("/sales-pipeline", { state: { openDealId: r.dealId } });
-    else if (r.customerId) navigate("/contact-management", { state: { openContactId: r.customerId } });
-  };
+  const [sheet, setSheet] = useState(null);
+  const closeSheet = useCallback(() => setSheet(null), []);
   const byPerson = new Map();
   model.dayContacts.forEach((r) => {
     if (!byPerson.has(r.ownerId)) byPerson.set(r.ownerId, []);
@@ -46,14 +45,15 @@ export default function DailyVisitsList({ model, onOpenPerson = null, noContactT
             <table className="w-full min-w-[760px] text-xs mt-1">
               <tbody className="divide-y divide-gray-50">
                 {rows.map((r) => {
-                  const openable = !!(r.dealId || r.customerId);
                   return (
                     <tr
                       key={r.id}
                       data-testid={`day-row-${r.id}`}
-                      onClick={openable ? () => openRow(r) : undefined}
-                      title={r.dealId ? "Open the deal" : r.customerId ? "Open the customer" : undefined}
-                      className={openable ? "cursor-pointer hover:bg-gray-50" : ""}
+                      onClick={() => setSheet(r)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet(r); } }}
+                      tabIndex={0}
+                      title="Open the visit"
+                      className="cursor-pointer hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50"
                     >
                       <td className="py-1.5 pr-2 font-mono text-gray-500 w-12">{r.time || "—"}</td>
                       <td className="py-1.5 pr-2 w-20">{r.kindLabel}</td>
@@ -75,6 +75,7 @@ export default function DailyVisitsList({ model, onOpenPerson = null, noContactT
         </div>
       ))}
       {!model.dayContacts.length && <p className="text-sm text-gray-500">Nothing logged on {shortDay(model.day)}.</p>}
+      {sheet && <VisitSheet row={sheet} nameOf={model.userName || (() => null)} onClose={closeSheet} />}
       <div data-testid={noContactTestid}>
         <h3 className="text-sm font-semibold text-gray-800">
           No contact that day ({model.noVisitPeople.length}){dayOff ? " — a day off, not flagged" : ""}

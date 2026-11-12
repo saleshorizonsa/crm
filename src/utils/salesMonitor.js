@@ -414,6 +414,14 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
         nextAction: r.next_action || null,
         notes: r.notes || null,
         viaReportContact: !!r.contact_id,
+        // For the read-only Visit sheet.
+        durationMinutes: r.duration_minutes ?? null,
+        followUp: r.follow_up_date || null,
+        rawOutcome: null,
+        audited: r.is_audited === true,
+        auditedBy: r.audited_by || null,
+        auditedAt: r.audited_at || null,
+        deal,
       };
     }),
     ...(raw.activities || []).map((a) => {
@@ -429,6 +437,15 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
         nextAction: a.next_action || null,
         notes: a.description || null,
         viaReportContact: false,
+        durationMinutes: a.duration_minutes ?? null,
+        followUp: a.next_action_date || null,
+        // The activity's own outcome, shown beside the mapped response.
+        rawOutcome: a.outcome || null,
+        // Activities have no audit; null, not false, so the sheet can say so.
+        audited: null,
+        auditedBy: null,
+        auditedAt: null,
+        deal,
       };
     }),
   ].filter((c) => c.date && viewSet.has(c.ownerId) && c.date <= monthEnd)
@@ -750,6 +767,8 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     exceptions,
     outcomeOfItem,
     customerOfDeal,
+    // Names of people in scope, for the Visit sheet's "audited by".
+    userName: (id) => (id && userById.get(id)?.full_name) || null,
     departedIds: departedAchievers,
     noTargetIds: noTargetSellers,
     contactIdColumn: raw.contactIdColumn !== false,
