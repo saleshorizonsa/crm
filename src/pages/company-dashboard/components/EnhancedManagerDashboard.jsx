@@ -124,7 +124,10 @@ const targetPeriodLabel = (row) => {
   return `${start} → ${end}`;
 };
 
-const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
+// targetsOnly (session 35): /targets renders this component on its Sales
+// Targets tab only, so a manager assigns targets there with the very same
+// state, reads and rules as here. Without it: unchanged.
+const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false, targetsOnly = false }) => {
   const { user, userProfile, company } = useAuth();
   const { formatCurrency, convertCurrency, preferredCurrency } = useCurrency();
   const { dateRange, setRange } = useDateRange();
@@ -142,7 +145,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
     return convertCurrency(amount, dealCurrency, preferredCurrency);
   };
   const [isLoading, setIsLoading] = useState(true);
-  const [activeView, setActiveView] = useState("overview");
+  const [activeView, setActiveView] = useState(targetsOnly ? "targets" : "overview");
 
   // Separate filter states for month, quarter, and year
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -1601,6 +1604,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
 
   return (
     <div className={`space-y-8 transition-opacity duration-200 ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
+      {!targetsOnly && (<>
       <KPICardsStrip
         salesmanData={kpiStrip.salesmanData}
         totals={kpiStrip.totals}
@@ -1670,6 +1674,8 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
         </div>
       )}
 
+      </>)}
+
       {/* Quick Date Selector */}
       <QuickDateSelector
         activeDateRange={activeDateRange}
@@ -1724,7 +1730,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
       ) : (
         <>
           {/* Navigation Tabs */}
-          <div className="border-b border-gray-200">
+          {!targetsOnly && <div className="border-b border-gray-200">
             <nav className="flex space-x-8">
               {[
                 { id: "overview", label: t("dashboard.overview"), icon: "LayoutDashboard" },
@@ -1745,7 +1751,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false }) => {
                 </button>
               ))}
             </nav>
-          </div>
+          </div>}
 
           {/* Overview Tab */}
           {activeView === "overview" && (
