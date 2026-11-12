@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import DailyVisitsList from "components/DailyVisitsList";
 import { useAuth } from "contexts/AuthContext";
 import Header from "components/ui/Header";
 import DrillSheet, { money } from "components/DrillSheet";
@@ -13,7 +14,6 @@ import {
   OUTCOME_HELP,
   outcomeLabelsFor,
   DEPARTED_ID,
-  NO_CUSTOMER,
 } from "utils/salesMonitor";
 import { THRESHOLDS } from "utils/salesMonitorThresholds";
 
@@ -99,9 +99,14 @@ export default function SalesMonitor() {
   const navigate = useNavigate();
   const canPick = MONITOR_PICKER_ROLES.includes(role);
 
-  const [monthKey, setMonthKey] = useState(thisMonthKey());
-  const [divisionId, setDivisionId] = useState("");
-  const [visitDay, setVisitDay] = useState(null);
+  // ?day=yyyy-MM-dd&division=<id> — how the Insights Visits panel opens this
+  // page on the same day and division. Read once, as the starting state.
+  const [params] = useSearchParams();
+  const linkDay = /^\d{4}-\d{2}-\d{2}$/.test(params.get("day") || "") ? params.get("day") : null;
+  const [monthKey, setMonthKey] = useState(linkDay ? linkDay.slice(0, 7) : thisMonthKey());
+  const [divisionId, setDivisionId] = useState(params.get("division") || "");
+  const [visitDay, setVisitDay] = useState(linkDay);
+  const firstMonth = React.useRef(true);
   const [raw, setRaw] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -127,7 +132,12 @@ export default function SalesMonitor() {
   }, [company?.id, user?.id, role, monthKey]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setVisitDay(null); }, [monthKey]);
+  // A new month starts on its default day — but not on mount, where the day
+  // may have come from a link.
+  useEffect(() => {
+    if (firstMonth.current) { firstMonth.current = false; return; }
+    setVisitDay(null);
+  }, [monthKey]);
 
   const model = useMemo(
     () => (raw ? computeSalesMonitor(raw, { divisionId: divisionId || null, visitDay }) : null),
@@ -230,11 +240,6 @@ export default function SalesMonitor() {
   const outcomeLabels = outcomeLabelsFor(model.closed);
   const OUTCOME_KEY = { Achieved: "outAchieved", Bounced: "outBounced", Failed: "outFailed", Pending: "outPending" };
 
-  const byPerson = new Map();
-  model.dayContacts.forEach((r) => {
-    if (!byPerson.has(r.ownerId)) byPerson.set(r.ownerId, []);
-    byPerson.get(r.ownerId).push(r);
-  });
   const feed = model.exceptions.filter((e) => sevFilter === "all" || e.severity === sevFilter);
   const maxDay = model.isCurrent ? model.today : model.monthEnd;
 
@@ -276,6 +281,13 @@ export default function SalesMonitor() {
             )}
           </div>
         </div>
+
+        {!canPick && model.division && (
+          <div className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 flex items-center gap-2" data-testid="monitor-division-chip">
+            Showing division {model.division.name} only.
+            <button type="button" onClick={() => setDivisionId("")} className="underline">Show all</button>
+          </div>
+        )}
 
         {model.notes.length > 0 && (
           <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-0.5" data-testid="monitor-notes">
@@ -433,47 +445,7 @@ export default function SalesMonitor() {
             </label>
           </div>
           <div className="p-4 space-y-4">
-            {[...byPerson.entries()].sort((a, b) => model.people.find((p) => p.id === a[0])?.name?.localeCompare(model.people.find((p) => p.id === b[0])?.name || "") || 0).map(([pid, rows]) => (
-              <div key={pid} data-testid={`day-person-${pid}`}>
-                <h3 className="text-sm font-semibold text-gray-800">{rows[0].person} <span className="font-normal text-gray-500">· {rows.length}</span></h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[760px] text-xs mt-1">
-                    <tbody className="divide-y divide-gray-50">
-                      {rows.map((r) => (
-                        <tr key={r.id} onClick={() => r.dealId && openRecord({ dealId: r.dealId })} className={r.dealId ? "cursor-pointer hover:bg-gray-50" : ""}>
-                          <td className="py-1.5 pr-2 font-mono text-gray-500 w-12">{r.time || "—"}</td>
-                          <td className="py-1.5 pr-2 w-20">{r.kindLabel}</td>
-                          <td className={`py-1.5 pr-2 ${r.customerKnown ? "text-gray-900" : "italic text-gray-500"}`}>{r.customerKnown ? r.customer : NO_CUSTOMER}</td>
-                          <td className="py-1.5 pr-2">
-                            {r.inPlan
-                              ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200">In plan · {money(r.planValue)}</span>
-                              : <span className="text-gray-300">—</span>}
-                          </td>
-                          <td className={`py-1.5 pr-2 capitalize ${r.response === "negative" ? "text-red-700" : r.response === "positive" ? "text-emerald-700" : "text-gray-600"}`}>{r.response || "—"}</td>
-                          <td className="py-1.5 pr-2 text-gray-700">{r.nextAction || "—"}</td>
-                          <td className="py-1.5 text-gray-600">{r.planOutcome || ""}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ))}
-            {!model.dayContacts.length && <p className="text-sm text-gray-500">Nothing logged on {shortDay(model.day)}.</p>}
-            <div data-testid="monitor-no-visit">
-              <h3 className="text-sm font-semibold text-gray-800">No visit, call or WhatsApp on {shortDay(model.day)} ({model.noVisitPeople.length})</h3>
-              {model.noVisitPeople.length ? (
-                <ul className="mt-1 flex flex-wrap gap-1.5">
-                  {model.noVisitPeople.map((p) => (
-                    <li key={p.id}>
-                      <button type="button" onClick={() => openPerson(p.id)} className="text-xs px-2 py-1 rounded border border-red-200 bg-red-50 text-red-700 hover:bg-red-100">
-                        {p.name}<span className="text-red-500"> · last {shortDay(p.lastVisit)}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="text-xs text-gray-500 mt-1">Everyone logged at least one.</p>}
-            </div>
+            <DailyVisitsList model={model} onOpenPerson={openPerson} />
 
             {/* month to date */}
             <div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
+import { supabase } from "../../lib/supabase";
 import Icon from "../../components/AppIcon";
 import Button from "../../components/ui/Button";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
@@ -90,6 +91,23 @@ const ContactManagement = () => {
       }
     }
   };
+
+  // OPEN ONE CUSTOMER FROM A LINK (session 34): the Insights Visits panel and
+  // the Sales Monitor send { openContactId } in the navigation state. Once the
+  // list has loaded, that customer's record opens in the usual modal — from
+  // the list if it is there, else read by id. Opened once per navigation.
+  const location = useLocation();
+  const openedFromLink = React.useRef(null);
+  useEffect(() => {
+    const id = location.state?.openContactId;
+    if (!id || isLoading || openedFromLink.current === location.key) return;
+    openedFromLink.current = location.key;
+    const inList = contacts.find((c) => c.id === id);
+    if (inList) { handleEditContact(inList); return; }
+    supabase.from("contacts").select("*").eq("id", id).maybeSingle()
+      .then(({ data }) => { if (data) handleEditContact(data); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key, location.state, isLoading, contacts]);
 
   const handleCreateContact = () => {
     setSelectedContact(null);

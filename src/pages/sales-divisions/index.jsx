@@ -39,6 +39,9 @@ import DivisionPicker from "./components/DivisionPicker";
 // The Dashboard's own audit panel, unchanged — the component already scopes
 // itself by ownerIds.
 import ContactReportsAudit from "components/dashboard/ContactReportsAudit";
+// The Sales Monitor's daily visits, for the roles that manage salesmen (session 34).
+import InsightsVisitsPanel from "./components/InsightsVisitsPanel";
+import { SALES_MONITOR_ROLES } from "utils/salesMonitor";
 
 // Insights (route /insights; folder and component keep the sales-divisions name)
 // — Company → Division → Team → Member → Deal.
@@ -1168,6 +1171,21 @@ export default function SalesDivisions() {
                  visits (session 17). */
               pacing={{ scopeIds: levelIds, companyId: company?.id, viewerId: user?.id, role }}
             />
+
+            {/* ── VISITS (session 34, CEO 2026-11-12) ──
+                What the field logged on one day, directly under the top cards,
+                for the roles that manage salesmen — a salesman keeps My work and
+                Log visit. Its own reads and the Sales Monitor's rules; it
+                follows the division being viewed and changes no figure above. */}
+            {SALES_MONITOR_ROLES.includes(role) && company?.id && (
+              <InsightsVisitsPanel
+                companyId={company.id}
+                viewerId={user?.id}
+                role={role}
+                divisionId={currentGroup?.id || null}
+                rangeEnd={rangeEnd}
+              />
+            )}
 
             {/* THE BENCHMARK (CEO decision 2026-10-07): the company conversion
                 RATE beside their own, for the two roles that cannot see the

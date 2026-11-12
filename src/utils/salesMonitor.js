@@ -133,6 +133,14 @@ export function daysBetween(a, b) {
   return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000);
 }
 const weekday = (ymd) => { const [y, m, d] = parts(ymd); return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); };
+/** True on the Saudi weekend (THRESHOLDS.daysOff). */
+export const isDayOff = (ymd) => THRESHOLDS.daysOff.includes(weekday(ymd));
+/** The last working day on or before `ymd` (yyyy-MM-dd). */
+export function lastWorkingDayOn(ymd) {
+  let d = String(ymd).slice(0, 10);
+  for (let i = 0; i < 7 && isDayOff(d); i += 1) d = addDays(d, -1);
+  return d;
+}
 const RIYADH_TIME = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit', hour12: false,
 });
