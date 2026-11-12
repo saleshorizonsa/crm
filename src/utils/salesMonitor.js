@@ -4,6 +4,7 @@ import {
   divisionRowOwners,
   COMPANY_SCOPE_ROLES,
   UNASSIGNED,
+  PACING_TOLERANCE,
 } from 'utils/salesDivisionMetrics';
 import {
   isAchievedDeal,
@@ -164,6 +165,14 @@ const wonDateOf = (d) => d?.closed_at || d?.stage_changed_at || null;
  *               pending, so "rejected" means rejected and not resubmitted.
  */
 export function classifyPlanStatus(sub) {
+  // REJECTED, NOT RESUBMITTED (session 36 fix). rejectPlan (utils/planApproval.js)
+  // writes approval_status 'rejected' AND is_submitted false, so the plan is back
+  // with its owner. It counts as not submitted AND as rejected — the earlier
+  // version tested is_submitted first and so never reported a rejection at all.
+  // A resubmission sets approval_status back to 'pending', is_submitted true.
+  if (sub && !sub.is_submitted && sub.approval_status === 'rejected') {
+    return { submitted: false, timing: PLAN_STATUS.missing, approval: PLAN_STATUS.rejected, label: 'rejected, not resubmitted' };
+  }
   if (!sub || !sub.is_submitted) {
     return { submitted: false, timing: PLAN_STATUS.missing, approval: null, label: PLAN_STATUS.missing };
   }
@@ -636,6 +645,20 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
       totalPlanned: s?.is_submitted ? num(s.total_planned) : null,
       requiredAtSubmit: s?.is_submitted ? num(s.required_plan) : null,
       rejection: s?.rejection_reason || null,
+      // For the Plan submission sheet's tabs (session 36).
+      division: divName(knownDivision(primaryByUser[id])),
+      target: num(targetPer[id]),
+      isSubmitted: st.submitted,
+      isLate: st.submitted && !!s?.is_late,
+      isPending: st.submitted && st.approval === PLAN_STATUS.pending,
+      isRejected: st.approval === PLAN_STATUS.rejected && !st.submitted,
+      when: st.submitted ? riyadhDate(s?.submitted_at) : (s?.deadline_date || deadlineFor(monthStart)),
+      whenIs: st.submitted ? 'submitted' : 'deadline',
+      // Who decides it: the approver who approved it, else the one assigned
+      // (resolveApproverMap — the approval queue's own rule).
+      approver: (s?.approval_status === 'approved' && s?.approved_by
+        ? raw.approverNames?.[s.approved_by]
+        : raw.approverNames?.[raw.approvers?.[id]]) || '—',
     };
   }) : [];
   const countStatus = (f) => planStatusRows.filter(f).length;
@@ -743,6 +766,7 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     || d?.title || '—';
 
   const ctx = {
+    closed, isCurrent,
     customerOfDeal, raw, metrics, groups, picked, nameOf, divName, knownDivision, primaryByUser,
     itemRows, plannedRows, planStatusRows, split, contactRows, dayContacts, mtdContacts,
     exceptions, people, planCustomerRows,
@@ -1130,7 +1154,10 @@ function buildDrills(ctx) {
     nextAction: c.nextAction || '—', one: 1,
   }));
 
-  return {
+  const tabs = buildTabs(ctx, {
+    targetRows, outcomeRows, visitRows, contactRows: mtdContacts,
+  });
+  const out = {
     target: {
       label: 'Target',
       explain: 'The month\'s target: every active monthly target row of the people who count, each in its own division — the Insights figure.',
@@ -1205,7 +1232,253 @@ function buildDrills(ctx) {
       })), { ...base, value: () => 1, divisionOf: (r) => r.divisionId, personOf: (r) => r.personId }),
     },
   };
+  Object.keys(tabs).forEach((k) => { if (out[k]) out[k].tabs = tabs[k]; });
+  return out;
 }
+
+/* ── tabs inside each card's sheet (session 36, CEO 2026-11-12) ─────────── */
+
+/**
+ * Tab columns that are new to session 36. The rest are DRILL_COLUMNS.
+ */
+export const TAB_COLUMNS = {
+  target: [
+    { key: 'person', label: 'Salesman' },
+    { key: 'targetType', label: 'Type' },
+    { key: 'value', label: 'Target', type: 'money' },
+    { key: 'achieved', label: 'Achieved', type: 'money' },
+    { key: 'pacePct', label: '% of target', type: 'pct' },
+  ],
+  submitted: [
+    { key: 'person', label: 'Salesman' },
+    { key: 'submittedAt', label: 'Submitted', type: 'date' },
+    { key: 'submitted', label: 'Submitted plan', type: 'money' },
+    { key: 'required', label: 'Required at submit', type: 'money' },
+    { key: 'planNow', label: 'Plan now', type: 'money' },
+  ],
+  below: [
+    { key: 'person', label: 'Salesman' },
+    { key: 'planNow', label: 'Plan now', type: 'money' },
+    { key: 'required', label: 'Required', type: 'money' },
+    { key: 'source', label: 'Required from' },
+    { key: 'gap', label: 'Missing', type: 'money' },
+  ],
+  noPlan: [
+    { key: 'person', label: 'Salesman' },
+    { key: 'status', label: 'Plan status' },
+    { key: 'required', label: 'Required', type: 'money' },
+  ],
+  planStatus: [
+    { key: 'person', label: 'Salesman' },
+    { key: 'division', label: 'Division' },
+    { key: 'target', label: 'Target', type: 'money' },
+    { key: 'when', label: 'Submitted / deadline', type: 'date' },
+    { key: 'status', label: 'Status' },
+    { key: 'approver', label: 'Approver' },
+  ],
+  invoices: [
+    { key: 'invoiceNumber', label: 'Invoice no.' },
+    { key: 'invoiceDate', label: 'Date', type: 'date' },
+    { key: 'customer', label: 'Customer' },
+    { key: 'person', label: 'Salesman' },
+    { key: 'value', label: 'Value', type: 'money' },
+    { key: 'returns', label: 'Returns', type: 'money' },
+    { key: 'net', label: 'Net', type: 'money' },
+  ],
+  achieved: [
+    { key: 'customer', label: 'Customer' },
+    { key: 'invoiceNumber', label: 'Invoice no.' },
+    { key: 'title', label: 'Deal' },
+    { key: 'invoiceDate', label: 'Date', type: 'date' },
+    { key: 'value', label: 'Amount', type: 'money' },
+  ],
+  notVisited: [
+    { key: 'customer', label: 'Customer' },
+    { key: 'person', label: 'Salesman' },
+    { key: 'planned', label: 'Planned', type: 'money' },
+    { key: 'lastContact', label: 'Last contact', type: 'date' },
+    { key: 'outcome', label: 'Outcome' },
+  ],
+};
+
+/** One level of groups (e.g. By customer) whose rows are the leaves. */
+function groupRows(rows, keyOf, value, idPrefix) {
+  const m = new Map();
+  rows.forEach((r) => { const k = keyOf(r) || '—'; if (!m.has(k)) m.set(k, []); m.get(k).push(r); });
+  return [...m.entries()].map(([k, rs]) => ({
+    id: `${idPrefix}:${k}`, name: k, total: rs.reduce((s, x) => s + num(value(x)), 0),
+    rows: rs.map((x) => ({ ...x, _value: value(x) })),
+  })).sort((a, b) => b.total - a.total);
+}
+
+/**
+ * The tabs of every card — FILTERS over the rows the card already has, so a
+ * tab's count is the rows it lists and its total is the card's own value
+ * function over them. See utils/drillTabs.js for how the sheet uses them.
+ */
+function buildTabs(ctx, r) {
+  const {
+    metrics, nameOf, divName, knownDivision, primaryByUser, plannedRows, planStatusRows,
+    exceptions, people, planCustomerRows, closed, isCurrent, split, customerOfDeal, raw,
+  } = ctx;
+  const base = { nameOf, divName };
+  const personDivision = (id) => knownDivision(primaryByUser[id]);
+  const tree = (value, customerOf = null) => (rows) => drillTree(rows, {
+    ...base, value, divisionOf: (x) => x.divisionId, personOf: (x) => x.personId, ...(customerOf ? { customerOf } : {}),
+  });
+  const sum = (value) => (rows) => sumBy(rows, value);
+  const count = (rows) => rows.length;
+  const L2 = ['By division', 'By salesman'];
+  const L3 = ['By division', 'By salesman', 'By customer'];
+
+  // ── Target: On pace / Behind pace — the card's own rule, per person ──
+  const elapsed = isCurrent ? num(metrics.elapsed) : (closed ? 1 : 0);
+  const tgtPer = metrics.drill.targetPerPerson || {};
+  const achPer = metrics.drill.invoicedPerPerson || {};
+  const paceOf = (id) => (num(tgtPer[id]) > 0 ? num(achPer[id]) / num(tgtPer[id]) : null);
+  const onPace = (id) => { const pc = paceOf(id); return pc === null || pc >= elapsed - PACING_TOLERANCE; };
+  const tRows = r.targetRows.map((x) => ({
+    ...x, achieved: num(achPer[x.personId]),
+    pacePct: paceOf(x.personId) === null ? null : paceOf(x.personId) * 100,
+    onPace: onPace(x.personId),
+  }));
+  const paceHint = `Pace = achieved as a share of target against the share of the month gone (${Math.round(elapsed * 100)}%); on pace within ${Math.round(PACING_TOLERANCE * 100)} points, the card's rule.`;
+
+  // ── Planned ──
+  const holders = people.filter((p) => p.planStatus);
+  const subRows = holders.filter((p) => p.submittedPlanned !== null && p.submittedPlanned !== undefined).map((p) => ({
+    personId: p.id, person: p.name, divisionId: p.divisionId, submitted: p.submittedPlanned,
+    required: num(p.submission?.required_plan), submittedAt: riyadhDate(p.submission?.submitted_at), planNow: p.planned,
+  }));
+  const nowRows = plannedRows.map((x) => ({
+    oppId: x.oppId, dealId: x.dealId, personId: x.ownerId, person: nameOf(x.ownerId), divisionId: x.divisionId,
+    customer: x.customer, status: x.status === 'open' ? 'open' : 'became a deal', expectedMonth: x.expectedMonth, outcome: x.outcome, planned: x.planned,
+  }));
+  const belowRows = people.filter((p) => p.requiredSource && num(p.planned) < num(p.requiredPlan)).map((p) => ({
+    personId: p.id, person: p.name, divisionId: p.divisionId, planNow: p.planned, required: p.requiredPlan,
+    source: p.requiredSource === 'submitted' ? 'submitted plan' : 'estimate', gap: num(p.requiredPlan) - num(p.planned),
+  }));
+  const noPlanRows = holders.filter((p) => num(p.planned) === 0).map((p) => ({
+    personId: p.id, person: p.name, divisionId: p.divisionId, status: p.planStatus.label, required: p.requiredPlan,
+  }));
+
+  // ── Achieved / From plan ──
+  const dealById = new Map((raw.allDeals || raw.deals || []).map((d) => [d.id, d]));
+  const invRows = [
+    ...split.fromRows.map((d) => [d, 'from this month\'s plan']),
+    ...split.outsideRows.map((d) => [d, 'outside the plan']),
+  ].map(([d, plan]) => ({
+    dealId: d.id, personId: d.owner_id, person: nameOf(d.owner_id), divisionId: knownDivision(d.division_id),
+    customer: customerOfDeal(d), title: d.title || '—', invoiceNumber: d.invoice_number || '—',
+    invoiceDate: d.invoice_date, plan, value: achievedAmount(d),
+  }));
+  const retRows = (metrics.drill.returnRows || []).map((x) => {
+    const d = dealById.get(x.deal_id);
+    return {
+      dealId: x.deal_id, personId: x.owner_id, person: nameOf(x.owner_id), divisionId: knownDivision(x.division_id),
+      customer: d ? customerOfDeal(d) : 'Sales return', title: 'credit note', invoiceNumber: d?.invoice_number || '—',
+      invoiceDate: x.return_date, plan: 'return', value: -returnAmount(x),
+    };
+  });
+  const retByDeal = new Map();
+  retRows.forEach((x) => retByDeal.set(x.dealId, (retByDeal.get(x.dealId) || 0) - x.value));
+  const invoiceRows = [
+    ...invRows.map((x) => ({ ...x, returns: retByDeal.get(x.dealId) || 0, net: x.value - (retByDeal.get(x.dealId) || 0) })),
+    // Credit notes against invoices of other months: their own lines.
+    ...retRows.filter((x) => !invRows.some((i) => i.dealId === x.dealId))
+      .map((x) => ({ ...x, value: 0, returns: -x.value, net: x.value })),
+  ];
+
+  // ── Outcomes ──
+  const outRows = r.outcomeRows.map((x) => ({ ...x, person: nameOf(x.personId) }));
+
+  // ── Visits ──
+  const visRows = r.visitRows.map((x, i) => ({ ...x, person: nameOf(x.personId), responseRaw: r.contactRows[i]?.response || null }));
+  const notVisited = planCustomerRows.filter((g) => !g.visited).map((g) => ({
+    personId: g.ownerId, person: nameOf(g.ownerId), divisionId: personDivision(g.ownerId),
+    customer: g.customer, planned: g.planned, lastContact: g.lastContact, outcome: g.outcome,
+  }));
+
+  // ── Exceptions ──
+  const excRows = exceptions.map((e) => ({
+    ...e, personId: e.ownerId, person: e.owner, divisionId: personDivision(e.ownerId),
+    dealId: e.record?.dealId || null, oppId: e.record?.oppId || null,
+  }));
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  return {
+    target: {
+      base: { rows: tRows, build: tree((x) => x.value), total: sum((x) => x.value), columns: TAB_COLUMNS.target, groupLabels: L2, searchKeys: ['person'] },
+      sets: [{ id: 'pace', options: [
+        { id: 'all', label: 'All' },
+        { id: 'on', label: 'On pace', filter: (x) => x.onPace, hint: paceHint },
+        { id: 'behind', label: 'Behind pace', filter: (x) => !x.onPace, hint: paceHint },
+      ] }],
+    },
+    planned: {
+      base: { rows: [], searchKeys: ['person', 'customer'] },
+      sets: [{ id: 'plan', options: [
+        { id: 'submitted', label: 'Submitted', rows: subRows, build: tree((x) => x.submitted), total: sum((x) => x.submitted), columns: TAB_COLUMNS.submitted, groupLabels: L2, unit: 'SAR',
+          explain: 'Each submitted plan\'s own total, as filed.' },
+        { id: 'now', label: 'Plan now', rows: nowRows, build: tree((x) => x.planned, (x) => x.customer), total: sum((x) => x.planned), columns: DRILL_COLUMNS.planned, groupLabels: L3, unit: 'SAR',
+          explain: 'The month\'s plan items today that are still open or became a live deal.' },
+        { id: 'below', label: 'Below required', rows: belowRows, build: tree((x) => x.gap), total: sum((x) => x.gap), columns: TAB_COLUMNS.below, groupLabels: L2, unit: 'SAR',
+          explain: 'People whose plan now is under their required plan (from their submitted plan, or estimated where none was submitted). The total is the plan still missing.' },
+        { id: 'none', label: 'No plan', rows: noPlanRows, build: tree(() => 1), total: count, columns: TAB_COLUMNS.noPlan, groupLabels: L2, unit: 'people',
+          explain: 'People who carry a target and have no plan item open or converted this month.' },
+      ] }],
+    },
+    planStatus: {
+      base: { rows: planStatusRows, build: tree(() => 1), total: count, columns: TAB_COLUMNS.planStatus, groupLabels: L2, unit: 'people', searchKeys: ['person', 'division', 'approver'] },
+      sets: [{ id: 'status', options: [
+        { id: 'all', label: 'All' },
+        { id: 'submitted', label: 'Submitted', filter: (x) => x.isSubmitted, hint: 'Submitted counts on-time and late plans together; Late is part of it.' },
+        { id: 'missing', label: 'Not submitted', filter: (x) => !x.isSubmitted, hint: 'No plan in hand, including a rejected plan not yet resubmitted.' },
+        { id: 'late', label: 'Late', filter: (x) => x.isLate, hint: 'Part of Submitted: filed after the deadline.' },
+        { id: 'pending', label: 'Awaiting approval', filter: (x) => x.isPending, hint: 'Part of Submitted: not approved or rejected yet.' },
+        { id: 'rejected', label: 'Rejected', filter: (x) => x.isRejected, hint: 'Rejected and not resubmitted (also in Not submitted). A resubmitted plan is Awaiting approval.' },
+      ] }],
+    },
+    achieved: {
+      base: { rows: [...invRows, ...retRows], searchKeys: ['person', 'customer', 'invoiceNumber', 'title'] },
+      sets: [{ id: 'view', options: [
+        { id: 'salesman', label: 'By salesman', build: tree((x) => x.value, (x) => x.customer), total: sum((x) => x.value), columns: TAB_COLUMNS.achieved, groupLabels: L3 },
+        { id: 'customer', label: 'By customer', build: (rows) => groupRows(rows, (x) => x.customer, (x) => x.value, 'c'), total: sum((x) => x.value), columns: TAB_COLUMNS.achieved, groupLabels: ['By customer'] },
+        { id: 'invoices', label: 'Invoices', rows: invoiceRows, build: null, total: sum((x) => x.net), columns: TAB_COLUMNS.invoices,
+          hint: 'One line per invoice, its returns beside it; credit notes against other months\' invoices have their own line. Net adds up to Achieved.' },
+      ] }],
+    },
+    fromPlan: {
+      base: { rows: invRows, build: tree((x) => x.value, (x) => x.customer), total: sum((x) => x.value), columns: TAB_COLUMNS.achieved, groupLabels: L3, searchKeys: ['person', 'customer', 'invoiceNumber', 'title'] },
+      sets: [{ id: 'plan', options: [
+        { id: 'from', label: 'From plan', filter: (x) => x.plan !== 'outside the plan', hint: 'Invoices whose plan item is in this month\'s plan. Returns are subtracted from Achieved separately.' },
+        { id: 'outside', label: 'Outside plan', filter: (x) => x.plan === 'outside the plan', hint: 'Every other invoice of the month. Returns are subtracted from Achieved separately.' },
+      ] }],
+    },
+    outcomes: {
+      base: { rows: outRows, build: tree((x) => x.planned, (x) => x.customer), total: sum((x) => x.planned), columns: DRILL_COLUMNS.outcomes, groupLabels: L3, searchKeys: ['person', 'customer'] },
+      sets: [{ id: 'outcome', options: outcomeLabelsFor(closed).map((l) => ({ id: l.toLowerCase(), label: l, filter: (x) => x.outcome === l, hint: OUTCOME_HELP[l] })) }],
+    },
+    visits: {
+      base: { rows: visRows, build: tree(() => 1, (x) => x.customer), total: count, columns: DRILL_COLUMNS.visits, groupLabels: L3, unit: 'contacts', searchKeys: ['person', 'customer'] },
+      sets: [{ id: 'visits', options: [
+        { id: 'visited', label: 'Visited' },
+        { id: 'notVisited', label: 'Planned not visited', rows: notVisited, build: tree(() => 1, (x) => x.customer), total: count, columns: TAB_COLUMNS.notVisited, unit: 'customers',
+          explain: 'Planned customers of this month with no visit, call or WhatsApp from their salesman yet.' },
+        { id: 'positive', label: 'Positive', filter: (x) => x.responseRaw === 'positive', hint: 'Part of Visited.' },
+        { id: 'negative', label: 'Negative', filter: (x) => x.responseRaw === 'negative', hint: 'Part of Visited.' },
+      ] }],
+    },
+    exceptions: {
+      base: { rows: excRows, build: tree(() => 1), total: count, columns: DRILL_COLUMNS.exceptions, groupLabels: L2, unit: 'exceptions', searchKeys: ['person', 'title', 'detail'] },
+      sets: [
+        { id: 'severity', options: [{ id: 'all', label: 'All', isAll: true }, ...['high', 'medium', 'low'].map((s) => ({ id: s, label: cap(s), filter: (x) => x.severity === s }))] },
+        { id: 'group', options: [{ id: 'all', label: 'All groups', isAll: true }, ...['Plan', 'Visits', 'Deals', 'Data'].map((g) => ({ id: g.toLowerCase(), label: g, filter: (x) => x.group === g }))] },
+      ],
+    },
+  };
+}
+
 
 /**
  * One salesman's own sheet, for a scoreboard row: plan items, invoices,

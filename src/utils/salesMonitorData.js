@@ -3,6 +3,7 @@ import { fetchAllRows } from 'utils/fetchAllRows';
 import { fetchAdditionalDivisions } from 'utils/divisionMembership';
 import { fetchConversionBaseOrDeals, nextMonthBounds } from 'utils/planningCalculations';
 import { scopeUserIds } from 'utils/salesDivisionMetrics';
+import { resolveApproverMap } from 'utils/planApproval';
 import { CONTACT_KINDS, ACTIVITY_CONTACT_KINDS } from 'utils/salesMonitor';
 import { isMissingColumn } from 'utils/missingColumn';
 
@@ -199,7 +200,7 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
     // The month's plan submissions. A failure is shown, never read as
     // "nobody submitted".
     supabase.from('plan_submissions')
-      .select('id, owner_id, plan_month, is_submitted, is_late, deadline_date, submitted_at, approval_status, total_planned, required_plan, flagged, rejection_reason, updated_at')
+      .select('id, owner_id, plan_month, is_submitted, is_late, deadline_date, submitted_at, approval_status, approved_by, total_planned, required_plan, flagged, rejection_reason, updated_at')
       .eq('company_id', companyId)
       .in('owner_id', scopeIds)
       .eq('plan_month', `${monthStart}`),
@@ -314,6 +315,12 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
     ? await byIds('contacts', 'id, company_name, first_name, last_name', contactIds)
     : [];
 
+  // Who approves each person's plan — the approval queue's own rule — and the
+  // names of approvers, who may sit outside the viewer's scope (session 36).
+  let approvers = {};
+  try { approvers = await resolveApproverMap(companyId, scopeIds); } catch (e) { console.warn('Sales Monitor: approvers not resolved:', e?.message || e); }
+  const approverNames = Object.fromEntries(allUsers.map((u) => [u.id, u.full_name || u.email || 'Unknown']));
+
   const [additionalByUser, conversionBase] = await Promise.all([
     fetchAdditionalDivisions({ companyId, userIds: scopeIds }),
     fetchConversionBaseOrDeals({ companyId, divisionIds: divisions.map((d) => d.id) }),
@@ -346,5 +353,7 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
     contacts,
     departedOpenPlan,
     contactIdColumn,
+    approvers,
+    approverNames,
   };
 }

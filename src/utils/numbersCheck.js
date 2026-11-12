@@ -1712,6 +1712,8 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
     const out = { onTime: 0, late: 0, missing: 0, approved: 0, rejected: 0 };
     ids.forEach((id) => {
       const s = subBy.get(id);
+      // rejectPlan sets is_submitted false: rejected AND not submitted (session 36).
+      if (s && !s.is_submitted && s.approval_status === 'rejected') { out.missing += 1; out.rejected += 1; return; }
       if (!s || !s.is_submitted) { out.missing += 1; return; }
       if (s.is_late) out.late += 1; else out.onTime += 1;
       if (s.approval_status === 'approved') out.approved += 1;
