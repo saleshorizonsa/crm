@@ -161,9 +161,14 @@ export default function SalesMonitor() {
     if (tree) setDrill({ ...tree, title: "Salesman", place: [...place, tree.label] });
   };
 
+  // The card's own title, for the sheet's Excel file name (session 36).
+  const CARD_TITLES = {
+    target: "Target", planned: "Planned", planStatus: "Plan submission", achieved: "Achieved",
+    fromPlan: "From plan vs outside plan", outcomes: "Plan outcomes", visits: "Visits", exceptions: "Exceptions",
+  };
   const openCard = (key) => {
     const node = model?.drills?.[key];
-    if (node) setDrill({ ...node, title: node.label, place });
+    if (node) setDrill({ ...node, title: node.label, place, card: CARD_TITLES[key] || node.label });
   };
 
   const openPerson = (id) => {
@@ -354,7 +359,7 @@ export default function SalesMonitor() {
             <Line label="To planned customers (MTD)" value={fmtPct(c.visits.mtd.inPlanPct, 0)} />
             <Line label="+ / = / −" value={`${c.visits.mtd.responses.positive} / ${c.visits.mtd.responses.neutral} / ${c.visits.mtd.responses.negative}`} />
           </Card>
-          <Card testid="card-exceptions" title="Exceptions" value={c.exceptions.total} sub="need a decision" onOpen={() => document.getElementById("monitor-feed")?.scrollIntoView({ behavior: "smooth" })}>
+          <Card testid="card-exceptions" title="Exceptions" value={c.exceptions.total} sub="need a decision" onOpen={() => openCard("exceptions")}>
             <Line label="High" value={c.exceptions.high} cls={c.exceptions.high ? "text-red-700" : ""} />
             <Line label="Medium" value={c.exceptions.medium} />
             <Line label="Low" value={c.exceptions.low} />
@@ -399,7 +404,7 @@ export default function SalesMonitor() {
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       {p.planStatus ? (
                         <span className={p.planStatus.submitted ? (p.planStatus.approval === "rejected" ? "text-red-700" : "text-gray-700") : "text-red-700"}>
-                          {p.planStatus.submitted ? `${p.planStatus.timing === "submitted late" ? "late" : "on time"} · ${p.planStatus.approval}` : "missing"}
+                          {p.planStatus.submitted ? `${p.planStatus.timing === "submitted late" ? "late" : "on time"} · ${p.planStatus.approval}` : p.planStatus.approval === "rejected" ? "rejected" : "missing"}
                         </span>
                       ) : "—"}
                     </td>
@@ -551,6 +556,8 @@ export default function SalesMonitor() {
           onClose={() => setDrill(null)}
           scopeLabel={model.division?.name || "company"}
           children={drill.children || null}
+          tabs={drill.tabs || null}
+          exportInfo={drill.tabs ? { prefix: "Sales Monitor", card: drill.card || drill.label, period } : null}
         />
       )}
     </div>

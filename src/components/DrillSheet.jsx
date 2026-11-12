@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+// Session 36: tabs, search and an .xlsx export — only when `tabs` is passed.
+import { resolveTabs, defaultSelection, excelRows, exportFileName } from "utils/drillTabs";
+import { exportToExcel } from "utils/exportUtils";
 
 /**
  * THE DRILL-DOWN SHEET — one implementation, used by every screen that has
@@ -309,8 +312,36 @@ export default function DrillSheet({
   place = [],          // where the sheet already starts, e.g. a person's name
   explain = null,      // string, per-depth array, or ({ depth, node }) => string
   levelHints = null,   // per-depth array: how this level is grouped / what a click does
+  // ── session 36: tabs inside the sheet (utils/drillTabs.js) ──
+  // Absent = the sheet is exactly what it was. Present = a row of tab buttons
+  // with counts, a search box and an .xlsx export of what is on screen; the
+  // tab's rows replace `children` / `rows` / `total` / `columns` / `unit`.
+  tabs = null,
+  exportInfo = null,   // { prefix, card, period } for the .xlsx file name
 }) {
   const [path, setPath] = useState([]);
+  // The tab, the search and the level live here, so they hold while the
+  // sheet is open and are gone when it closes (it unmounts).
+  const [selection, setSelection] = useState(() => (tabs ? defaultSelection(tabs) : []));
+  const [query, setQuery] = useState("");
+  const resolved = tabs ? resolveTabs(tabs, selection, query) : null;
+  if (resolved) {
+    /* eslint-disable no-param-reassign */
+    total = resolved.total;
+    tree = resolved.children;
+    rows = resolved.children ? null : resolved.rows;
+    columns = resolved.cfg.columns || columns;
+    unit = resolved.cfg.unit || unit;
+    explain = resolved.cfg.explain || explain;
+    groupLabels = resolved.cfg.groupLabels || groupLabels;
+    /* eslint-enable no-param-reassign */
+  }
+  const pickTab = (setIndex, optionId) => {
+    const next = [...(selection.length ? selection : defaultSelection(tabs))];
+    next[setIndex] = optionId;
+    setSelection(next);
+    setPath([]);
+  };
   const panelRef = useRef(null);
 
   // Esc closes, and the panel takes focus so a keyboard user is inside it.
@@ -322,13 +353,31 @@ export default function DrillSheet({
   }, [onClose]);
 
   const root = { id: "__root", name: label, total, children: tree, rows };
+  // A search can remove the group the reader had opened: step back to the
+  // deepest level that still exists rather than show a stale one.
+  const validDepth = (() => {
+    let n = root;
+    let k = 0;
+    for (const id of path) {
+      const c = (n.children || []).find((x) => x.id === id);
+      if (!c) break;
+      n = c;
+      k += 1;
+    }
+    return k;
+  })();
+  useEffect(() => {
+    if (validDepth < path.length) setPath(path.slice(0, validDepth));
+  }, [validDepth, path]);
   const node = nodeAt(root, path);
   const atLeaf = !node.children || node.children.length === 0;
   const leafRows = atLeaf ? (node.rows || []) : [];
   const cols = columnsAt(root, path, columns);
 
+  const tabLabels = resolved ? resolved.labels : [];
   const crumbs = [
     { label, onClick: () => setPath([]) },
+    ...tabLabels.map((l) => ({ label: l, onClick: path.length ? () => setPath([]) : null })),
     ...path.map((id, i) => ({
       label: nodeAt(root, path.slice(0, i + 1)).name,
       onClick: i === path.length - 1 ? null : () => setPath(path.slice(0, i + 1)),
@@ -338,7 +387,7 @@ export default function DrillSheet({
   const groupHint = groupLabels[path.length] || null;
 
   // THE TITLE: what, when, and every place opened on the way down.
-  const placeNames = [...(place || []), ...path.map((_, i) => nodeAt(root, path.slice(0, i + 1)).name)];
+  const placeNames = [...(place || []), ...tabLabels, ...path.map((_, i) => nodeAt(root, path.slice(0, i + 1)).name)];
   const what = title || label;
   const fullTitle = [
     period ? `${what} — ${period}` : what,
@@ -410,11 +459,63 @@ export default function DrillSheet({
             {note && path.length === 0 && (
               <p className="mt-1 text-[11px] text-gray-500">{note}</p>
             )}
+            {resolved && (
+              <div className="mt-2 space-y-1.5" data-testid="drill-tabs">
+                {resolved.sets.map((set, i) => (
+                  <div key={set.id} role="tablist" aria-label={set.id} className="flex gap-1 overflow-x-auto flex-nowrap pb-1 -mx-1 px-1">
+                    {set.options.map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={o.active}
+                        data-testid={`drill-tab-${set.id}-${o.id}`}
+                        title={o.hint || undefined}
+                        onClick={() => pickTab(i, o.id)}
+                        className={`flex-shrink-0 whitespace-nowrap text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                          o.active
+                            ? "bg-gray-900 text-white border-gray-900"
+                            : o.count === 0
+                              ? "border-gray-200 text-gray-400 bg-gray-50"
+                              : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        {o.label} <span className="font-mono">{o.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+                {resolved.hints.length > 0 && (
+                  <p data-testid="drill-tab-hint" className="text-[11px] text-gray-600 leading-snug">{resolved.hints.join(" ")}</p>
+                )}
+                <input
+                  type="search"
+                  data-testid="drill-search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search salesman, customer, invoice or deal"
+                  aria-label="Search this list"
+                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs"
+                />
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             <button
               type="button"
-              onClick={() => exportRows({
+              data-testid={resolved ? "drill-export" : undefined}
+              onClick={() => (resolved ? exportToExcel(
+                [{
+                  name: label,
+                  data: atLeaf
+                    ? excelRows(leafRows, cols, unit)
+                    : node.children.map((c) => ({
+                      [groupHint ? groupHint.replace(/^By /i, "") : "Name"]: c.name,
+                      [unit === "SAR" ? `${label} (SAR)` : `${label} (${unit})`]: Number(c.total) || 0,
+                    })),
+                }],
+                exportFileName({ ...(exportInfo || {}), card: exportInfo?.card || label, tabLabels, period: exportInfo?.period || period }),
+              ) : exportRows({
                 title: fullTitle,
                 segment: label,
                 columns: atLeaf
@@ -425,7 +526,7 @@ export default function DrillSheet({
                   ],
                 rows: atLeaf ? leafRows : node.children,
                 scopeLabel: path.length ? node.name : scopeLabel,
-              })}
+              }))}
               className="text-[11px] px-2 py-1 rounded border border-gray-200 hover:bg-gray-50"
             >
               Export to Excel
