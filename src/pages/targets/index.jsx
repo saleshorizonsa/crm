@@ -7,6 +7,10 @@ import SalesTargetTable from "components/SalesTargetTable";
 import Icon from "components/AppIcon";
 import { useAuth } from "contexts/AuthContext";
 import { salesTargetService, userService } from "services/supabaseService";
+// Session 35: the Dashboards' own targets views, for the roles that used to
+// assign targets only there.
+import DirectorDashboard from "pages/company-dashboard/components/DirectorDashboard";
+import EnhancedManagerDashboard from "pages/company-dashboard/components/EnhancedManagerDashboard";
 
 /**
  * /targets — WHERE A SUPERVISOR ASSIGNS TARGETS TO HIS SALESMEN.
@@ -21,13 +25,47 @@ import { salesTargetService, userService } from "services/supabaseService";
  * DirectorSalesTargetAssignment render that banner inside themselves; the
  * supervisor's component never did, so the page provides it.
  *
- * MANAGERS ARE NOT SENT HERE. They assign through
- * ManagerSalesTargetAssignment, a different component on a Dashboard they
- * keep, so moving them would give them two places rather than one. If that
- * changes, this page is where they belong: add the role to TARGETS_PAGE_ROLES
- * and render their component beside the supervisor's.
+ * SINCE SESSION 35 (2026-11-12) DIRECTOR, HEAD, ADMIN AND MANAGER ARE SENT
+ * HERE TOO, so the Dashboard can be hidden without losing target assignment.
+ * They get their OWN Dashboard's targets view — DirectorDashboard (director,
+ * head, admin) or EnhancedManagerDashboard (manager) rendered with
+ * targetsOnly — the same component, state, reads and rules as on the
+ * Dashboard, not a second implementation. A supervisor's page is unchanged.
  */
+const DIRECTOR_TARGET_ROLES = ["director", "head", "admin"];
+
 export default function TargetsPage() {
+  const { company, userProfile } = useAuth();
+  const role = userProfile?.role;
+  if (DIRECTOR_TARGET_ROLES.includes(role) || role === "manager") {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5" data-testid="targets-page-dashboard-view">
+          <NavigationBreadcrumbs
+            items={[
+              { label: "Home", href: "/" },
+              { label: "Targets", href: "/targets" },
+            ]}
+          />
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Targets</h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Assign targets and follow what has been assigned — the same tools as the Dashboard&apos;s targets tab.
+            </p>
+          </div>
+          {role === "manager"
+            ? <EnhancedManagerDashboard targetsOnly />
+            : <DirectorDashboard company={company} targetsOnly />}
+        </div>
+      </div>
+    );
+  }
+  return <SupervisorTargetsPage />;
+}
+
+/** The supervisor's page, exactly as it was before session 35. */
+function SupervisorTargetsPage() {
   const { user, company, userProfile } = useAuth();
 
   const [myTargets, setMyTargets] = useState([]);
