@@ -51,19 +51,42 @@ const OUTCOME_STYLE = {
 };
 
 /** A card that opens its drill. */
-function Card({ title, value, sub, children, onOpen, testid }) {
+function Card({ title, value, sub, children, onOpen, testid, wide = false }) {
   return (
     <button
       type="button"
       onClick={onOpen}
       data-testid={testid}
-      className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-400 hover:shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-w-0"
+      className={`text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-400 hover:shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-w-0 ${wide ? "w-full sm:flex sm:items-center sm:gap-8" : ""}`}
     >
       <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{title}</div>
       <div className="mt-1 text-xl font-semibold font-mono text-gray-900 break-words">{value}</div>
       {sub && <div className="mt-0.5 text-xs text-gray-600">{sub}</div>}
-      {children && <div className="mt-2 text-xs text-gray-700 space-y-0.5">{children}</div>}
+      {children && <div className={wide ? "mt-2 sm:mt-0 text-xs text-gray-700 flex flex-wrap gap-x-6 gap-y-0.5 [&>*]:gap-2" : "mt-2 text-xs text-gray-700 space-y-0.5"}>{children}</div>}
     </button>
+  );
+}
+
+/**
+ * ONE STAGE OF THE SALES PROCESS (session 38, CEO 2026-11-15): a numbered
+ * header, an arrow to the next stage (right on a wide screen, down on a phone,
+ * where the stages stack in the same order), and that stage's cards.
+ */
+function Stage({ n, name, testid, arrow = false, children }) {
+  return (
+    <div data-testid={testid} className="flex flex-col gap-3 min-w-0">
+      <div className="flex items-center gap-2">
+        <span className="w-6 h-6 rounded-full bg-gray-900 text-white text-xs font-semibold flex items-center justify-center flex-shrink-0">{n}</span>
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">{name}</h2>
+        {arrow && (
+          <span aria-hidden="true" data-testid={`${testid}-arrow`} className="ml-auto text-gray-400 text-lg leading-none">
+            <span className="hidden lg:inline">→</span>
+            <span className="lg:hidden">↓</span>
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
   );
 }
 
@@ -166,9 +189,9 @@ export default function SalesMonitor() {
     target: "Target", planned: "Planned", planStatus: "Plan submission", achieved: "Achieved",
     fromPlan: "From plan vs outside plan", outcomes: "Plan outcomes", visits: "Visits", exceptions: "Exceptions",
   };
-  const openCard = (key) => {
+  const openCard = (key, initialSelection = null) => {
     const node = model?.drills?.[key];
-    if (node) setDrill({ ...node, title: node.label, place, card: CARD_TITLES[key] || node.label });
+    if (node) setDrill({ ...node, title: node.label, place, card: CARD_TITLES[key] || node.label, initialSelection });
   };
 
   const openPerson = (id) => {
@@ -300,66 +323,84 @@ export default function SalesMonitor() {
           </div>
         )}
 
-        {/* ── A. top cards ── */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3" aria-label="Summary">
-          <Card testid="card-target" title="Target" value={money(c.target.total)} sub={c.target.span} onOpen={() => openCard("target")}>
-            <Line label="People with a target" value={model.people.filter((p) => p.target > 0).length} />
-          </Card>
-          <Card testid="card-planned" title="Planned" value={`${c.planned.submitted === null ? NO_FIGURE : money(c.planned.submitted)} · ${money(c.planned.total)}`} sub="submitted · plan now" onOpen={() => openCard("planned")}>
-            <Line label={`Submitted (${c.planned.submittedPeople} of ${c.planned.planHolders} plans)`} value={c.planned.submitted === null ? NO_FIGURE : money(c.planned.submitted)} />
-            <Line label="Plan now (open + live deal)" value={money(c.planned.total)} />
-            <Line label="Plan now, % of target" value={fmtPct(c.planned.pctOfTarget, 0)} />
-            {c.planned.required ? (
-              <>
-                <div data-testid="required-submitted">
-                  <Line label={`Required, from ${c.planned.required.submitted.count} submitted plan${c.planned.required.submitted.count === 1 ? "" : "s"}`} value={money(c.planned.required.submitted.required)} />
-                  <Line label="… their plan now, % of it" value={fmtPct(c.planned.required.submitted.pct, 0)} />
-                </div>
-                {c.planned.required.estimated.count > 0 && (
-                  <div data-testid="required-estimated">
-                    <Line label={`Required (estimated for ${c.planned.required.estimated.count} not submitted)`} value={money(c.planned.required.estimated.required)} />
-                    <Line label="… their plan now, % of it" value={fmtPct(c.planned.required.estimated.pct, 0)} />
+        {/* ── A. THE SALES PROCESS (session 38, CEO 2026-11-15) ──
+            Target → Planned → Visits → Achieved, each card under its stage.
+            The cards are the ones this page always had, moved, not changed. */}
+        <section aria-label="Sales process" data-testid="monitor-stages" className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          <Stage n={1} name="Target" testid="stage-target" arrow>
+            <Card testid="card-target" title="Target" value={money(c.target.total)} sub={c.target.span} onOpen={() => openCard("target")}>
+              <Line label="People with a target" value={model.people.filter((p) => p.target > 0).length} />
+            </Card>
+          </Stage>
+          <Stage n={2} name="Planned" testid="stage-planned" arrow>
+            <Card testid="card-plan-status" title="Plan submission" value={c.planStatus.loaded ? `${c.planStatus.onTime + c.planStatus.late} of ${c.planStatus.people}` : NO_FIGURE} sub="submitted" onOpen={() => openCard("planStatus")}>
+              {c.planStatus.loaded ? (
+                <>
+                  <Line label="On time / late" value={`${c.planStatus.onTime} / ${c.planStatus.late}`} />
+                  <Line label="Not submitted" value={c.planStatus.missing} cls={c.planStatus.missing ? "text-red-700" : ""} />
+                  <Line label="Approved / rejected" value={`${c.planStatus.approved} / ${c.planStatus.rejected}`} />
+                </>
+              ) : <p className="text-amber-700">Plan submissions could not be read.</p>}
+            </Card>
+            <Card testid="card-planned" title="Planned" value={`${c.planned.submitted === null ? NO_FIGURE : money(c.planned.submitted)} · ${money(c.planned.total)}`} sub="submitted · plan now" onOpen={() => openCard("planned")}>
+              <Line label={`Submitted (${c.planned.submittedPeople} of ${c.planned.planHolders} plans)`} value={c.planned.submitted === null ? NO_FIGURE : money(c.planned.submitted)} />
+              <Line label="Plan now (open + live deal)" value={money(c.planned.total)} />
+              <Line label="Plan now, % of target" value={fmtPct(c.planned.pctOfTarget, 0)} />
+              {c.planned.required ? (
+                <>
+                  <div data-testid="required-submitted">
+                    <Line label={`Required, from ${c.planned.required.submitted.count} submitted plan${c.planned.required.submitted.count === 1 ? "" : "s"}`} value={money(c.planned.required.submitted.required)} />
+                    <Line label="… their plan now, % of it" value={fmtPct(c.planned.required.submitted.pct, 0)} />
                   </div>
-                )}
-              </>
-            ) : <Line label="Required" value={NO_FIGURE} />}
-            <p className="text-[11px] text-gray-500 pt-1" data-testid="planned-explain">Submitted = the total on each plan when it was filed. Plan now = the month's plan items today that are still open or became a live deal. Required from submitted plans = each plan's own required plan, as filed. Estimated = for each person with no submitted plan, today's gap to target ÷ their conversion rate.</p>
-            <p className="text-[11px] text-gray-500" data-testid="company-required">Insights' company required pipeline, for comparison only: {money(c.planned.companyRequired.value)} = (target {money(c.planned.companyRequired.target)} − achieved {money(c.planned.companyRequired.achieved)}) ÷ {fmtPct(c.planned.companyRequired.winRatePct, 1)} conversion.</p>
-          </Card>
-          <Card testid="card-plan-status" title="Plan submission" value={c.planStatus.loaded ? `${c.planStatus.onTime + c.planStatus.late} of ${c.planStatus.people}` : NO_FIGURE} sub="submitted" onOpen={() => openCard("planStatus")}>
-            {c.planStatus.loaded ? (
-              <>
-                <Line label="On time / late" value={`${c.planStatus.onTime} / ${c.planStatus.late}`} />
-                <Line label="Not submitted" value={c.planStatus.missing} cls={c.planStatus.missing ? "text-red-700" : ""} />
-                <Line label="Approved / rejected" value={`${c.planStatus.approved} / ${c.planStatus.rejected}`} />
-              </>
-            ) : <p className="text-amber-700">Plan submissions could not be read.</p>}
-          </Card>
-          <Card testid="card-achieved" title="Achieved" value={money(c.achieved.total)} sub={`${fmtPct(c.achieved.pctOfTarget, 0)} of target`} onOpen={() => openCard("achieved")}>
-            {c.achieved.isCurrent
-              ? <Line label="Month elapsed" value={fmtPct(c.achieved.elapsedPct, 0)} cls={c.achieved.pacingOk ? "text-emerald-700" : "text-red-700"} />
-              : <Line label="Month closed" value="—" />}
-            {c.achieved.returns > 0 && <Line label="Returns" value={`−${money(c.achieved.returns)}`} />}
-          </Card>
-          <Card testid="card-from-plan" title="From plan vs outside plan" value={money(c.fromPlan.fromPlan)} sub={`from this month's plan · ${fmtPct(c.fromPlan.fromPlanPct, 0)} of invoiced`} onOpen={() => openCard("fromPlan")}>
-            <Line label="Outside plan" value={money(c.fromPlan.outsidePlan)} />
-            {c.fromPlan.returns > 0 && <Line label="Returns" value={`−${money(c.fromPlan.returns)}`} />}
-          </Card>
-          <Card testid="card-outcomes" title="Plan outcomes" value={`${c.outcomes.total.count} items`} sub={`achieved from plan ${fmtPct(c.outcomes.achievedFromPlanPct, 0)}`} onOpen={() => openCard("outcomes")}>
-            {outcomeLabels.map((l) => (
-              <div key={l} title={OUTCOME_HELP[l]}>
-                <Line label={l} value={`${c.outcomes[l].count} · ${money(c.outcomes[l].value)}`} cls={OUTCOME_STYLE[l]} />
-              </div>
-            ))}
-            <p className="text-[11px] text-gray-500 pt-1" data-testid="outcomes-explain">
-              {outcomeLabels.map((l) => `${l}: ${OUTCOME_HELP[l].toLowerCase()}`).join(" · ")}.
-            </p>
-          </Card>
-          <Card testid="card-visits" title="Visits" value={`${c.visits.today.count} · ${c.visits.mtd.count}`} sub={`${shortDay(c.visits.day)} · month to date`} onOpen={() => openCard("visits")}>
-            <Line label="To planned customers (MTD)" value={fmtPct(c.visits.mtd.inPlanPct, 0)} />
-            <Line label="+ / = / −" value={`${c.visits.mtd.responses.positive} / ${c.visits.mtd.responses.neutral} / ${c.visits.mtd.responses.negative}`} />
-          </Card>
-          <Card testid="card-exceptions" title="Exceptions" value={c.exceptions.total} sub="need a decision" onOpen={() => openCard("exceptions")}>
+                  {c.planned.required.estimated.count > 0 && (
+                    <div data-testid="required-estimated">
+                      <Line label={`Required (estimated for ${c.planned.required.estimated.count} not submitted)`} value={money(c.planned.required.estimated.required)} />
+                      <Line label="… their plan now, % of it" value={fmtPct(c.planned.required.estimated.pct, 0)} />
+                    </div>
+                  )}
+                </>
+              ) : <Line label="Required" value={NO_FIGURE} />}
+              <p className="text-[11px] text-gray-500 pt-1" data-testid="planned-explain">Submitted = the total on each plan when it was filed. Plan now = the month's plan items today that are still open or became a live deal. Required from submitted plans = each plan's own required plan, as filed. Estimated = for each person with no submitted plan, today's gap to target ÷ their conversion rate.</p>
+              <p className="text-[11px] text-gray-500" data-testid="company-required">Insights' company required pipeline, for comparison only: {money(c.planned.companyRequired.value)} = (target {money(c.planned.companyRequired.target)} − achieved {money(c.planned.companyRequired.achieved)}) ÷ {fmtPct(c.planned.companyRequired.winRatePct, 1)} conversion.</p>
+            </Card>
+          </Stage>
+          <Stage n={3} name="Visits" testid="stage-visits" arrow>
+            <Card testid="card-visits" title="Visits" value={`${c.visits.today.count} · ${c.visits.mtd.count}`} sub={`${shortDay(c.visits.day)} · month to date`} onOpen={() => openCard("visits")}>
+              <Line label="To planned customers (MTD)" value={fmtPct(c.visits.mtd.inPlanPct, 0)} />
+              <Line label="+ / = / −" value={`${c.visits.mtd.responses.positive} / ${c.visits.mtd.responses.neutral} / ${c.visits.mtd.responses.negative}`} />
+            </Card>
+            <Card testid="card-planned-visited" title="Planned customers visited" value={`${c.visits.plannedVisited} of ${c.visits.plannedCustomers}`} sub="month to date" onOpen={() => openCard("visits", ["notVisited"])}>
+              <Line label="Visited" value={c.visits.plannedVisited} />
+              <Line label="Not visited" value={c.visits.plannedCustomers - c.visits.plannedVisited} cls={c.visits.plannedCustomers - c.visits.plannedVisited ? "text-red-700" : ""} />
+            </Card>
+          </Stage>
+          <Stage n={4} name="Achieved" testid="stage-achieved">
+            <Card testid="card-achieved" title="Achieved" value={money(c.achieved.total)} sub={`${fmtPct(c.achieved.pctOfTarget, 0)} of target`} onOpen={() => openCard("achieved")}>
+              {c.achieved.isCurrent
+                ? <Line label="Month elapsed" value={fmtPct(c.achieved.elapsedPct, 0)} cls={c.achieved.pacingOk ? "text-emerald-700" : "text-red-700"} />
+                : <Line label="Month closed" value="—" />}
+              {c.achieved.returns > 0 && <Line label="Returns" value={`−${money(c.achieved.returns)}`} />}
+            </Card>
+            <Card testid="card-from-plan" title="From plan vs outside plan" value={money(c.fromPlan.fromPlan)} sub={`from this month's plan · ${fmtPct(c.fromPlan.fromPlanPct, 0)} of invoiced`} onOpen={() => openCard("fromPlan")}>
+              <Line label="Outside plan" value={money(c.fromPlan.outsidePlan)} />
+              {c.fromPlan.returns > 0 && <Line label="Returns" value={`−${money(c.fromPlan.returns)}`} />}
+            </Card>
+            <Card testid="card-outcomes" title="Plan outcomes" value={`${c.outcomes.total.count} items`} sub={`achieved from plan ${fmtPct(c.outcomes.achievedFromPlanPct, 0)}`} onOpen={() => openCard("outcomes")}>
+              {outcomeLabels.map((l) => (
+                <div key={l} title={OUTCOME_HELP[l]}>
+                  <Line label={l} value={`${c.outcomes[l].count} · ${money(c.outcomes[l].value)}`} cls={OUTCOME_STYLE[l]} />
+                </div>
+              ))}
+              <p className="text-[11px] text-gray-500 pt-1" data-testid="outcomes-explain">
+                {outcomeLabels.map((l) => `${l}: ${OUTCOME_HELP[l].toLowerCase()}`).join(" · ")}.
+              </p>
+            </Card>
+          </Stage>
+        </section>
+
+        {/* Under the four stages: Exceptions, full width. */}
+        <section aria-label="Exceptions summary">
+          <Card wide testid="card-exceptions" title="Exceptions" value={c.exceptions.total} sub="need a decision" onOpen={() => openCard("exceptions")}>
             <Line label="High" value={c.exceptions.high} cls={c.exceptions.high ? "text-red-700" : ""} />
             <Line label="Medium" value={c.exceptions.medium} />
             <Line label="Low" value={c.exceptions.low} />
@@ -370,26 +411,34 @@ export default function SalesMonitor() {
         <section className="bg-white border border-gray-200 rounded-xl" aria-label="Salesman scoreboard">
           <div className="px-4 py-3 border-b border-gray-100">
             <h2 className="text-base font-semibold text-gray-900">Salesman scoreboard</h2>
-            <p className="text-xs text-gray-600">Exceptions first. Click a column to sort, a row to open the salesman. Submitted plan = the total on the plan as filed; Plan now = its items today (open or a live deal), as % of the submitted required plan, or of an estimate ("est.") where none was submitted. Coverage = (open deals due + open plan) ÷ (target − achieved).</p>
+            <p className="text-xs text-gray-600">Columns follow the process: target, plan, visits, achieved. Exceptions first. Click a column to sort, a row to open the salesman. Submitted plan = the total on the plan as filed; Plan now = its items today (open or a live deal), as % of the submitted required plan, or of an estimate ("est.") where none was submitted. Coverage = (open deals due + open plan) ÷ (target − achieved).</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1420px] text-xs" data-testid="monitor-scoreboard">
               <thead className="bg-gray-50">
+                <tr data-testid="scoreboard-bands">
+                  <th scope="colgroup" colSpan={2} data-testid="band-who" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 sticky left-0 bg-gray-50 z-10"></th>
+                  <th scope="colgroup" colSpan={1} data-testid="band-target" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Target</th>
+                  <th scope="colgroup" colSpan={4} data-testid="band-planned" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Planned</th>
+                  <th scope="colgroup" colSpan={2} data-testid="band-visits" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Visits</th>
+                  <th scope="colgroup" colSpan={4 + outcomeLabels.length} data-testid="band-achieved" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Achieved</th>
+                  <th scope="colgroup" colSpan={1} data-testid="band-who" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200"></th>
+                </tr>
                 <tr>
                   <Th k="name" left>Salesman</Th>
                   <Th>Division</Th>
                   <Th k="target">Target</Th>
+                  <Th>Plan status</Th>
                   <Th k="submitted">Submitted plan</Th>
                   <Th k="planned">Plan now (% req.)</Th>
-                  <Th>Plan status</Th>
+                  <Th k="coverage">Coverage</Th>
+                  <Th k="visits">Visits MTD (% planned)</Th>
+                  <Th k="lastVisit">Last visit</Th>
                   <Th k="achieved">Achieved</Th>
                   <Th k="achievedPct">% target</Th>
                   <Th k="fromPlan">From / outside plan</Th>
                   {outcomeLabels.map((l) => <Th key={l} k={OUTCOME_KEY[l]} help={OUTCOME_HELP[l]}>{l}</Th>)}
                   <Th k="wni">Won not invoiced</Th>
-                  <Th k="visits">Visits MTD (% planned)</Th>
-                  <Th k="lastVisit">Last visit</Th>
-                  <Th k="coverage">Coverage</Th>
                   <Th k="exceptions">Exceptions</Th>
                 </tr>
               </thead>
@@ -399,8 +448,6 @@ export default function SalesMonitor() {
                     <td className="px-2 py-2 sticky left-0 bg-white group-hover:bg-gray-50 font-medium text-gray-900 whitespace-nowrap">{p.name}</td>
                     <td className="px-2 py-2 text-right text-gray-600">{p.division}</td>
                     <td className="px-2 py-2 text-right font-mono">{money(p.target)}</td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title="total_planned on the plan as filed">{p.submittedPlanned === null ? NO_FIGURE : money(p.submittedPlanned)}</td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title={p.requiredSource === "submitted" ? `open + live-deal plan items today, as % of the submitted required plan ${money(p.requiredPlan)}` : p.requiredSource === "estimated" ? `open + live-deal plan items today, as % of an ESTIMATED required plan ${money(p.requiredPlan)} (no submitted plan): gap to target ÷ conversion rate` : "open + live-deal plan items today"}>{money(p.planned)} <span className="text-gray-500">({fmtPct(p.plannedPctOfRequired, 0)}{p.requiredSource === "estimated" ? " est." : ""})</span></td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       {p.planStatus ? (
                         <span className={p.planStatus.submitted ? (p.planStatus.approval === "rejected" ? "text-red-700" : "text-gray-700") : "text-red-700"}>
@@ -408,6 +455,11 @@ export default function SalesMonitor() {
                         </span>
                       ) : "—"}
                     </td>
+                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title="total_planned on the plan as filed">{p.submittedPlanned === null ? NO_FIGURE : money(p.submittedPlanned)}</td>
+                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title={p.requiredSource === "submitted" ? `open + live-deal plan items today, as % of the submitted required plan ${money(p.requiredPlan)}` : p.requiredSource === "estimated" ? `open + live-deal plan items today, as % of an ESTIMATED required plan ${money(p.requiredPlan)} (no submitted plan): gap to target ÷ conversion rate` : "open + live-deal plan items today"}>{money(p.planned)} <span className="text-gray-500">({fmtPct(p.plannedPctOfRequired, 0)}{p.requiredSource === "estimated" ? " est." : ""})</span></td>
+                    <td className="px-2 py-2 text-right font-mono">{p.coverageMet ? "met" : p.coverageRatio === null ? NO_FIGURE : `${p.coverageRatio.toFixed(2)}×`}</td>
+                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{p.visitsMtd} <span className="text-gray-500">({fmtPct(p.visitsMtdInPlanPct, 0)})</span></td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap">{shortDay(p.lastVisit)}</td>
                     <td className="px-2 py-2 text-right font-mono">{money(p.achieved)}</td>
                     <td className="px-2 py-2 text-right font-mono">{fmtPct(p.achievedPct, 0)}</td>
                     <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{money(p.fromPlan)} / {money(p.outsidePlan)}</td>
@@ -415,9 +467,6 @@ export default function SalesMonitor() {
                       <td key={l} data-testid={`out-${l}`} className={`px-2 py-2 text-right font-mono ${p.outcomes[l].count ? OUTCOME_STYLE[l] : "text-gray-300"}`} title={`${l}: ${money(p.outcomes[l].value)} planned`}>{p.outcomes[l].count}</td>
                     ))}
                     <td className="px-2 py-2 text-right font-mono">{money(p.wonNotInvoiced)}</td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{p.visitsMtd} <span className="text-gray-500">({fmtPct(p.visitsMtdInPlanPct, 0)})</span></td>
-                    <td className="px-2 py-2 text-right whitespace-nowrap">{shortDay(p.lastVisit)}</td>
-                    <td className="px-2 py-2 text-right font-mono">{p.coverageMet ? "met" : p.coverageRatio === null ? NO_FIGURE : `${p.coverageRatio.toFixed(2)}×`}</td>
                     <td className={`px-2 py-2 text-right font-mono ${p.exceptions ? "text-red-700 font-semibold" : "text-gray-400"}`}>{p.exceptions}</td>
                   </tr>
                 ))}
@@ -557,6 +606,7 @@ export default function SalesMonitor() {
           scopeLabel={model.division?.name || "company"}
           children={drill.children || null}
           tabs={drill.tabs || null}
+          initialSelection={drill.initialSelection || null}
           exportInfo={drill.tabs ? { prefix: "Sales Monitor", card: drill.card || drill.label, period } : null}
         />
       )}

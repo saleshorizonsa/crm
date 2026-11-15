@@ -318,11 +318,17 @@ export default function DrillSheet({
   // tab's rows replace `children` / `rows` / `total` / `columns` / `unit`.
   tabs = null,
   exportInfo = null,   // { prefix, card, period } for the .xlsx file name
+  // session 38: open on a given tab (option id per set); absent = the first.
+  initialSelection = null,
 }) {
   const [path, setPath] = useState([]);
   // The tab, the search and the level live here, so they hold while the
   // sheet is open and are gone when it closes (it unmounts).
-  const [selection, setSelection] = useState(() => (tabs ? defaultSelection(tabs) : []));
+  const [selection, setSelection] = useState(() => {
+    if (!tabs) return [];
+    const first = defaultSelection(tabs);
+    return Array.isArray(initialSelection) ? first.map((id, i) => initialSelection[i] ?? id) : first;
+  });
   const [query, setQuery] = useState("");
   const resolved = tabs ? resolveTabs(tabs, selection, query) : null;
   if (resolved) {
