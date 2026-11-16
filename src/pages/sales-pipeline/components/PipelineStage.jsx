@@ -5,6 +5,7 @@ import DealCard from "./DealCard";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
 import { groupDealsByMaterialGroup, getDealOrigin } from "../../../utils/dealGroupUtils";
+import { PIPELINE_STAGE_COLOR } from "utils/pipelineStageColors";
 
 // ─── Grouped view component ───────────────────────────────────────────────────
 
@@ -131,17 +132,8 @@ const PipelineStage = ({
     catch { /* storage unavailable */ }
   }
 
-  const getStageColor = (stageId) => {
-    const map = {
-      lead: "bg-slate-500",
-      contact_made: "bg-blue-500",
-      proposal_sent: "bg-yellow-500",
-      negotiation: "bg-orange-500",
-      won: "bg-green-500",
-      lost: "bg-red-500",
-    };
-    return map[stageId] || "bg-gray-400";
-  };
+  // One map with the Sales Monitor (utils/pipelineStageColors.js, session 42).
+  const getStageColor = (stageId) => PIPELINE_STAGE_COLOR[stageId] || "bg-gray-400";
 
   const totalValue = wonSplit ? wonSplit.total.value : deals.reduce((sum, d) => {
     const convertedAmount = d?.amount || 0;

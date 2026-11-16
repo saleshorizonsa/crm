@@ -13,6 +13,10 @@ import {
   stageHref, monitorHref, levelName,
 } from "utils/stagePages";
 import { actionTarget } from "utils/exceptionActions";
+import {
+  stageColour, SEVERITY_CHIP, OUTCOME_TONE, RESPONSE_TONE, TONE_TEXT, NEXT_STEPS_BOX,
+  toneChip, planStatusTone, paceTone, pipelineStageDot, stageKeyOfLabel,
+} from "utils/monitorColours";
 
 // SALES MONITOR — ONE PAGE PER STAGE (session 39, CEO 2026-11-16).
 //
@@ -30,11 +34,8 @@ const monthTitle = (key) => {
   const [y, m] = String(key).split("-").map(Number);
   return `${MONTH_LONG[m - 1]} ${y}`;
 };
-const SEV_STYLE = {
-  high: "bg-red-50 text-red-700 border-red-200",
-  medium: "bg-amber-50 text-amber-700 border-amber-200",
-  low: "bg-gray-50 text-gray-600 border-gray-200",
-};
+// Session 42: the app's severity colours (utils/monitorColours.js).
+const SEV_STYLE = SEVERITY_CHIP;
 
 /** A figure as the cards show it. */
 const fig = (value, type) => {
@@ -45,6 +46,34 @@ const fig = (value, type) => {
   return String(value);
 };
 const valueText = (v, unit) => (v === null || v === undefined ? "—" : unit === "SAR" ? `${money(v)}${v < 0 ? " CR" : ""}` : String(v));
+
+/**
+ * A cell's text with its status colour (session 42): a pipeline stage gets the
+ * Pipeline's dot, an outcome / plan status / response a pill, a % of target
+ * the pace colour. The text is exactly what it was.
+ */
+function statusCell(key, text, { elapsedPct }) {
+  const chips = (words, sep, toneOf) => {
+    const parts = String(text).split(sep);
+    if (!parts.every((w) => toneOf(w))) return text;
+    return parts.map((w, i) => (
+      <React.Fragment key={`${w}-${i}`}>{i ? sep : ""}<span data-deco="wrap" className={toneChip(toneOf(w))}>{w}</span></React.Fragment>
+    ));
+  };
+  if (key === "stage" || key === "stageNow") {
+    const k = stageKeyOfLabel(text);
+    return k ? <><span data-deco="1" aria-hidden="true" className={`inline-block w-2 h-2 rounded-full mr-1 align-middle ${pipelineStageDot(k)}`} />{text}</> : text;
+  }
+  if (key === "outcome") return chips(text, " / ", (w) => OUTCOME_TONE[w]);
+  if (key === "planStatus") return chips(text, " · ", (w) => planStatusTone(w));
+  if (key === "response") return chips(text, " / ", (w) => RESPONSE_TONE[w]);
+  if (key === "pace") return chips(text, " / ", (w) => ({ "on pace": "green", behind: "red" })[w]);
+  if (key === "achievedPct") {
+    const tone = paceTone(Number(String(text).replace("%", "")), elapsedPct);
+    return tone ? <span data-deco="wrap" className={TONE_TEXT[tone]}>{text}</span> : text;
+  }
+  return text;
+}
 
 export default function StagePage() {
   const { stage: stageParam } = useParams();
@@ -182,6 +211,8 @@ export default function StagePage() {
   );
 
   const activeView = page.views.find((v) => v.active);
+  const SC = stageColour(stage.id);
+  const elapsedPct = model.cards.achieved.isCurrent ? model.cards.achieved.elapsedPct : model.closed ? 100 : 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -225,15 +256,15 @@ export default function StagePage() {
               const on = s.id === stage.id;
               return (
                 <li key={s.id} className="flex items-center gap-1 flex-shrink-0">
-                  {i > 0 && <span aria-hidden="true" className="text-gray-400 px-0.5">{s.n ? "→" : "·"}</span>}
+                  {i > 0 && <span aria-hidden="true" className={`${stageColour(s.id).arrow} px-0.5`}>{s.n ? "→" : "·"}</span>}
                   <button
                     type="button"
                     data-testid={`stagebar-${s.id}`}
                     aria-current={on ? "page" : undefined}
                     onClick={() => navigate(stageHref(s.id, keep))}
-                    className={`flex items-center gap-1.5 whitespace-nowrap text-sm px-3 py-1.5 rounded-full border ${on ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                    className={`flex items-center gap-1.5 whitespace-nowrap text-sm px-3 py-1.5 rounded-full border ${on ? stageColour(s.id).solid : stageColour(s.id).outline}`}
                   >
-                    {s.n && <span className={`w-5 h-5 rounded-full text-[11px] font-semibold flex items-center justify-center ${on ? "bg-white text-gray-900" : "bg-gray-900 text-white"}`}>{s.n}</span>}
+                    {s.n && <span className={`w-5 h-5 rounded-full text-[11px] font-semibold flex items-center justify-center ${on ? "bg-white text-gray-900" : stageColour(s.id).solid}`}>{s.n}</span>}
                     {s.name}
                   </button>
                 </li>
@@ -249,11 +280,22 @@ export default function StagePage() {
         )}
 
         {/* ── the stage's figures in one line ── */}
-        <section aria-label="Summary" data-testid="stage-summary" className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex flex-wrap gap-x-6 gap-y-2">
+        <section aria-label="Summary" data-testid="stage-summary" className="relative overflow-hidden bg-white border border-gray-200 rounded-xl px-4 py-3 flex flex-wrap gap-x-6 gap-y-2">
+          <div data-deco="1" aria-hidden="true" className={`absolute top-0 left-0 right-0 h-1 ${SC.strip}`} />
           {page.summary.map((s) => (
             <div key={s.id} data-testid={`sum-${s.id}`} className="min-w-0">
               <div className="text-[11px] uppercase tracking-wide text-gray-500">{s.label}</div>
-              <div className="font-mono text-base font-semibold text-gray-900">{fig(s.value, s.type)}</div>
+              <div className={`font-mono text-base font-semibold ${SC.text}`}>{fig(s.value, s.type)}</div>
+              {(() => {
+                // A bar for a share ("4 of 8"), in the stage's colour — decoration only.
+                const m = /^(\d+) of (\d+)$/.exec(String(s.value));
+                if (!m || !Number(m[2])) return null;
+                return (
+                  <div data-deco="1" aria-hidden="true" className="mt-1 h-1.5 w-24 rounded-full bg-gray-100 overflow-hidden">
+                    <div className={`h-full rounded-full ${SC.bar}`} style={{ width: `${Math.min(100, (Number(m[1]) / Number(m[2])) * 100)}%` }} />
+                  </div>
+                );
+              })()}
             </div>
           ))}
         </section>
@@ -266,7 +308,7 @@ export default function StagePage() {
                 {page.views.map((v) => (
                   <button key={v.id} type="button" role="tab" aria-selected={v.active} data-testid={`stage-view-${v.id}`}
                     onClick={() => setList({ view: v.id, tab: null, only: null })}
-                    className={`flex-shrink-0 whitespace-nowrap text-sm px-3 py-1 rounded-lg border ${v.active ? "bg-gray-900 text-white border-gray-900" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
+                    className={`flex-shrink-0 whitespace-nowrap text-sm px-3 py-1 rounded-lg border ${v.active ? SC.solid : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
                     {v.label}
                   </button>
                 ))}
@@ -274,7 +316,7 @@ export default function StagePage() {
             )}
             <div className="flex items-baseline gap-2 flex-wrap">
               <h2 className="text-base font-semibold text-gray-900">{activeView.label}</h2>
-              <span className="font-mono text-lg font-semibold text-gray-900" data-testid="stage-total">{valueText(page.total, page.unit)}</span>
+              <span className={`font-mono text-lg font-semibold ${SC.text}`} data-testid="stage-total">{valueText(page.total, page.unit)}</span>
               <span className="text-xs text-gray-500">{page.unit}</span>
             </div>
             {page.explain && <p className="text-xs text-gray-600" data-testid="stage-explain">{page.explain}</p>}
@@ -286,7 +328,7 @@ export default function StagePage() {
                     <button key={o.id} type="button" role="tab" aria-selected={on} title={o.hint || undefined}
                       data-testid={`stage-tab-${set.id}-${o.id}`}
                       onClick={() => { const t = [...page.selection]; t[i] = o.id; setList({ tab: t, only: null }); }}
-                      className={`flex-shrink-0 whitespace-nowrap text-xs px-2.5 py-1 rounded-full border ${on ? "bg-gray-900 text-white border-gray-900" : o.count === 0 ? "border-gray-200 text-gray-400 bg-gray-50" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
+                      className={`flex-shrink-0 whitespace-nowrap text-xs px-2.5 py-1 rounded-full border ${on ? SC.solid : o.count === 0 ? "border-gray-200 text-gray-400 bg-gray-50" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
                       {o.label} <span className="font-mono">{o.count}</span>
                     </button>
                   );
@@ -344,7 +386,7 @@ export default function StagePage() {
                   data-value={node.value ?? ""}
                   data-sum={node.sumKey ? (node.cells?.[node.sumKey] ?? "") : undefined}
                   data-tabrow={node.tabRow ? "true" : undefined}
-                  className={`flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3 py-2 pr-3 ${depth ? "bg-gray-50/60" : ""}`}
+                  className={`flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3 py-2 pr-3 border-l-2 ${kids ? SC.left : "border-l-transparent"} ${depth ? "bg-gray-50/60" : ""}`}
                   style={{ paddingLeft: `${12 + depth * 16}px` }}
                 >
                   <div className="flex items-start gap-2 min-w-0 sm:w-72 sm:flex-shrink-0">
@@ -371,7 +413,7 @@ export default function StagePage() {
                     {cols.filter((c) => !(node.kind === "exception" && c.key === "severity")).map((c) => (
                       <span key={c.key} data-cell={c.key}>
                         <span className="text-gray-500">{c.label}</span>{" "}
-                        <span className="font-mono text-gray-800">{node.cells?.[c.key] === null || node.cells?.[c.key] === undefined || node.cells?.[c.key] === "" ? "—" : c.type ? cellText(node.cells, c) : String(node.cells[c.key])}</span>
+                        <span className="font-mono text-gray-800">{node.cells?.[c.key] === null || node.cells?.[c.key] === undefined || node.cells?.[c.key] === "" ? "—" : statusCell(c.key, c.type ? cellText(node.cells, c) : String(node.cells[c.key]), { elapsedPct })}</span>
                       </span>
                     ))}
                   </div>
@@ -394,25 +436,25 @@ export default function StagePage() {
         </section>
 
         {/* ── next steps, from this page's own rows ── */}
-        <section aria-label="Next steps" data-testid="stage-next-steps" className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-          <h2 className="text-base font-semibold text-gray-900">Next steps</h2>
+        <section aria-label="Next steps" data-testid="stage-next-steps" className={`${NEXT_STEPS_BOX} rounded-xl px-4 py-3`}>
+          <h2 className="text-base font-semibold text-amber-800">Next steps</h2>
           {page.nextSteps.length ? (
             <ul className="mt-2 space-y-1.5">
               {page.nextSteps.map((s) => (
                 <li key={s.id} data-testid={`next-${s.id}`} data-count={s.count} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-sm">
                   <button type="button" data-testid={`next-link-${s.id}`}
                     onClick={() => { setList({ view: s.link.view, tab: s.link.tab, only: s.link.only || null }); setQuery(""); setRowDivision(""); }}
-                    className="text-left text-blue-800 hover:underline">
+                    className="text-left text-amber-800 underline decoration-amber-300 hover:decoration-amber-700">
                     {s.text}
                   </button>
                   {s.external && (
                     <button type="button" data-testid={`next-external-${s.id}`} onClick={() => navigate({ pathname: s.external.path, hash: s.external.hash || "" })}
-                      className="self-start text-[11px] px-2 py-0.5 rounded border border-blue-300 text-blue-800 hover:bg-blue-50 whitespace-nowrap">{s.external.label}</button>
+                      className="self-start text-[11px] px-2 py-0.5 rounded border border-amber-300 bg-white text-amber-800 hover:bg-amber-100 whitespace-nowrap">{s.external.label}</button>
                   )}
                 </li>
               ))}
             </ul>
-          ) : <p className="mt-1 text-sm text-gray-500" data-testid="next-none">Nothing to act on in this stage.</p>}
+          ) : <p className="mt-1 text-sm text-amber-700" data-testid="next-none">Nothing to act on in this stage.</p>}
         </section>
       </main>
 

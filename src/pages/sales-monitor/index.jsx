@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import DailyVisitsList from "components/DailyVisitsList";
 import { useAuth } from "contexts/AuthContext";
@@ -18,6 +18,9 @@ import {
 import { THRESHOLDS } from "utils/salesMonitorThresholds";
 import { CARD_LINK, stageHref } from "utils/stagePages";
 import { exceptionAction, actionTarget } from "utils/exceptionActions";
+import {
+  STAGE_COLOURS, SEVERITY_CHIP, OUTCOME_TEXT, TONE_TEXT, toneChip, planStatusTone, paceTone, pipelineStageDot,
+} from "utils/monitorColours";
 
 // SALES MONITOR (/sales-monitor) — session 34, CEO / Director Nader 2026-11-10.
 //
@@ -40,29 +43,27 @@ const dayTitle = (d) => {
 };
 const shortDay = (d) => (d ? dayTitle(d) : "—");
 
-const SEV_STYLE = {
-  high: "bg-red-50 text-red-700 border-red-200",
-  medium: "bg-amber-50 text-amber-700 border-amber-200",
-  low: "bg-gray-50 text-gray-600 border-gray-200",
-};
-const OUTCOME_STYLE = {
-  [OUTCOME.achieved]: "text-emerald-700",
-  [OUTCOME.bounced]: "text-amber-700",
-  [OUTCOME.failed]: "text-red-700",
-  [OUTCOME.pending]: "text-gray-600",
-};
+// Session 42: the app's severity and outcome colours (utils/monitorColours.js).
+const SEV_STYLE = SEVERITY_CHIP;
+const OUTCOME_STYLE = OUTCOME_TEXT;
+
+/** The colour of the stage a card sits in (session 42). */
+const StageColour = React.createContext(null);
 
 /** A card that opens its drill. */
-function Card({ title, value, sub, children, onOpen, testid, wide = false }) {
+function Card({ title, value, sub, children, onOpen, testid, wide = false, colour = null }) {
+  const fromStage = useContext(StageColour);
+  const c = colour || fromStage;
   return (
     <button
       type="button"
       onClick={onOpen}
       data-testid={testid}
-      className={`text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-400 hover:shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-w-0 ${wide ? "w-full sm:flex sm:items-center sm:gap-8" : ""}`}
+      className={`relative overflow-hidden text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-400 hover:shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-w-0 ${wide ? "w-full sm:flex sm:items-center sm:gap-8" : ""}`}
     >
+      {c && <div data-deco="1" aria-hidden="true" className={`absolute top-0 left-0 right-0 h-1 ${c.strip}`} />}
       <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{title}</div>
-      <div className="mt-1 text-xl font-semibold font-mono text-gray-900 break-words">{value}</div>
+      <div className={`mt-1 text-xl font-semibold font-mono ${c ? c.text : "text-gray-900"} break-words`}>{value}</div>
       {sub && <div className="mt-0.5 text-xs text-gray-600">{sub}</div>}
       {children && <div className={wide ? "mt-2 sm:mt-0 text-xs text-gray-700 flex flex-wrap gap-x-6 gap-y-0.5 [&>*]:gap-2" : "mt-2 text-xs text-gray-700 space-y-0.5"}>{children}</div>}
     </button>
@@ -74,27 +75,30 @@ function Card({ title, value, sub, children, onOpen, testid, wide = false }) {
  * header, an arrow to the next stage (right on a wide screen, down on a phone,
  * where the stages stack in the same order), and that stage's cards.
  */
-function Stage({ n, name, testid, arrow = false, children }) {
+function Stage({ n, name, testid, arrow = false, colour, next = null, children }) {
+  const c = STAGE_COLOURS[colour];
+  // The arrow takes the colour of the stage it points to (session 42).
+  const a = next ? STAGE_COLOURS[next] : null;
   return (
     <div data-testid={testid} className="flex flex-col gap-3 min-w-0">
       <div className="flex items-center gap-2">
-        <span className="w-6 h-6 rounded-full bg-gray-900 text-white text-xs font-semibold flex items-center justify-center flex-shrink-0">{n}</span>
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">{name}</h2>
+        <span className={`w-6 h-6 rounded-full ${c.solid} text-xs font-semibold flex items-center justify-center flex-shrink-0`}>{n}</span>
+        <h2 className={`text-xs font-semibold uppercase tracking-wide ${c.text}`}>{name}</h2>
         {arrow && (
-          <span aria-hidden="true" data-testid={`${testid}-arrow`} className="ml-auto text-gray-400 text-lg leading-none">
+          <span aria-hidden="true" data-testid={`${testid}-arrow`} className={`ml-auto ${a ? a.arrow : "text-gray-400"} text-lg leading-none`}>
             <span className="hidden lg:inline">→</span>
             <span className="lg:hidden">↓</span>
           </span>
         )}
       </div>
-      {children}
+      <StageColour.Provider value={c}>{children}</StageColour.Provider>
     </div>
   );
 }
 
-const Line = ({ label, value, cls = "" }) => (
+const Line = ({ label, value, cls = "", dot = null }) => (
   <div className="flex justify-between gap-2">
-    <span className="text-gray-500">{label}</span>
+    <span className="text-gray-500">{dot && <span data-deco="1" aria-hidden="true" className={`inline-block w-2 h-2 rounded-full mr-1 align-middle ${dot}`} />}{label}</span>
     <span className={`font-mono ${cls}`}>{value}</span>
   </div>
 );
@@ -345,12 +349,12 @@ export default function SalesMonitor() {
             each card under its stage.
             The cards are the ones this page always had, moved, not changed. */}
         <section aria-label="Sales process" data-testid="monitor-stages" className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          <Stage n={1} name="Target" testid="stage-target" arrow>
+          <Stage n={1} name="Target" testid="stage-target" arrow colour="target" next="planned">
             <Card testid="card-target" title="Target" value={money(c.target.total)} sub={c.target.span} onOpen={() => openCard("target")}>
               <Line label="People with a target" value={model.people.filter((p) => p.target > 0).length} />
             </Card>
           </Stage>
-          <Stage n={2} name="Planned" testid="stage-planned" arrow>
+          <Stage n={2} name="Planned" testid="stage-planned" arrow colour="planned" next="funnel">
             <Card testid="card-plan-status" title="Plan submission" value={c.planStatus.loaded ? `${c.planStatus.onTime + c.planStatus.late} of ${c.planStatus.people}` : NO_FIGURE} sub="submitted" onOpen={() => openCard("planStatus")}>
               {c.planStatus.loaded ? (
                 <>
@@ -382,7 +386,7 @@ export default function SalesMonitor() {
               <p className="text-[11px] text-gray-500" data-testid="company-required">Insights' company required pipeline, for comparison only: {money(c.planned.companyRequired.value)} = (target {money(c.planned.companyRequired.target)} − achieved {money(c.planned.companyRequired.achieved)}) ÷ {fmtPct(c.planned.companyRequired.winRatePct, 1)} conversion.</p>
             </Card>
           </Stage>
-          <Stage n={3} name="Funnel" testid="stage-funnel" arrow>
+          <Stage n={3} name="Funnel" testid="stage-funnel" arrow colour="funnel" next="visits">
             {(() => {
               const F = model.funnel.cards;
               return (
@@ -394,7 +398,7 @@ export default function SalesMonitor() {
                     {F.plan.other.count > 0 && <Line label="Other" value={`${F.plan.other.count} · ${money(F.plan.other.value)}`} />}
                   </Card>
                   <Card testid="card-funnel-stages" title="Deals by stage" value={money(F.stages.total)} sub="open funnel, as Insights" onOpen={() => openCard("funnelStages")}>
-                    {F.stages.byStage.map((x) => <Line key={x.stage} label={x.label} value={`${x.count} · ${money(x.value)}`} />)}
+                    {F.stages.byStage.map((x) => <Line key={x.stage} dot={pipelineStageDot(x.stage)} label={x.label} value={`${x.count} · ${money(x.value)}`} />)}
                     <Line label="… of which undated" value={`${F.stages.undated.count} · ${money(F.stages.undated.value)}`} />
                     <Line label="All dates (any close date)" value={money(F.stages.allDates.total)} />
                   </Card>
@@ -417,7 +421,7 @@ export default function SalesMonitor() {
               );
             })()}
           </Stage>
-          <Stage n={4} name="Visits" testid="stage-visits" arrow>
+          <Stage n={4} name="Visits" testid="stage-visits" arrow colour="visits" next="achieved">
             <Card testid="card-visits" title="Visits" value={`${c.visits.today.count} · ${c.visits.mtd.count}`} sub={`${shortDay(c.visits.day)} · month to date`} onOpen={() => openCard("visits")}>
               <Line label="To planned customers (MTD)" value={fmtPct(c.visits.mtd.inPlanPct, 0)} />
               <Line label="+ / = / −" value={`${c.visits.mtd.responses.positive} / ${c.visits.mtd.responses.neutral} / ${c.visits.mtd.responses.negative}`} />
@@ -427,10 +431,10 @@ export default function SalesMonitor() {
               <Line label="Not visited" value={c.visits.plannedCustomers - c.visits.plannedVisited} cls={c.visits.plannedCustomers - c.visits.plannedVisited ? "text-red-700" : ""} />
             </Card>
           </Stage>
-          <Stage n={5} name="Achieved" testid="stage-achieved">
+          <Stage n={5} name="Achieved" testid="stage-achieved" colour="achieved">
             <Card testid="card-achieved" title="Achieved" value={money(c.achieved.total)} sub={`${fmtPct(c.achieved.pctOfTarget, 0)} of target`} onOpen={() => openCard("achieved")}>
               {c.achieved.isCurrent
-                ? <Line label="Month elapsed" value={fmtPct(c.achieved.elapsedPct, 0)} cls={c.achieved.pacingOk ? "text-emerald-700" : "text-red-700"} />
+                ? <Line label="Month elapsed" value={fmtPct(c.achieved.elapsedPct, 0)} cls={c.achieved.pacingOk ? TONE_TEXT.green : TONE_TEXT.red} />
                 : <Line label="Month closed" value="—" />}
               {c.achieved.returns > 0 && <Line label="Returns" value={`−${money(c.achieved.returns)}`} />}
             </Card>
@@ -453,7 +457,7 @@ export default function SalesMonitor() {
 
         {/* Under the four stages: Exceptions, full width. */}
         <section aria-label="Exceptions summary">
-          <Card wide testid="card-exceptions" title="Exceptions" value={c.exceptions.total} sub="need a decision" onOpen={() => openCard("exceptions")}>
+          <Card wide colour={STAGE_COLOURS.exceptions} testid="card-exceptions" title="Exceptions" value={c.exceptions.total} sub="need a decision" onOpen={() => openCard("exceptions")}>
             <Line label="High" value={c.exceptions.high} cls={c.exceptions.high ? "text-red-700" : ""} />
             <Line label="Medium" value={c.exceptions.medium} />
             <Line label="Low" value={c.exceptions.low} />
@@ -471,11 +475,11 @@ export default function SalesMonitor() {
               <thead className="bg-gray-50">
                 <tr data-testid="scoreboard-bands">
                   <th scope="colgroup" colSpan={2} data-testid="band-who" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 sticky left-0 bg-gray-50 z-10"></th>
-                  <th scope="colgroup" colSpan={1} data-testid="band-target" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Target</th>
-                  <th scope="colgroup" colSpan={4} data-testid="band-planned" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Planned</th>
-                  <th scope="colgroup" colSpan={3} data-testid="band-funnel" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Funnel</th>
-                  <th scope="colgroup" colSpan={2} data-testid="band-visits" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Visits</th>
-                  <th scope="colgroup" colSpan={4 + outcomeLabels.length} data-testid="band-achieved" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Achieved</th>
+                  <th scope="colgroup" colSpan={1} data-testid="band-target" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-blue-600 border-t-4 border-t-blue-600 text-center border-b border-gray-200 border-l border-gray-200">Target</th>
+                  <th scope="colgroup" colSpan={4} data-testid="band-planned" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-purple-700 border-t-4 border-t-purple-500 text-center border-b border-gray-200 border-l border-gray-200">Planned</th>
+                  <th scope="colgroup" colSpan={3} data-testid="band-funnel" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-orange-700 border-t-4 border-t-orange-500 text-center border-b border-gray-200 border-l border-gray-200">Funnel</th>
+                  <th scope="colgroup" colSpan={2} data-testid="band-visits" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-teal-700 border-t-4 border-t-teal-500 text-center border-b border-gray-200 border-l border-gray-200">Visits</th>
+                  <th scope="colgroup" colSpan={4 + outcomeLabels.length} data-testid="band-achieved" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-green-700 border-t-4 border-t-green-500 text-center border-b border-gray-200 border-l border-gray-200">Achieved</th>
                   <th scope="colgroup" colSpan={1} data-testid="band-who" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200"></th>
                 </tr>
                 <tr>
@@ -507,8 +511,14 @@ export default function SalesMonitor() {
                     <td className="px-2 py-2 text-right font-mono">{money(p.target)}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       {p.planStatus ? (
-                        <span className={p.planStatus.submitted ? (p.planStatus.approval === "rejected" ? "text-red-700" : "text-gray-700") : "text-red-700"}>
-                          {p.planStatus.submitted ? `${p.planStatus.timing === "submitted late" ? "late" : "on time"} · ${p.planStatus.approval}` : p.planStatus.approval === "rejected" ? "rejected" : "missing"}
+                        <span>
+                          {p.planStatus.submitted ? (
+                            <>
+                              <span data-deco="wrap" className={toneChip(planStatusTone(p.planStatus.timing === "submitted late" ? "late" : "on time"))}>{p.planStatus.timing === "submitted late" ? "late" : "on time"}</span>
+                              {" · "}
+                              <span data-deco="wrap" className={toneChip(planStatusTone(p.planStatus.approval))}>{p.planStatus.approval}</span>
+                            </>
+                          ) : <span data-deco="wrap" className={toneChip("red")}>{p.planStatus.approval === "rejected" ? "rejected" : "missing"}</span>}
                         </span>
                       ) : "—"}
                     </td>
@@ -521,7 +531,7 @@ export default function SalesMonitor() {
                     <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{p.visitsMtd} <span className="text-gray-500">({fmtPct(p.visitsMtdInPlanPct, 0)})</span></td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">{shortDay(p.lastVisit)}</td>
                     <td className="px-2 py-2 text-right font-mono">{money(p.achieved)}</td>
-                    <td className="px-2 py-2 text-right font-mono">{fmtPct(p.achievedPct, 0)}</td>
+                    <td className={`px-2 py-2 text-right font-mono ${TONE_TEXT[paceTone(p.achievedPct, c.achieved.isCurrent ? c.achieved.elapsedPct : model.closed ? 100 : 0)] || ""}`}>{fmtPct(p.achievedPct, 0)}</td>
                     <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{money(p.fromPlan)} / {money(p.outsidePlan)}</td>
                     {outcomeLabels.map((l) => (
                       <td key={l} data-testid={`out-${l}`} className={`px-2 py-2 text-right font-mono ${p.outcomes[l].count ? OUTCOME_STYLE[l] : "text-gray-300"}`} title={`${l}: ${money(p.outcomes[l].value)} planned`}>{p.outcomes[l].count}</td>
@@ -559,7 +569,7 @@ export default function SalesMonitor() {
             </label>
           </div>
           <div className="p-4 space-y-4">
-            <DailyVisitsList model={model} onOpenPerson={openPerson} />
+            <DailyVisitsList model={model} onOpenPerson={openPerson} responseChips />
 
             {/* month to date */}
             <div>

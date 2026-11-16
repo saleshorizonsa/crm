@@ -2,6 +2,7 @@ import React, { useCallback, useState } from "react";
 import VisitSheet from "components/VisitSheet";
 import { money } from "components/DrillSheet";
 import { NO_CUSTOMER, isDayOff } from "utils/salesMonitor";
+import { RESPONSE_TONE, toneChip } from "utils/monitorColours";
 
 /**
  * ONE DAY'S VISITS, CALLS AND WHATSAPPS — the list the Sales Monitor and the
@@ -23,7 +24,9 @@ export const shortDay = (d) => {
   return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : "—";
 };
 
-export default function DailyVisitsList({ model, onOpenPerson = null, noContactTestid = "monitor-no-visit", showOutcome = true }) {
+// responseChips (session 42, Sales Monitor only): the response as a coloured
+// pill — the word kept. Off by default, so the Insights panel is unchanged.
+export default function DailyVisitsList({ model, onOpenPerson = null, noContactTestid = "monitor-no-visit", showOutcome = true, responseChips = false }) {
   const dayOff = isDayOff(model.day);
   const [sheet, setSheet] = useState(null);
   const closeSheet = useCallback(() => setSheet(null), []);
@@ -63,7 +66,11 @@ export default function DailyVisitsList({ model, onOpenPerson = null, noContactT
                           ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200">In plan · {money(r.planValue)}</span>
                           : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className={`py-1.5 pr-2 capitalize ${r.response === "negative" ? "text-red-700" : r.response === "positive" ? "text-emerald-700" : "text-gray-600"}`}>{r.response || "—"}</td>
+                      <td className={`py-1.5 pr-2 capitalize ${responseChips ? "" : r.response === "negative" ? "text-red-700" : r.response === "positive" ? "text-emerald-700" : "text-gray-600"}`}>
+                        {responseChips && RESPONSE_TONE[r.response]
+                          ? <span data-deco="wrap" className={toneChip(RESPONSE_TONE[r.response])}>{r.response}</span>
+                          : r.response || "—"}
+                      </td>
                       <td className="py-1.5 pr-2 text-gray-700">{r.nextAction || "—"}</td>
                       {showOutcome && <td className="py-1.5 text-gray-600">{r.planOutcome || ""}</td>}
                     </tr>
