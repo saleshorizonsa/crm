@@ -48,6 +48,7 @@ import TargetsPage from "./pages/targets";
 import ReassignRecords from "./pages/reassign-records";
 import NumbersCheck from "./pages/numbers-check";
 import SalesMonitor from "./pages/sales-monitor";
+import SalesMonitorStage from "./pages/sales-monitor/StagePage";
 // Who may open the Sales Monitor: one list, shared with the menu entry.
 import { SALES_MONITOR_ROLES } from "./utils/salesMonitor";
 // The roles the numbers check is for, imported from the page's own util so the
@@ -254,6 +255,19 @@ const Routes = () => {
                       denyNotice="This page is not enabled for your account."
                     >
                       <SalesMonitor />
+                    </ProtectedRoute>
+                  }
+                />
+                {/* One page per stage (session 39): target, planned, visits,
+                    achieved, exceptions — same roles, same page permission. */}
+                <Route
+                  path="/sales-monitor/:stage"
+                  element={
+                    <ProtectedRoute page="sales-monitor"
+                      allowedRoles={SALES_MONITOR_ROLES}
+                      denyNotice="This page is not enabled for your account."
+                    >
+                      <SalesMonitorStage />
                     </ProtectedRoute>
                   }
                 />

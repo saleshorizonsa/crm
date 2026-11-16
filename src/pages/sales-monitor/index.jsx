@@ -16,6 +16,8 @@ import {
   DEPARTED_ID,
 } from "utils/salesMonitor";
 import { THRESHOLDS } from "utils/salesMonitorThresholds";
+import { CARD_LINK, stageHref } from "utils/stagePages";
+import { exceptionAction, actionTarget } from "utils/exceptionActions";
 
 // SALES MONITOR (/sales-monitor) — session 34, CEO / Director Nader 2026-11-10.
 //
@@ -126,7 +128,9 @@ export default function SalesMonitor() {
   // page on the same day and division. Read once, as the starting state.
   const [params] = useSearchParams();
   const linkDay = /^\d{4}-\d{2}-\d{2}$/.test(params.get("day") || "") ? params.get("day") : null;
-  const [monthKey, setMonthKey] = useState(linkDay ? linkDay.slice(0, 7) : thisMonthKey());
+  // ?month=yyyy-MM — how a stage page's back link returns (session 39).
+  const linkMonth = /^\d{4}-\d{2}$/.test(params.get("month") || "") ? params.get("month") : null;
+  const [monthKey, setMonthKey] = useState(linkDay ? linkDay.slice(0, 7) : linkMonth || thisMonthKey());
   const [divisionId, setDivisionId] = useState(params.get("division") || "");
   const [visitDay, setVisitDay] = useState(linkDay);
   const firstMonth = React.useRef(true);
@@ -184,14 +188,20 @@ export default function SalesMonitor() {
     if (tree) setDrill({ ...tree, title: "Salesman", place: [...place, tree.label] });
   };
 
-  // The card's own title, for the sheet's Excel file name (session 36).
-  const CARD_TITLES = {
-    target: "Target", planned: "Planned", planStatus: "Plan submission", achieved: "Achieved",
-    fromPlan: "From plan vs outside plan", outcomes: "Plan outcomes", visits: "Visits", exceptions: "Exceptions",
+  // A card opens its stage page on that card's tab (session 39), with the
+  // month, division and day kept.
+  const openCard = (key) => {
+    const link = CARD_LINK[key];
+    if (!link) return;
+    navigate(stageHref(link.stage, {
+      month: monthKey, division: divisionId, day: visitDay, view: link.view, tab: link.tab || null,
+    }));
   };
-  const openCard = (key, initialSelection = null) => {
-    const node = model?.drills?.[key];
-    if (node) setDrill({ ...node, title: node.label, place, card: CARD_TITLES[key] || node.label, initialSelection });
+  // An exception's clearing action, where its screen exists.
+  const runAction = (e, a) => {
+    if (a.to === "person") { openPerson(e.ownerId); return; }
+    const t = actionTarget(a.to, e);
+    if (t) navigate({ pathname: t.path, hash: t.hash || "" }, t.state ? { state: t.state } : undefined);
   };
 
   const openPerson = (id) => {
@@ -279,7 +289,7 @@ export default function SalesMonitor() {
         <div className="flex flex-col sm:flex-row sm:items-end gap-3 justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-gray-900">Sales Monitor</h1>
-            <p className="text-sm text-gray-600">Target → plan → visits → result for {period}{model.division ? ` · ${model.division.name}` : ""}. Click any card to see what is behind it.</p>
+            <p className="text-sm text-gray-600">Target → plan → visits → result for {period}{model.division ? ` · ${model.division.name}` : ""}. Click any card to open its stage page.</p>
           </div>
           <div className="flex flex-wrap gap-2 items-end">
             <label className="text-xs text-gray-600">
@@ -369,7 +379,7 @@ export default function SalesMonitor() {
               <Line label="To planned customers (MTD)" value={fmtPct(c.visits.mtd.inPlanPct, 0)} />
               <Line label="+ / = / −" value={`${c.visits.mtd.responses.positive} / ${c.visits.mtd.responses.neutral} / ${c.visits.mtd.responses.negative}`} />
             </Card>
-            <Card testid="card-planned-visited" title="Planned customers visited" value={`${c.visits.plannedVisited} of ${c.visits.plannedCustomers}`} sub="month to date" onOpen={() => openCard("visits", ["notVisited"])}>
+            <Card testid="card-planned-visited" title="Planned customers visited" value={`${c.visits.plannedVisited} of ${c.visits.plannedCustomers}`} sub="month to date" onOpen={() => openCard("plannedVisited")}>
               <Line label="Visited" value={c.visits.plannedVisited} />
               <Line label="Not visited" value={c.visits.plannedCustomers - c.visits.plannedVisited} cls={c.visits.plannedCustomers - c.visits.plannedVisited ? "text-red-700" : ""} />
             </Card>
@@ -560,7 +570,7 @@ export default function SalesMonitor() {
           <div className="px-4 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <h2 className="text-base font-semibold text-gray-900">Exceptions</h2>
-              <p className="text-xs text-gray-600">High first, newest first. Click one to open the record. Won not invoiced counts from {THRESHOLDS.wonNotInvoicedDays} days.</p>
+              <p className="text-xs text-gray-600">High first, newest first. Click one to open the record; each says what clears it. Won not invoiced counts from {THRESHOLDS.wonNotInvoicedDays} days.</p>
             </div>
             <div className="flex gap-1" role="group" aria-label="Severity">
               {["all", "high", "medium", "low"].map((s) => (
@@ -572,18 +582,29 @@ export default function SalesMonitor() {
             </div>
           </div>
           <ul className="divide-y divide-gray-100" data-testid="monitor-feed-list">
-            {feed.map((e) => (
-              <li key={e.id}>
-                <button type="button" onClick={() => openRecord(e)} className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-start gap-3">
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border uppercase ${SEV_STYLE[e.severity]}`}>{e.severity}</span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm text-gray-900">{e.title}</span>
-                    <span className="block text-xs text-gray-600 break-words">{e.group} · {e.owner} · {e.detail}</span>
-                  </span>
-                  <span className="text-xs text-gray-500 whitespace-nowrap">{shortDay(e.date)}</span>
-                </button>
-              </li>
-            ))}
+            {feed.map((e) => {
+              // What clears it, in one line, and a button where its screen exists (session 39).
+              const act = exceptionAction(e, { monthStart: model.monthStart });
+              return (
+                <li key={e.id} className="flex flex-col sm:flex-row sm:items-start hover:bg-gray-50">
+                  <button type="button" onClick={() => openRecord(e)} className="flex-1 min-w-0 text-left px-4 py-2.5 flex items-start gap-3">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border uppercase ${SEV_STYLE[e.severity]}`}>{e.severity}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm text-gray-900">{e.title}</span>
+                      <span className="block text-xs text-gray-600 break-words">{e.group} · {e.owner} · {e.detail}</span>
+                      <span className="block text-xs text-blue-800 mt-0.5" data-testid="feed-action">To clear it: {act.text}</span>
+                    </span>
+                    <span className="text-xs text-gray-500 whitespace-nowrap">{shortDay(e.date)}</span>
+                  </button>
+                  {act.to && (
+                    <button type="button" data-testid="feed-action-button" onClick={() => runAction(e, act)}
+                      className="mx-4 mb-2 sm:my-2.5 sm:ml-0 self-start text-[11px] px-2 py-0.5 rounded border border-blue-300 text-blue-800 hover:bg-blue-50 whitespace-nowrap">
+                      {act.button}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
             {!feed.length && <li className="px-4 py-8 text-center text-sm text-gray-400">No exceptions.</li>}
           </ul>
         </section>
