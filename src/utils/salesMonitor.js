@@ -25,6 +25,8 @@ import { parseInvoiceNumbers } from 'utils/invoiceNumber';
 import {
   THRESHOLDS, RULE_SEVERITY, RULE_GROUP, SEVERITY_ORDER,
 } from 'utils/salesMonitorThresholds';
+// Session 41: stage ③ Funnel, computed apart (it adds to the model, changes nothing in it).
+import { computeFunnel } from 'utils/salesMonitorFunnel';
 
 /**
  * SALES MONITOR (session 34; CEO / Director Nader, 2026-11-10).
@@ -772,8 +774,15 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     exceptions, people, planCustomerRows,
   };
 
+  const funnel = computeFunnel({
+    raw, metrics, itemRows, people, nameOf, knownDivision, primaryByUser, dealInView, viewSet,
+    today, day, monthStart, monthEnd, now, contactRows, customerOfDeal,
+    departedIds: departedAchievers, noTargetIds: noTargetSellers, pickedId: picked?.id || null,
+  });
+
   return {
     monthStart, monthEnd, today, closed, isCurrent, cutoff, day,
+    funnel,
     groups: groups.map((g) => ({ id: g.id, name: g.name })),
     division: picked ? { id: picked.id, name: picked.name } : null,
     metrics,

@@ -16,6 +16,8 @@ import {
   DEPARTED_ID,
 } from "utils/salesMonitor";
 import { THRESHOLDS } from "utils/salesMonitorThresholds";
+import { CARD_LINK, stageHref } from "utils/stagePages";
+import { exceptionAction, actionTarget } from "utils/exceptionActions";
 
 // SALES MONITOR (/sales-monitor) — session 34, CEO / Director Nader 2026-11-10.
 //
@@ -51,19 +53,42 @@ const OUTCOME_STYLE = {
 };
 
 /** A card that opens its drill. */
-function Card({ title, value, sub, children, onOpen, testid }) {
+function Card({ title, value, sub, children, onOpen, testid, wide = false }) {
   return (
     <button
       type="button"
       onClick={onOpen}
       data-testid={testid}
-      className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-400 hover:shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-w-0"
+      className={`text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-400 hover:shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-w-0 ${wide ? "w-full sm:flex sm:items-center sm:gap-8" : ""}`}
     >
       <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{title}</div>
       <div className="mt-1 text-xl font-semibold font-mono text-gray-900 break-words">{value}</div>
       {sub && <div className="mt-0.5 text-xs text-gray-600">{sub}</div>}
-      {children && <div className="mt-2 text-xs text-gray-700 space-y-0.5">{children}</div>}
+      {children && <div className={wide ? "mt-2 sm:mt-0 text-xs text-gray-700 flex flex-wrap gap-x-6 gap-y-0.5 [&>*]:gap-2" : "mt-2 text-xs text-gray-700 space-y-0.5"}>{children}</div>}
     </button>
+  );
+}
+
+/**
+ * ONE STAGE OF THE SALES PROCESS (session 38, CEO 2026-11-15): a numbered
+ * header, an arrow to the next stage (right on a wide screen, down on a phone,
+ * where the stages stack in the same order), and that stage's cards.
+ */
+function Stage({ n, name, testid, arrow = false, children }) {
+  return (
+    <div data-testid={testid} className="flex flex-col gap-3 min-w-0">
+      <div className="flex items-center gap-2">
+        <span className="w-6 h-6 rounded-full bg-gray-900 text-white text-xs font-semibold flex items-center justify-center flex-shrink-0">{n}</span>
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">{name}</h2>
+        {arrow && (
+          <span aria-hidden="true" data-testid={`${testid}-arrow`} className="ml-auto text-gray-400 text-lg leading-none">
+            <span className="hidden lg:inline">→</span>
+            <span className="lg:hidden">↓</span>
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
   );
 }
 
@@ -92,6 +117,12 @@ const SORTS = {
   outPending: (p) => p.outcomes.Pending.count,
   coverage: (p) => (p.coverageMet ? Infinity : p.coverageRatio ?? -1),
 };
+// Session 41: the Funnel band's columns sort on the funnel's per-person figures.
+const FUNNEL_SORTS = {
+  converted: (f) => (f ? f.converted : -1),
+  funnelOpen: (f) => (f ? f.openValue : -1),
+  stuck: (f) => (f ? f.stuck : -1),
+};
 
 export default function SalesMonitor() {
   const { user, company, userProfile } = useAuth();
@@ -103,7 +134,9 @@ export default function SalesMonitor() {
   // page on the same day and division. Read once, as the starting state.
   const [params] = useSearchParams();
   const linkDay = /^\d{4}-\d{2}-\d{2}$/.test(params.get("day") || "") ? params.get("day") : null;
-  const [monthKey, setMonthKey] = useState(linkDay ? linkDay.slice(0, 7) : thisMonthKey());
+  // ?month=yyyy-MM — how a stage page's back link returns (session 39).
+  const linkMonth = /^\d{4}-\d{2}$/.test(params.get("month") || "") ? params.get("month") : null;
+  const [monthKey, setMonthKey] = useState(linkDay ? linkDay.slice(0, 7) : linkMonth || thisMonthKey());
   const [divisionId, setDivisionId] = useState(params.get("division") || "");
   const [visitDay, setVisitDay] = useState(linkDay);
   const firstMonth = React.useRef(true);
@@ -161,14 +194,20 @@ export default function SalesMonitor() {
     if (tree) setDrill({ ...tree, title: "Salesman", place: [...place, tree.label] });
   };
 
-  // The card's own title, for the sheet's Excel file name (session 36).
-  const CARD_TITLES = {
-    target: "Target", planned: "Planned", planStatus: "Plan submission", achieved: "Achieved",
-    fromPlan: "From plan vs outside plan", outcomes: "Plan outcomes", visits: "Visits", exceptions: "Exceptions",
-  };
+  // A card opens its stage page on that card's tab (session 39), with the
+  // month, division and day kept.
   const openCard = (key) => {
-    const node = model?.drills?.[key];
-    if (node) setDrill({ ...node, title: node.label, place, card: CARD_TITLES[key] || node.label });
+    const link = CARD_LINK[key];
+    if (!link) return;
+    navigate(stageHref(link.stage, {
+      month: monthKey, division: divisionId, day: visitDay, view: link.view, tab: link.tab || null,
+    }));
+  };
+  // An exception's clearing action, where its screen exists.
+  const runAction = (e, a) => {
+    if (a.to === "person") { openPerson(e.ownerId); return; }
+    const t = actionTarget(a.to, e);
+    if (t) navigate({ pathname: t.path, hash: t.hash || "" }, t.state ? { state: t.state } : undefined);
   };
 
   const openPerson = (id) => {
@@ -205,8 +244,9 @@ export default function SalesMonitor() {
   if (!model) return null;
 
   const c = model.cards;
+  const funnelOf = (p) => model.funnel?.perPerson?.[p.id] || null;
   const people = [...model.people].sort((a, b) => {
-    const f = SORTS[sort.key] || SORTS.exceptions;
+    const f = FUNNEL_SORTS[sort.key] ? (q) => FUNNEL_SORTS[sort.key](funnelOf(q)) : SORTS[sort.key] || SORTS.exceptions;
     const x = f(a); const y = f(b);
     const less = x < y ? -1 : x > y ? 1 : 0;
     const primary = sort.dir === "asc" ? less : -less;
@@ -256,7 +296,7 @@ export default function SalesMonitor() {
         <div className="flex flex-col sm:flex-row sm:items-end gap-3 justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-gray-900">Sales Monitor</h1>
-            <p className="text-sm text-gray-600">Target → plan → visits → result for {period}{model.division ? ` · ${model.division.name}` : ""}. Click any card to see what is behind it.</p>
+            <p className="text-sm text-gray-600">Target → plan → funnel → visits → result for {period}{model.division ? ` · ${model.division.name}` : ""}. Click any card to open its stage page.</p>
           </div>
           <div className="flex flex-wrap gap-2 items-end">
             <label className="text-xs text-gray-600">
@@ -300,66 +340,120 @@ export default function SalesMonitor() {
           </div>
         )}
 
-        {/* ── A. top cards ── */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3" aria-label="Summary">
-          <Card testid="card-target" title="Target" value={money(c.target.total)} sub={c.target.span} onOpen={() => openCard("target")}>
-            <Line label="People with a target" value={model.people.filter((p) => p.target > 0).length} />
-          </Card>
-          <Card testid="card-planned" title="Planned" value={`${c.planned.submitted === null ? NO_FIGURE : money(c.planned.submitted)} · ${money(c.planned.total)}`} sub="submitted · plan now" onOpen={() => openCard("planned")}>
-            <Line label={`Submitted (${c.planned.submittedPeople} of ${c.planned.planHolders} plans)`} value={c.planned.submitted === null ? NO_FIGURE : money(c.planned.submitted)} />
-            <Line label="Plan now (open + live deal)" value={money(c.planned.total)} />
-            <Line label="Plan now, % of target" value={fmtPct(c.planned.pctOfTarget, 0)} />
-            {c.planned.required ? (
-              <>
-                <div data-testid="required-submitted">
-                  <Line label={`Required, from ${c.planned.required.submitted.count} submitted plan${c.planned.required.submitted.count === 1 ? "" : "s"}`} value={money(c.planned.required.submitted.required)} />
-                  <Line label="… their plan now, % of it" value={fmtPct(c.planned.required.submitted.pct, 0)} />
-                </div>
-                {c.planned.required.estimated.count > 0 && (
-                  <div data-testid="required-estimated">
-                    <Line label={`Required (estimated for ${c.planned.required.estimated.count} not submitted)`} value={money(c.planned.required.estimated.required)} />
-                    <Line label="… their plan now, % of it" value={fmtPct(c.planned.required.estimated.pct, 0)} />
+        {/* ── A. THE SALES PROCESS (session 38, CEO 2026-11-15) ──
+            Target → Planned → Funnel → Visits → Achieved (Funnel: session 41),
+            each card under its stage.
+            The cards are the ones this page always had, moved, not changed. */}
+        <section aria-label="Sales process" data-testid="monitor-stages" className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+          <Stage n={1} name="Target" testid="stage-target" arrow>
+            <Card testid="card-target" title="Target" value={money(c.target.total)} sub={c.target.span} onOpen={() => openCard("target")}>
+              <Line label="People with a target" value={model.people.filter((p) => p.target > 0).length} />
+            </Card>
+          </Stage>
+          <Stage n={2} name="Planned" testid="stage-planned" arrow>
+            <Card testid="card-plan-status" title="Plan submission" value={c.planStatus.loaded ? `${c.planStatus.onTime + c.planStatus.late} of ${c.planStatus.people}` : NO_FIGURE} sub="submitted" onOpen={() => openCard("planStatus")}>
+              {c.planStatus.loaded ? (
+                <>
+                  <Line label="On time / late" value={`${c.planStatus.onTime} / ${c.planStatus.late}`} />
+                  <Line label="Not submitted" value={c.planStatus.missing} cls={c.planStatus.missing ? "text-red-700" : ""} />
+                  <Line label="Approved / rejected" value={`${c.planStatus.approved} / ${c.planStatus.rejected}`} />
+                </>
+              ) : <p className="text-amber-700">Plan submissions could not be read.</p>}
+            </Card>
+            <Card testid="card-planned" title="Planned" value={`${c.planned.submitted === null ? NO_FIGURE : money(c.planned.submitted)} · ${money(c.planned.total)}`} sub="submitted · plan now" onOpen={() => openCard("planned")}>
+              <Line label={`Submitted (${c.planned.submittedPeople} of ${c.planned.planHolders} plans)`} value={c.planned.submitted === null ? NO_FIGURE : money(c.planned.submitted)} />
+              <Line label="Plan now (open + live deal)" value={money(c.planned.total)} />
+              <Line label="Plan now, % of target" value={fmtPct(c.planned.pctOfTarget, 0)} />
+              {c.planned.required ? (
+                <>
+                  <div data-testid="required-submitted">
+                    <Line label={`Required, from ${c.planned.required.submitted.count} submitted plan${c.planned.required.submitted.count === 1 ? "" : "s"}`} value={money(c.planned.required.submitted.required)} />
+                    <Line label="… their plan now, % of it" value={fmtPct(c.planned.required.submitted.pct, 0)} />
                   </div>
-                )}
-              </>
-            ) : <Line label="Required" value={NO_FIGURE} />}
-            <p className="text-[11px] text-gray-500 pt-1" data-testid="planned-explain">Submitted = the total on each plan when it was filed. Plan now = the month's plan items today that are still open or became a live deal. Required from submitted plans = each plan's own required plan, as filed. Estimated = for each person with no submitted plan, today's gap to target ÷ their conversion rate.</p>
-            <p className="text-[11px] text-gray-500" data-testid="company-required">Insights' company required pipeline, for comparison only: {money(c.planned.companyRequired.value)} = (target {money(c.planned.companyRequired.target)} − achieved {money(c.planned.companyRequired.achieved)}) ÷ {fmtPct(c.planned.companyRequired.winRatePct, 1)} conversion.</p>
-          </Card>
-          <Card testid="card-plan-status" title="Plan submission" value={c.planStatus.loaded ? `${c.planStatus.onTime + c.planStatus.late} of ${c.planStatus.people}` : NO_FIGURE} sub="submitted" onOpen={() => openCard("planStatus")}>
-            {c.planStatus.loaded ? (
-              <>
-                <Line label="On time / late" value={`${c.planStatus.onTime} / ${c.planStatus.late}`} />
-                <Line label="Not submitted" value={c.planStatus.missing} cls={c.planStatus.missing ? "text-red-700" : ""} />
-                <Line label="Approved / rejected" value={`${c.planStatus.approved} / ${c.planStatus.rejected}`} />
-              </>
-            ) : <p className="text-amber-700">Plan submissions could not be read.</p>}
-          </Card>
-          <Card testid="card-achieved" title="Achieved" value={money(c.achieved.total)} sub={`${fmtPct(c.achieved.pctOfTarget, 0)} of target`} onOpen={() => openCard("achieved")}>
-            {c.achieved.isCurrent
-              ? <Line label="Month elapsed" value={fmtPct(c.achieved.elapsedPct, 0)} cls={c.achieved.pacingOk ? "text-emerald-700" : "text-red-700"} />
-              : <Line label="Month closed" value="—" />}
-            {c.achieved.returns > 0 && <Line label="Returns" value={`−${money(c.achieved.returns)}`} />}
-          </Card>
-          <Card testid="card-from-plan" title="From plan vs outside plan" value={money(c.fromPlan.fromPlan)} sub={`from this month's plan · ${fmtPct(c.fromPlan.fromPlanPct, 0)} of invoiced`} onOpen={() => openCard("fromPlan")}>
-            <Line label="Outside plan" value={money(c.fromPlan.outsidePlan)} />
-            {c.fromPlan.returns > 0 && <Line label="Returns" value={`−${money(c.fromPlan.returns)}`} />}
-          </Card>
-          <Card testid="card-outcomes" title="Plan outcomes" value={`${c.outcomes.total.count} items`} sub={`achieved from plan ${fmtPct(c.outcomes.achievedFromPlanPct, 0)}`} onOpen={() => openCard("outcomes")}>
-            {outcomeLabels.map((l) => (
-              <div key={l} title={OUTCOME_HELP[l]}>
-                <Line label={l} value={`${c.outcomes[l].count} · ${money(c.outcomes[l].value)}`} cls={OUTCOME_STYLE[l]} />
-              </div>
-            ))}
-            <p className="text-[11px] text-gray-500 pt-1" data-testid="outcomes-explain">
-              {outcomeLabels.map((l) => `${l}: ${OUTCOME_HELP[l].toLowerCase()}`).join(" · ")}.
-            </p>
-          </Card>
-          <Card testid="card-visits" title="Visits" value={`${c.visits.today.count} · ${c.visits.mtd.count}`} sub={`${shortDay(c.visits.day)} · month to date`} onOpen={() => openCard("visits")}>
-            <Line label="To planned customers (MTD)" value={fmtPct(c.visits.mtd.inPlanPct, 0)} />
-            <Line label="+ / = / −" value={`${c.visits.mtd.responses.positive} / ${c.visits.mtd.responses.neutral} / ${c.visits.mtd.responses.negative}`} />
-          </Card>
-          <Card testid="card-exceptions" title="Exceptions" value={c.exceptions.total} sub="need a decision" onOpen={() => openCard("exceptions")}>
+                  {c.planned.required.estimated.count > 0 && (
+                    <div data-testid="required-estimated">
+                      <Line label={`Required (estimated for ${c.planned.required.estimated.count} not submitted)`} value={money(c.planned.required.estimated.required)} />
+                      <Line label="… their plan now, % of it" value={fmtPct(c.planned.required.estimated.pct, 0)} />
+                    </div>
+                  )}
+                </>
+              ) : <Line label="Required" value={NO_FIGURE} />}
+              <p className="text-[11px] text-gray-500 pt-1" data-testid="planned-explain">Submitted = the total on each plan when it was filed. Plan now = the month's plan items today that are still open or became a live deal. Required from submitted plans = each plan's own required plan, as filed. Estimated = for each person with no submitted plan, today's gap to target ÷ their conversion rate.</p>
+              <p className="text-[11px] text-gray-500" data-testid="company-required">Insights' company required pipeline, for comparison only: {money(c.planned.companyRequired.value)} = (target {money(c.planned.companyRequired.target)} − achieved {money(c.planned.companyRequired.achieved)}) ÷ {fmtPct(c.planned.companyRequired.winRatePct, 1)} conversion.</p>
+            </Card>
+          </Stage>
+          <Stage n={3} name="Funnel" testid="stage-funnel" arrow>
+            {(() => {
+              const F = model.funnel.cards;
+              return (
+                <>
+                  <Card testid="card-funnel-plan" title="Plan → deal" value={`${F.plan.converted.count} of ${F.plan.total.count}`} sub={`converted · ${fmtPct(F.plan.convertedPct, 0)} of items, ${fmtPct(F.plan.convertedValuePct, 0)} of value`} onOpen={() => openCard("funnelPlan")}>
+                    <Line label="Converted" value={money(F.plan.converted.value)} />
+                    <Line label="Not started (still open)" value={`${F.plan.notStarted.count} · ${money(F.plan.notStarted.value)}`} cls={F.plan.notStarted.count ? "text-red-700" : ""} />
+                    <Line label="Moved to later months" value={`${F.plan.moved.count} · ${money(F.plan.moved.value)}`} />
+                    {F.plan.other.count > 0 && <Line label="Other" value={`${F.plan.other.count} · ${money(F.plan.other.value)}`} />}
+                  </Card>
+                  <Card testid="card-funnel-stages" title="Deals by stage" value={money(F.stages.total)} sub="open funnel, as Insights" onOpen={() => openCard("funnelStages")}>
+                    {F.stages.byStage.map((x) => <Line key={x.stage} label={x.label} value={`${x.count} · ${money(x.value)}`} />)}
+                    <Line label="… of which undated" value={`${F.stages.undated.count} · ${money(F.stages.undated.value)}`} />
+                    <Line label="All dates (any close date)" value={money(F.stages.allDates.total)} />
+                  </Card>
+                  <Card testid="card-funnel-moves" title="Movement" value={F.movement.loaded ? `${F.movement.week.forward} ↑ · ${F.movement.week.back} ↓` : NO_FIGURE} sub={`forward · back, 7 days to ${shortDay(F.movement.day)}`} onOpen={() => openCard("funnelMoves")}>
+                    {F.movement.loaded ? (
+                      <>
+                        <Line label="7 days: won / lost / new leads" value={`${F.movement.week.won} / ${F.movement.week.lost} / ${F.movement.week.new}`} />
+                        <Line label="Month to date: forward / back" value={`${F.movement.mtd.forward} / ${F.movement.mtd.back}`} />
+                        <Line label="Month to date: won / lost / new leads" value={`${F.movement.mtd.won} / ${F.movement.mtd.lost} / ${F.movement.mtd.new}`} />
+                      </>
+                    ) : <p className="text-amber-700">Deal stage history could not be read.</p>}
+                  </Card>
+                  <Card testid="card-funnel-stuck" title="Stuck and overdue" value={`${F.stuck.stuck.count} · ${F.stuck.overdue.count}`} sub={`stuck ${THRESHOLDS.stuckDays}+ days · past close date`} onOpen={() => openCard("funnelStuck")}>
+                    <Line label="Stuck, value" value={money(F.stuck.stuck.value)} cls={F.stuck.stuck.count ? "text-red-700" : ""} />
+                    <Line label="Past close date, value" value={money(F.stuck.overdue.value)} cls={F.stuck.overdue.count ? "text-red-700" : ""} />
+                    <Line label="Auto-moved to Future Orders this month" value={F.stuck.autoMoved.loaded ? `${F.stuck.autoMoved.count} · ${money(F.stuck.autoMoved.value)}` : NO_FIGURE} />
+                    <Line label={`Due to auto-move within ${THRESHOLDS.autoMoveSoonDays} day`} value={F.stuck.dueSoon.count} />
+                  </Card>
+                </>
+              );
+            })()}
+          </Stage>
+          <Stage n={4} name="Visits" testid="stage-visits" arrow>
+            <Card testid="card-visits" title="Visits" value={`${c.visits.today.count} · ${c.visits.mtd.count}`} sub={`${shortDay(c.visits.day)} · month to date`} onOpen={() => openCard("visits")}>
+              <Line label="To planned customers (MTD)" value={fmtPct(c.visits.mtd.inPlanPct, 0)} />
+              <Line label="+ / = / −" value={`${c.visits.mtd.responses.positive} / ${c.visits.mtd.responses.neutral} / ${c.visits.mtd.responses.negative}`} />
+            </Card>
+            <Card testid="card-planned-visited" title="Planned customers visited" value={`${c.visits.plannedVisited} of ${c.visits.plannedCustomers}`} sub="month to date" onOpen={() => openCard("plannedVisited")}>
+              <Line label="Visited" value={c.visits.plannedVisited} />
+              <Line label="Not visited" value={c.visits.plannedCustomers - c.visits.plannedVisited} cls={c.visits.plannedCustomers - c.visits.plannedVisited ? "text-red-700" : ""} />
+            </Card>
+          </Stage>
+          <Stage n={5} name="Achieved" testid="stage-achieved">
+            <Card testid="card-achieved" title="Achieved" value={money(c.achieved.total)} sub={`${fmtPct(c.achieved.pctOfTarget, 0)} of target`} onOpen={() => openCard("achieved")}>
+              {c.achieved.isCurrent
+                ? <Line label="Month elapsed" value={fmtPct(c.achieved.elapsedPct, 0)} cls={c.achieved.pacingOk ? "text-emerald-700" : "text-red-700"} />
+                : <Line label="Month closed" value="—" />}
+              {c.achieved.returns > 0 && <Line label="Returns" value={`−${money(c.achieved.returns)}`} />}
+            </Card>
+            <Card testid="card-from-plan" title="From plan vs outside plan" value={money(c.fromPlan.fromPlan)} sub={`from this month's plan · ${fmtPct(c.fromPlan.fromPlanPct, 0)} of invoiced`} onOpen={() => openCard("fromPlan")}>
+              <Line label="Outside plan" value={money(c.fromPlan.outsidePlan)} />
+              {c.fromPlan.returns > 0 && <Line label="Returns" value={`−${money(c.fromPlan.returns)}`} />}
+            </Card>
+            <Card testid="card-outcomes" title="Plan outcomes" value={`${c.outcomes.total.count} items`} sub={`achieved from plan ${fmtPct(c.outcomes.achievedFromPlanPct, 0)}`} onOpen={() => openCard("outcomes")}>
+              {outcomeLabels.map((l) => (
+                <div key={l} title={OUTCOME_HELP[l]}>
+                  <Line label={l} value={`${c.outcomes[l].count} · ${money(c.outcomes[l].value)}`} cls={OUTCOME_STYLE[l]} />
+                </div>
+              ))}
+              <p className="text-[11px] text-gray-500 pt-1" data-testid="outcomes-explain">
+                {outcomeLabels.map((l) => `${l}: ${OUTCOME_HELP[l].toLowerCase()}`).join(" · ")}.
+              </p>
+            </Card>
+          </Stage>
+        </section>
+
+        {/* Under the four stages: Exceptions, full width. */}
+        <section aria-label="Exceptions summary">
+          <Card wide testid="card-exceptions" title="Exceptions" value={c.exceptions.total} sub="need a decision" onOpen={() => openCard("exceptions")}>
             <Line label="High" value={c.exceptions.high} cls={c.exceptions.high ? "text-red-700" : ""} />
             <Line label="Medium" value={c.exceptions.medium} />
             <Line label="Low" value={c.exceptions.low} />
@@ -370,26 +464,38 @@ export default function SalesMonitor() {
         <section className="bg-white border border-gray-200 rounded-xl" aria-label="Salesman scoreboard">
           <div className="px-4 py-3 border-b border-gray-100">
             <h2 className="text-base font-semibold text-gray-900">Salesman scoreboard</h2>
-            <p className="text-xs text-gray-600">Exceptions first. Click a column to sort, a row to open the salesman. Submitted plan = the total on the plan as filed; Plan now = its items today (open or a live deal), as % of the submitted required plan, or of an estimate ("est.") where none was submitted. Coverage = (open deals due + open plan) ÷ (target − achieved).</p>
+            <p className="text-xs text-gray-600">Columns follow the process: target, plan, funnel, visits, achieved. Exceptions first. Click a column to sort, a row to open the salesman. Submitted plan = the total on the plan as filed; Plan now = its items today (open or a live deal), as % of the submitted required plan, or of an estimate ("est.") where none was submitted. Coverage = (open deals due + open plan) ÷ (target − achieved).</p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1420px] text-xs" data-testid="monitor-scoreboard">
+            <table className="w-full min-w-[1640px] text-xs" data-testid="monitor-scoreboard">
               <thead className="bg-gray-50">
+                <tr data-testid="scoreboard-bands">
+                  <th scope="colgroup" colSpan={2} data-testid="band-who" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 sticky left-0 bg-gray-50 z-10"></th>
+                  <th scope="colgroup" colSpan={1} data-testid="band-target" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Target</th>
+                  <th scope="colgroup" colSpan={4} data-testid="band-planned" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Planned</th>
+                  <th scope="colgroup" colSpan={3} data-testid="band-funnel" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Funnel</th>
+                  <th scope="colgroup" colSpan={2} data-testid="band-visits" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Visits</th>
+                  <th scope="colgroup" colSpan={4 + outcomeLabels.length} data-testid="band-achieved" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Achieved</th>
+                  <th scope="colgroup" colSpan={1} data-testid="band-who" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200"></th>
+                </tr>
                 <tr>
                   <Th k="name" left>Salesman</Th>
                   <Th>Division</Th>
                   <Th k="target">Target</Th>
+                  <Th>Plan status</Th>
                   <Th k="submitted">Submitted plan</Th>
                   <Th k="planned">Plan now (% req.)</Th>
-                  <Th>Plan status</Th>
+                  <Th k="coverage">Coverage</Th>
+                  <Th k="converted" help="Plan items of the month converted into a deal, of all the month's plan items">Converted</Th>
+                  <Th k="funnelOpen" help="Open funnel, as Insights: open deals due this month or undated">Open deals</Th>
+                  <Th k="stuck" help={`Open deals with no stage change for ${THRESHOLDS.stuckDays} days or more`}>Stuck</Th>
+                  <Th k="visits">Visits MTD (% planned)</Th>
+                  <Th k="lastVisit">Last visit</Th>
                   <Th k="achieved">Achieved</Th>
                   <Th k="achievedPct">% target</Th>
                   <Th k="fromPlan">From / outside plan</Th>
                   {outcomeLabels.map((l) => <Th key={l} k={OUTCOME_KEY[l]} help={OUTCOME_HELP[l]}>{l}</Th>)}
                   <Th k="wni">Won not invoiced</Th>
-                  <Th k="visits">Visits MTD (% planned)</Th>
-                  <Th k="lastVisit">Last visit</Th>
-                  <Th k="coverage">Coverage</Th>
                   <Th k="exceptions">Exceptions</Th>
                 </tr>
               </thead>
@@ -399,8 +505,6 @@ export default function SalesMonitor() {
                     <td className="px-2 py-2 sticky left-0 bg-white group-hover:bg-gray-50 font-medium text-gray-900 whitespace-nowrap">{p.name}</td>
                     <td className="px-2 py-2 text-right text-gray-600">{p.division}</td>
                     <td className="px-2 py-2 text-right font-mono">{money(p.target)}</td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title="total_planned on the plan as filed">{p.submittedPlanned === null ? NO_FIGURE : money(p.submittedPlanned)}</td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title={p.requiredSource === "submitted" ? `open + live-deal plan items today, as % of the submitted required plan ${money(p.requiredPlan)}` : p.requiredSource === "estimated" ? `open + live-deal plan items today, as % of an ESTIMATED required plan ${money(p.requiredPlan)} (no submitted plan): gap to target ÷ conversion rate` : "open + live-deal plan items today"}>{money(p.planned)} <span className="text-gray-500">({fmtPct(p.plannedPctOfRequired, 0)}{p.requiredSource === "estimated" ? " est." : ""})</span></td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       {p.planStatus ? (
                         <span className={p.planStatus.submitted ? (p.planStatus.approval === "rejected" ? "text-red-700" : "text-gray-700") : "text-red-700"}>
@@ -408,6 +512,14 @@ export default function SalesMonitor() {
                         </span>
                       ) : "—"}
                     </td>
+                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title="total_planned on the plan as filed">{p.submittedPlanned === null ? NO_FIGURE : money(p.submittedPlanned)}</td>
+                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title={p.requiredSource === "submitted" ? `open + live-deal plan items today, as % of the submitted required plan ${money(p.requiredPlan)}` : p.requiredSource === "estimated" ? `open + live-deal plan items today, as % of an ESTIMATED required plan ${money(p.requiredPlan)} (no submitted plan): gap to target ÷ conversion rate` : "open + live-deal plan items today"}>{money(p.planned)} <span className="text-gray-500">({fmtPct(p.plannedPctOfRequired, 0)}{p.requiredSource === "estimated" ? " est." : ""})</span></td>
+                    <td className="px-2 py-2 text-right font-mono">{p.coverageMet ? "met" : p.coverageRatio === null ? NO_FIGURE : `${p.coverageRatio.toFixed(2)}×`}</td>
+                    <td data-testid="fn-converted" className="px-2 py-2 text-right font-mono whitespace-nowrap">{funnelOf(p) ? `${funnelOf(p).converted} of ${funnelOf(p).items}` : NO_FIGURE}</td>
+                    <td data-testid="fn-open" className="px-2 py-2 text-right font-mono">{funnelOf(p) ? money(funnelOf(p).openValue) : NO_FIGURE}</td>
+                    <td data-testid="fn-stuck" className={`px-2 py-2 text-right font-mono ${funnelOf(p)?.stuck ? "text-red-700" : "text-gray-400"}`}>{funnelOf(p) ? funnelOf(p).stuck : NO_FIGURE}</td>
+                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{p.visitsMtd} <span className="text-gray-500">({fmtPct(p.visitsMtdInPlanPct, 0)})</span></td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap">{shortDay(p.lastVisit)}</td>
                     <td className="px-2 py-2 text-right font-mono">{money(p.achieved)}</td>
                     <td className="px-2 py-2 text-right font-mono">{fmtPct(p.achievedPct, 0)}</td>
                     <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{money(p.fromPlan)} / {money(p.outsidePlan)}</td>
@@ -415,14 +527,11 @@ export default function SalesMonitor() {
                       <td key={l} data-testid={`out-${l}`} className={`px-2 py-2 text-right font-mono ${p.outcomes[l].count ? OUTCOME_STYLE[l] : "text-gray-300"}`} title={`${l}: ${money(p.outcomes[l].value)} planned`}>{p.outcomes[l].count}</td>
                     ))}
                     <td className="px-2 py-2 text-right font-mono">{money(p.wonNotInvoiced)}</td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{p.visitsMtd} <span className="text-gray-500">({fmtPct(p.visitsMtdInPlanPct, 0)})</span></td>
-                    <td className="px-2 py-2 text-right whitespace-nowrap">{shortDay(p.lastVisit)}</td>
-                    <td className="px-2 py-2 text-right font-mono">{p.coverageMet ? "met" : p.coverageRatio === null ? NO_FIGURE : `${p.coverageRatio.toFixed(2)}×`}</td>
                     <td className={`px-2 py-2 text-right font-mono ${p.exceptions ? "text-red-700 font-semibold" : "text-gray-400"}`}>{p.exceptions}</td>
                   </tr>
                 ))}
                 {!people.length && (
-                  <tr><td colSpan={14 + outcomeLabels.length} className="px-4 py-8 text-center text-sm text-gray-400">Nobody in this view carries a target.</td></tr>
+                  <tr><td colSpan={17 + outcomeLabels.length} className="px-4 py-8 text-center text-sm text-gray-400">Nobody in this view carries a target.</td></tr>
                 )}
               </tbody>
             </table>
@@ -511,7 +620,7 @@ export default function SalesMonitor() {
           <div className="px-4 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <h2 className="text-base font-semibold text-gray-900">Exceptions</h2>
-              <p className="text-xs text-gray-600">High first, newest first. Click one to open the record. Won not invoiced counts from {THRESHOLDS.wonNotInvoicedDays} days.</p>
+              <p className="text-xs text-gray-600">High first, newest first. Click one to open the record; each says what clears it. Won not invoiced counts from {THRESHOLDS.wonNotInvoicedDays} days.</p>
             </div>
             <div className="flex gap-1" role="group" aria-label="Severity">
               {["all", "high", "medium", "low"].map((s) => (
@@ -523,18 +632,29 @@ export default function SalesMonitor() {
             </div>
           </div>
           <ul className="divide-y divide-gray-100" data-testid="monitor-feed-list">
-            {feed.map((e) => (
-              <li key={e.id}>
-                <button type="button" onClick={() => openRecord(e)} className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-start gap-3">
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border uppercase ${SEV_STYLE[e.severity]}`}>{e.severity}</span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm text-gray-900">{e.title}</span>
-                    <span className="block text-xs text-gray-600 break-words">{e.group} · {e.owner} · {e.detail}</span>
-                  </span>
-                  <span className="text-xs text-gray-500 whitespace-nowrap">{shortDay(e.date)}</span>
-                </button>
-              </li>
-            ))}
+            {feed.map((e) => {
+              // What clears it, in one line, and a button where its screen exists (session 39).
+              const act = exceptionAction(e, { monthStart: model.monthStart });
+              return (
+                <li key={e.id} className="flex flex-col sm:flex-row sm:items-start hover:bg-gray-50">
+                  <button type="button" onClick={() => openRecord(e)} className="flex-1 min-w-0 text-left px-4 py-2.5 flex items-start gap-3">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border uppercase ${SEV_STYLE[e.severity]}`}>{e.severity}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm text-gray-900">{e.title}</span>
+                      <span className="block text-xs text-gray-600 break-words">{e.group} · {e.owner} · {e.detail}</span>
+                      <span className="block text-xs text-blue-800 mt-0.5" data-testid="feed-action">To clear it: {act.text}</span>
+                    </span>
+                    <span className="text-xs text-gray-500 whitespace-nowrap">{shortDay(e.date)}</span>
+                  </button>
+                  {act.to && (
+                    <button type="button" data-testid="feed-action-button" onClick={() => runAction(e, act)}
+                      className="mx-4 mb-2 sm:my-2.5 sm:ml-0 self-start text-[11px] px-2 py-0.5 rounded border border-blue-300 text-blue-800 hover:bg-blue-50 whitespace-nowrap">
+                      {act.button}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
             {!feed.length && <li className="px-4 py-8 text-center text-sm text-gray-400">No exceptions.</li>}
           </ul>
         </section>
@@ -557,6 +677,7 @@ export default function SalesMonitor() {
           scopeLabel={model.division?.name || "company"}
           children={drill.children || null}
           tabs={drill.tabs || null}
+          initialSelection={drill.initialSelection || null}
           exportInfo={drill.tabs ? { prefix: "Sales Monitor", card: drill.card || drill.label, period } : null}
         />
       )}

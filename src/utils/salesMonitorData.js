@@ -4,7 +4,8 @@ import { fetchAdditionalDivisions } from 'utils/divisionMembership';
 import { fetchConversionBaseOrDeals, nextMonthBounds } from 'utils/planningCalculations';
 import { scopeUserIds } from 'utils/salesDivisionMetrics';
 import { resolveApproverMap } from 'utils/planApproval';
-import { CONTACT_KINDS, ACTIVITY_CONTACT_KINDS } from 'utils/salesMonitor';
+import { CONTACT_KINDS, ACTIVITY_CONTACT_KINDS, addDays } from 'utils/salesMonitor';
+import { SLA_REASON } from 'utils/leadExpiryCheck';
 import { isMissingColumn } from 'utils/missingColumn';
 
 export { isMissingColumn };
@@ -71,6 +72,18 @@ async function byIds(table, cols, ids) {
   return out;
 }
 
+/** Rows whose `col` is in `ids`, in chunks, through fetchAllRows. */
+async function byColumn(table, cols, col, ids) {
+  const out = [];
+  for (const part of chunks([...new Set((ids || []).filter(Boolean))])) {
+    // eslint-disable-next-line no-await-in-loop
+    const res = await fetchAllRows(() => supabase.from(table).select(cols, { count: 'exact' }).in(col, part));
+    if (res.error) return { data: out, error: res.error };
+    out.push(...(res.data || []));
+  }
+  return { data: out, error: null };
+}
+
 /**
  * Everything the page shows, for one viewer and one month.
  *
@@ -112,6 +125,7 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
       returns: [], flags: [], escalations: [], additionalByUser: {}, conversionBase: {},
       planItems: [], bounceLogs: [], submissions: [], futurePushes: [], contactReports: [],
       activities: [], contacts: [], departedOpenPlan: [], contactIdColumn: false,
+      stageHistory: [], stageHistoryLoaded: false, autoMoved: [], autoMovedLoaded: false, leadConvertedAt: {},
     };
   }
   if (divisionsRes.error) base.notes.push('Sales divisions could not be loaded, so everyone is shown under Unassigned.');
@@ -321,6 +335,63 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
   try { approvers = await resolveApproverMap(companyId, scopeIds); } catch (e) { console.warn('Sales Monitor: approvers not resolved:', e?.message || e); }
   const approverNames = Object.fromEntries(allUsers.map((u) => [u.id, u.full_name || u.email || 'Unknown']));
 
+  // ── THE FUNNEL STAGE'S OWN READS (session 41) — all guarded ──
+  //
+  // deal_stage_history (migrations/add_deal_stage_history.sql, applied
+  // 2026-10-05): one row per stage a deal entered, written by updateDeal and
+  // createDeal. The rows entered from 7 days before the month to its end are
+  // read, then EVERY row of those deals, so each move can be compared with the
+  // stage before it. Rows are deleted with their deal (ON DELETE CASCADE), so a
+  // lead the 3-day sweep removed leaves none.
+  const scopeDealIds = new Set(allDeals.map((d) => d.id));
+  let stageHistoryLoaded = true;
+  const historyWindow = await fetchAllRows(() => supabase.from('deal_stage_history')
+    .select('id, deal_id, stage, entered_at, exited_at', { count: 'exact' })
+    .eq('company_id', companyId)
+    .gte('entered_at', `${addDays(monthStart, -7)}T00:00:00+03:00`)
+    .lte('entered_at', `${monthEnd}T23:59:59+03:00`));
+  let stageHistory = [];
+  if (historyWindow.error) {
+    stageHistoryLoaded = false;
+    console.warn('Sales Monitor: deal stage history not loaded:', historyWindow.error.message);
+    base.notes.push('Deal stage history could not be read, so funnel movement is not shown.');
+  } else {
+    const moved = [...new Set((historyWindow.data || []).map((h) => h.deal_id).filter((id) => scopeDealIds.has(id)))];
+    const every = await byColumn('deal_stage_history', 'id, deal_id, stage, entered_at, exited_at', 'deal_id', moved);
+    if (every.error) {
+      stageHistoryLoaded = false;
+      console.warn('Sales Monitor: deal stage history not loaded:', every.error.message);
+      base.notes.push('Deal stage history could not be read, so funnel movement is not shown.');
+    } else stageHistory = every.data;
+  }
+  // Leads the 3-day sweep moved to Future Orders in the month: the sweep
+  // (utils/leadExpiryCheck.js, moveLeadToFutureOrders) writes a future_orders
+  // row with reason SLA_REASON, the deal it came from in source_deal_id and
+  // the time in moved_at, and then deletes the deal. That row is how they are
+  // found — the deal itself no longer exists.
+  let autoMovedLoaded = true;
+  const autoMovedRes = await fetchAllRows(() => supabase.from('future_orders')
+    .select('id, owner_id, contact_id, customer_name, planned_amount, expected_month, status, opportunity_id, source_deal_id, moved_at, reason, division_id', { count: 'exact' })
+    .eq('company_id', companyId)
+    .in('owner_id', scopeIds)
+    .eq('reason', SLA_REASON)
+    .gte('moved_at', `${monthStart}T00:00:00+03:00`)
+    .lte('moved_at', `${monthEnd}T23:59:59+03:00`));
+  if (autoMovedRes.error) {
+    autoMovedLoaded = false;
+    console.warn('Sales Monitor: auto-moved leads not loaded:', autoMovedRes.error.message);
+    base.notes.push('Leads moved to Future Orders by the 3-day rule could not be read.');
+  }
+  // converted_at of open Leads — the sweep's own clock falls back to it — read
+  // apart, so a failure only loses that fallback.
+  const leadConvertedAt = {};
+  const leadIds = allDeals.filter((d) => d.stage === 'lead').map((d) => d.id);
+  if (leadIds.length) {
+    const conv = await byColumn('deals', 'id, converted_at', 'id', leadIds);
+    if (conv.error) console.warn('Sales Monitor: deals.converted_at not read:', conv.error.message);
+    (conv.data || []).forEach((d) => { if (d.converted_at) leadConvertedAt[d.id] = d.converted_at; });
+  }
+
   const [additionalByUser, conversionBase] = await Promise.all([
     fetchAdditionalDivisions({ companyId, userIds: scopeIds }),
     fetchConversionBaseOrDeals({ companyId, divisionIds: divisions.map((d) => d.id) }),
@@ -355,5 +426,10 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
     contactIdColumn,
     approvers,
     approverNames,
+    stageHistory,
+    stageHistoryLoaded,
+    autoMoved: autoMovedRes.error ? [] : autoMovedRes.data || [],
+    autoMovedLoaded,
+    leadConvertedAt,
   };
 }

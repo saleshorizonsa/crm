@@ -55,6 +55,10 @@ import { computeWeeklyPacing } from 'utils/weeklyPacing';
 import { wholePeriodOf, isCurrentMonthRange } from 'utils/dashboardDateUtils';
 import { buildForecast } from 'utils/forecastEngine';
 import { loadSalesMonitor } from 'utils/salesMonitorData';
+// Session 41: the Funnel group's independent recomputation.
+import { partitionOpenFunnel as partitionOpenFunnelS41 } from 'utils/openFunnel';
+import { THRESHOLDS as MONITOR_THRESHOLDS } from 'utils/salesMonitorThresholds';
+import { riyadhDate as riyadhDateS41 } from 'utils/visits';
 import { computeSalesMonitor, OUTCOME_ORDER, DEPARTED_ID, NO_TARGET_ID } from 'utils/salesMonitor';
 import {
   reportService,
@@ -1663,7 +1667,49 @@ async function buildInsightsVsPlanningRows({
  *
  * Whole months only: the page is a monthly page.
  */
-async function buildSalesMonitorRows({ companyId, bundle, start, end, reference, viewer }) {
+/**
+ * SALES MONITOR — ③ FUNNEL (session 41). The page's Funnel figures against an
+ * independent recomputation from the bundle's own deal read: the open funnel
+ * through partitionOpenFunnel over active achievers' open deals, the stuck and
+ * overdue counts from the deals' own dates, and every list adding up to its
+ * card.
+ */
+function buildSalesMonitorFunnelRows({ bundle, model, start, end }) {
+  const F = model.funnel;
+  const users = bundle.users || [];
+  const forward = new Set(activeIdsFrom(achieverIdsFrom(users, { includeInactive: true }), users));
+  const open = (bundle.deals || []).filter((d) => forward.has(d.owner_id) && !['won', 'lost'].includes(d.stage));
+  const split = partitionOpenFunnelS41({ rows: open, start, end });
+  const today = model.today;
+  const days = (d) => {
+    const a = riyadhDateS41(d.stage_changed_at || d.created_at);
+    if (!a) return null;
+    return Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+  };
+  const stuck = open.filter((d) => days(d) !== null && days(d) >= MONITOR_THRESHOLDS.stuckDays);
+  const overdue = open.filter((d) => d.expected_close_date && String(d.expected_close_date).slice(0, 10) < today);
+  const c = F.cards;
+  const partKeys = ['open', 'won', 'lost', 'gone', 'notStarted', 'moved', 'other'];
+  const moveKinds = ['forward', 'back', 'won', 'lost', 'new', 'unrecorded', 'same'];
+  return [
+    row({ label: 'Sales Monitor — 3 Funnel: deals by stage = open funnel (active achievers, due in the month or undated, raw amount)', value: c.stages.total, expected: split.total }),
+    row({ label: 'Sales Monitor — 3 Funnel: deals by stage, count', value: c.stages.count, expected: split.dealCount, kind: 'count' }),
+    row({ label: 'Sales Monitor — 3 Funnel: deals by stage = Insights Open funnel (calcDivisionMetrics.monthFunnel)', value: c.stages.total, expected: model.metrics.monthFunnel }),
+    row({ label: 'Sales Monitor — 3 Funnel: the stages add up to the total', value: c.stages.byStage.reduce((x, y) => x + y.value, 0), expected: c.stages.total }),
+    row({ label: 'Sales Monitor — 3 Funnel: stage counts add up', value: c.stages.byStage.reduce((x, y) => x + y.count, 0), expected: c.stages.count, kind: 'count' }),
+    row({ label: 'Sales Monitor — 3 Funnel: all dates = every open deal of active achievers', value: c.stages.allDates.total, expected: open.reduce((x, d) => x + n(d.amount), 0) }),
+    row({ label: 'Sales Monitor — 3 Funnel: Plan → deal parts add up to the plan items', value: partKeys.reduce((x, k) => x + c.plan[k].count, 0), expected: c.plan.total.count, kind: 'count' }),
+    row({ label: 'Sales Monitor — 3 Funnel: Plan → deal parts add up in value', value: partKeys.reduce((x, k) => x + c.plan[k].value, 0), expected: c.plan.total.value }),
+    row({ label: 'Sales Monitor — 3 Funnel: plan items = Plan outcomes items', value: c.plan.total.count, expected: model.cards.outcomes.total.count, kind: 'count' }),
+    row({ label: 'Sales Monitor — 3 Funnel: movement, 7 days, kinds add up', value: moveKinds.reduce((x, k) => x + c.movement.week[k], 0), expected: c.movement.week.total, kind: 'count' }),
+    row({ label: 'Sales Monitor — 3 Funnel: movement, month to date, kinds add up', value: moveKinds.reduce((x, k) => x + c.movement.mtd[k], 0), expected: c.movement.mtd.total, kind: 'count' }),
+    row({ label: `Sales Monitor — 3 Funnel: stuck ${MONITOR_THRESHOLDS.stuckDays}+ days (as of today)`, value: c.stuck.stuck.count, expected: stuck.length, kind: 'count' }),
+    row({ label: 'Sales Monitor — 3 Funnel: past close date (as of today)', value: c.stuck.overdue.count, expected: overdue.length, kind: 'count' }),
+    row({ label: 'Sales Monitor — 3 Funnel: leads moved to Future Orders by the 3-day rule this month', value: c.stuck.autoMoved.count, kind: 'count', note: c.stuck.autoMoved.loaded ? 'future_orders.reason = SLA_REASON, moved_at in the month' : 'not read' }),
+  ];
+}
+
+async function buildSalesMonitorRows({ companyId, bundle, start, end, reference, viewer, out = null }) {
   const rows = [];
   const users = bundle.users || [];
   let model;
@@ -1672,6 +1718,7 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
       companyId, viewerId: viewer?.id || null, role: 'director', monthKey: String(start).slice(0, 7), now: bundle.now,
     });
     model = computeSalesMonitor(raw);
+    if (out) out.model = model;
   } catch (e) {
     rows.push(row({ label: `Sales Monitor: could not load (${e?.message || e})`, value: 0, expected: 1 }));
     return rows;
@@ -2582,8 +2629,13 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
   // Sales Monitor (session 34) — appended LAST so every group above reads
   // exactly as it did before it existed.
   if (isWholeMonth) {
-    const monitorRows = await buildSalesMonitorRows({ companyId, bundle, start, end, reference, viewer });
+    const monitorOut = {};
+    const monitorRows = await buildSalesMonitorRows({ companyId, bundle, start, end, reference, viewer, out: monitorOut });
     groups.push({ screen: 'Sales Monitor (session 34)', fn: 'loadSalesMonitor + computeSalesMonitor', rows: monitorRows });
+    // Session 41 — appended after it, so every group above reads as before.
+    if (monitorOut.model) {
+      groups.push({ screen: 'Sales Monitor — 3 Funnel (session 41)', fn: 'computeSalesMonitor → computeFunnel', rows: buildSalesMonitorFunnelRows({ bundle, model: monitorOut.model, start, end }) });
+    }
   }
 
   const allRows = groups.flatMap((g) => g.rows);

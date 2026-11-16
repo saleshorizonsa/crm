@@ -7,7 +7,9 @@ const DAY_MS = 1000 * 60 * 60 * 24;
 
 // Days a converted lead may sit in the Lead stage with no contact before it is
 // moved out of the Funnel and parked in Future Orders.
-const SLA_DAYS = 3;
+// Exported (session 41) so the Sales Monitor's "due to auto-move" reads the
+// sweep's own numbers rather than a copy.
+export const SLA_DAYS = 3;
 
 export const SLA_REASON = 'No contact within 3-day SLA';
 
@@ -34,7 +36,7 @@ const UNDEFINED_COLUMN = '42703';
 // (updated whenever the deal's stage changes) with fallbacks to converted_at /
 // created_at. A lead that advances resets its timer via stage_changed_at; one that
 // never leaves stage='lead' is moved to Future Orders after 3 days.
-function referenceTime(lead) {
+export function referenceTime(lead) {
   return new Date(lead.stage_changed_at || lead.converted_at || lead.created_at);
 }
 
