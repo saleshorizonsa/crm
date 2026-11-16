@@ -117,6 +117,12 @@ const SORTS = {
   outPending: (p) => p.outcomes.Pending.count,
   coverage: (p) => (p.coverageMet ? Infinity : p.coverageRatio ?? -1),
 };
+// Session 41: the Funnel band's columns sort on the funnel's per-person figures.
+const FUNNEL_SORTS = {
+  converted: (f) => (f ? f.converted : -1),
+  funnelOpen: (f) => (f ? f.openValue : -1),
+  stuck: (f) => (f ? f.stuck : -1),
+};
 
 export default function SalesMonitor() {
   const { user, company, userProfile } = useAuth();
@@ -238,8 +244,9 @@ export default function SalesMonitor() {
   if (!model) return null;
 
   const c = model.cards;
+  const funnelOf = (p) => model.funnel?.perPerson?.[p.id] || null;
   const people = [...model.people].sort((a, b) => {
-    const f = SORTS[sort.key] || SORTS.exceptions;
+    const f = FUNNEL_SORTS[sort.key] ? (q) => FUNNEL_SORTS[sort.key](funnelOf(q)) : SORTS[sort.key] || SORTS.exceptions;
     const x = f(a); const y = f(b);
     const less = x < y ? -1 : x > y ? 1 : 0;
     const primary = sort.dir === "asc" ? less : -less;
@@ -289,7 +296,7 @@ export default function SalesMonitor() {
         <div className="flex flex-col sm:flex-row sm:items-end gap-3 justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-gray-900">Sales Monitor</h1>
-            <p className="text-sm text-gray-600">Target → plan → visits → result for {period}{model.division ? ` · ${model.division.name}` : ""}. Click any card to open its stage page.</p>
+            <p className="text-sm text-gray-600">Target → plan → funnel → visits → result for {period}{model.division ? ` · ${model.division.name}` : ""}. Click any card to open its stage page.</p>
           </div>
           <div className="flex flex-wrap gap-2 items-end">
             <label className="text-xs text-gray-600">
@@ -334,9 +341,10 @@ export default function SalesMonitor() {
         )}
 
         {/* ── A. THE SALES PROCESS (session 38, CEO 2026-11-15) ──
-            Target → Planned → Visits → Achieved, each card under its stage.
+            Target → Planned → Funnel → Visits → Achieved (Funnel: session 41),
+            each card under its stage.
             The cards are the ones this page always had, moved, not changed. */}
-        <section aria-label="Sales process" data-testid="monitor-stages" className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        <section aria-label="Sales process" data-testid="monitor-stages" className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           <Stage n={1} name="Target" testid="stage-target" arrow>
             <Card testid="card-target" title="Target" value={money(c.target.total)} sub={c.target.span} onOpen={() => openCard("target")}>
               <Line label="People with a target" value={model.people.filter((p) => p.target > 0).length} />
@@ -374,7 +382,42 @@ export default function SalesMonitor() {
               <p className="text-[11px] text-gray-500" data-testid="company-required">Insights' company required pipeline, for comparison only: {money(c.planned.companyRequired.value)} = (target {money(c.planned.companyRequired.target)} − achieved {money(c.planned.companyRequired.achieved)}) ÷ {fmtPct(c.planned.companyRequired.winRatePct, 1)} conversion.</p>
             </Card>
           </Stage>
-          <Stage n={3} name="Visits" testid="stage-visits" arrow>
+          <Stage n={3} name="Funnel" testid="stage-funnel" arrow>
+            {(() => {
+              const F = model.funnel.cards;
+              return (
+                <>
+                  <Card testid="card-funnel-plan" title="Plan → deal" value={`${F.plan.converted.count} of ${F.plan.total.count}`} sub={`converted · ${fmtPct(F.plan.convertedPct, 0)} of items, ${fmtPct(F.plan.convertedValuePct, 0)} of value`} onOpen={() => openCard("funnelPlan")}>
+                    <Line label="Converted" value={money(F.plan.converted.value)} />
+                    <Line label="Not started (still open)" value={`${F.plan.notStarted.count} · ${money(F.plan.notStarted.value)}`} cls={F.plan.notStarted.count ? "text-red-700" : ""} />
+                    <Line label="Moved to later months" value={`${F.plan.moved.count} · ${money(F.plan.moved.value)}`} />
+                    {F.plan.other.count > 0 && <Line label="Other" value={`${F.plan.other.count} · ${money(F.plan.other.value)}`} />}
+                  </Card>
+                  <Card testid="card-funnel-stages" title="Deals by stage" value={money(F.stages.total)} sub="open funnel, as Insights" onOpen={() => openCard("funnelStages")}>
+                    {F.stages.byStage.map((x) => <Line key={x.stage} label={x.label} value={`${x.count} · ${money(x.value)}`} />)}
+                    <Line label="… of which undated" value={`${F.stages.undated.count} · ${money(F.stages.undated.value)}`} />
+                    <Line label="All dates (any close date)" value={money(F.stages.allDates.total)} />
+                  </Card>
+                  <Card testid="card-funnel-moves" title="Movement" value={F.movement.loaded ? `${F.movement.week.forward} ↑ · ${F.movement.week.back} ↓` : NO_FIGURE} sub={`forward · back, 7 days to ${shortDay(F.movement.day)}`} onOpen={() => openCard("funnelMoves")}>
+                    {F.movement.loaded ? (
+                      <>
+                        <Line label="7 days: won / lost / new leads" value={`${F.movement.week.won} / ${F.movement.week.lost} / ${F.movement.week.new}`} />
+                        <Line label="Month to date: forward / back" value={`${F.movement.mtd.forward} / ${F.movement.mtd.back}`} />
+                        <Line label="Month to date: won / lost / new leads" value={`${F.movement.mtd.won} / ${F.movement.mtd.lost} / ${F.movement.mtd.new}`} />
+                      </>
+                    ) : <p className="text-amber-700">Deal stage history could not be read.</p>}
+                  </Card>
+                  <Card testid="card-funnel-stuck" title="Stuck and overdue" value={`${F.stuck.stuck.count} · ${F.stuck.overdue.count}`} sub={`stuck ${THRESHOLDS.stuckDays}+ days · past close date`} onOpen={() => openCard("funnelStuck")}>
+                    <Line label="Stuck, value" value={money(F.stuck.stuck.value)} cls={F.stuck.stuck.count ? "text-red-700" : ""} />
+                    <Line label="Past close date, value" value={money(F.stuck.overdue.value)} cls={F.stuck.overdue.count ? "text-red-700" : ""} />
+                    <Line label="Auto-moved to Future Orders this month" value={F.stuck.autoMoved.loaded ? `${F.stuck.autoMoved.count} · ${money(F.stuck.autoMoved.value)}` : NO_FIGURE} />
+                    <Line label={`Due to auto-move within ${THRESHOLDS.autoMoveSoonDays} day`} value={F.stuck.dueSoon.count} />
+                  </Card>
+                </>
+              );
+            })()}
+          </Stage>
+          <Stage n={4} name="Visits" testid="stage-visits" arrow>
             <Card testid="card-visits" title="Visits" value={`${c.visits.today.count} · ${c.visits.mtd.count}`} sub={`${shortDay(c.visits.day)} · month to date`} onOpen={() => openCard("visits")}>
               <Line label="To planned customers (MTD)" value={fmtPct(c.visits.mtd.inPlanPct, 0)} />
               <Line label="+ / = / −" value={`${c.visits.mtd.responses.positive} / ${c.visits.mtd.responses.neutral} / ${c.visits.mtd.responses.negative}`} />
@@ -384,7 +427,7 @@ export default function SalesMonitor() {
               <Line label="Not visited" value={c.visits.plannedCustomers - c.visits.plannedVisited} cls={c.visits.plannedCustomers - c.visits.plannedVisited ? "text-red-700" : ""} />
             </Card>
           </Stage>
-          <Stage n={4} name="Achieved" testid="stage-achieved">
+          <Stage n={5} name="Achieved" testid="stage-achieved">
             <Card testid="card-achieved" title="Achieved" value={money(c.achieved.total)} sub={`${fmtPct(c.achieved.pctOfTarget, 0)} of target`} onOpen={() => openCard("achieved")}>
               {c.achieved.isCurrent
                 ? <Line label="Month elapsed" value={fmtPct(c.achieved.elapsedPct, 0)} cls={c.achieved.pacingOk ? "text-emerald-700" : "text-red-700"} />
@@ -421,15 +464,16 @@ export default function SalesMonitor() {
         <section className="bg-white border border-gray-200 rounded-xl" aria-label="Salesman scoreboard">
           <div className="px-4 py-3 border-b border-gray-100">
             <h2 className="text-base font-semibold text-gray-900">Salesman scoreboard</h2>
-            <p className="text-xs text-gray-600">Columns follow the process: target, plan, visits, achieved. Exceptions first. Click a column to sort, a row to open the salesman. Submitted plan = the total on the plan as filed; Plan now = its items today (open or a live deal), as % of the submitted required plan, or of an estimate ("est.") where none was submitted. Coverage = (open deals due + open plan) ÷ (target − achieved).</p>
+            <p className="text-xs text-gray-600">Columns follow the process: target, plan, funnel, visits, achieved. Exceptions first. Click a column to sort, a row to open the salesman. Submitted plan = the total on the plan as filed; Plan now = its items today (open or a live deal), as % of the submitted required plan, or of an estimate ("est.") where none was submitted. Coverage = (open deals due + open plan) ÷ (target − achieved).</p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1420px] text-xs" data-testid="monitor-scoreboard">
+            <table className="w-full min-w-[1640px] text-xs" data-testid="monitor-scoreboard">
               <thead className="bg-gray-50">
                 <tr data-testid="scoreboard-bands">
                   <th scope="colgroup" colSpan={2} data-testid="band-who" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 sticky left-0 bg-gray-50 z-10"></th>
                   <th scope="colgroup" colSpan={1} data-testid="band-target" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Target</th>
                   <th scope="colgroup" colSpan={4} data-testid="band-planned" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Planned</th>
+                  <th scope="colgroup" colSpan={3} data-testid="band-funnel" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Funnel</th>
                   <th scope="colgroup" colSpan={2} data-testid="band-visits" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Visits</th>
                   <th scope="colgroup" colSpan={4 + outcomeLabels.length} data-testid="band-achieved" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200">Achieved</th>
                   <th scope="colgroup" colSpan={1} data-testid="band-who" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200"></th>
@@ -442,6 +486,9 @@ export default function SalesMonitor() {
                   <Th k="submitted">Submitted plan</Th>
                   <Th k="planned">Plan now (% req.)</Th>
                   <Th k="coverage">Coverage</Th>
+                  <Th k="converted" help="Plan items of the month converted into a deal, of all the month's plan items">Converted</Th>
+                  <Th k="funnelOpen" help="Open funnel, as Insights: open deals due this month or undated">Open deals</Th>
+                  <Th k="stuck" help={`Open deals with no stage change for ${THRESHOLDS.stuckDays} days or more`}>Stuck</Th>
                   <Th k="visits">Visits MTD (% planned)</Th>
                   <Th k="lastVisit">Last visit</Th>
                   <Th k="achieved">Achieved</Th>
@@ -468,6 +515,9 @@ export default function SalesMonitor() {
                     <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title="total_planned on the plan as filed">{p.submittedPlanned === null ? NO_FIGURE : money(p.submittedPlanned)}</td>
                     <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title={p.requiredSource === "submitted" ? `open + live-deal plan items today, as % of the submitted required plan ${money(p.requiredPlan)}` : p.requiredSource === "estimated" ? `open + live-deal plan items today, as % of an ESTIMATED required plan ${money(p.requiredPlan)} (no submitted plan): gap to target ÷ conversion rate` : "open + live-deal plan items today"}>{money(p.planned)} <span className="text-gray-500">({fmtPct(p.plannedPctOfRequired, 0)}{p.requiredSource === "estimated" ? " est." : ""})</span></td>
                     <td className="px-2 py-2 text-right font-mono">{p.coverageMet ? "met" : p.coverageRatio === null ? NO_FIGURE : `${p.coverageRatio.toFixed(2)}×`}</td>
+                    <td data-testid="fn-converted" className="px-2 py-2 text-right font-mono whitespace-nowrap">{funnelOf(p) ? `${funnelOf(p).converted} of ${funnelOf(p).items}` : NO_FIGURE}</td>
+                    <td data-testid="fn-open" className="px-2 py-2 text-right font-mono">{funnelOf(p) ? money(funnelOf(p).openValue) : NO_FIGURE}</td>
+                    <td data-testid="fn-stuck" className={`px-2 py-2 text-right font-mono ${funnelOf(p)?.stuck ? "text-red-700" : "text-gray-400"}`}>{funnelOf(p) ? funnelOf(p).stuck : NO_FIGURE}</td>
                     <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{p.visitsMtd} <span className="text-gray-500">({fmtPct(p.visitsMtdInPlanPct, 0)})</span></td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">{shortDay(p.lastVisit)}</td>
                     <td className="px-2 py-2 text-right font-mono">{money(p.achieved)}</td>
@@ -481,7 +531,7 @@ export default function SalesMonitor() {
                   </tr>
                 ))}
                 {!people.length && (
-                  <tr><td colSpan={14 + outcomeLabels.length} className="px-4 py-8 text-center text-sm text-gray-400">Nobody in this view carries a target.</td></tr>
+                  <tr><td colSpan={17 + outcomeLabels.length} className="px-4 py-8 text-center text-sm text-gray-400">Nobody in this view carries a target.</td></tr>
                 )}
               </tbody>
             </table>

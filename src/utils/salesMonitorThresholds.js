@@ -44,6 +44,17 @@ export const THRESHOLDS = {
   /** A plan item bounced this many times or more. */
   bouncedTimes: 2,
 
+  // ── Funnel (session 41) ──
+  /** An open deal with no stage change for this many days or more is stuck. */
+  stuckDays: 14,
+  /**
+   * "Due to auto-move": a Lead the 3-day sweep (utils/leadExpiryCheck.js,
+   * SLA_DAYS) will move to Future Orders within this many days.
+   */
+  autoMoveSoonDays: 1,
+  /** An open deal in Negotiation above this amount (SAR) is confirmed with its owner. */
+  negotiationLargeAmount: 1000000,
+
   // ── Data ──
   /**
    * A submission's required_plan above this many times the person's target

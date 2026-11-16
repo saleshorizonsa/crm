@@ -13,6 +13,7 @@ import { exceptionAction } from 'utils/exceptionActions';
  *
  *   /sales-monitor/target      salesman ▸ target lines
  *   /sales-monitor/planned     salesman ▸ plan items (with outcome)
+ *   /sales-monitor/funnel      salesman ▸ customer ▸ deals or plan items (session 41)
  *   /sales-monitor/visits      salesman ▸ customer ▸ visits
  *   /sales-monitor/achieved    salesman ▸ customer ▸ invoices
  *   /sales-monitor/exceptions  group ▸ exception ▸ record
@@ -35,8 +36,10 @@ import { exceptionAction } from 'utils/exceptionActions';
 export const STAGES = [
   { id: 'target', n: 1, name: 'Target', views: ['target'] },
   { id: 'planned', n: 2, name: 'Planned', views: ['planStatus', 'planned'] },
-  { id: 'visits', n: 3, name: 'Visits', views: ['visits'] },
-  { id: 'achieved', n: 4, name: 'Achieved', views: ['achieved', 'fromPlan', 'outcomes', 'wni'] },
+  // Session 41: plan items become deals and move through the stages.
+  { id: 'funnel', n: 3, name: 'Funnel', views: ['funnel'] },
+  { id: 'visits', n: 4, name: 'Visits', views: ['visits'] },
+  { id: 'achieved', n: 5, name: 'Achieved', views: ['achieved', 'fromPlan', 'outcomes', 'wni'] },
   { id: 'exceptions', n: null, name: 'Exceptions', views: ['exceptions'] },
 ];
 export const STAGE_IDS = STAGES.map((s) => s.id);
@@ -51,6 +54,7 @@ export const VIEW_LABEL = {
   fromPlan: 'From plan vs outside plan',
   outcomes: 'Plan outcomes',
   wni: 'Won not invoiced',
+  funnel: 'Funnel',
   exceptions: 'Exceptions',
 };
 
@@ -59,6 +63,10 @@ export const CARD_LINK = {
   target: { stage: 'target', view: 'target' },
   planStatus: { stage: 'planned', view: 'planStatus' },
   planned: { stage: 'planned', view: 'planned' },
+  funnelPlan: { stage: 'funnel', view: 'funnel', tab: ['planDeal'] },
+  funnelStages: { stage: 'funnel', view: 'funnel', tab: ['byStage'] },
+  funnelMoves: { stage: 'funnel', view: 'funnel', tab: ['moves7'] },
+  funnelStuck: { stage: 'funnel', view: 'funnel', tab: ['stuck'] },
   visits: { stage: 'visits', view: 'visits' },
   plannedVisited: { stage: 'visits', view: 'visits', tab: ['notVisited'] },
   achieved: { stage: 'achieved', view: 'achieved' },
@@ -74,6 +82,8 @@ export const CARD_LINK = {
 export const ONLY = {
   noNext: { label: 'without a next action', test: (r) => !String(r.nextAction || '').replace(/^—$/, '').trim() },
   moved: { label: 'moved to a later month', test: (r) => /^→/.test(String(r.detail || '')) },
+  notStarted: { label: 'not started (still open)', test: (r) => r.partKey === 'notStarted' },
+  large: { label: `over ${Math.round(THRESHOLDS.negotiationLargeAmount).toLocaleString('en-US')}`, test: (r) => Number(r.value) > THRESHOLDS.negotiationLargeAmount },
 };
 const onlyFilter = (only) => {
   if (!only) return null;
@@ -133,6 +143,7 @@ export function stageContext(model) {
   ['target', 'planStatus', 'planned', 'visits', 'achieved', 'fromPlan', 'outcomes', 'exceptions'].forEach((k) => {
     tabs[k] = model.drills?.[k]?.tabs || null;
   });
+  tabs.funnel = model.funnel?.tabs || null;
 
   // Won not invoiced: the rows calcDivisionMetrics returned for the page
   // total, summed with achievedAmount — the Won-not-invoiced figure itself.
@@ -206,6 +217,7 @@ function valueLabelOf(viewId, sel) {
   if (viewId === 'fromPlan') return 'Amount';
   if (viewId === 'outcomes') return 'Planned';
   if (viewId === 'wni') return 'Amount';
+  if (viewId === 'funnel') return ({ planDeal: 'Planned', moves7: 'Moves', movesMtd: 'Moves', autoMoved: 'Planned' })[sel[0]] || 'Amount';
   if (viewId === 'exceptions') return 'Exceptions';
   return 'Value';
 }
@@ -219,6 +231,9 @@ function personColumns(stageId) {
     return [C.division, { key: 'planStatus', label: 'Plan status' }, { key: 'submitted', label: 'Submitted plan', type: 'money' },
       { key: 'planNow', label: 'Plan now', type: 'money' }, { key: 'required', label: 'Required', type: 'money' }, { key: 'requiredFrom', label: 'Required from' },
       { key: 'pctReq', label: '% of required', type: 'pct' }];
+  }
+  if (stageId === 'funnel') {
+    return [C.division, { key: 'converted', label: 'Converted' }, { key: 'openValue', label: 'Open deals', type: 'money' }, { key: 'stuck', label: 'Stuck', type: 'int' }];
   }
   if (stageId === 'visits') {
     return [C.division, { key: 'visitsMtd', label: 'Contacts MTD', type: 'int' }, { key: 'inPlanPct', label: 'To planned customers', type: 'pct' },
@@ -251,6 +266,10 @@ function personCells(sc, stageId, id, rows) {
       pctReq: p.plannedPctOfRequired,
       requiredFrom: p.requiredSource === 'submitted' ? 'submitted plan' : p.requiredSource === 'estimated' ? 'estimate' : null,
     };
+  }
+  if (stageId === 'funnel') {
+    const f = sc.model.funnel?.perPerson?.[id];
+    return f ? { division, converted: `${f.converted} of ${f.items}`, openValue: f.openValue, stuck: f.stuck } : { division };
   }
   if (stageId === 'visits') {
     const mine = sc.model.planCustomerRows.filter((g) => g.ownerId === id);
@@ -416,6 +435,24 @@ function viewShape(sc, stageId, viewId, sel) {
         kind: 'record', name: (r) => r.title,
         columns: [{ key: 'wonDate', label: 'Won', type: 'date' }, { key: 'daysWon', label: 'Days since won', type: 'int' }],
         cells: (r) => ({ wonDate: r.wonDate, daysWon: r.daysWon }),
+      },
+    };
+  }
+  if (viewId === 'funnel') {
+    const k = sel[0];
+    const cols = k === 'planDeal'
+      ? [{ key: 'part', label: 'Became' }, { key: 'stage', label: 'Deal stage' }, { key: 'status', label: 'Plan status' }]
+      : k === 'moves7' || k === 'movesMtd'
+        ? [{ key: 'move', label: 'Move' }, { key: 'date', label: 'Date', type: 'date' }, { key: 'kindLabel', label: 'Kind' }, { key: 'stageNow', label: 'Stage now' }]
+        : k === 'autoMoved'
+          ? [{ key: 'movedDate', label: 'Moved', type: 'date' }, { key: 'expectedMonth', label: 'To', type: 'month' }, { key: 'status', label: 'Future order' }]
+          : [{ key: 'stage', label: 'Stage' }, { key: 'expectedClose', label: 'Expected close', type: 'date' }, { key: 'daysInStage', label: 'Days in stage', type: 'int' },
+            { key: 'lastContact', label: 'Last contact', type: 'date' }, ...(k === 'dueSoon' ? [{ key: 'dueIn', label: 'Moves' }] : [])];
+    return {
+      group: ['person', 'customer'],
+      leaf: {
+        kind: 'record', name: (r) => r.title, columns: cols,
+        cells: (r) => Object.fromEntries(cols.map((c) => [c.key, r[c.key]])),
       },
     };
   }
@@ -732,6 +769,20 @@ function summaryOf(sc, stageId) {
       { id: 'pctTarget', label: 'Plan now, % of target', value: c.planned.pctOfTarget, type: 'pct' },
     ];
   }
+  if (stageId === 'funnel') {
+    const f = M.funnel?.cards;
+    if (!f) return [];
+    return [
+      { id: 'converted', label: 'Plan items converted', value: `${f.plan.converted.count} of ${f.plan.total.count}` },
+      { id: 'notStarted', label: 'Not started', value: f.plan.notStarted.count, type: 'int' },
+      { id: 'funnel', label: 'Open funnel (as Insights)', value: f.stages.total, type: 'money' },
+      { id: 'allDates', label: 'Open, all dates', value: f.stages.allDates.total, type: 'money' },
+      { id: 'week', label: 'Moves, 7 days: forward / back', value: f.movement.loaded ? `${f.movement.week.forward} / ${f.movement.week.back}` : '—' },
+      { id: 'stuck', label: `Stuck ${THRESHOLDS.stuckDays}+ days`, value: f.stuck.stuck.count, type: 'int' },
+      { id: 'overdue', label: 'Past close date', value: f.stuck.overdue.count, type: 'int' },
+      { id: 'autoMoved', label: 'Auto-moved this month', value: f.stuck.autoMoved.count, type: 'int' },
+    ];
+  }
   if (stageId === 'visits') {
     return [
       { id: 'mtd', label: 'Contacts, month to date', value: c.visits.mtd.count, type: 'int' },
@@ -831,6 +882,44 @@ export function nextStepsOf(sc, stageId) {
           text: `${plural(none.length, 'salesman', 'salesmen')} with no plan item this month → ${names(none)}`,
         });
       }
+    }
+  }
+
+  if (stageId === 'funnel' && sc.tabs.funnel) {
+    const ns = rows('funnel', ['planDeal', 'all'], 'notStarted');
+    if (ns.length) {
+      out.push({
+        id: 'notConverted', count: ns.length, level: 'leaf', link: { view: 'funnel', tab: ['planDeal', 'all'], only: 'notStarted' },
+        text: `${plural(ns.length, 'plan item', 'plan items')} not converted to a deal → ${names(ns)}`,
+      });
+    }
+    const st = rows('funnel', ['stuck', 'all']);
+    if (st.length) {
+      out.push({
+        id: 'stuck', count: st.length, level: 'leaf', link: { view: 'funnel', tab: ['stuck', 'all'] },
+        text: `${plural(st.length, 'deal', 'deals')} stuck ${THRESHOLDS.stuckDays}+ days → review with ${names(st)}`,
+      });
+    }
+    const od = rows('funnel', ['overdue', 'all']);
+    if (od.length) {
+      out.push({
+        id: 'overdue', count: od.length, level: 'leaf', link: { view: 'funnel', tab: ['overdue', 'all'] },
+        text: `${plural(od.length, 'deal', 'deals')} past close date, ${fmt(sum(od, (r) => r.value))} SAR → re-date or close with ${names(od)}`,
+      });
+    }
+    const due = rows('funnel', ['dueSoon', 'all']);
+    if (due.length) {
+      out.push({
+        id: 'dueSoon', count: due.length, level: 'leaf', link: { view: 'funnel', tab: ['dueSoon', 'all'] },
+        text: `${plural(due.length, 'lead', 'leads')} due to auto-move within ${THRESHOLDS.autoMoveSoonDays} day → contact the customer: ${names(due)}`,
+      });
+    }
+    const big = rows('funnel', ['allOpen', 'negotiation'], 'large');
+    if (big.length) {
+      out.push({
+        id: 'large', count: big.length, level: 'leaf', link: { view: 'funnel', tab: ['allOpen', 'negotiation'], only: 'large' },
+        text: `${plural(big.length, 'deal', 'deals')} over ${fmt(THRESHOLDS.negotiationLargeAmount)} in Negotiation → confirm with ${names(big)}`,
+      });
     }
   }
 

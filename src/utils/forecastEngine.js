@@ -14,7 +14,7 @@ export const STAGE_WEIGHTS = DEFAULT_STAGE_WEIGHTS;
 
 export const STAGE_ORDER = ["lead", "contact_made", "proposal_sent", "negotiation", "won", "lost"];
 
-const STAGE_LABELS = {
+export const STAGE_LABELS = {
   lead:          "Lead",
   contact_made:  "Contact Made",
   proposal_sent: "Proposal Sent",
