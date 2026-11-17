@@ -1,5 +1,6 @@
 import { supabase } from 'lib/supabase';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
+import { probePlanDivisionColumn, planRowFor, fetchDivisionNames } from 'utils/planDivisions';
 
 // Manager approval workflow for monthly sales plans.
 //
@@ -228,8 +229,20 @@ const monthLabel = (planMonth) =>
 // True only when an approved plan has locked the month. Any error — including
 // the pre-migration 42703 — resolves to false, so a missing column can never
 // lock a salesman out of their own plan.
-export async function isPlanLocked(ownerId, planMonth = currentPlanMonth()) {
+export async function isPlanLocked(ownerId, planMonth = currentPlanMonth(), divisionId = null) {
   if (!ownerId) return false;
+  // Session 43: once plans can be per division, a person may hold two rows a
+  // month; the plan governing an item is its division's (utils/planDivisions
+  // planRowFor). Without the column, exactly the read below.
+  if (await probePlanDivisionColumn()) {
+    const { data: rows, error: e2 } = await supabase
+      .from('plan_submissions')
+      .select('is_locked, is_submitted, division_id')
+      .eq('owner_id', ownerId)
+      .eq('plan_month', planMonth);
+    if (e2) return false;
+    return planRowFor(rows, divisionId)?.is_locked === true;
+  }
   const { data, error } = await supabase
     .from('plan_submissions')
     .select('is_locked')
@@ -251,8 +264,8 @@ export async function isPlanLocked(ownerId, planMonth = currentPlanMonth()) {
 // decides anything — what matters is whose plan the row belongs to, which is
 // `ownerId`, and callers are responsible for passing the ROW's owner rather than
 // the viewer.
-export async function blockIfPlanLocked({ ownerId, planMonth = currentPlanMonth() }) {
-  const locked = await isPlanLocked(ownerId, planMonth);
+export async function blockIfPlanLocked({ ownerId, planMonth = currentPlanMonth(), divisionId = null }) {
+  const locked = await isPlanLocked(ownerId, planMonth, divisionId);
   if (locked) {
     // Deliberately not "Your plan": CustomerMaster passes the CUSTOMER's owner,
     // which may be a subordinate, and the message must not claim otherwise.
@@ -297,16 +310,28 @@ const CONVERSION_GATED_ROLES = ['salesman', 'supervisor'];
  *   reason ∈ approved | no_plan | unsubmitted | pending | rejected |
  *            schema_missing | lookup_failed | no_month | no_owner
  */
-export async function planApprovalState(ownerId, planMonth) {
+export async function planApprovalState(ownerId, planMonth, divisionId = null) {
   if (!ownerId) return { allowed: true, reason: 'no_owner', status: null };
   if (!planMonth) return { allowed: true, reason: 'no_month', status: null };
 
-  const { data, error } = await supabase
-    .from('plan_submissions')
-    .select('approval_status, is_submitted')
-    .eq('owner_id', ownerId)
-    .eq('plan_month', planMonth)
-    .maybeSingle();
+  // Session 43: the item's division plan, once plans can be per division.
+  let data; let error;
+  if (await probePlanDivisionColumn()) {
+    const res = await supabase
+      .from('plan_submissions')
+      .select('approval_status, is_submitted, division_id')
+      .eq('owner_id', ownerId)
+      .eq('plan_month', planMonth);
+    error = res.error;
+    data = error ? null : planRowFor(res.data, divisionId);
+  } else {
+    ({ data, error } = await supabase
+      .from('plan_submissions')
+      .select('approval_status, is_submitted')
+      .eq('owner_id', ownerId)
+      .eq('plan_month', planMonth)
+      .maybeSingle());
+  }
 
   // The approval migration not being applied is "feature off", not "block
   // everyone" — the same rule the rest of this module follows.
@@ -349,9 +374,9 @@ export function conversionBlockedMessage(reason, planMonth) {
  * Guard for converting an opportunity into a deal/lead. Returns true when the
  * caller should stop, having already told the user why.
  */
-export async function blockIfPlanNotApproved({ ownerId, role, planMonth, notify = alert }) {
+export async function blockIfPlanNotApproved({ ownerId, role, planMonth, divisionId = null, notify = alert }) {
   if (role && !CONVERSION_GATED_ROLES.includes(role)) return false;
-  const { allowed, reason } = await planApprovalState(ownerId, planMonth);
+  const { allowed, reason } = await planApprovalState(ownerId, planMonth, divisionId);
   if (allowed) return false;
   notify(conversionBlockedMessage(reason, planMonth));
   return true;
@@ -360,21 +385,23 @@ export async function blockIfPlanNotApproved({ ownerId, role, planMonth, notify 
 // ── Submit ──────────────────────────────────────────────────────────────────
 // Called after plan_submissions has been upserted with is_submitted = true.
 // Sends the notification that never existed before.
-export async function notifyPlanSubmitted({ companyId, ownerId, ownerName, planMonth, totalPlanned, submissionId }) {
+// divisionId / divisionName (session 43): a division plan names its division;
+// without them the message and metadata are exactly as before.
+export async function notifyPlanSubmitted({ companyId, ownerId, ownerName, planMonth, totalPlanned, submissionId, divisionId = null, divisionName = null }) {
   const approverId = await resolveApprover(companyId, ownerId);
   await notify({
     userId: approverId,
     companyId,
     type: 'plan_submitted',
     title: '📋 Plan Submitted for Review',
-    message: `${ownerName || 'A salesman'} submitted their ${monthLabel(planMonth)} sales plan. Total planned: ${fmtSAR(totalPlanned)} SAR. Please review and approve.`,
-    metadata: { plan_submission_id: submissionId || null, owner_id: ownerId, plan_month: planMonth },
+    message: `${ownerName || 'A salesman'} submitted their ${monthLabel(planMonth)}${divisionName ? ` ${divisionName}` : ''} sales plan. Total planned: ${fmtSAR(totalPlanned)} SAR. Please review and approve.`,
+    metadata: { plan_submission_id: submissionId || null, owner_id: ownerId, plan_month: planMonth, ...(divisionId ? { division_id: divisionId } : {}) },
   });
   return approverId;
 }
 
 // ── Approve / reject ────────────────────────────────────────────────────────
-export async function approvePlan({ submissionId, ownerId, companyId, approverId }) {
+export async function approvePlan({ submissionId, ownerId, companyId, approverId, divisionName = null }) {
   const guard = await assertIsApprover({ submissionId, companyId, actorId: approverId });
   if (guard.error) return guard;
   const now = new Date().toISOString();
@@ -395,7 +422,9 @@ export async function approvePlan({ submissionId, ownerId, companyId, approverId
     companyId,
     type: 'plan_approved',
     title: '✅ Your Plan Was Approved',
-    message: 'Your sales plan has been approved and is now locked for the month.',
+    message: divisionName
+      ? `Your ${divisionName} sales plan has been approved and is now locked for the month.`
+      : 'Your sales plan has been approved and is now locked for the month.',
     metadata: { plan_submission_id: submissionId },
   });
   return { error: null };
@@ -405,7 +434,7 @@ export async function approvePlan({ submissionId, ownerId, companyId, approverId
 // existing canSubmit gate in planning/index.jsx keys off !is_submitted, so this
 // reopens the plan without any further change there. is_locked is cleared too,
 // in case the plan was approved and then sent back.
-export async function rejectPlan({ submissionId, ownerId, companyId, reason, actorId }) {
+export async function rejectPlan({ submissionId, ownerId, companyId, reason, actorId, divisionName = null }) {
   const guard = await assertIsApprover({ submissionId, companyId, actorId });
   if (guard.error) return guard;
   const now = new Date().toISOString();
@@ -426,7 +455,7 @@ export async function rejectPlan({ submissionId, ownerId, companyId, reason, act
     companyId,
     type: 'plan_rejected',
     title: '❌ Your Plan Needs Changes',
-    message: `Your manager sent back your plan: "${reason}". Please revise and resubmit.`,
+    message: `Your manager sent back your ${divisionName ? `${divisionName} ` : ''}plan: "${reason}". Please revise and resubmit.`,
     metadata: { plan_submission_id: submissionId, rejection_reason: reason },
   });
   return { error: null };
@@ -438,9 +467,11 @@ export async function rejectPlan({ submissionId, ownerId, companyId, reason, act
 // plan is never silently hidden.
 export async function fetchPendingApprovals({ companyId, ownerIds }) {
   if (!companyId || !ownerIds?.length) return { rows: [], schemaMissing: false };
+  // Session 43: a division plan is its own card, titled with its division.
+  const hasDivision = await probePlanDivisionColumn();
   const { data, error } = await supabase
     .from('plan_submissions')
-    .select('id, plan_month, total_planned, required_plan, submitted_at, approval_status, owner_id, owner:users!owner_id(id, full_name)')
+    .select(`id, plan_month, total_planned, required_plan, submitted_at, approval_status, owner_id${hasDivision ? ', division_id' : ''}, owner:users!owner_id(id, full_name)`)
     .eq('company_id', companyId)
     .in('owner_id', ownerIds)
     .eq('approval_status', 'pending')
@@ -452,7 +483,12 @@ export async function fetchPendingApprovals({ companyId, ownerIds }) {
     console.error('fetchPendingApprovals:', error);
     return { rows: [], schemaMissing: false };
   }
-  return { rows: data || [], schemaMissing: false };
+  const rows = data || [];
+  if (hasDivision && rows.some((r) => r.division_id)) {
+    const names = await fetchDivisionNames(rows.map((r) => r.division_id));
+    rows.forEach((r) => { if (r.division_id) r.division_name = names[r.division_id] || 'Unknown division'; });
+  }
+  return { rows, schemaMissing: false };
 }
 
 // Count only — for the dashboard banner.

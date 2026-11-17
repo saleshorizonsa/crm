@@ -518,7 +518,17 @@ export default function SalesMonitor() {
                     <td className="px-2 py-2 text-right text-gray-600">{p.division}</td>
                     <td className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap">{money(p.target)}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">
-                      {p.planStatus ? (
+                      {p.planStatus?.perDivision ? (
+                        <span data-testid={`plan-status-divisions-${p.id}`}>
+                          {p.planStatus.perDivision.map((d, i) => (
+                            <React.Fragment key={d.divisionId}>
+                              {i > 0 && " · "}
+                              {d.division}{" "}
+                              <span data-deco="wrap" className={toneChip(planStatusTone(d.status === "submitted" ? "awaiting approval" : d.status))}>{d.status}</span>
+                            </React.Fragment>
+                          ))}
+                        </span>
+                      ) : p.planStatus ? (
                         <span>
                           {p.planStatus.submitted ? (
                             <>

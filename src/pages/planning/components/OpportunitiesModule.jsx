@@ -11,6 +11,7 @@ import ExportTag from 'components/ExportTag';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
 import { blockIfPlanLocked, blockIfPlanNotApproved, planMonthForDate } from 'utils/planApproval';
+import { usePlanDivisionColumn } from 'utils/planDivisions';
 import { fetchOpenFunnel } from 'utils/openFunnel';
 import { monthBoundsOf } from 'utils/planMonths';
 import {
@@ -101,6 +102,11 @@ export default function OpportunitiesModule({
   // customer key → flag list. Passed in rather than computed per row so the
   // list, the panel and the chips cannot disagree about what is wrong.
   flagsByItemId = null,
+  // Session 43: { ownerId, divisionId } while the page shows ONE DIVISION's
+  // plan of a person who plans per division. That person's rows are listed
+  // for that division only (anyone else's rows are untouched), and a new item
+  // starts in that division. null for everybody else — the list as before.
+  planDivision = null,
 }) {
   const { user, company: authCompany, userProfile } = useAuth();
   const { formatCurrency } = useCurrency();
@@ -403,9 +409,12 @@ export default function OpportunitiesModule({
       // "PVC pipe and Fitting" are one group, and only a normalised comparison
       // treats them as one. Rows with no group at all are left out while a group
       // is selected — they belong to no group, not to every group.
-      const rows = filterProductGroup
+      const byGroup = filterProductGroup
         ? (data || []).filter((o) => o.material_group && matchesGroup(o.material_group, filterProductGroup))
         : (data || []);
+      const rows = planDivision
+        ? byGroup.filter((o) => o.owner_id !== planDivision.ownerId || o.division_id === planDivision.divisionId)
+        : byGroup;
       setOpportunities(rows);
       if (filterOwner === 'all') setRecordOwners((prev) => addRecordOwners(prev, data));
     } catch (err) {
@@ -416,7 +425,7 @@ export default function OpportunitiesModule({
       setLoading(false);
     }
   }, [company?.id, isDirector, isTeamLead, user?.id, filterOwner, filterStatus, teamMembers,
-      targetMonth.start, targetMonth.end, filterProductGroup]);
+      targetMonth.start, targetMonth.end, filterProductGroup, planDivision?.ownerId, planDivision?.divisionId]);
 
   // ── Fetch: contacts + team ────────────────────────────────────────────────
   // Contacts are scoped by OWNER, not company: contacts.company_id is null in
@@ -550,8 +559,40 @@ export default function OpportunitiesModule({
   // open-only sum here, converting an item after submitting would have cut the
   // filed total by that item's value. A second hand-rolled sum here would be a
   // different definition waiting to drift.
+  const hasPlanDivision = usePlanDivisionColumn();
   const resyncSubmittedTotal = useCallback(async (ownerId) => {
     if (!company?.id || !ownerId) return;
+    // Session 43: an owner with DIVISION plans has one pending row per
+    // division; each is put back in step with its own division's items.
+    if (hasPlanDivision) {
+      const { data: pendingRows } = await supabase
+        .from('plan_submissions')
+        .select('id, division_id')
+        .eq('company_id', company.id)
+        .eq('owner_id', ownerId)
+        .eq('plan_month', targetMonth.start)
+        .eq('is_submitted', true)
+        .eq('approval_status', 'pending');
+      if ((pendingRows || []).some((r) => r.division_id)) {
+        for (const r of pendingRows) {
+          // eslint-disable-next-line no-await-in-loop
+          const res = await fetchSubmissionPlanned({
+            companyId: company.id, ownerIds: [ownerId], start: targetMonth.start, end: targetMonth.end,
+            divisionId: r.division_id || null,
+          });
+          if (res.failed) { console.error('resyncSubmittedTotal: read failed, total left as submitted'); continue; }
+          // eslint-disable-next-line no-await-in-loop
+          const { error: e2 } = await supabase
+            .from('plan_submissions')
+            .update({ total_planned: res.total, updated_at: new Date().toISOString() })
+            .eq('id', r.id)
+            .eq('is_submitted', true)
+            .eq('approval_status', 'pending');
+          if (e2) console.error('resyncSubmittedTotal:', e2);
+        }
+        return;
+      }
+    }
     const { total, failed } = await fetchSubmissionPlanned({
       companyId: company.id,
       ownerIds: [ownerId],
@@ -576,7 +617,7 @@ export default function OpportunitiesModule({
       .eq('is_submitted', true)
       .eq('approval_status', 'pending');
     if (error) console.error('resyncSubmittedTotal:', error);
-  }, [company?.id, targetMonth.start, targetMonth.end]);
+  }, [company?.id, targetMonth.start, targetMonth.end, hasPlanDivision]);
 
   // ── Derived totals ────────────────────────────────────────────────────────
   //
@@ -625,6 +666,8 @@ export default function OpportunitiesModule({
     // accepts it but no longer lets it decide anything.)
     if (editingOpp && await blockIfPlanLocked({
       ownerId: editingOpp.owner_id || user?.id, planMonth,
+      // Session 43: the item's own division plan governs it.
+      divisionId: editingOpp.division_id || null,
     })) return;
     setSaving(true);
     try {
@@ -686,7 +729,7 @@ export default function OpportunitiesModule({
     if (!isOwnRow(opp)) return;
     const id = typeof opp === 'string' ? opp : opp?.id;
     const ownerId = (typeof opp === 'object' && opp?.owner_id) || user?.id;
-    if (await blockIfPlanLocked({ ownerId, role, planMonth })) return;
+    if (await blockIfPlanLocked({ ownerId, role, planMonth, divisionId: (typeof opp === 'object' && opp?.division_id) || null })) return;
     if (!window.confirm('Delete this opportunity?')) return;
     const { error } = await supabase.from('opportunities').delete().eq('id', id);
     if (error) { alert(`Could not delete: ${error.message}`); return; }
@@ -714,6 +757,7 @@ export default function OpportunitiesModule({
       ownerId: opp.owner_id || user?.id,
       role,
       planMonth: oppPlanMonth,
+      divisionId: opp.division_id || null,
     })) return;
 
     try {
@@ -796,7 +840,9 @@ export default function OpportunitiesModule({
     // the filtered list it was added from. Guarded here as well as in the UI.
     if (isViewingOther) return;
     setEditingOpp(null);
-    setForm(emptyForm(currentMonth));
+    setForm(planDivision && planDivision.ownerId === user?.id
+      ? { ...emptyForm(currentMonth), division_id: planDivision.divisionId }
+      : emptyForm(currentMonth));
     setShowModal(true);
   }
   function openEdit(opp) {

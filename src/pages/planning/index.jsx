@@ -9,7 +9,12 @@ import OpportunitiesModule from "./components/OpportunitiesModule";
 import FutureOrdersModule from "./components/FutureOrdersModule";
 import HistoricalDataModule from "./components/HistoricalDataModule";
 import SalesReturnsModule from "./components/SalesReturnsModule";
-import { computePlanningPageSummary, fetchProductGroups, fetchSubmissionPlanned } from "utils/planningPageSummary";
+import { computePlanningPageSummary, fetchProductGroups, fetchSubmissionPlanned, computeDivisionPlanFigures } from "utils/planningPageSummary";
+// Session 43: one plan per division for a person in more than one division.
+import {
+  usePlanDivisionColumn, planDivisionsOf, planUnitsFor, fetchDivisionNames, upsertPlanSubmission,
+} from "utils/planDivisions";
+import { fetchAdditionalDivisions } from "utils/divisionMembership";
 import { fetchMonthlyTargets, targetPerPerson } from "utils/planningCalculations";
 // Percentages that cannot crash a render. planning/index.jsx:1305 took the
 // whole page down in production on 2026-10-05 by calling .toFixed on a figure
@@ -274,12 +279,43 @@ const PlanningPage = () => {
   // Only the plan's own owner may submit it. Everyone else is read-only.
   const isViewingOther = !!viewedOwnerId && viewedOwnerId !== user?.id;
 
+  // ── ONE PLAN PER DIVISION (session 43) ────────────────────────────────────
+  // Whether plan_submissions has division_id yet (the migration), and, for the
+  // person whose plan is on screen, the divisions they file SEPARATE plans for
+  // (null = one plan, as everyone did before). Until both are known the
+  // submit button stays off: filing the whole-month plan for someone who
+  // files per division would be the wrong row.
+  const hasPlanDivision = usePlanDivisionColumn();
+  const [subjectDivs, setSubjectDivs] = useState({ ownerId: null, ids: null, primary: null, names: {} });
+  useEffect(() => {
+    let alive = true;
+    if (!hasPlanDivision || !companyId || !viewedOwnerId) {
+      setSubjectDivs({ ownerId: viewedOwnerId || null, ids: null, primary: null, names: {} });
+      return undefined;
+    }
+    (async () => {
+      const [{ data: u }, additional] = await Promise.all([
+        supabase.from("users").select("id, sales_division_id").eq("id", viewedOwnerId).maybeSingle(),
+        fetchAdditionalDivisions({ companyId, userIds: [viewedOwnerId] }),
+      ]);
+      const ids = planDivisionsOf(u, additional, true);
+      const names = ids ? await fetchDivisionNames(ids) : {};
+      if (alive) setSubjectDivs({ ownerId: viewedOwnerId, ids, primary: u?.sales_division_id || null, names });
+    })();
+    return () => { alive = false; };
+  }, [hasPlanDivision, companyId, viewedOwnerId]);
+  const divsReady = hasPlanDivision === false
+    || (hasPlanDivision === true && subjectDivs.ownerId === viewedOwnerId);
+  const [planDivision, setPlanDivision] = useState(null);
+
   // ── Plan submission (deadline: 25th of the month) ───────────────────────────
   // Keyed BY PLAN MONTH rather than a single row, because in the last 7 days of
   // a month two plans can be open at once: this month's (due on the 25th, quite
   // possibly overdue) and next month's, submitted early. Same table, same
   // workflow, a different plan_month.
-  const [submissions, setSubmissions] = useState({});   // { "yyyy-MM-01": row }
+  // { "yyyy-MM-01": [rows] } — a person filing per division (session 43) has
+  // one row per division; everybody else has at most one.
+  const [submissionRows, setSubmissionRows] = useState({});
   const [submitting, setSubmitting] = useState(null);   // the month being submitted
   const [pendingApprovals, setPendingApprovals] = useState(0);
 
@@ -293,7 +329,7 @@ const PlanningPage = () => {
   const graceOpen = isGraceWindowOpen(now);
 
   const fetchPlanSubmission = useCallback(async () => {
-    if (!companyId || !viewedOwnerId) { setSubmissions({}); return; }
+    if (!companyId || !viewedOwnerId) { setSubmissionRows({}); return; }
     // Both months in one round trip; outside the window the second key simply
     // matches nothing.
     const { data } = await supabase
@@ -306,8 +342,8 @@ const PlanningPage = () => {
       // Keys that are not applicable simply match nothing.
       .in("plan_month", [prevMonthKey, currentMonthKey, nextMonthKey]);
     const byMonth = {};
-    (data || []).forEach((r) => { byMonth[String(r.plan_month).slice(0, 10)] = r; });
-    setSubmissions(byMonth);
+    (data || []).forEach((r) => { const k = String(r.plan_month).slice(0, 10); (byMonth[k] = byMonth[k] || []).push(r); });
+    setSubmissionRows(byMonth);
   }, [companyId, viewedOwnerId, prevMonthKey, currentMonthKey, nextMonthKey]);
 
   useEffect(() => { fetchPlanSubmission(); }, [fetchPlanSubmission]);
@@ -357,7 +393,22 @@ const PlanningPage = () => {
   const activeMonthKey = planningNextMonth ? nextMonthKey
     : planningPrevMonth ? prevMonthKey
       : currentMonthKey;
-  const planSubmission = submissions[activeMonthKey] || null;
+  // The plans of the month on screen. A person filing per division gets the
+  // division switch, and the bar below is about the division chosen; a
+  // whole-month plan filed before the change (see utils/planDivisions) stays
+  // one plan.
+  const unitsOfMonth = (m) => planUnitsFor(subjectDivs.ids, submissionRows[m]);
+  const activeUnits = unitsOfMonth(activeMonthKey);
+  const perDivision = !!subjectDivs.ids && !activeUnits[0]?.wholeMonth;
+  const activeDivisionId = perDivision
+    ? (subjectDivs.ids.includes(planDivision) ? planDivision : subjectDivs.ids[0])
+    : null;
+  const activeDivisionName = activeDivisionId ? (subjectDivs.names[activeDivisionId] || "Division") : null;
+  const planSubmission = (perDivision
+    ? activeUnits.find((u) => u.divisionId === activeDivisionId)?.row
+    : activeUnits[0]?.row) || null;
+  // "November" — or "November PVC Compound" for a division plan.
+  const planName = (monthKey) => (activeDivisionName ? `${monthNameOf(monthKey)} ${activeDivisionName}` : monthNameOf(monthKey));
   // Session 40: opening Planning on your own rejected, not resubmitted plan
   // says what to do — once per plan and rejection.
   const rejectedShown = React.useRef(null);
@@ -605,8 +656,14 @@ const PlanningPage = () => {
   // CONTRIBUTOR_ROLES, so a manager filing his own plan would be judged against
   // a target of 0. And the tiles' Planned stays open-only — converted counts
   // toward the GATE, nowhere else (CEO, 2026-10-11).
-  const readPlanFor = useCallback(async (ownerId, monthKey) => {
+  const readPlanFor = useCallback(async (ownerId, monthKey, divisionId = null, primaryDivisionId = null) => {
     const bounds = monthBoundsOf(monthKey);
+    // A division plan (session 43): that division's target, items and required.
+    if (divisionId) {
+      return computeDivisionPlanFigures({
+        companyId, ownerId, primaryDivisionId, divisionId, start: bounds.start, end: bounds.end,
+      });
+    }
     const [rows, planned] = await Promise.all([
       fetchMonthlyTargets({
         companyId, contributorIds: [ownerId], start: bounds.start, end: bounds.end,
@@ -623,9 +680,13 @@ const PlanningPage = () => {
       failed: !!planned.failed,
     };
   }, [companyId]);
+  // Your own plan; for a division plan, that division's (only while it is
+  // your own plan on screen — subjectDivs describes the person on screen).
+  const ownDivisionId = isViewingOther ? null : activeDivisionId;
+  const ownPrimary = isViewingOther ? null : subjectDivs.primary;
   const readOwnPlanFor = useCallback(
-    (monthKey) => readPlanFor(user.id, monthKey),
-    [readPlanFor, user?.id],
+    (monthKey, divisionId = null) => readPlanFor(user.id, monthKey, divisionId, ownPrimary),
+    [readPlanFor, user?.id, ownPrimary],
   );
 
   useEffect(() => {
@@ -635,13 +696,13 @@ const PlanningPage = () => {
     }
     let alive = true;
     (async () => {
-      const next = await readOwnPlanFor(activeMonthKey);
+      const next = await readOwnPlanFor(activeMonthKey, ownDivisionId);
       if (!alive) return;
       setOwnPlan(next);
     })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId, user?.id, activeMonthKey, planVersion, readOwnPlanFor]);
+  }, [companyId, user?.id, activeMonthKey, planVersion, readOwnPlanFor, ownDivisionId]);
 
   // Complete when the owner has planned at least his own target. Deliberately NOT
   // target ÷ win rate: that is a coverage estimate, and gating on it meant the
@@ -695,12 +756,12 @@ const PlanningPage = () => {
     let alive = true;
     (async () => {
       // The same reader as ownPlan, pointed at the viewed owner.
-      const next = await readPlanFor(viewedOwnerId, activeMonthKey);
+      const next = await readPlanFor(viewedOwnerId, activeMonthKey, activeDivisionId, subjectDivs.primary);
       if (!alive) return;
       setViewedPlan(next);
     })();
     return () => { alive = false; };
-  }, [isViewingOther, companyId, viewedOwnerId, activeMonthKey, readPlanFor]);
+  }, [isViewingOther, companyId, viewedOwnerId, activeMonthKey, readPlanFor, activeDivisionId, subjectDivs.primary]);
 
   const subjectPlan = isViewingOther ? viewedPlan : ownPlan;
   // Identical to plannedShortfall for one's own plan — deliberately written as
@@ -732,7 +793,8 @@ const PlanningPage = () => {
   const canSubmit = summaryReady
     && (planningNextMonth || planningPrevMonth || planComplete)
     && !planSubmission?.is_submitted
-    && !isViewingOther;
+    && !isViewingOther
+    && divsReady;
   // Managers file their own plan too. The bar also appears for a lead who is
   // reading a subordinate's plan, because its whole content is that plan's state.
   const showSubmitBar = (isSalesman || isSupervisor || isManager || isViewingOther) && !!companyId;
@@ -861,7 +923,14 @@ const PlanningPage = () => {
       // Only the current month is gated, exactly as planComplete gates it: next
       // month and the grace window may be filed under target by design, and
       // their shortfall is recorded on the row for the approver to see.
-      const atClick = await readOwnPlanFor(planMonth);
+      // Session 43: a division plan is checked, recorded and keyed by its
+      // division. Refused while the divisions are not known yet.
+      if (!divsReady) {
+        setSubmitError("Your plan's divisions could not be read just now, so the plan was not submitted. Please reload and try again.");
+        return;
+      }
+      const planDivisionId = activeDivisionId;
+      const atClick = await readOwnPlanFor(planMonth, planDivisionId);
       setOwnPlan(atClick);          // so the bar and the button follow reality
       const gatedMonth = !planningNextMonth && !planningPrevMonth;
       // Every month, not only the gated one: atClick.planned is also the figure
@@ -894,10 +963,15 @@ const PlanningPage = () => {
       // which is what a plan_month row is actually about.
       const bounds = monthBoundsOf(planMonth);
       const ownerIds = await resolveSubmitterScope();
-      const fresh = await computePlanningPageSummary({
-        companyId, ownerIds, start: bounds.start, end: bounds.end,
-        productGroup: null,
-      });
+      // A division plan's required plan is that division's (atClick, read just
+      // above by computeDivisionPlanFigures); every other plan's is the
+      // month's, exactly as before.
+      const fresh = planDivisionId
+        ? { requiredPlan: atClick.requiredPlan, partialFailure: atClick.failed }
+        : await computePlanningPageSummary({
+          companyId, ownerIds, start: bounds.start, end: bounds.end,
+          productGroup: null,
+        });
       // Never record figures assembled from a partially failed read: a dropped
       // opportunities query returns 0 planned, which is indistinguishable from
       // an empty plan once it is written down.
@@ -936,12 +1010,11 @@ const PlanningPage = () => {
         rejection_reason: null,
         is_locked: false,
       };
-      const upsert = (payload) =>
-        supabase
-          .from("plan_submissions")
-          .upsert(payload, { onConflict: "company_id,owner_id,plan_month" })
-          .select("id")
-          .maybeSingle();
+      // On whichever unique key the database has (session 43): today's
+      // (company, owner, month) until the migration, then with the division.
+      const upsert = (payload) => upsertPlanSubmission(payload, {
+        hasColumn: hasPlanDivision === true, divisionId: planDivisionId,
+      });
 
       let { data: saved, error } = await upsert(withApproval);
       // add_plan_approval_workflow.sql not applied yet — submit still works.
@@ -957,6 +1030,8 @@ const PlanningPage = () => {
         planMonth,
         totalPlanned: atClick.planned,
         submissionId: saved?.id,
+        divisionId: planDivisionId,
+        divisionName: planDivisionId ? activeDivisionName : null,
       });
       await fetchPlanSubmission();
       emitNextStep({ kind: 'planSubmitted', month: planMonth });
@@ -1260,6 +1335,38 @@ const PlanningPage = () => {
           </p>
         </div>
 
+        {/* THE DIVISION SWITCH (session 43): a person in more than one
+            division plans, submits and is approved per division. Each button
+            says where that division's plan stands. */}
+        {showSubmitBar && perDivision && (
+          <div className="flex items-center gap-2 mb-3 flex-wrap" role="tablist" aria-label="Plan division" data-testid="plan-division-switch">
+            <span className="text-xs text-muted-foreground">Plan for</span>
+            {subjectDivs.ids.map((id) => {
+              const row = activeUnits.find((u) => u.divisionId === id)?.row;
+              const word = row?.is_locked ? "approved"
+                : row?.is_submitted ? "submitted"
+                  : row?.approval_status === "rejected" ? "sent back" : "not submitted";
+              const on = id === activeDivisionId;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  data-testid={`plan-division-${id}`}
+                  onClick={() => setPlanDivision(id)}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                    on ? "bg-blue-600 text-white border-blue-600" : "bg-card text-foreground border-border hover:bg-muted"
+                  }`}
+                >
+                  {subjectDivs.names[id] || "Division"}
+                  <span className={`ml-1.5 text-[11px] ${on ? "text-blue-100" : "text-muted-foreground"}`}>· {word}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Plan submission status + Submit Plan (salesman/supervisor) */}
         {/* Approved plans are locked: the salesman can no longer change the
             month's opportunities until a manager sends the plan back. */}
@@ -1317,14 +1424,23 @@ const PlanningPage = () => {
                     </span>
                   )}
                   {planSubmission?.is_submitted
-                    ? `✅ ${monthNameOf(activeMonthKey)} Plan Submitted`
+                    ? `✅ ${planName(activeMonthKey)} Plan Submitted`
                     : isLate
-                      ? `🚨 ${monthNameOf(activeMonthKey)} Plan Overdue`
-                      : `📋 ${monthNameOf(activeMonthKey)} Plan Due by 25th`}
+                      ? `🚨 ${planName(activeMonthKey)} Plan Overdue`
+                      : `📋 ${planName(activeMonthKey)} Plan Due by 25th`}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {submitBarNote()}
                 </p>
+                {/* A division plan's own figures (session 43). */}
+                {perDivision && subjectPlan.loaded && !subjectPlan.failed && (
+                  <p className="text-xs text-muted-foreground" data-testid="plan-division-figures">
+                    {activeDivisionName}: target {fmtSAR(subjectPlan.target)}
+                    {subjectPlan.target > 0 ? "" : " (no target — no minimum)"}
+                    {" · "}planned {fmtSAR(subjectPlan.planned)}
+                    {" · "}required plan {fmtSAR(subjectPlan.requiredPlan || 0)}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1383,7 +1499,7 @@ const PlanningPage = () => {
             <Icon name="AlertCircle" size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-medium text-red-700">
-                {monthNameOf(activeMonthKey)} plan was NOT submitted
+                {planName(activeMonthKey)} plan was NOT submitted
               </p>
               <p className="text-xs text-red-600 mt-0.5">
                 {submitRefused
@@ -1804,7 +1920,11 @@ const PlanningPage = () => {
                   </div>
                   <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
                     {monthOptions.map((opt) => {
-                      const row = submissions[opt.month];
+                      const units = unitsOfMonth(opt.month);
+                      const row = units.length === 1 ? units[0].row : {
+                        is_locked: units.every((u) => u.row?.is_locked),
+                        is_submitted: units.every((u) => u.row?.is_submitted),
+                      };
                       return (
                         <button
                           key={opt.key}
@@ -1845,6 +1965,9 @@ const PlanningPage = () => {
               // would freeze October's planning and an approved October plan
               // would not be protected at all.
               planMonth={activeMonthKey}
+              // Session 43: a division plan lists that division's items only
+              // (for its owner; anyone else's rows are untouched).
+              planDivision={perDivision ? { ownerId: viewedOwnerId, divisionId: activeDivisionId } : null}
               filterOwner={filterOwner}
               onFilterOwnerChange={setFilterOwner}
               // Same rule as the read-only chip and the hidden submit button:
