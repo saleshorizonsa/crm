@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { money } from "components/DrillSheet";
 import { NO_CUSTOMER } from "utils/salesMonitor";
+import { PURPOSE_LABEL } from "utils/visitPurpose";
 
 /**
  * ONE VISIT, READ-ONLY (session 34, CEO 2026-11-12).
@@ -24,7 +25,9 @@ const day = (d) => {
 const OUTCOME_WORDS = { positive: "positive", neutral: "neutral", followup: "needs follow-up", not_interested: "not interested" };
 const titleCase = (s) => String(s || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-export default function VisitSheet({ row, nameOf = () => null, onClose }) {
+// showPurpose (session 40): the purpose and the amount collected, once the
+// columns exist (model.purposeColumns). The audit note shows whenever there is one.
+export default function VisitSheet({ row, nameOf = () => null, onClose, showPurpose = false }) {
   const navigate = useNavigate();
   const panelRef = useRef(null);
 
@@ -52,6 +55,8 @@ export default function VisitSheet({ row, nameOf = () => null, onClose }) {
     ["Salesman", row.person],
     ["Date and time", when || "—"],
     ["Type", row.kindLabel],
+    ...(showPurpose ? [["Purpose", PURPOSE_LABEL[row.purpose] || PURPOSE_LABEL.sales]] : []),
+    ...(showPurpose && row.purpose === "collection" ? [["Amount collected", row.collected ? `${money(row.collected)} SAR` : "not recorded"]] : []),
     ...(row.durationMinutes ? [["Duration", `${row.durationMinutes} min`]] : []),
     ["Customer", row.customerKnown ? row.customer : NO_CUSTOMER],
     ["Plan", row.inPlan
@@ -62,6 +67,7 @@ export default function VisitSheet({ row, nameOf = () => null, onClose }) {
     ["Next action", row.nextAction || "—"],
     ["Follow-up date", day(row.followUp) || "—"],
     ["Audit", audit],
+    ...(row.auditNotes ? [["Audit note", row.auditNotes]] : []),
     ["Deal", deal
       ? `${deal.title || "—"} · ${titleCase(deal.stage)} · ${money(deal.final_amount ?? deal.amount)} SAR`
       : (row.dealTitle || "No deal")],

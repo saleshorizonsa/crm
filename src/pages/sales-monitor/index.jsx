@@ -4,6 +4,7 @@ import DailyVisitsList from "components/DailyVisitsList";
 import { useAuth } from "contexts/AuthContext";
 import Header from "components/ui/Header";
 import DrillSheet, { money } from "components/DrillSheet";
+import Figure from "components/Figure";
 import { fmtPct, NO_FIGURE } from "utils/formatPct";
 import { loadSalesMonitor } from "utils/salesMonitorData";
 import {
@@ -16,6 +17,7 @@ import {
   DEPARTED_ID,
 } from "utils/salesMonitor";
 import { THRESHOLDS } from "utils/salesMonitorThresholds";
+import { purposeSplitText } from "utils/visitPurpose";
 import { CARD_LINK, stageHref } from "utils/stagePages";
 import { exceptionAction, actionTarget } from "utils/exceptionActions";
 import {
@@ -63,7 +65,7 @@ function Card({ title, value, sub, children, onOpen, testid, wide = false, colou
     >
       {c && <div data-deco="1" aria-hidden="true" className={`absolute top-0 left-0 right-0 h-1 ${c.strip}`} />}
       <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{title}</div>
-      <div className={`mt-1 text-xl font-semibold font-mono ${c ? c.text : "text-gray-900"} break-words`}>{value}</div>
+      <div className={`mt-1 text-xl font-semibold font-mono tabular-nums ${c ? c.text : "text-gray-900"}`}><Figure>{value}</Figure></div>
       {sub && <div className="mt-0.5 text-xs text-gray-600">{sub}</div>}
       {children && <div className={wide ? "mt-2 sm:mt-0 text-xs text-gray-700 flex flex-wrap gap-x-6 gap-y-0.5 [&>*]:gap-2" : "mt-2 text-xs text-gray-700 space-y-0.5"}>{children}</div>}
     </button>
@@ -97,9 +99,9 @@ function Stage({ n, name, testid, arrow = false, colour, next = null, children }
 }
 
 const Line = ({ label, value, cls = "", dot = null }) => (
-  <div className="flex justify-between gap-2">
-    <span className="text-gray-500">{dot && <span data-deco="1" aria-hidden="true" className={`inline-block w-2 h-2 rounded-full mr-1 align-middle ${dot}`} />}{label}</span>
-    <span className={`font-mono ${cls}`}>{value}</span>
+  <div className="flex flex-wrap justify-between gap-x-2">
+    <span className="text-gray-500 min-w-0">{dot && <span data-deco="1" aria-hidden="true" className={`inline-block w-2 h-2 rounded-full mr-1 align-middle ${dot}`} />}{label}</span>
+    <span className={`ml-auto font-mono tabular-nums whitespace-nowrap ${cls}`}>{value}</span>
   </div>
 );
 
@@ -425,6 +427,13 @@ export default function SalesMonitor() {
             <Card testid="card-visits" title="Visits" value={`${c.visits.today.count} · ${c.visits.mtd.count}`} sub={`${shortDay(c.visits.day)} · month to date`} onOpen={() => openCard("visits")}>
               <Line label="To planned customers (MTD)" value={fmtPct(c.visits.mtd.inPlanPct, 0)} />
               <Line label="+ / = / −" value={`${c.visits.mtd.responses.positive} / ${c.visits.mtd.responses.neutral} / ${c.visits.mtd.responses.negative}`} />
+              {/* Session 40: what the contacts were for, once the purpose columns exist. */}
+              {model.purposeColumns && (
+                <>
+                  <p data-testid="visits-purpose-split" className="text-gray-700 pt-1">{purposeSplitText(c.visits.mtd.byPurpose, c.visits.mtd.count)}</p>
+                  {c.visits.mtd.byPurpose.collection > 0 && <Line label="Collected (MTD)" value={money(c.visits.mtd.collected)} />}
+                </>
+              )}
             </Card>
             <Card testid="card-planned-visited" title="Planned customers visited" value={`${c.visits.plannedVisited} of ${c.visits.plannedCustomers}`} sub="month to date" onOpen={() => openCard("plannedVisited")}>
               <Line label="Visited" value={c.visits.plannedVisited} />
@@ -508,7 +517,7 @@ export default function SalesMonitor() {
                   <tr key={p.id} onClick={() => openPerson(p.id)} className="group cursor-pointer hover:bg-gray-50" data-testid={`score-row-${p.id}`}>
                     <td className="px-2 py-2 sticky left-0 bg-white group-hover:bg-gray-50 font-medium text-gray-900 whitespace-nowrap">{p.name}</td>
                     <td className="px-2 py-2 text-right text-gray-600">{p.division}</td>
-                    <td className="px-2 py-2 text-right font-mono">{money(p.target)}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap">{money(p.target)}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       {p.planStatus ? (
                         <span>
@@ -522,22 +531,22 @@ export default function SalesMonitor() {
                         </span>
                       ) : "—"}
                     </td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title="total_planned on the plan as filed">{p.submittedPlanned === null ? NO_FIGURE : money(p.submittedPlanned)}</td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap" title={p.requiredSource === "submitted" ? `open + live-deal plan items today, as % of the submitted required plan ${money(p.requiredPlan)}` : p.requiredSource === "estimated" ? `open + live-deal plan items today, as % of an ESTIMATED required plan ${money(p.requiredPlan)} (no submitted plan): gap to target ÷ conversion rate` : "open + live-deal plan items today"}>{money(p.planned)} <span className="text-gray-500">({fmtPct(p.plannedPctOfRequired, 0)}{p.requiredSource === "estimated" ? " est." : ""})</span></td>
-                    <td className="px-2 py-2 text-right font-mono">{p.coverageMet ? "met" : p.coverageRatio === null ? NO_FIGURE : `${p.coverageRatio.toFixed(2)}×`}</td>
-                    <td data-testid="fn-converted" className="px-2 py-2 text-right font-mono whitespace-nowrap">{funnelOf(p) ? `${funnelOf(p).converted} of ${funnelOf(p).items}` : NO_FIGURE}</td>
-                    <td data-testid="fn-open" className="px-2 py-2 text-right font-mono">{funnelOf(p) ? money(funnelOf(p).openValue) : NO_FIGURE}</td>
-                    <td data-testid="fn-stuck" className={`px-2 py-2 text-right font-mono ${funnelOf(p)?.stuck ? "text-red-700" : "text-gray-400"}`}>{funnelOf(p) ? funnelOf(p).stuck : NO_FIGURE}</td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{p.visitsMtd} <span className="text-gray-500">({fmtPct(p.visitsMtdInPlanPct, 0)})</span></td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap" title="total_planned on the plan as filed">{p.submittedPlanned === null ? NO_FIGURE : money(p.submittedPlanned)}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap" title={p.requiredSource === "submitted" ? `open + live-deal plan items today, as % of the submitted required plan ${money(p.requiredPlan)}` : p.requiredSource === "estimated" ? `open + live-deal plan items today, as % of an ESTIMATED required plan ${money(p.requiredPlan)} (no submitted plan): gap to target ÷ conversion rate` : "open + live-deal plan items today"}>{money(p.planned)} <span className="text-gray-500">({fmtPct(p.plannedPctOfRequired, 0)}{p.requiredSource === "estimated" ? " est." : ""})</span></td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap">{p.coverageMet ? "met" : p.coverageRatio === null ? NO_FIGURE : `${p.coverageRatio.toFixed(2)}×`}</td>
+                    <td data-testid="fn-converted" className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap">{funnelOf(p) ? `${funnelOf(p).converted} of ${funnelOf(p).items}` : NO_FIGURE}</td>
+                    <td data-testid="fn-open" className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap">{funnelOf(p) ? money(funnelOf(p).openValue) : NO_FIGURE}</td>
+                    <td data-testid="fn-stuck" className={`px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap ${funnelOf(p)?.stuck ? "text-red-700" : "text-gray-400"}`}>{funnelOf(p) ? funnelOf(p).stuck : NO_FIGURE}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap">{p.visitsMtd} <span className="text-gray-500">({fmtPct(p.visitsMtdInPlanPct, 0)})</span></td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">{shortDay(p.lastVisit)}</td>
-                    <td className="px-2 py-2 text-right font-mono">{money(p.achieved)}</td>
-                    <td className={`px-2 py-2 text-right font-mono ${TONE_TEXT[paceTone(p.achievedPct, c.achieved.isCurrent ? c.achieved.elapsedPct : model.closed ? 100 : 0)] || ""}`}>{fmtPct(p.achievedPct, 0)}</td>
-                    <td className="px-2 py-2 text-right font-mono whitespace-nowrap">{money(p.fromPlan)} / {money(p.outsidePlan)}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap">{money(p.achieved)}</td>
+                    <td className={`px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap ${TONE_TEXT[paceTone(p.achievedPct, c.achieved.isCurrent ? c.achieved.elapsedPct : model.closed ? 100 : 0)] || ""}`}>{fmtPct(p.achievedPct, 0)}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap">{money(p.fromPlan)} / {money(p.outsidePlan)}</td>
                     {outcomeLabels.map((l) => (
-                      <td key={l} data-testid={`out-${l}`} className={`px-2 py-2 text-right font-mono ${p.outcomes[l].count ? OUTCOME_STYLE[l] : "text-gray-300"}`} title={`${l}: ${money(p.outcomes[l].value)} planned`}>{p.outcomes[l].count}</td>
+                      <td key={l} data-testid={`out-${l}`} className={`px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap ${p.outcomes[l].count ? OUTCOME_STYLE[l] : "text-gray-300"}`} title={`${l}: ${money(p.outcomes[l].value)} planned`}>{p.outcomes[l].count}</td>
                     ))}
-                    <td className="px-2 py-2 text-right font-mono">{money(p.wonNotInvoiced)}</td>
-                    <td className={`px-2 py-2 text-right font-mono ${p.exceptions ? "text-red-700 font-semibold" : "text-gray-400"}`}>{p.exceptions}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap">{money(p.wonNotInvoiced)}</td>
+                    <td className={`px-2 py-2 text-right font-mono tabular-nums whitespace-nowrap ${p.exceptions ? "text-red-700 font-semibold" : "text-gray-400"}`}>{p.exceptions}</td>
                   </tr>
                 ))}
                 {!people.length && (
@@ -612,8 +621,8 @@ export default function SalesMonitor() {
                       <tr key={g.key} className={g.visited ? "" : "bg-red-50/40"}>
                         <td className="py-1">{g.customer}</td>
                         <td>{g.person}</td>
-                        <td className="text-right font-mono">{money(g.planned)}</td>
-                        <td className={`text-right font-mono ${g.visited ? "" : "text-red-700"}`}>{g.contactsMtd}</td>
+                        <td className="text-right font-mono tabular-nums whitespace-nowrap">{money(g.planned)}</td>
+                        <td className={`text-right font-mono tabular-nums whitespace-nowrap ${g.visited ? "" : "text-red-700"}`}>{g.contactsMtd}</td>
                         <td className="text-right">{shortDay(g.lastContact)}</td>
                         <td className="text-right">{g.outcome}</td>
                       </tr>

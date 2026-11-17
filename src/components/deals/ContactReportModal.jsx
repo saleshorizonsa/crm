@@ -5,6 +5,9 @@ import { dealService } from '../../services/supabaseService';
 import { useAuth } from '../../contexts/AuthContext';
 import CustomerPicker from '../CustomerPicker';
 import { isMissingColumn } from '../../utils/missingColumn';
+import PurposeField from '../PurposeField';
+import { usePurposeColumns, purposeFields, amountError, DEFAULT_PURPOSE } from '../../utils/visitPurpose';
+import { emitNextStep } from '../../utils/nextStepBus';
 import {
   Phone, MapPin, MessageCircle, Mail, X, CheckCircle,
   Calendar, Clock, ArrowRight,
@@ -54,7 +57,14 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
     next_action: '',
     follow_up_date: '',
     notes: '',
+    // Session 40: what the contact was for (and, for a collection, how much).
+    purpose: DEFAULT_PURPOSE,
+    collected: '',
   });
+  // Whether contact_reports has the purpose columns yet
+  // (migrations/visit_purpose_collection.sql). Until it does, the field is
+  // hidden and the save is exactly what it was.
+  const hasPurpose = usePurposeColumns();
   // THE CUSTOMER (session 34): every visit, call and WhatsApp names one. It is
   // the deal's own customer; only a deal that names none asks for it here.
   const [customerId, setCustomerId] = useState(deal?.contact_id || null);
@@ -80,6 +90,11 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
     if (!form.customer_response) e.customer_response = 'Select customer response';
     if (!form.next_action) e.next_action = 'Select next action';
     if (!form.follow_up_date) e.follow_up_date = 'Select follow-up date';
+    if (hasPurpose && NEEDS_CUSTOMER.includes(form.contact_type)) {
+      if (!form.purpose) e.purpose = 'Select the purpose';
+      const amt = amountError(form.purpose, form.collected);
+      if (amt) e.collected = amt;
+    }
     return e;
   };
 
@@ -109,8 +124,23 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
         // Until it is applied the column does not exist and PostgREST refuses
         // the whole insert, so the same report is saved without it — the
         // customer is still reachable through the deal, as before.
-        let { error } = await supabase.from('contact_reports').insert({ ...payload, contact_id: customerId || null });
-        if (isMissingColumn(error)) ({ error } = await supabase.from('contact_reports').insert(payload));
+        //
+        // Session 40: the purpose columns likewise. Each step back drops only
+        // what the database says it does not have, so the report is saved
+        // with everything it can hold.
+        const purpose = purposeFields(hasPurpose && NEEDS_CUSTOMER.includes(form.contact_type), form.purpose, form.collected);
+        const tries = [
+          { ...payload, contact_id: customerId || null, ...purpose },
+          { ...payload, contact_id: customerId || null },
+          { ...payload, ...purpose },
+          payload,
+        ].filter((t, i, all) => all.findIndex((x) => JSON.stringify(x) === JSON.stringify(t)) === i);
+        let error = null;
+        for (const t of tries) {
+          // eslint-disable-next-line no-await-in-loop
+          ({ error } = await supabase.from('contact_reports').insert(t));
+          if (!isMissingColumn(error)) break;
+        }
         if (error) throw error;
         reportSaved.current = true;
       }
@@ -137,6 +167,17 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
         }
       }
 
+      // What the salesman does next (session 40) — after the save, never in its way.
+      emitNextStep(
+        form.purpose === 'collection' && hasPurpose && NEEDS_CUSTOMER.includes(form.contact_type)
+          ? { kind: 'collectionLogged', amount: form.collected, followUp: form.follow_up_date }
+          : nextStage
+            ? { kind: 'stageChanged', stage: nextStage, deal, followUp: form.follow_up_date }
+            : {
+              kind: 'visitLogged', nextAction: form.next_action, followUp: form.follow_up_date,
+              response: form.customer_response, contactId: customerId || deal?.contact_id || null, dealId: deal?.id || null,
+            },
+      );
       onSaved?.();
       onClose?.();
     } catch (err) {
@@ -201,6 +242,19 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
               </div>
               {errText('contact_type')}
             </div>
+
+            {/* Purpose (session 40): only once the columns exist. */}
+            {hasPurpose && NEEDS_CUSTOMER.includes(form.contact_type) && (
+              <PurposeField
+                idPrefix="contact-report-purpose"
+                purpose={form.purpose}
+                amount={form.collected}
+                onPurpose={(v) => { set('purpose', v); setErrors((er) => ({ ...er, purpose: undefined, collected: undefined })); }}
+                onAmount={(v) => { set('collected', v); setErrors((er) => ({ ...er, collected: undefined })); }}
+                error={errors.collected}
+              />
+            )}
+            {errText('purpose')}
 
             {/* The customer, asked for only when the deal names none */}
             {!deal?.contact_id && NEEDS_CUSTOMER.includes(form.contact_type) && (

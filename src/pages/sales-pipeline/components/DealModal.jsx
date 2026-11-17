@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { emitNextStep } from "utils/nextStepBus";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import Icon from "../../../components/AppIcon";
@@ -1716,6 +1717,7 @@ const DealModal = ({
           });
       if (delErr) throw delErr;
 
+      emitNextStep({ kind: "movedToFuture", month: `${moveMonth}-01` });
       setShowReplacement(false);
       onDelete?.(deal.id); // funnel drops the card
       onClose();

@@ -3036,8 +3036,11 @@ export const activityService = {
   // completedAt is optional: a visit logged for a past day carries that day, so
   // utils/visits.js (completed_at, else due_date, else created_at) dates it
   // right. Omitted, the row is exactly what it always was.
-  async logActivity({ companyId, userId, contactId, dealId, activityType, description, outcome, nextAction, nextActionDate, durationMinutes, completedAt }) {
-    const { data, error } = await supabase
+  // purpose (session 40): { visit_purpose, collected_amount } from
+  // utils/visitPurpose.purposeFields — empty until the columns exist. If the
+  // database still refuses them, the activity is saved without them.
+  async logActivity({ companyId, userId, contactId, dealId, activityType, description, outcome, nextAction, nextActionDate, durationMinutes, completedAt, purpose = {} }) {
+    const insertWith = (extra) => supabase
       .from('activities')
       .insert({
         company_id:       companyId,
@@ -3051,12 +3054,16 @@ export const activityService = {
         next_action_date: nextActionDate   || null,
         duration_minutes: durationMinutes  || null,
         ...(completedAt ? { completed_at: completedAt } : {}),
+        ...extra,
         created_at:       new Date().toISOString(),
       })
       .select(`id, type, description, outcome, next_action, next_action_date, duration_minutes, created_at,
                owner:users!owner_id(id, full_name, avatar_url),
                contact:contacts!contact_id(id, first_name, last_name, company_name)`)
       .single();
+    let { data, error } = await insertWith(purpose || {});
+    const missing = error && (error.code === '42703' || error.code === 'PGRST204' || /column .* does not exist|could not find the .* column/i.test(error.message || ''));
+    if (missing && purpose && Object.keys(purpose).length) ({ data, error } = await insertWith({}));
     return { data, error };
   },
 

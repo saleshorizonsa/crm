@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { emitNextStep } from "utils/nextStepBus";
 import { supabase } from 'lib/supabase';
 import { useAuth } from 'contexts/AuthContext';
 import Icon from 'components/AppIcon';
@@ -604,6 +605,7 @@ export default function CustomerMaster({
       setActiveRow(null);
       setInlineAmount('');
       onPlanChange?.();
+      emitNextStep({ kind: 'planItemAdded', month: expectedMonth });
     } catch (err) {
       console.error('Save opp:', err);
       alert(`Could not create sales plan item: ${err.message || err}`);

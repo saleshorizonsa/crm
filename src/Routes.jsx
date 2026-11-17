@@ -1,4 +1,5 @@
 import React from "react";
+import NextStepPanel from "./components/NextStepPanel";
 import {
   BrowserRouter,
   Routes as RouterRoutes,
@@ -292,6 +293,8 @@ const Routes = () => {
                 <Route path="*" element={<NotFound />} />
               </RouterRoutes>
               <AIAssistant />
+              {/* Session 40: the next step after a save, for every page. */}
+              <NextStepPanel />
               </DateRangeProvider>
             </CurrencyProvider>
             </PageAccessProvider>
