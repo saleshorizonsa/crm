@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Icon from 'components/AppIcon';
 import { supabase } from 'lib/supabase';
+import { probePlanDivisionColumn, fetchDivisionNames, planTitle } from 'utils/planDivisions';
 
 // Red alert listing team members who missed the plan-submission deadline (the
 // 25th) for the current month. `ownerIds` scopes it: null = whole company
@@ -13,9 +14,15 @@ export default function PlanSubmissionAlert({ companyId, ownerIds = null, review
     if (!companyId) { setMissed([]); return; }
     const n = new Date();
     const planMonth = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-01`;
+    // Session 43: a person who plans per division can miss one division's
+    // plan and not the other; each missed plan is its own chip, with its
+    // division. Without the column, the read is today's.
+    const hasDivision = await probePlanDivisionColumn();
     let q = supabase
       .from('plan_submissions')
-      .select('id, plan_month, flagged, owner:users!owner_id(id, full_name, role)')
+      .select(hasDivision
+        ? 'id, plan_month, flagged, division_id, owner:users!owner_id(id, full_name, role)'
+        : 'id, plan_month, flagged, owner:users!owner_id(id, full_name, role)')
       .eq('company_id', companyId)
       .eq('plan_month', planMonth)
       .eq('flagged', true)
@@ -26,7 +33,12 @@ export default function PlanSubmissionAlert({ companyId, ownerIds = null, review
       q = q.in('owner_id', ownerIds);
     }
     const { data } = await q;
-    setMissed(data || []);
+    const rows = data || [];
+    if (hasDivision && rows.some((r) => r.division_id)) {
+      const names = await fetchDivisionNames(rows.map((r) => r.division_id));
+      rows.forEach((r) => { if (r.division_id) r.division_name = names[r.division_id] || 'division'; });
+    }
+    setMissed(rows);
   }, [companyId, ownerIds]);
 
   useEffect(() => { fetchMissed(); }, [fetchMissed]);
@@ -53,7 +65,7 @@ export default function PlanSubmissionAlert({ companyId, ownerIds = null, review
         <div className="flex flex-wrap gap-2 mt-2">
           {missed.map((p) => (
             <span key={p.id} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-lg font-medium">
-              {p.owner?.full_name || 'Unknown'}
+              {planTitle(p.owner?.full_name || 'Unknown', p.division_name || null)}
             </span>
           ))}
         </div>

@@ -10,12 +10,17 @@ import {
   resolveApproverScope,
   resolveApproverMap,
 } from 'utils/planApproval';
+import { planTitle } from 'utils/planDivisions';
 
 const fmtSAR = (n) =>
   new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Math.round(Number(n) || 0));
 
 const monthLabel = (m) =>
   m ? new Date(`${m}T00:00:00`).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : '—';
+
+// Session 43: a division plan is titled "Mohamed Kamal — PVC Compound"; a
+// one-plan person's card is titled with the name alone, as before.
+const titleOf = (row, fallback) => planTitle(row?.owner?.full_name || fallback, row?.division_name || null);
 
 const dateLabel = (d) =>
   d ? new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
@@ -58,6 +63,7 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
     setBusyId(row.id);
     const { error } = await approvePlan({
       submissionId: row.id, ownerId: row.owner_id, companyId, approverId: user?.id,
+      divisionName: row.division_name || null,
     });
     setBusyId(null);
     if (error) { alert(`Could not approve: ${error.message || error}`); return; }
@@ -70,6 +76,7 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
     setBusyId(rejecting.id);
     const { error } = await rejectPlan({
       submissionId: rejecting.id, ownerId: rejecting.owner_id, companyId, reason: reason.trim(), actorId: user?.id,
+      divisionName: rejecting.division_name || null,
     });
     setBusyId(null);
     if (error) { alert(`Could not reject: ${error.message || error}`); return; }
@@ -79,16 +86,18 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
     onChange?.();
   }
 
-  // "View Plan" — the opportunities that make up the submitted plan.
+  // "View Plan" — the opportunities that make up the submitted plan. A
+  // division plan (session 43) is made of that division's items only.
   async function handleView(row) {
     setViewing({ row, opps: [], loading: true });
-    const { data } = await supabase
+    let q = supabase
       .from('opportunities')
       .select('id, customer_name, planned_amount, status, expected_month, material_group')
       .eq('company_id', companyId)
       .eq('owner_id', row.owner_id)
-      .eq('expected_month', row.plan_month)
-      .order('planned_amount', { ascending: false });
+      .eq('expected_month', row.plan_month);
+    if (row.division_id) q = q.eq('division_id', row.division_id);
+    const { data } = await q.order('planned_amount', { ascending: false });
     setViewing({ row, opps: data || [], loading: false });
   }
 
@@ -183,7 +192,7 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-sm font-semibold text-foreground truncate">
-                    {row.owner?.full_name || 'Unknown salesman'}
+                    {titleOf(row, 'Unknown salesman')}
                   </p>
                   {/* A next-month plan may be submitted below the completeness
                       threshold — a month that has not started has its whole
@@ -261,7 +270,7 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-card border border-border rounded-xl p-4 w-full max-w-md">
             <h3 className="text-sm font-semibold text-foreground mb-1">
-              Send back {rejecting.owner?.full_name || 'this plan'}
+              Send back {rejecting.owner?.full_name ? titleOf(rejecting) : 'this plan'}
             </h3>
             <p className="text-xs text-muted-foreground mb-3">
               The reason is shown to them in the notification. Their plan reopens for editing.
@@ -300,7 +309,7 @@ export default function PlanApprovalsModule({ adminCompany, onChange }) {
             <div className="p-4 border-b border-border flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">
-                  {viewing.row.owner?.full_name} — {monthLabel(viewing.row.plan_month)}
+                  {viewing.row.division_name ? titleOf(viewing.row) : viewing.row.owner?.full_name} — {monthLabel(viewing.row.plan_month)}
                 </h3>
                 <p className="text-xs text-muted-foreground">
                   {viewing.opps.length} opportunit{viewing.opps.length === 1 ? 'y' : 'ies'} ·{' '}

@@ -1,4 +1,7 @@
 import { supabase } from '../lib/supabase';
+import {
+  probePlanDivisionColumn, fetchPlanDivisions, planUnitsFor, fetchDivisionNames, upsertPlanSubmission,
+} from './planDivisions';
 
 // Plan-submission deadline = the 25th of each month. After the 25th, any active
 // salesman/supervisor who hasn't submitted their plan is flagged, and both they
@@ -20,13 +23,17 @@ export async function checkPlanDeadlines(companyId, _actorId, _role) {
   const monthLabel = now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 
   try {
+    // Session 43: once plan_submissions has division_id, a person in more
+    // than one division has one plan per division, and each is flagged on its
+    // own. Without the column, every read and write below is today's.
+    const hasDivision = await probePlanDivisionColumn();
     const { data: contributors } = await supabase
       .from('users')
       // supervisor_id, not reports_to: it is the only hierarchy column the app
       // writes, so reports_to routes a missed-plan alert to whoever was the
       // manager at backfill time — or, when it is null, to nobody at all.
       // See utils/teamHierarchy.js for the full reasoning.
-      .select('id, full_name, role, supervisor_id')
+      .select(hasDivision ? 'id, full_name, role, supervisor_id, sales_division_id' : 'id, full_name, role, supervisor_id')
       .eq('company_id', companyId)
       .eq('is_active', true)
       .in('role', ['salesman', 'supervisor']);
@@ -35,32 +42,37 @@ export async function checkPlanDeadlines(companyId, _actorId, _role) {
     // One read for the whole month, then only touch the ones still missing.
     const { data: subs } = await supabase
       .from('plan_submissions')
-      .select('owner_id, is_submitted, flagged')
+      .select(hasDivision ? 'owner_id, is_submitted, flagged, division_id' : 'owner_id, is_submitted, flagged')
       .eq('company_id', companyId)
       .eq('plan_month', planMonth);
-    const subMap = {};
-    (subs || []).forEach((s) => { subMap[s.owner_id] = s; });
+    const subsOf = {};
+    (subs || []).forEach((s) => { (subsOf[s.owner_id] = subsOf[s.owner_id] || []).push(s); });
+    const { byUser: planDivs } = hasDivision
+      ? await fetchPlanDivisions({ companyId, users: contributors })
+      : { byUser: {} };
+    const divName = hasDivision ? await fetchDivisionNames(Object.values(planDivs).flat()) : {};
 
     for (const person of contributors) {
-      const sub = subMap[person.id];
+     for (const unit of planUnitsFor(planDivs[person.id] || null, subsOf[person.id])) {
+      const sub = unit.row;
       if (sub?.is_submitted || sub?.flagged) continue; // already fine or already flagged
+      const division = unit.divisionId ? divName[unit.divisionId] || 'division' : null;
+      const which = division ? ` ${division}` : '';
 
-      const { error: upErr } = await supabase
-        .from('plan_submissions')
-        .upsert(
-          {
-            company_id: companyId,
-            owner_id: person.id,
-            plan_month: planMonth,
-            is_submitted: false,
-            is_late: true,
-            deadline_date: deadlineDate,
-            flagged: true,
-            flagged_at: now.toISOString(),
-            updated_at: now.toISOString(),
-          },
-          { onConflict: 'company_id,owner_id,plan_month' },
-        );
+      const { error: upErr } = await upsertPlanSubmission(
+        {
+          company_id: companyId,
+          owner_id: person.id,
+          plan_month: planMonth,
+          is_submitted: false,
+          is_late: true,
+          deadline_date: deadlineDate,
+          flagged: true,
+          flagged_at: now.toISOString(),
+          updated_at: now.toISOString(),
+        },
+        { hasColumn: hasDivision, divisionId: unit.divisionId, select: null },
+      );
       if (upErr) { console.error('flag plan:', upErr); continue; }
 
       // Notify the direct manager (if any) and the salesman. Best-effort.
@@ -71,9 +83,9 @@ export async function checkPlanDeadlines(companyId, _actorId, _role) {
           company_id: companyId,
           type: 'plan_deadline_missed',
           title: '🚩 Plan Not Submitted',
-          message: `${person.full_name} has not submitted their ${monthLabel} sales plan. The deadline was the 25th. Please interview before the month starts.`,
+          message: `${person.full_name} has not submitted their ${monthLabel}${which} sales plan. The deadline was the 25th. Please interview before the month starts.`,
           is_read: false,
-          metadata: { owner_id: person.id, plan_month: planMonth },
+          metadata: { owner_id: person.id, plan_month: planMonth, ...(unit.divisionId ? { division_id: unit.divisionId } : {}) },
         });
       }
       notes.push({
@@ -81,13 +93,14 @@ export async function checkPlanDeadlines(companyId, _actorId, _role) {
         company_id: companyId,
         type: 'plan_overdue',
         title: '🚨 Your Sales Plan is Overdue',
-        message: `Your ${monthLabel} sales plan was due on the 25th and has not been submitted. Please submit immediately and contact your manager.`,
+        message: `Your ${monthLabel}${which} sales plan was due on the 25th and has not been submitted. Please submit immediately and contact your manager.`,
         is_read: false,
-        metadata: { plan_month: planMonth },
+        metadata: { plan_month: planMonth, ...(unit.divisionId ? { division_id: unit.divisionId } : {}) },
       });
       try {
         await supabase.from('notifications').insert(notes);
       } catch (_) { /* notifications are best-effort */ }
+     }
     }
   } catch (err) {
     console.error('checkPlanDeadlines:', err);

@@ -131,13 +131,19 @@ export function targetPerPerson(targetRows) {
   return per;
 }
 
-/** Monthly target rows overlapping [start, end] for these contributors. */
-export async function fetchMonthlyTargets({ companyId, contributorIds, start, end }) {
+/**
+ * Monthly target rows overlapping [start, end] for these contributors.
+ * withDivision (session 43): also read each row's division_id, for a plan of
+ * one division. Omitted, the read is exactly as before.
+ */
+export async function fetchMonthlyTargets({ companyId, contributorIds, start, end, withDivision = false }) {
   if (!companyId || !contributorIds?.length) return [];
   const { data, error } = await supabase
     .from('sales_targets')
     .select(
-      'target_amount, assigned_to, target_type, period_start, product_group, client_targets(target_amount)',
+      withDivision
+        ? 'target_amount, assigned_to, target_type, period_start, product_group, division_id, client_targets(target_amount)'
+        : 'target_amount, assigned_to, target_type, period_start, product_group, client_targets(target_amount)',
     )
     .eq('company_id', companyId)
     .eq('status', 'active')
@@ -896,7 +902,10 @@ export function computeAchieved({
 }
 
 /** Achieved straight from the database, same rule as computeAchieved. */
-export async function fetchAchieved({ companyId, contributorIds, start = null, end = null }) {
+// divisionId (session 43): only that division's invoices and returns, by the
+// DEAL's division_id — the rule every division figure uses. Omitted, the read
+// and the result are exactly as before.
+export async function fetchAchieved({ companyId, contributorIds, start = null, end = null, divisionId = null }) {
   const empty = {
     total: 0, perPerson: {}, count: 0, deals: [],
     grossTotal: 0, returnsTotal: 0, returnsPerPerson: {}, returnsCount: 0,
@@ -904,7 +913,9 @@ export async function fetchAchieved({ companyId, contributorIds, start = null, e
   if (!companyId || !contributorIds?.length) return empty;
   let q = supabase
     .from('deals')
-    .select('id, owner_id, stage, is_invoiced, amount, final_amount, invoice_date')
+    .select(divisionId
+      ? 'id, owner_id, stage, is_invoiced, amount, final_amount, invoice_date, division_id'
+      : 'id, owner_id, stage, is_invoiced, amount, final_amount, invoice_date')
     .eq('company_id', companyId)
     .eq('stage', 'won')
     .eq('is_invoiced', true)
@@ -917,6 +928,13 @@ export async function fetchAchieved({ companyId, contributorIds, start = null, e
   // above: a return dated this month usually belongs to an invoice from an
   // earlier month, which is not in `data` at all.
   const returns = await fetchReturns({ companyId, ownerIds: contributorIds, start, end });
+  if (divisionId) {
+    return computeAchieved({
+      deals: (data || []).filter((d) => d.division_id === divisionId),
+      contributorIds, start, end,
+      returns: returns.filter((r) => r.division_id === divisionId),
+    });
+  }
   return computeAchieved({ deals: data, contributorIds, start, end, returns });
 }
 

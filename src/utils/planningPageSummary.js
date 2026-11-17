@@ -42,6 +42,8 @@ import { fetchOpenFunnel } from './openFunnel';
 import { wholePeriodOf } from './dashboardDateUtils';
 // "Converted" means status converted AND the deal still there — one rule.
 import { isConvertedWithDeal } from './planningDrill';
+// A plan of one division (session 43): the shared target/plan-item rule.
+import { rowInDivision } from './divisionMembership';
 
 /**
  * Product groups are free text typed into the opportunity form, so the same
@@ -131,9 +133,11 @@ export function openPlanTotal(rows) {
   };
 }
 
-export async function fetchPlannedOpen({ companyId, ownerIds, start, end, productGroup }) {
+// divisionId (session 43): only plan items of that division (their own
+// division_id). Omitted, the read is exactly as before.
+export async function fetchPlannedOpen({ companyId, ownerIds, start, end, productGroup, divisionId = null }) {
   if (!companyId || !ownerIds?.length) return { total: 0, untagged: 0, rows: [] };
-  const { data, error } = await supabase
+  let qOpen = supabase
     .from('opportunities')
     // The columns the figure needs, plus the ones the row needs to be WORTH
     // opening: which customer, which month, and the deal it became. Session 13
@@ -145,6 +149,8 @@ export async function fetchPlannedOpen({ companyId, ownerIds, start, end, produc
     .in('owner_id', ownerIds)
     .gte('expected_month', start)
     .lte('expected_month', end);
+  if (divisionId) qOpen = qOpen.eq('division_id', divisionId);
+  const { data, error } = await qOpen;
   // `failed` matters as much as the zero. A swallowed error here returns a
   // total of 0, which is indistinguishable from "nothing planned" — that is how
   // a plan came to be filed with total_planned 0.00 against a real pipeline.
@@ -181,19 +187,24 @@ export async function fetchPlannedOpen({ companyId, ownerIds, start, end, produc
  * item whose deal has gone (DEAL MISSING) does not count toward the gate.
  * No product group: a submission is the whole month's plan.
  */
-export async function fetchSubmissionPlanned({ companyId, ownerIds, start, end }) {
+// divisionId (session 43): the plan of one division — its items only.
+export async function fetchSubmissionPlanned({ companyId, ownerIds, start, end, divisionId = null }) {
   const empty = { total: 0, open: 0, converted: 0, convertedCount: 0 };
   if (!companyId || !ownerIds?.length) return empty;
+  let qConv = supabase
+    .from('opportunities')
+    .select('planned_amount, status, deal_id')
+    .eq('company_id', companyId)
+    .eq('status', 'converted')
+    .in('owner_id', ownerIds)
+    .gte('expected_month', start)
+    .lte('expected_month', end);
+  if (divisionId) qConv = qConv.eq('division_id', divisionId);
   const [open, conv] = await Promise.all([
-    fetchPlannedOpen({ companyId, ownerIds, start, end, productGroup: null }),
-    supabase
-      .from('opportunities')
-      .select('planned_amount, status, deal_id')
-      .eq('company_id', companyId)
-      .eq('status', 'converted')
-      .in('owner_id', ownerIds)
-      .gte('expected_month', start)
-      .lte('expected_month', end),
+    divisionId
+      ? fetchPlannedOpen({ companyId, ownerIds, start, end, productGroup: null, divisionId })
+      : fetchPlannedOpen({ companyId, ownerIds, start, end, productGroup: null }),
+    qConv,
   ]);
   // Either read failing makes the whole figure unknown, never a smaller one.
   if (open.failed || conv.error) {
@@ -207,6 +218,49 @@ export async function fetchSubmissionPlanned({ companyId, ownerIds, start, end }
     open: open.total,
     converted,
     convertedCount: withDeal.length,
+  };
+}
+
+/**
+ * ONE DIVISION'S PLAN FIGURES for one person's month (session 43) — the gate
+ * and the row of a person who files one plan per division.
+ *
+ *   target    that division's monthly target rows: a row's own division_id,
+ *             else its assignee's primary division (rowInDivision, the rule
+ *             Insights attributes targets by). No target = 0 = no minimum.
+ *   planned   fetchSubmissionPlanned over that division's plan items.
+ *   required  (target − that division's Achieved) ÷ the person's own
+ *             conversion rate — computePlanningPageSummary's Required Plan,
+ *             over one division. Achieved by the deals' and returns' own
+ *             division_id; the rate is the person's (the same rate his whole
+ *             plan uses).
+ */
+export async function computeDivisionPlanFigures({
+  companyId, ownerId, primaryDivisionId = null, divisionId, start, end,
+}) {
+  const ids = [ownerId];
+  const [targetRows, achievedRes, planned, rate] = await Promise.all([
+    fetchMonthlyTargets({ companyId, contributorIds: ids, start, end, withDivision: true }),
+    fetchAchieved({ companyId, contributorIds: ids, start, end, divisionId }),
+    fetchSubmissionPlanned({ companyId, ownerIds: ids, start, end, divisionId }),
+    computeWinRate({ companyId, ownerIds: ids, withFallback: true, contributorIds: ids }),
+  ]);
+  const inDivision = rowInDivision(divisionId, {
+    primaryByUser: { [ownerId]: primaryDivisionId }, ownerKey: 'assigned_to', ownerFallback: true,
+  });
+  const target = Object.values(targetPerPerson((targetRows || []).filter(inDivision))).reduce((s, v) => s + v, 0);
+  const achieved = achievedRes.total || 0;
+  const remainingTarget = Math.max(0, target - achieved);
+  const winRatePct = rate.winRatePct;
+  return {
+    target,
+    achieved,
+    winRatePct,
+    requiredPlan: remainingTarget > 0 ? computeRequiredRaw({ target: remainingTarget, winRatePct }) : 0,
+    planned: planned.total,
+    plannedConverted: planned.converted,
+    loaded: true,
+    failed: !!planned.failed,
   };
 }
 

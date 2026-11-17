@@ -1,6 +1,7 @@
 import { supabase } from 'lib/supabase';
 import { fetchAllRows } from 'utils/fetchAllRows';
 import { fetchAdditionalDivisions } from 'utils/divisionMembership';
+import { probePlanDivisionColumn } from 'utils/planDivisions';
 import { fetchConversionBaseOrDeals, nextMonthBounds } from 'utils/planningCalculations';
 import { scopeUserIds } from 'utils/salesDivisionMetrics';
 import { resolveApproverMap } from 'utils/planApproval';
@@ -143,6 +144,9 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
   const w3Start = new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString();
   const w3End = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59).toISOString();
 
+  // Session 43: whether plans can be per division (plan_submissions.division_id).
+  const planDivisionColumn = await probePlanDivisionColumn();
+
   // ── PHASE 2: Insights' reads, plus the Monitor's own ──
   const [
     allDeals, targets, deals3m, openOpps, futureOrders, returnsRaw,
@@ -214,7 +218,7 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
     // The month's plan submissions. A failure is shown, never read as
     // "nobody submitted".
     supabase.from('plan_submissions')
-      .select('id, owner_id, plan_month, is_submitted, is_late, deadline_date, submitted_at, approval_status, approved_by, total_planned, required_plan, flagged, rejection_reason, updated_at')
+      .select(`id, owner_id, plan_month, is_submitted, is_late, deadline_date, submitted_at, approval_status, approved_by, total_planned, required_plan, flagged, rejection_reason, updated_at${planDivisionColumn ? ', division_id' : ''}`)
       .eq('company_id', companyId)
       .in('owner_id', scopeIds)
       .eq('plan_month', `${monthStart}`),
@@ -456,6 +460,7 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
     planItems,
     bounceLogs,
     submissions: submissionsRes.error ? null : submissionsRes.data || [],
+    planDivisionColumn,
     futurePushes,
     contactReports: reports,
     activities: activitiesWithPurpose,

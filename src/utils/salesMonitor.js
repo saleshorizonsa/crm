@@ -20,6 +20,7 @@ import {
 import { rowInDivision, dealInDivision, primaryDivisionByUser } from 'utils/divisionMembership';
 import { isConvertedWithDeal, isConvertedDealMissing, customerKey } from 'utils/planningDrill';
 import { deadlineFor } from 'utils/planMonths';
+import { planDivisionsOf, planUnitsFor, planTitle, perDivisionStatusText } from 'utils/planDivisions';
 import { riyadhDate, riyadhToday } from 'utils/visits';
 import { parseInvoiceNumbers } from 'utils/invoiceNumber';
 import {
@@ -326,7 +327,13 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
   // their plan status comes from plan_submissions, and they get a row.
   // The target is Insights' own per-person figure for the month.
   const targetPer = metrics.drill.targetPerPerson || {};
-  const carriesTarget = (id) => num(targetPer[id]) > 0;
+  // Session 43: a person who plans PER DIVISION carries a plan in each of
+  // their divisions once they hold a target for the month in any of them —
+  // Mohamed Kamal's Export plan exists although Export has no target. Without
+  // the column, or for anyone in one division, exactly the rule above.
+  const filesPerDivision = (id) => !!planDivisionsOf(userById.get(id), raw.additionalByUser || {}, raw.planDivisionColumn === true);
+  const carriesTarget = (id) => num(targetPer[id]) > 0
+    || (!!picked && filesPerDivision(id) && num(calcDivisionMetrics([id], { ...raw, divisionId: null }).target) > 0);
   const planPeople = activeAchievers.filter((id) => contributorRoles.has(id) || carriesTarget(id));
   const contributors = new Set(planPeople);                         // the plan-holders
   // A selling manager with NO target this month stays off the plan side. His
@@ -541,7 +548,39 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
 
   // ── per person ──
   const subs = raw.submissions;
-  const subByOwner = new Map((subs || []).map((s) => [s.owner_id, s]));
+  // ── ONE PLAN PER DIVISION (session 43) ──
+  // A person in more than one division files one plan per division once
+  // plan_submissions has division_id (raw.planDivisionColumn). plansOf(id) is
+  // that person's plans for the month, each with its row: ONE plan, keyed by
+  // the person alone, for everybody else — and for everybody before the
+  // migration — so their figures cannot move. The division picker shows only
+  // that division's plan.
+  const subsOf = new Map();
+  (subs || []).forEach((s) => subsOf.set(s.owner_id, [...(subsOf.get(s.owner_id) || []), s]));
+  const subByOwner = new Map((subs || []).filter((s) => !s.division_id).map((s) => [s.owner_id, s]));
+  const divMetricsCache = new Map();
+  const divMetrics = (id, d) => {
+    const k = `${id}|${d}`;
+    if (!divMetricsCache.has(k)) divMetricsCache.set(k, calcDivisionMetrics([id], { ...raw, divisionId: d }));
+    return divMetricsCache.get(k);
+  };
+  const plansOf = (id) => {
+    const all = planUnitsFor(planDivisionsOf(userById.get(id), raw.additionalByUser || {}, raw.planDivisionColumn === true), subsOf.get(id));
+    const multi = all.some((u) => u.divisionId);
+    const shown = multi && picked ? all.filter((u) => u.divisionId === picked.id) : all;
+    return shown.map((u) => ({
+      ...u,
+      ownerId: id,
+      multi,
+      divisionName: u.divisionId ? divName(u.divisionId) : null,
+      // A division plan's own target (Insights' division rule); null = the person's.
+      target: u.divisionId ? num(divMetrics(id, u.divisionId).target) : null,
+    }));
+  };
+  // One word per plan, for "PVC Compound submitted · Export not submitted".
+  const planWord = (st) => (st.submitted
+    ? (st.approval === PLAN_STATUS.approved ? 'approved' : st.approval === PLAN_STATUS.rejected ? 'rejected' : 'submitted')
+    : st.approval === PLAN_STATUS.rejected ? 'rejected' : 'not submitted');
   const fromPlanDealIds = new Set(inMonthItems.map((o) => o.deal_id).filter(Boolean));
   const splitInvoiced = (rows) => {
     const from = rows.filter((d) => fromPlanDealIds.has(d.id));
@@ -572,12 +611,40 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     const plannedTotal = sumBy(myPlanned, (r) => r.planned);
     const split = splitInvoiced(m.drill.invoicedRows || []);
     const sub = isDeparted ? null : subByOwner.get(id) || null;
-    const planStatus = !isDeparted && contributors.has(id) && subs ? classifyPlanStatus(sub) : null;
-    const requiredOf = isDeparted || !contributors.has(id) || !subs
+    let planStatus = !isDeparted && contributors.has(id) && subs ? classifyPlanStatus(sub) : null;
+    let requiredOf = isDeparted || !contributors.has(id) || !subs
       ? { value: null, source: null }
       : sub?.is_submitted
         ? { value: num(sub.required_plan), source: 'submitted' }
         : { value: num(m.requiredRaw), source: 'estimated' };
+    // Session 43: a person with division plans — status, required and
+    // "submitted" per division plan, summed on their one row.
+    const myPlans = !isDeparted && contributors.has(id) && subs ? plansOf(id) : null;
+    let planUnits = null;
+    let submittedPlanned = sub?.is_submitted ? num(sub.total_planned) : null;
+    if (myPlans && myPlans[0]?.multi) {
+      planUnits = myPlans.map((u) => {
+        const st = classifyPlanStatus(u.row);
+        const req = u.row?.is_submitted
+          ? { value: num(u.row.required_plan), source: 'submitted' }
+          : { value: num(divMetrics(id, u.divisionId).requiredRaw), source: 'estimated' };
+        return {
+          ...u, status: st, word: planWord(st), required: req.value, source: req.source,
+          planNow: sumBy(myPlanned.filter((r) => r.divisionId === u.divisionId), (r) => r.planned),
+        };
+      });
+      const same = (f) => (planUnits.every((u) => f(u) === f(planUnits[0])) ? f(planUnits[0]) : 'mixed');
+      planStatus = {
+        submitted: planUnits.every((u) => u.status.submitted),
+        timing: same((u) => u.status.timing),
+        approval: same((u) => u.status.approval),
+        label: perDivisionStatusText(planUnits.map((u) => ({ division: u.divisionName, status: u.word }))),
+        perDivision: planUnits.map((u) => ({ divisionId: u.divisionId, division: u.divisionName, status: u.word })),
+      };
+      requiredOf = { value: sumBy(planUnits, (u) => u.required), source: same((u) => u.source) };
+      const filed = planUnits.filter((u) => u.row?.is_submitted);
+      submittedPlanned = filed.length ? sumBy(filed, (u) => num(u.row.total_planned)) : null;
+    }
     const wni = (m.drill.wonNotInvoicedRows || []);
     const myContacts = mtdContacts.filter((c) => owners.has(c.ownerId));
     const openPlan = num(m.planned);
@@ -602,11 +669,13 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
       planned: plannedTotal,
       // "Submitted": what the plan said when it was filed (its own total_planned);
       // null when nothing was submitted. "Plan now" is `planned` above.
-      submittedPlanned: sub?.is_submitted ? num(sub.total_planned) : null,
+      submittedPlanned,
       plannedOpen: openPlan,
       plannedPctOfTarget: pct(plannedTotal, m.target),
       plannedPctOfRequired: pct(plannedTotal, requiredOf.value),
       planStatus,
+      // Only for a person with division plans (session 43).
+      ...(planUnits ? { planUnits } : {}),
       submission: sub,
       fromPlan: split.fromPlan,
       outsidePlan: split.outsidePlan,
@@ -642,14 +711,18 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
   const split = splitInvoiced(metrics.drill.invoicedRows || []);
   const plannedTotal = sumBy(plannedRows, (r) => r.planned);
   const planHolders = personIds.filter((id) => contributors.has(id));
-  const statusOf = (id) => classifyPlanStatus(subByOwner.get(id));
-  const planStatusRows = subs ? planHolders.map((id) => {
-    const s = subByOwner.get(id) || null;
-    const st = statusOf(id);
+  // Every plan of the month: one per person, one per division for a person
+  // with division plans (session 43). The plan cards count PLANS.
+  const allPlans = subs ? planHolders.flatMap(plansOf) : [];
+  const planStatusRows = subs ? allPlans.map((u) => {
+    const id = u.ownerId;
+    const s = u.row || null;
+    const st = classifyPlanStatus(s);
+    const divId = u.multi ? u.divisionId : knownDivision(primaryByUser[id]);
     return {
       personId: id,
-      person: nameOf(id),
-      divisionId: knownDivision(primaryByUser[id]),
+      person: u.multi ? planTitle(nameOf(id), u.divisionName) : nameOf(id),
+      divisionId: divId,
       status: st.label,
       timing: st.timing,
       approval: st.approval || '—',
@@ -659,8 +732,8 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
       requiredAtSubmit: s?.is_submitted ? num(s.required_plan) : null,
       rejection: s?.rejection_reason || null,
       // For the Plan submission sheet's tabs (session 36).
-      division: divName(knownDivision(primaryByUser[id])),
-      target: num(targetPer[id]),
+      division: divName(divId),
+      target: u.multi ? u.target : num(targetPer[id]),
       isSubmitted: st.submitted,
       isLate: st.submitted && !!s?.is_late,
       isPending: st.submitted && st.approval === PLAN_STATUS.pending,
@@ -679,7 +752,7 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
   const exceptions = buildExceptions({
     raw, now, today, monthStart, monthEnd, closed, isCurrent, cutoff,
     viewSet, isActive, nameOf, contributors: visitPeople, people, itemRows, planCustomerRows,
-    contactRows, mtdContacts, subByOwner, subsLoaded: !!subs, planHolders, dealInView,
+    contactRows, mtdContacts, subByOwner, subsLoaded: !!subs, planHolders, allPlans, dealInView,
     divName, knownDivision, primaryByUser, userById,
   });
   const excByOwner = new Map();
@@ -690,10 +763,15 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
   });
 
   const holderRows = people.filter((p) => p.requiredSource);
+  // Required, per PLAN: a person's one plan, or each of their division plans
+  // (session 43) — so a division plan counts under its own source.
+  const requiredUnits = holderRows.flatMap((p) => (p.planUnits
+    ? p.planUnits.map((u) => ({ name: planTitle(p.name, u.divisionName), source: u.source, required: u.required, planNow: u.planNow }))
+    : [{ name: p.name, source: p.requiredSource, required: p.requiredPlan, planNow: p.planned }]));
   const lineFor = (source) => {
-    const rows = holderRows.filter((p) => p.requiredSource === source);
-    const required = sumBy(rows, (p) => p.requiredPlan);
-    const planNow = sumBy(rows, (p) => p.planned);
+    const rows = requiredUnits.filter((p) => p.source === source);
+    const required = sumBy(rows, (p) => p.required);
+    const planNow = sumBy(rows, (p) => p.planNow);
     return { count: rows.length, people: rows.map((p) => p.name), required, planNow, pct: pct(planNow, required) };
   };
   const requiredLines = subs ? { submitted: lineFor('submitted'), estimated: lineFor('estimated') } : null;
@@ -718,9 +796,10 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
       // "Submitted": the plan-holders' filed total_planned, summed over those
       // who submitted. It does not follow the division picker below the
       // person: a submission is one person's whole month.
-      submitted: subs ? sumBy(planHolders.map((id) => subByOwner.get(id)).filter((x) => x?.is_submitted), (x) => x.total_planned) : null,
-      submittedPeople: subs ? planHolders.filter((id) => subByOwner.get(id)?.is_submitted).length : 0,
-      planHolders: planHolders.length,
+      // Per PLAN (session 43): a division plan is a plan of its own.
+      submitted: subs ? sumBy(allPlans.map((u) => u.row).filter((x) => x?.is_submitted), (x) => x.total_planned) : null,
+      submittedPeople: subs ? allPlans.filter((u) => u.row?.is_submitted).length : 0,
+      planHolders: subs ? allPlans.length : planHolders.length,
       // Open plan of selling managers with no target this month: counted by
       // Insights' Planned, not here.
       openLeftOut,
@@ -819,6 +898,8 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     // Session 40: whether visit_purpose exists yet. Until it does, no page
     // shows a purpose at all.
     purposeColumns: raw.purposeColumns === true,
+    // Session 43: whether plans can be per division.
+    planDivisionColumn: raw.planDivisionColumn === true,
     notes: raw.notes || [],
     drills: buildDrills(ctx),
   };
@@ -849,35 +930,40 @@ export function buildExceptions(c) {
   // ── Plan ──
   if (c.subsLoaded) {
     const deadline = deadlineFor(c.monthStart);
-    c.planHolders.forEach((id) => {
-      const s = c.subByOwner.get(id) || null;
+    // Per PLAN (session 43): a division plan is checked on its own; its key
+    // and detail name the division. A one-plan person's are as before.
+    c.allPlans.forEach((u) => {
+      const id = u.ownerId;
+      const key = u.multi ? `${id}:${u.divisionId}` : id;
+      const pre = u.multi ? `${u.divisionName} · ` : '';
+      const s = u.row || null;
       const st = classifyPlanStatus(s);
       const due = s?.deadline_date || deadline;
       if (!st.submitted && c.today > due) {
-        add('plan_not_submitted', id, {
-          title: 'Plan not submitted by the deadline', detail: `deadline ${dayLabel(due)}`,
+        add('plan_not_submitted', key, {
+          title: 'Plan not submitted by the deadline', detail: `${pre}deadline ${dayLabel(due)}`,
           ownerId: id, date: due, record: { kind: 'person', personId: id },
         });
       }
       if (st.submitted && num(s.required_plan) > 0 && num(s.total_planned) < num(s.required_plan)) {
-        add('plan_below_required', id, {
+        add('plan_below_required', key, {
           title: 'Plan below required',
-          detail: `planned ${Math.round(num(s.total_planned)).toLocaleString('en-US')} of ${Math.round(num(s.required_plan)).toLocaleString('en-US')} required`,
+          detail: `${pre}planned ${Math.round(num(s.total_planned)).toLocaleString('en-US')} of ${Math.round(num(s.required_plan)).toLocaleString('en-US')} required`,
           ownerId: id, date: riyadhDate(s.submitted_at) || due, record: { kind: 'person', personId: id },
         });
       }
       if (st.submitted && st.approval === PLAN_STATUS.pending && s.submitted_at) {
         const waited = daysBetween(riyadhDate(s.submitted_at), c.today);
         if (waited > T.approvalPendingDays) {
-          add('plan_awaiting_approval', id, {
-            title: `Plan awaiting approval ${waited} days`, detail: `submitted ${dayLabel(riyadhDate(s.submitted_at))}`,
+          add('plan_awaiting_approval', key, {
+            title: `Plan awaiting approval ${waited} days`, detail: `${pre}submitted ${dayLabel(riyadhDate(s.submitted_at))}`,
             ownerId: id, date: riyadhDate(s.submitted_at), record: { kind: 'person', personId: id },
           });
         }
       }
       if (st.approval === PLAN_STATUS.rejected) {
-        add('plan_rejected', id, {
-          title: 'Plan rejected, not resubmitted', detail: s.rejection_reason || 'no reason recorded',
+        add('plan_rejected', key, {
+          title: 'Plan rejected, not resubmitted', detail: `${pre}${s.rejection_reason || 'no reason recorded'}`,
           ownerId: id, date: riyadhDate(s.updated_at) || riyadhDate(s.submitted_at) || due,
           record: { kind: 'person', personId: id },
         });
@@ -1041,14 +1127,15 @@ export function buildExceptions(c) {
   // A required plan that cannot be right: more than N times the month's target.
   if (c.subsLoaded) {
     const targetOfPerson = new Map(c.people.map((p) => [p.id, num(p.target)]));
-    c.planHolders.forEach((id) => {
-      const s = c.subByOwner.get(id);
+    c.allPlans.forEach((u) => {
+      const id = u.ownerId;
+      const s = u.row;
       const req = num(s?.required_plan);
-      const tgt = targetOfPerson.get(id) || 0;
+      const tgt = (u.multi ? u.target : targetOfPerson.get(id)) || 0;
       if (req > 0 && req > T.requiredPlanTargetMultiple * tgt) {
-        add('required_plan_wrong', id, {
+        add('required_plan_wrong', u.multi ? `${id}:${u.divisionId}` : id, {
           title: 'Required plan looks wrong',
-          detail: `required ${Math.round(req).toLocaleString('en-US')} against a target of ${Math.round(tgt).toLocaleString('en-US')}${tgt > 0 ? ` (${(req / tgt).toFixed(1)}×)` : ''}`,
+          detail: `${u.multi ? `${u.divisionName} · ` : ''}required ${Math.round(req).toLocaleString('en-US')} against a target of ${Math.round(tgt).toLocaleString('en-US')}${tgt > 0 ? ` (${(req / tgt).toFixed(1)}×)` : ''}`,
           ownerId: id, date: riyadhDate(s.submitted_at) || riyadhDate(s.updated_at) || c.monthStart,
           record: { kind: 'person', personId: id },
         });
@@ -1403,21 +1490,36 @@ function buildTabs(ctx, r) {
 
   // ── Planned ──
   const holders = people.filter((p) => p.planStatus);
-  const subRows = holders.filter((p) => p.submittedPlanned !== null && p.submittedPlanned !== undefined).map((p) => ({
-    personId: p.id, person: p.name, divisionId: p.divisionId, submitted: p.submittedPlanned,
-    required: num(p.submission?.required_plan), submittedAt: riyadhDate(p.submission?.submitted_at), planNow: p.planned,
-  }));
+  // A person with division plans (session 43) has a row per division plan.
+  const subRows = holders.filter((p) => p.submittedPlanned !== null && p.submittedPlanned !== undefined).flatMap((p) => (p.planUnits
+    ? p.planUnits.filter((u) => u.row?.is_submitted).map((u) => ({
+      personId: p.id, person: planTitle(p.name, u.divisionName), divisionId: u.divisionId, submitted: num(u.row.total_planned),
+      required: num(u.row.required_plan), submittedAt: riyadhDate(u.row.submitted_at), planNow: u.planNow,
+    }))
+    : [{
+      personId: p.id, person: p.name, divisionId: p.divisionId, submitted: p.submittedPlanned,
+      required: num(p.submission?.required_plan), submittedAt: riyadhDate(p.submission?.submitted_at), planNow: p.planned,
+    }]));
   const nowRows = plannedRows.map((x) => ({
     oppId: x.oppId, dealId: x.dealId, personId: x.ownerId, person: nameOf(x.ownerId), divisionId: x.divisionId,
     customer: x.customer, status: x.status === 'open' ? 'open' : 'became a deal', expectedMonth: x.expectedMonth, outcome: x.outcome, planned: x.planned,
   }));
-  const belowRows = people.filter((p) => p.requiredSource && num(p.planned) < num(p.requiredPlan)).map((p) => ({
-    personId: p.id, person: p.name, divisionId: p.divisionId, planNow: p.planned, required: p.requiredPlan,
-    source: p.requiredSource === 'submitted' ? 'submitted plan' : 'estimate', gap: num(p.requiredPlan) - num(p.planned),
-  }));
-  const noPlanRows = holders.filter((p) => num(p.planned) === 0).map((p) => ({
-    personId: p.id, person: p.name, divisionId: p.divisionId, status: p.planStatus.label, required: p.requiredPlan,
-  }));
+  const belowRows = people.filter((p) => p.requiredSource).flatMap((p) => (p.planUnits
+    ? p.planUnits.filter((u) => num(u.planNow) < num(u.required)).map((u) => ({
+      personId: p.id, person: planTitle(p.name, u.divisionName), divisionId: u.divisionId, planNow: u.planNow, required: u.required,
+      source: u.source === 'submitted' ? 'submitted plan' : 'estimate', gap: num(u.required) - num(u.planNow),
+    }))
+    : num(p.planned) < num(p.requiredPlan) ? [{
+      personId: p.id, person: p.name, divisionId: p.divisionId, planNow: p.planned, required: p.requiredPlan,
+      source: p.requiredSource === 'submitted' ? 'submitted plan' : 'estimate', gap: num(p.requiredPlan) - num(p.planned),
+    }] : []));
+  const noPlanRows = holders.flatMap((p) => (p.planUnits
+    ? p.planUnits.filter((u) => num(u.planNow) === 0).map((u) => ({
+      personId: p.id, person: planTitle(p.name, u.divisionName), divisionId: u.divisionId, status: u.word, required: u.required,
+    }))
+    : num(p.planned) === 0 ? [{
+      personId: p.id, person: p.name, divisionId: p.divisionId, status: p.planStatus.label, required: p.requiredPlan,
+    }] : []));
 
   // ── Achieved / From plan ──
   const dealById = new Map((raw.allDeals || raw.deals || []).map((d) => [d.id, d]));

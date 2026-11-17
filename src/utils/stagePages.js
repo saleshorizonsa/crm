@@ -260,7 +260,7 @@ function personCells(sc, stageId, id, rows) {
     const st = p.planStatus;
     return {
       division,
-      planStatus: st ? (st.submitted ? `${st.timing === 'submitted late' ? 'late' : 'on time'} · ${st.approval}` : st.approval === 'rejected' ? 'rejected' : 'missing') : '—',
+      planStatus: st ? (st.perDivision ? st.label : st.submitted ? `${st.timing === 'submitted late' ? 'late' : 'on time'} · ${st.approval}` : st.approval === 'rejected' ? 'rejected' : 'missing') : '—',
       submitted: p.submittedPlanned,
       planNow: p.planned,
       required: p.requiredPlan,

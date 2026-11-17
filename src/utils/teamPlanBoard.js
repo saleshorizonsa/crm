@@ -1,4 +1,7 @@
 import { supabase } from 'lib/supabase';
+import {
+  probePlanDivisionColumn, fetchPlanDivisions, fetchDivisionNames, planUnitsFor, perDivisionStatusText,
+} from 'utils/planDivisions';
 import { computePlanningPageSummary } from 'utils/planningPageSummary';
 import {
   planItemFlags, isConvertedWithDeal, isConvertedDealMissing,
@@ -59,14 +62,33 @@ export async function buildTeamPlanBoard({
   const ids = people.map((u) => u.id);
 
   // Plan submissions for the month, for everybody at once.
+  // Session 43: a person who plans per division has one row per division;
+  // the board shows each division's status on their one line. Without the
+  // column, exactly today's read.
+  const hasDivision = await probePlanDivisionColumn();
   const { data: subs } = await supabase
     .from('plan_submissions')
-    .select('owner_id, approval_status, is_submitted, plan_month')
+    .select(hasDivision ? 'owner_id, approval_status, is_submitted, plan_month, division_id' : 'owner_id, approval_status, is_submitted, plan_month')
     .eq('company_id', companyId)
     .in('owner_id', ids)
     .eq('plan_month', monthKey);
-  const subByOwner = new Map();
-  (subs || []).forEach((r) => { subByOwner.set(r.owner_id, r); });
+  const subsOf = new Map();
+  (subs || []).forEach((r) => { subsOf.set(r.owner_id, [...(subsOf.get(r.owner_id) || []), r]); });
+  let planDivs = {};
+  let divName = {};
+  if (hasDivision) {
+    const { data: divUsers } = await supabase.from('users').select('id, sales_division_id').in('id', ids);
+    planDivs = (await fetchPlanDivisions({ companyId, users: divUsers || [] })).byUser;
+    divName = await fetchDivisionNames(Object.values(planDivs).flat());
+  }
+  const statusOfRow = (sub) => (!sub || !sub.is_submitted
+    ? PLAN_STATUS.none
+    : PLAN_STATUS[sub.approval_status] || PLAN_STATUS.pending);
+  const planStatusOf = (id) => {
+    const units = planUnitsFor(planDivs[id] || null, subsOf.get(id));
+    if (units.length === 1) return statusOfRow(units[0].row);
+    return perDivisionStatusText(units.map((u) => ({ division: divName[u.divisionId] || 'division', status: statusOfRow(u.row) })));
+  };
 
   /**
    * WHAT HAPPENED TO THE REST OF THE PLAN — converted, and moved on.
@@ -127,10 +149,7 @@ export async function buildTeamPlanBoard({
     const sum = await computePlanningPageSummary({
       companyId, ownerIds: [u.id], start, end, productGroup,
     });
-    const sub = subByOwner.get(u.id);
-    const status = !sub || !sub.is_submitted
-      ? PLAN_STATUS.none
-      : PLAN_STATUS[sub.approval_status] || PLAN_STATUS.pending;
+    const status = planStatusOf(u.id);
 
     const notConverted = (sum.drill?.planRows || []).filter(
       (o) => planItemFlags(o, flagCtx).includes('NOT CONVERTED'),

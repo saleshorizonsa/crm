@@ -62,6 +62,10 @@ import { riyadhDate as riyadhDateS41 } from 'utils/visits';
 // Session 40: the purpose split and the Collection count, recounted.
 import { PURPOSES as PURPOSES_S40 } from 'utils/visitPurpose';
 import { computeSalesMonitor, OUTCOME_ORDER, DEPARTED_ID, NO_TARGET_ID } from 'utils/salesMonitor';
+// Session 43: one plan per division for a person in more than one division.
+import {
+  fetchPlanDivisions, fetchDivisionNames, planUnitsFor, planTitle, probePlanDivisionColumn, perDivisionStatusText,
+} from 'utils/planDivisions';
 import {
   reportService,
   reportWonTotal,
@@ -717,12 +721,21 @@ async function buildPlanAccuracyRows({ companyId, bundle, start, end, reference 
      * approved. Nothing errored. This re-reads the table with its own query
      * and requires every person's status to match it.
      */
+    // Session 43: with division plans, a person in several divisions reads
+    // each division's status on one line; recounted from the rows here.
+    const boardDiv = await probePlanDivisionColumn();
     const { data: subs, error: subsErr } = await supabase
       .from('plan_submissions')
-      .select('owner_id, is_submitted, approval_status')
+      .select(boardDiv ? 'owner_id, is_submitted, approval_status, division_id' : 'owner_id, is_submitted, approval_status')
       .eq('company_id', companyId)
       .in('owner_id', boardRows.map((r) => r.id))
       .eq('plan_month', boardMonthKey);
+    let boardPlanDivs = {};
+    let boardDivNames = {};
+    if (boardDiv && !subsErr) {
+      boardPlanDivs = (await fetchPlanDivisions({ companyId, users: users.filter((u) => boardRows.some((r) => r.id === u.id)) })).byUser;
+      boardDivNames = await fetchDivisionNames(Object.values(boardPlanDivs).flat());
+    }
     if (subsErr) {
       rows.push(row({
         label: 'Team plan board: plan status = plan_submissions',
@@ -731,15 +744,21 @@ async function buildPlanAccuracyRows({ companyId, bundle, start, end, reference 
         note: `plan_submissions could not be read: ${subsErr.message}`,
       }));
     } else {
-      const subOf = new Map((subs || []).map((s) => [s.owner_id, s]));
+      const rowsOf = new Map();
+      (subs || []).forEach((s) => rowsOf.set(s.owner_id, [...(rowsOf.get(s.owner_id) || []), s]));
       const statusOf = (s) => {
         if (!s || !s.is_submitted) return PLAN_STATUS.none;
         return PLAN_STATUS[s.approval_status] || PLAN_STATUS.pending;
       };
-      const matching = boardRows.filter((r) => r.planStatus === statusOf(subOf.get(r.id)));
+      const wantOf = (id) => {
+        const units = planUnitsFor(boardPlanDivs[id] || null, rowsOf.get(id));
+        if (units.length === 1) return statusOf(units[0].row);
+        return perDivisionStatusText(units.map((u) => ({ division: boardDivNames[u.divisionId] || 'division', status: statusOf(u.row) })));
+      };
+      const matching = boardRows.filter((r) => r.planStatus === wantOf(r.id));
       const byStatus = {};
       boardRows.forEach((r) => {
-        const want = statusOf(subOf.get(r.id));
+        const want = wantOf(r.id);
         (byStatus[want] = byStatus[want] || []).push(
           r.planStatus === want ? r.name : `${r.name} (board: ${r.planStatus})`,
         );
@@ -1778,7 +1797,9 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
       .select('id, owner_id, planned_amount, status, deal_id, expected_month')
       .eq('company_id', companyId).gte('expected_month', start).lte('expected_month', end),
     supabase.from('plan_submissions')
-      .select('owner_id, is_submitted, is_late, approval_status, required_plan')
+      .select(model.planDivisionColumn
+        ? 'owner_id, is_submitted, is_late, approval_status, required_plan, division_id'
+        : 'owner_id, is_submitted, is_late, approval_status, required_plan')
       .eq('company_id', companyId).eq('plan_month', start),
   ]);
   const monthItems = items || [];
@@ -1792,11 +1813,23 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
     .reduce((s, d) => s + achievedAmount(d), 0);
   const outsideOf = (ids) => invoicedOf(ids).filter((d) => !planDealIds.has(d.id))
     .reduce((s, d) => s + achievedAmount(d), 0);
-  const subBy = new Map((subs || []).map((s) => [s.owner_id, s]));
+  const subBy = new Map((subs || []).filter((s) => !s.division_id).map((s) => [s.owner_id, s]));
+  // PLANS, rebuilt here (session 43): one per person, one per division for a
+  // person in more than one division once plan_submissions has division_id.
+  // For everybody else a person's plan is the row above, as before.
+  const subRowsBy = new Map();
+  (subs || []).forEach((s) => subRowsBy.set(s.owner_id, [...(subRowsBy.get(s.owner_id) || []), s]));
+  let planDivs = {};
+  let planDivNames = {};
+  if (model.planDivisionColumn) {
+    planDivs = (await fetchPlanDivisions({ companyId, users: users.filter((u) => contributors.includes(u.id)) })).byUser;
+    planDivNames = await fetchDivisionNames(Object.values(planDivs).flat());
+  }
+  const plansOfRef = (id) => planUnitsFor(planDivs[id] || null, subRowsBy.get(id));
+  const contributorPlans = contributors.flatMap((id) => plansOfRef(id).map((u) => ({ ...u, ownerId: id })));
   const statusCounts = (ids) => {
     const out = { onTime: 0, late: 0, missing: 0, approved: 0, rejected: 0 };
-    ids.forEach((id) => {
-      const s = subBy.get(id);
+    ids.flatMap((id) => plansOfRef(id).map((u) => u.row)).forEach((s) => {
       // rejectPlan sets is_submitted false: rejected AND not submitted (session 36).
       if (s && !s.is_submitted && s.approval_status === 'rejected') { out.missing += 1; out.rejected += 1; return; }
       if (!s || !s.is_submitted) { out.missing += 1; return; }
@@ -1824,21 +1857,23 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
       note: `no-target sellers' open plan ${Math.round(c.planned.openLeftOut).toLocaleString('en-US')} is in Insights' Planned, not here`,
     }),
     ...(subErr ? [] : (() => {
-      const filed = contributors.filter((id) => subBy.get(id)?.is_submitted);
-      const notFiled = contributors.filter((id) => !subBy.get(id)?.is_submitted);
+      const filed = contributorPlans.filter((u) => u.row?.is_submitted);
+      const notFiled = contributorPlans.filter((u) => !u.row?.is_submitted);
       const r = c.planned.required;
       return [
         row({
           label: 'Sales Monitor — 2 Required, from submitted plans = their required_plan',
           value: r.submitted.required,
-          expected: filed.reduce((t, id) => t + n(subBy.get(id).required_plan), 0),
+          expected: filed.reduce((t, u) => t + n(u.row.required_plan), 0),
           note: `${filed.length} plan(s)`,
         }),
         row({ label: 'Sales Monitor — 2 Required, estimated: people with no submitted plan', value: r.estimated.count, expected: notFiled.length, kind: 'count', note: r.estimated.people.join(', ') || 'none' }),
         row({
           label: 'Sales Monitor — 2 Required, estimated = sum of those people’s own estimates',
           value: r.estimated.required,
-          expected: model.people.filter((x) => x.requiredSource === 'estimated').reduce((t, x) => t + n(x.requiredPlan), 0),
+          expected: model.people.flatMap((x) => (x.planUnits
+            ? x.planUnits.filter((u) => u.source === 'estimated').map((u) => u.required)
+            : x.requiredSource === 'estimated' ? [x.requiredPlan] : [])).reduce((t, v) => t + n(v), 0),
         }),
         row({
           label: 'Sales Monitor — Insights company required pipeline (context only, not on the card)',
@@ -1850,7 +1885,7 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
     ...(subErr ? [] : [row({
       label: 'Sales Monitor — 2 Submitted (company): total_planned of the filed plans',
       value: c.planned.submitted,
-      expected: contributors.map((id) => subBy.get(id)).filter((x) => x?.is_submitted).reduce((t, x) => t + n(x.total_planned), 0),
+      expected: contributorPlans.map((u) => u.row).filter((x) => x?.is_submitted).reduce((t, x) => t + n(x.total_planned), 0),
     })]),
     row({ label: 'Sales Monitor — 5 From this month\'s plan (company)', value: c.fromPlan.fromPlan, expected: fromPlanOf(achievers) }),
     row({ label: 'Sales Monitor — 5 Outside plan (company)', value: c.fromPlan.outsidePlan, expected: outsideOf(achievers) }),
@@ -1888,6 +1923,39 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
       })));
   }
 
+  // ── PLANS PER DIVISION (session 43) ── only when someone files them.
+  const multiPlans = contributorPlans.filter((u) => u.divisionId);
+  if (!subErr && multiPlans.length) {
+    const multiIds = [...new Set(multiPlans.map((u) => u.ownerId))];
+    const { data: divTargets } = await supabase.from('sales_targets')
+      .select('assigned_to, target_amount, target_type, period_start, division_id, client_targets(target_amount)')
+      .eq('company_id', companyId).eq('status', 'active').eq('period_type', 'monthly')
+      .in('assigned_to', multiIds).lte('period_start', end).gte('period_end', start);
+    const primaryOf = new Map(users.map((u) => [u.id, u.sales_division_id || null]));
+    const word = (s) => (!s || !s.is_submitted
+      ? (s?.approval_status === 'rejected' ? 'rejected' : 'not submitted')
+      : s.approval_status === 'approved' ? 'approved' : s.approval_status === 'rejected' ? 'rejected' : 'submitted');
+    rows.push(row({
+      label: 'Sales Monitor — 2 Plans per division: plans on the Plan submission card (one per person, one per division of a person in several)',
+      value: c.planStatus.people, expected: contributorPlans.length, kind: 'count',
+      note: multiIds.map((id) => `${users.find((u) => u.id === id)?.full_name || id}: ${plansOfRef(id).length} plans`).join(' · '),
+    }));
+    multiPlans.forEach((u) => {
+      const name = planTitle(users.find((x) => x.id === u.ownerId)?.full_name || u.ownerId, planDivNames[u.divisionId] || 'division');
+      const shown = (model.planStatusRows || []).find((r) => r.personId === u.ownerId && r.divisionId === u.divisionId);
+      const tgt = sum(targetPerPerson((divTargets || []).filter((t) => t.assigned_to === u.ownerId
+        && (t.division_id || primaryOf.get(u.ownerId)) === u.divisionId)));
+      rows.push(
+        row({
+          label: `Sales Monitor — 2 Plan per division: ${name} — submitted`,
+          value: shown ? (shown.isSubmitted ? 1 : 0) : null, expected: u.row?.is_submitted ? 1 : 0, kind: 'count',
+          note: word(u.row),
+        }),
+        row({ label: `Sales Monitor — 2 Plan per division: ${name} — target`, value: shown ? shown.target : null, expected: tgt }),
+      );
+    });
+  }
+
   // ── per salesman ──
   let sumTarget = 0;
   let sumAchieved = 0;
@@ -1914,9 +1982,24 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
       }),
     );
     if (p.submittedPlanned !== null && p.submittedPlanned !== undefined) {
-      rows.push(row({ label: label('2 Submitted'), value: p.submittedPlanned, expected: n(subBy.get(p.id)?.total_planned) }));
+      rows.push(row({
+        label: label('2 Submitted'),
+        value: p.submittedPlanned,
+        expected: p.planUnits
+          ? plansOfRef(p.id).filter((u) => u.row?.is_submitted && u.divisionId).reduce((t, u) => t + n(u.row.total_planned), 0)
+          : n(subBy.get(p.id)?.total_planned),
+      }));
     }
-    if (p.planStatus && !subErr) {
+    if (p.planStatus?.perDivision && !subErr) {
+      // A person with division plans: each division's status, recounted.
+      const want = plansOfRef(p.id).filter((u) => u.divisionId).map((u) => `${planDivNames[u.divisionId] || 'division'} ${(!u.row || !u.row.is_submitted)
+        ? (u.row?.approval_status === 'rejected' ? 'rejected' : 'not submitted')
+        : u.row.approval_status === 'approved' ? 'approved' : u.row.approval_status === 'rejected' ? 'rejected' : 'submitted'}`).join(' · ');
+      rows.push(row({
+        label: label('3 Plan status per division matches the submissions'),
+        value: p.planStatus.label === want ? 1 : 0, expected: 1, kind: 'count', note: p.planStatus.label,
+      }));
+    } else if (p.planStatus && !subErr) {
       const sc = statusCounts([p.id]);
       const expected = sc.missing ? 'not submitted' : (sc.late ? 'submitted late' : 'submitted on time');
       rows.push(row({
