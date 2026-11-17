@@ -2,9 +2,10 @@ import { resolveTabs, rowMatches, defaultSelection } from 'utils/drillTabs';
 import { achievedAmount } from 'utils/planningCalculations';
 import { riyadhDate } from 'utils/visits';
 import { THRESHOLDS } from 'utils/salesMonitorThresholds';
-import { daysBetween } from 'utils/salesMonitor';
+import { daysBetween, DEPARTED_ID, NO_TARGET_ID } from 'utils/salesMonitor';
 import { exceptionAction } from 'utils/exceptionActions';
 import { purposeSplitText } from 'utils/visitPurpose';
+import { PACING_TOLERANCE } from 'utils/salesDivisionMetrics';
 
 /**
  * SALES MONITOR STAGE PAGES (session 39, CEO 2026-11-16).
@@ -136,8 +137,20 @@ const C = {
  * Everything one stage needs from the model, built once per model: the tabs
  * of every view, lookups from a tab row back to the row it was made from.
  */
-export function stageContext(model) {
+export function stageContext(model, { divisionModel = null } = {}) {
   const people = new Map(model.people.map((p) => [p.id, p]));
+  // SESSION 45: a salesman's figures UNDER A DIVISION are that division's —
+  // computeSalesMonitor(raw, { divisionId }) for it, the division picker's own
+  // model (passed in by the page as divisionModel). Without one (or for
+  // Unassigned) the person's whole figures, as before.
+  const divCache = new Map();
+  const divCtx = (d) => {
+    if (!divCache.has(d)) {
+      const dm = (divisionModel && d && d !== 'unassigned' && divisionModel(d)) || model;
+      divCache.set(d, { model: dm, people: new Map((dm.people || []).map((p) => [p.id, p])) });
+    }
+    return divCache.get(d);
+  };
   const divName = (id) => (model.groups.find((g) => g.id === id)?.name) || 'Unassigned';
   const nameOf = (id, fallback) => people.get(id)?.name || fallback || model.userName?.(id) || 'Unknown';
   const tabs = {};
@@ -193,7 +206,7 @@ export function stageContext(model) {
   const pcByName = new Map(model.planCustomerRows.map((g) => [`${g.ownerId}|${g.customer}`, g]));
 
   return {
-    model, people, divName, nameOf, tabs, contactOf, planCustomerOf, nowRows, pcByKey, pcByName, wniRows,
+    model, people, divName, nameOf, tabs, contactOf, planCustomerOf, nowRows, pcByKey, pcByName, wniRows, divCtx,
   };
 }
 
@@ -247,12 +260,23 @@ function personColumns(stageId) {
   return [C.division];
 }
 
-function personCells(sc, stageId, id, rows) {
-  const p = sc.people.get(id);
+/** The month's pace rule (the Target card's): share of target achieved against the share of the month gone. */
+const elapsedOf = (M) => (M.cards?.achieved?.isCurrent ? num(M.metrics?.elapsed) : M.closed ? 1 : 0);
+export const NO_TARGET = 'No target';
+const paceWord = (M, achieved, target) => (num(target) > 0
+  ? (num(achieved) / num(target) >= elapsedOf(M) - PACING_TOLERANCE ? 'on pace' : 'behind')
+  : NO_TARGET);
+
+// d (session 45): the division the row sits under — its figures are that
+// division's. Without d, exactly as before.
+function personCells(sc, stageId, id, rows, d = null) {
+  const ctx = d ? sc.divCtx(d) : { model: sc.model, people: sc.people };
+  const p = ctx.people.get(id);
   const r0 = rows[0] || {};
   const division = p?.division || sc.divName(r0.divisionId);
   if (!p) return { division };
   if (stageId === 'target') {
+    if (d) return { division, target: p.target, achieved: p.achieved, achievedPct: p.achievedPct, pace: paceWord(ctx.model, p.achieved, p.target) };
     const behind = rows.some((x) => x.onPace === false);
     return { division, achieved: p.achieved, achievedPct: p.achievedPct, pace: rows.some((x) => 'onPace' in x) ? (behind ? 'behind' : 'on pace') : '—' };
   }
@@ -269,11 +293,11 @@ function personCells(sc, stageId, id, rows) {
     };
   }
   if (stageId === 'funnel') {
-    const f = sc.model.funnel?.perPerson?.[id];
+    const f = ctx.model.funnel?.perPerson?.[id];
     return f ? { division, converted: `${f.converted} of ${f.items}`, openValue: f.openValue, stuck: f.stuck } : { division };
   }
   if (stageId === 'visits') {
-    const mine = sc.model.planCustomerRows.filter((g) => g.ownerId === id);
+    const mine = ctx.model.planCustomerRows.filter((g) => g.ownerId === id);
     return {
       division, visitsMtd: p.visitsMtd, inPlanPct: p.visitsMtdInPlanPct,
       plannedVisited: `${mine.filter((g) => g.visited).length} of ${mine.length}`, lastVisit: p.lastVisit,
@@ -287,6 +311,65 @@ function personCells(sc, stageId, id, rows) {
   }
   return { division };
 }
+
+/**
+ * A DIVISION row's figures (session 45): its salesmen's own figures under it,
+ * summed or recounted — no new formula. % and pace: the division's achieved
+ * against its target by the month's pace rule; a division with no target
+ * reads "No target".
+ */
+function divisionCells(sc, stageId, d, personIds) {
+  const ctx = sc.divCtx(d);
+  const cells = personIds.map((id) => personCells(sc, stageId, id, [], d));
+  const add = (k) => cells.reduce((s, c) => s + num(c[k]), 0);
+  const anyOf = (k) => cells.some((c) => c[k] !== null && c[k] !== undefined);
+  const ofParts = (k) => cells.reduce((a, c) => {
+    const m = String(c[k] ?? '').match(/^(\d+) of (\d+)$/);
+    return m ? [a[0] + Number(m[1]), a[1] + Number(m[2])] : a;
+  }, [0, 0]);
+  const target = add('target');
+  const achieved = add('achieved');
+  const pctOrNo = () => (target > 0 ? pct(achieved, target) : NO_TARGET);
+  if (stageId === 'target') {
+    return { target, achieved, achievedPct: pctOrNo(), pace: paceWord(ctx.model, achieved, target) };
+  }
+  if (stageId === 'planned') {
+    const st = personIds.map((id) => ctx.people.get(id)?.planStatus).filter(Boolean);
+    const submitted = st.filter((s) => s.submitted).length;
+    const approved = st.filter((s) => s.submitted && (s.approval === 'approved' || s.selfApproved)).length;
+    const planNow = add('planNow');
+    const required = add('required');
+    return {
+      planStatus: `${submitted} of ${st.length} submitted · ${approved} approved`,
+      submitted: anyOf('submitted') ? add('submitted') : null,
+      planNow, required, pctReq: pct(planNow, required), requiredFrom: null,
+    };
+  }
+  if (stageId === 'funnel') {
+    const [a, b] = ofParts('converted');
+    return { converted: `${a} of ${b}`, openValue: add('openValue'), stuck: add('stuck') };
+  }
+  if (stageId === 'visits') {
+    const visits = add('visitsMtd');
+    const inPlan = cells.reduce((s, c) => s + num(c.visitsMtd) * num(c.inPlanPct) / 100, 0);
+    const [v, n] = ofParts('plannedVisited');
+    const last = cells.map((c) => c.lastVisit).filter(Boolean).sort().pop() || null;
+    return { visitsMtd: visits, inPlanPct: visits > 0 ? (inPlan / visits) * 100 : null, plannedVisited: `${v} of ${n}`, lastVisit: last };
+  }
+  if (stageId === 'achieved') {
+    return {
+      target, achieved, achievedPct: pctOrNo(),
+      fromPlan: add('fromPlan'), outsidePlan: add('outsidePlan'), wni: add('wni'),
+    };
+  }
+  return {};
+}
+
+/** Division columns: the stage's salesman columns, without "Division". */
+const divisionColumns = (stageId) => [
+  ...(stageId === 'target' ? [{ key: 'target', label: 'Target', type: 'money' }] : []),
+  ...personColumns(stageId).filter((c) => c.key !== 'division'),
+];
 
 const CUSTOMER_COLUMNS = [
   { key: 'planValue', label: 'Plan value', type: 'money' },
@@ -530,7 +613,17 @@ function listRows(sc, viewId, selection, { only = null, division = '' } = {}) {
   const tabs = sc.tabs[viewId];
   if (!tabs) return [];
   const sel = normalizeSelection(tabs, selection);
-  let rows = resolveTabs(tabs, sel, '').rows;
+  // Session 45: the Target page's On pace / Behind pace pick DIVISIONS by the
+  // division's own pace; the rows are then all of that division's rows.
+  const divPace = viewId === 'target' && ['on', 'behind'].includes(sel[0]);
+  let rows = resolveTabs(tabs, divPace ? ['all'] : sel, '').rows;
+  if (divPace) {
+    const want = sel[0] === 'on' ? 'on pace' : 'behind';
+    const verdict = new Map(groupBy(rows, (r) => r.divisionId || 'unassigned').map(([d, drs]) => [
+      d, divisionCells(sc, 'target', d, uniq(drs.map((r) => r.personId))).pace,
+    ]));
+    rows = rows.filter((r) => verdict.get(r.divisionId || 'unassigned') === want);
+  }
   const of = onlyFilter(only);
   if (of) rows = rows.filter(of.test);
   if (division) rows = rows.filter((r) => r.divisionId === division);
@@ -550,8 +643,12 @@ function resolveList(sc, stageId, viewId, selection, { only, query, division }) 
   const of = onlyFilter(only);
 
   // Search: a tab row stays when it, or a record it expands into, matches.
+  // Session 45: or its DIVISION's name matches ("Pipes" keeps that division).
   const q = String(query || '').trim();
-  const matches = (r) => rowMatches(r, q, STAGE_SEARCH_KEYS);
+  const grouped = stageId !== 'exceptions';
+  const matchesOwn = (r) => rowMatches(r, q, STAGE_SEARCH_KEYS);
+  const divMatches = (r) => grouped && !!q && rowMatches({ division: sc.divName(r.divisionId || 'unassigned') }, q, ['division']);
+  const matches = (r) => matchesOwn(r) || divMatches(r);
   const passes = (r) => {
     if (!q) return true;
     if (matches(r)) return true;
@@ -573,16 +670,26 @@ function resolveList(sc, stageId, viewId, selection, { only, query, division }) 
       const trial = [...sel];
       trial[i] = o.id;
       const trialRows = searched(listRows(sc, viewId, trial, { division }));
+      // Session 45: the chips count DIVISION rows.
+      if (grouped) {
+        const empty = viewId === 'target' && (o.isAll || o.id === 'all') ? emptyDivisions(sc, trialRows, { q, division }).length : 0;
+        return { ...o, count: uniq(trialRows.map((r) => r.divisionId || 'unassigned')).length + empty };
+      }
       return { ...o, count: trialRows.length };
     }),
   }));
 
   const valueLabel = valueLabelOf(viewId, sel);
   const valueOf = (rs) => (cfg.total ? cfg.total(rs) : rs.length);
-  const nodes = buildNodes(sc, stageId, shape, rows, valueOf, q, matches);
+  const withEmpty = grouped && viewId === 'target' && sel[0] === 'all' && !of;
+  const nodes = buildNodes(sc, stageId, shape, rows, valueOf, q, matches, {
+    grouped, empty: withEmpty ? emptyDivisions(sc, rows, { q, division }) : [],
+  });
   // The value column already shows the tab's figure: not twice on a row.
-  const pCols = personColumns(stageId).filter((c) => c.label !== valueLabel);
+  // Grouped by division (session 45): the division is the parent, not a column.
+  const pCols = personColumns(stageId).filter((c) => c.label !== valueLabel && !(grouped && c.key === 'division'));
   const columns = {
+    division: divisionColumns(stageId).filter((c) => c.label !== valueLabel),
     person: pCols,
     customer: shape.group[0] === 'customer' ? [{ key: 'salesmen', label: 'Salesmen' }] : CUSTOMER_COLUMNS,
     group: [],
@@ -601,19 +708,46 @@ function resolveList(sc, stageId, viewId, selection, { only, query, division }) 
     hints: resolveTabs(tabs, sel, '').hints,
     only: of ? { id: only, label: of.label } : null,
     rowCount: rows.length,
+    grouped,
+    divisionCount: grouped ? nodes.filter((n) => n.kind === 'division').length : 0,
+    salesmanCount: grouped ? uniq(nodes.flatMap((n) => (n.children || []).filter((c) => c.kind === 'person').map((c) => c.row?.personId || c.personId))).length : 0,
   };
+}
+
+/**
+ * Divisions with work this month but no target row (session 45; today
+ * Export): shown on the Target page with Target "—", their achieved and their
+ * salesmen. Never Unassigned. The division filter and the search apply.
+ */
+function emptyDivisions(sc, rows, { q = '', division = '' } = {}) {
+  const have = new Set(rows.map((r) => r.divisionId || 'unassigned'));
+  // With a division picked (?division=), only that division can be shown.
+  const picked = sc.model.division?.id || null;
+  return (sc.model.groups || [])
+    .filter((g) => g.id && g.id !== 'unassigned' && !have.has(g.id) && (!division || division === g.id) && (!picked || picked === g.id))
+    .map((g) => {
+      const ctx = sc.divCtx(g.id);
+      const ids = (ctx.model.people || [])
+        .filter((p) => p.id !== DEPARTED_ID && p.id !== NO_TARGET_ID && (num(p.achieved) || num(p.planned) || num(p.wonNotInvoiced)))
+        .map((p) => p.id);
+      return { id: g.id, name: g.name, personIds: ids };
+    })
+    .filter((g) => g.personIds.length)
+    .filter((g) => !q || rowMatches({ division: g.name }, q, ['division'])
+      || g.personIds.some((id) => rowMatches({ person: sc.nameOf(id) }, q, ['person'])));
 }
 
 /**
  * The row tree. Every grouping node's value is the tab's own total over the
  * rows under it; a leaf's value is that function over the one row.
  */
-function buildNodes(sc, stageId, shape, rows, valueOf, q, matches) {
+function buildNodes(sc, stageId, shape, rows, valueOf, q, matches, { grouped = false, empty = [] } = {}) {
   const keyFns = {
     person: (r) => r.personId,
     customer: (r) => (shape.customerKey ? shape.customerKey(r) : `name:${r.customer}`),
     group: (r) => r.group,
   };
+  let d = null; // the division being built (session 45)
   const leafNode = (r, parentId, i) => {
     const L = shape.leaf;
     const id = `${parentId}/${L.kind}:${r.oppId || r.dealId || r.id || r.personId || ''}:${i}`;
@@ -622,7 +756,7 @@ function buildNodes(sc, stageId, shape, rows, valueOf, q, matches) {
       kind: L.kind,
       name: L.name(r),
       value: valueOf([r]),
-      cells: L.kind === 'person' ? personCells(sc, stageId, r.personId, [r]) : (L.cells ? L.cells(r) : {}),
+      cells: L.kind === 'person' ? personCells(sc, stageId, r.personId, [r], d) : (L.cells ? L.cells(r) : {}),
       open: L.open ? L.open(r) : openOf(r),
       action: L.action ? L.action(r) : null,
       row: r,
@@ -658,29 +792,68 @@ function buildNodes(sc, stageId, shape, rows, valueOf, q, matches) {
       const name = key === 'person' ? sc.nameOf(r0.personId, r0.person)
         : key === 'customer' ? r0.customer
           : key === 'group' ? k : k;
-      const cells = key === 'person' ? personCells(sc, stageId, r0.personId, krs)
+      const cells = key === 'person' ? personCells(sc, stageId, r0.personId, krs, d)
         : key === 'customer' && shape.group[0] === 'person'
           ? customerCells(sc, r0.personId, r0.customer, sc.contactOf.get(r0)?.customerKey || null)
           : key === 'customer' ? { salesmen: uniq(krs.map((x) => x.person)).join(', ') } : {};
-      return { id, kind: key, name, value: valueOf(krs), cells, children: level(krs, depth + 1, id) };
+      return { id, kind: key, name, value: valueOf(krs), cells, children: level(krs, depth + 1, id), ...(key === 'person' ? { personId: r0.personId } : {}) };
     });
     if (key === 'group' && shape.groupOrder) {
       return groups.sort((a, b) => shape.groupOrder.indexOf(a.name) - shape.groupOrder.indexOf(b.name));
     }
+    if (key === 'person' && d) return groups.sort(byTargetIn(d, (n) => n.personId));
     return groups.sort(byValue);
   };
-  const out = level(rows, 0, 'root');
-  // A person-per-row tab: the leaves ARE the salesmen; order them like groups.
-  return shape.group.length ? out : out.sort(byValue);
+  if (!grouped) {
+    const out = level(rows, 0, 'root');
+    // A person-per-row tab: the leaves ARE the salesmen; order them like groups.
+    return shape.group.length ? out : out.sort(byValue);
+  }
+  // SESSION 45: DIVISION ▸ salesman ▸ records. A row's division is its own
+  // divisionId (a target's, plan item's, deal's, invoice's); a person in two
+  // divisions is under both, with each division's figures.
+  const targetOf = (dd) => num(sc.divCtx(dd).model.cards?.target?.total);
+  function byTargetIn(dd, idOf) {
+    const ppl = sc.divCtx(dd).people;
+    return (a, b) => (num(ppl.get(idOf(b))?.target) - num(ppl.get(idOf(a))?.target)) || String(a.name).localeCompare(String(b.name));
+  }
+  const divisionNodes = groupBy(rows, (r) => r.divisionId || 'unassigned').map(([dd, drs]) => {
+    d = dd;
+    const id = `root/division:${dd}`;
+    let children = level(drs, 0, id);
+    if (!shape.group.length) children = children.sort(byTargetIn(dd, (n) => n.row?.personId));
+    const node = {
+      id, kind: 'division', divisionId: dd, name: sc.divName(dd), value: valueOf(drs),
+      cells: divisionCells(sc, stageId, dd, uniq(drs.map((r) => r.personId))), children,
+    };
+    d = null;
+    return node;
+  });
+  empty.forEach((g) => {
+    const id = `root/division:${g.id}`;
+    divisionNodes.push({
+      id, kind: 'division', divisionId: g.id, name: g.name, value: null, noRows: true,
+      cells: divisionCells(sc, stageId, g.id, g.personIds),
+      children: g.personIds.map((pid) => ({
+        id: `${id}/person:${pid}`, kind: 'person', personId: pid, name: sc.nameOf(pid), value: null,
+        cells: personCells(sc, stageId, pid, [], g.id), children: [],
+      })).sort(byTargetIn(g.id, (n) => n.personId)),
+    });
+  });
+  // Divisions by target, largest first; then those with no target; Unassigned last.
+  const rank = (n) => (n.divisionId === 'unassigned' ? 2 : targetOf(n.divisionId) > 0 ? 0 : 1);
+  return divisionNodes.sort((a, b) => (rank(a) - rank(b))
+    || (targetOf(b.divisionId) - targetOf(a.divisionId)) || String(a.name).localeCompare(String(b.name)));
 }
 
 /* ── showing the tree ───────────────────────────────────────────────────── */
 
 /** Every node id that can expand. */
-export function expandableIds(nodes) {
+// maxDepth (session 45): Expand all opens levels 1 and 2 (division, salesman).
+export function expandableIds(nodes, maxDepth = Infinity) {
   const out = [];
-  const walk = (ns) => ns.forEach((n) => { if (n.children?.length) { out.push(n.id); walk(n.children); } });
-  walk(nodes);
+  const walk = (ns, depth) => ns.forEach((n) => { if (n.children?.length && depth < maxDepth) { out.push(n.id); walk(n.children, depth + 1); } });
+  walk(nodes, 0);
   return out;
 }
 
@@ -695,7 +868,7 @@ export function visibleRows(nodes, expanded) {
   return out;
 }
 
-const LEVEL_NAME = { person: 'Salesman', customer: 'Customer', record: 'Record', group: 'Group', exception: 'Exception' };
+const LEVEL_NAME = { division: 'Division', person: 'Salesman', customer: 'Customer', record: 'Record', group: 'Group', exception: 'Exception' };
 export const levelName = (kind) => LEVEL_NAME[kind] || kind;
 
 /**
@@ -708,8 +881,11 @@ export function exportStageRows(page, expanded) {
   const colOf = (kind) => page.columns[kind] || [];
   const allCols = [];
   const seen = new Set();
-  ['group', 'person', 'customer', 'exception', 'record'].forEach((k) => colOf(k).forEach((c) => {
+  ['group', 'division', 'person', 'customer', 'exception', 'record'].forEach((k) => colOf(k).forEach((c) => {
     const head = c.type === 'money' ? `${c.label} (SAR)` : c.label;
+    // Grouped (session 45): Division and Salesman lead every row; a record's own
+    // "Division" column would repeat (and overwrite) them.
+    if (page.grouped && (head === 'Division' || head === 'Salesman')) return;
     if (!seen.has(head)) { seen.add(head); allCols.push({ ...c, head }); }
   }));
   const headOf = (node) => {
@@ -719,11 +895,20 @@ export function exportStageRows(page, expanded) {
   };
   const valueHeads = uniq(vis.map(({ node }) => headOf(node)));
   const path = [];
-  return vis.map(({ node, depth }) => {
+  const nodes = [];
+  const out = vis.map(({ node, depth }) => {
     path.length = depth;
     path[depth] = node.name;
+    nodes.length = depth;
+    nodes[depth] = node;
+    // Session 45: Division, then Salesman, first; a division row is its total.
+    const lead = page.grouped ? {
+      Division: nodes[0]?.kind === 'division' ? nodes[0].name : '',
+      Salesman: nodes.find((n) => n?.kind === 'person')?.name || '',
+    } : {};
     const row = {
-      Level: levelName(node.kind),
+      ...lead,
+      Level: page.grouped && node.kind === 'division' ? 'Division total' : levelName(node.kind),
       Under: path.slice(0, depth).join(' › '),
       Name: node.name ?? '',
     };
@@ -743,6 +928,15 @@ export function exportStageRows(page, expanded) {
     });
     return row;
   });
+  if (page.grouped) {
+    // The grand total, which equals the page header.
+    const total = { Division: '', Salesman: '', Level: 'Grand total', Under: '', Name: '' };
+    valueHeads.forEach((h) => { total[h] = null; });
+    total[valueHeads[0] || (page.unit === 'SAR' ? `${page.valueLabel} (SAR)` : `${page.valueLabel} (${page.unit})`)] = Number(page.total);
+    allCols.forEach((c) => { if (!(c.head in total)) total[c.head] = c.type === 'money' || c.type === 'pct' || c.type === 'int' ? null : ''; });
+    out.push(total);
+  }
+  return out;
 }
 
 /* ── the summary line ───────────────────────────────────────────────────── */

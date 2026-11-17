@@ -11,7 +11,7 @@ import { loadSalesMonitor } from "utils/salesMonitorData";
 import { computeSalesMonitor, personDrill, MONITOR_PICKER_ROLES, DEPARTED_ID } from "utils/salesMonitor";
 import {
   STAGES, stageById, stageContext, buildStagePage, expandableIds, visibleRows, exportStageRows,
-  stageHref, monitorHref, levelName,
+  stageHref, monitorHref, levelName, NO_TARGET,
 } from "utils/stagePages";
 import { actionTarget } from "utils/exceptionActions";
 import {
@@ -74,6 +74,8 @@ function statusCell(key, text, { elapsedPct }) {
   }
   if (key === "planStatus") return chips(text, " · ", (w) => planStatusTone(w));
   if (key === "response") return chips(text, " / ", (w) => RESPONSE_TONE[w]);
+  // Session 45: a division with no target says so, muted.
+  if (text === NO_TARGET) return <span data-deco="wrap" className="text-gray-400">{text}</span>;
   if (key === "pace") return chips(text, " / ", (w) => ({ "on pace": "green", behind: "red" })[w]);
   if (key === "achievedPct") {
     const tone = paceTone(Number(String(text).replace("%", "")), elapsedPct);
@@ -128,16 +130,32 @@ export default function StagePage() {
     () => (raw ? computeSalesMonitor(raw, { divisionId: divisionId || null, visitDay }) : null),
     [raw, divisionId, visitDay],
   );
-  const sc = useMemo(() => (model ? stageContext(model) : null), [model]);
+  // SESSION 45: each division's own model (the division picker's), built once
+  // per load and only for the divisions a page shows — a salesman's figures
+  // under a division are that division's.
+  const divisionModel = useMemo(() => {
+    const cache = new Map();
+    return (d) => {
+      if (!raw) return null;
+      if (!cache.has(d)) cache.set(d, computeSalesMonitor(raw, { divisionId: d, visitDay, namedSellers: true }));
+      return cache.get(d);
+    };
+  }, [raw, visitDay]);
+  const sc = useMemo(() => (model ? stageContext(model, { divisionModel }) : null), [model, divisionModel]);
   const stage = stageById(stageParam);
   const page = useMemo(
     () => (sc && stage ? buildStagePage(model, { stage: stage.id, view, tab, only, query, division: rowDivision }, sc) : null),
     [sc, model, stage, view, tab, only, query, rowDivision],
   );
 
-  // A new list starts collapsed.
-  const listKey = page ? `${stage.id}|${page.view}|${page.selection.join(",")}|${only || ""}` : "";
-  useEffect(() => { setExpanded(new Set()); }, [listKey]);
+  // A new list starts collapsed — except with a division filter set, when the
+  // division row is opened (session 45).
+  const listKey = page ? `${stage.id}|${page.view}|${page.selection.join(",")}|${only || ""}|${divisionId}|${rowDivision}` : "";
+  useEffect(() => {
+    const filtered = !!(divisionId || rowDivision) && page?.grouped;
+    setExpanded(new Set(filtered ? page.nodes.filter((n) => n.kind === "division" && n.children?.length).map((n) => n.id) : []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listKey]);
 
   const keep = { month: monthKey, division: divisionId, day: visitDay };
   const setList = (next) => {
@@ -361,7 +379,7 @@ export default function StagePage() {
                 </select>
               )}
               <div className="flex gap-1">
-                <button type="button" data-testid="stage-expand-all" onClick={() => setExpanded(new Set(expandableIds(page.nodes)))} className="text-xs px-2.5 py-1.5 rounded border border-gray-300 hover:bg-gray-50 whitespace-nowrap">Expand all</button>
+                <button type="button" data-testid="stage-expand-all" onClick={() => setExpanded(new Set(page.grouped ? expandableIds(page.nodes, 2) : expandableIds(page.nodes)))} className="text-xs px-2.5 py-1.5 rounded border border-gray-300 hover:bg-gray-50 whitespace-nowrap">Expand all</button>
                 <button type="button" data-testid="stage-collapse-all" onClick={() => setExpanded(new Set())} className="text-xs px-2.5 py-1.5 rounded border border-gray-300 hover:bg-gray-50 whitespace-nowrap">Collapse all</button>
                 <button type="button" data-testid="stage-export" onClick={doExport} className="text-xs px-2.5 py-1.5 rounded border border-gray-300 hover:bg-gray-50 whitespace-nowrap">Export to Excel</button>
               </div>
@@ -378,7 +396,8 @@ export default function StagePage() {
               // A tab row that counts as one (a person, a visit, a customer)
               // does not repeat "1"; groups show their count, money always shows.
               const valueUnit = node.valueUnit || page.unit;
-              const showValue = node.value !== null && node.value !== undefined && !(node.tabRow && valueUnit !== "SAR");
+              // A division row always shows its value; "—" when it has none (session 45).
+              const showValue = node.kind === "division" || (node.value !== null && node.value !== undefined && !(node.tabRow && valueUnit !== "SAR"));
               const onRow = kids ? () => toggle(node.id) : node.open ? () => openRecord(node.open) : undefined;
               return (
                 <div
@@ -402,7 +421,7 @@ export default function StagePage() {
                         className="w-6 h-6 -my-0.5 flex-shrink-0 rounded hover:bg-gray-200 text-gray-600">{isOpen ? "▾" : "▸"}</button>
                     ) : <span className="w-6 flex-shrink-0" />}
                     <button type="button" onClick={onRow} disabled={!onRow}
-                      className={`text-left min-w-0 break-words ${node.kind === "person" || node.kind === "group" ? "font-semibold text-gray-900" : "text-gray-800"} text-sm ${onRow && !kids ? "hover:underline" : ""}`}>
+                      className={`text-left min-w-0 break-words ${node.kind === "division" ? "font-bold text-gray-900" : node.kind === "person" || node.kind === "group" ? "font-semibold text-gray-900" : "text-gray-800"} text-sm ${onRow && !kids ? "hover:underline" : ""}`}>
                       <span className="sr-only">{levelName(node.kind)}: </span>
                       {node.kind === "exception" && node.cells?.severity && (
                         <span className={`mr-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border uppercase ${SEV_STYLE[node.cells.severity] || ""}`}>{node.cells.severity}</span>
@@ -420,7 +439,7 @@ export default function StagePage() {
                     {cols.filter((c) => !(node.kind === "exception" && c.key === "severity")).map((c) => (
                       <span key={c.key} data-cell={c.key}>
                         <span className="text-gray-500">{c.label}</span>{" "}
-                        <span className={`font-mono text-gray-800 ${c.type ? "tabular-nums whitespace-nowrap" : ""}`}>{node.cells?.[c.key] === null || node.cells?.[c.key] === undefined || node.cells?.[c.key] === "" ? "—" : statusCell(c.key, c.type ? cellText(node.cells, c) : String(node.cells[c.key]), { elapsedPct })}</span>
+                        <span className={`font-mono text-gray-800 ${c.type ? "tabular-nums whitespace-nowrap" : ""}`}>{node.cells?.[c.key] === null || node.cells?.[c.key] === undefined || node.cells?.[c.key] === "" ? "—" : statusCell(c.key, c.type && node.cells[c.key] !== NO_TARGET ? cellText(node.cells, c) : String(node.cells[c.key]), { elapsedPct })}</span>
                       </span>
                     ))}
                   </div>
@@ -438,7 +457,9 @@ export default function StagePage() {
             {!vis.length && <p className="px-4 py-8 text-center text-sm text-gray-400">{searching ? "Nothing matches the search." : "Nothing in this list."}</p>}
           </div>
           <div className="px-4 py-2 border-t border-gray-100 text-[11px] font-mono text-gray-600" data-testid="stage-footer">
-            {page.rowCount} {page.unit === "SAR" ? "rows" : page.unit} · {vis.length} on screen · click ▸ to expand, a record to open it
+            {page.grouped
+              ? `${page.divisionCount} division${page.divisionCount === 1 ? "" : "s"} · ${page.salesmanCount} salesm${page.salesmanCount === 1 ? "an" : "en"} · ${vis.length} on screen · click ▸ to expand, a record to open it`
+              : <>{page.rowCount} {page.unit === "SAR" ? "rows" : page.unit} · {vis.length} on screen · click ▸ to expand, a record to open it</>}
           </div>
         </section>
 

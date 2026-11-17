@@ -269,7 +269,13 @@ export function planOutcome(o, {
  * @param {string} [opts.divisionId]  the division picker; null = everything in scope
  * @param {string} [opts.visitDay]    yyyy-MM-dd; default today, or the month's last day
  */
-export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } = {}) {
+// namedSellers (session 45, stage pages only): with a division picked, a
+// selling manager who carries no target in THAT division (Mohamed Kamal in
+// Export) gets his own row instead of the combined "no target" row, so the
+// stage page can show him under the division with that division's figures.
+// The figures are dataFor([id]) like everyone's; the rows still add up to the
+// same total. Omitted, the model is exactly as before.
+export function computeSalesMonitor(raw, { divisionId = null, visitDay = null, namedSellers = false } = {}) {
   const now = raw.now || new Date();
   const today = riyadhToday(now);
   const { monthStart, monthEnd } = raw;
@@ -705,7 +711,13 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     const hasAny = num(dm.target) || num(dm.achieved) || itemRows.some((r) => departedAchievers.includes(r.ownerId));
     if (hasAny) people.push(personFigures(DEPARTED_ID, dm));
   }
-  if (noTargetSellers.length) {
+  if (namedSellers && picked && noTargetSellers.length) {
+    noTargetSellers.forEach((id) => {
+      const nm1 = dataFor([id]);
+      const wni1 = sumBy(nm1.drill.wonNotInvoicedRows || [], achievedAmount);
+      if (num(nm1.achieved) || num(nm1.target) || wni1 || itemRows.some((r) => r.ownerId === id)) people.push(personFigures(id, nm1));
+    });
+  } else if (noTargetSellers.length) {
     const nm = dataFor(noTargetSellers);
     const wniNt = sumBy(nm.drill.wonNotInvoicedRows || [], achievedAmount);
     if (num(nm.achieved) || num(nm.target) || wniNt) people.push(personFigures(NO_TARGET_ID, nm));
