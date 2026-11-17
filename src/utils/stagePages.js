@@ -260,7 +260,7 @@ function personCells(sc, stageId, id, rows) {
     const st = p.planStatus;
     return {
       division,
-      planStatus: st ? (st.perDivision ? st.label : st.submitted ? `${st.timing === 'submitted late' ? 'late' : 'on time'} · ${st.approval}` : st.approval === 'rejected' ? 'rejected' : 'missing') : '—',
+      planStatus: st ? (st.perDivision ? st.label : st.submitted ? `${st.timing === 'submitted late' ? 'late' : 'on time'} · ${st.selfApproved ? 'self-approved' : st.approval}` : st.approval === 'rejected' ? 'rejected' : 'missing') : '—',
       submitted: p.submittedPlanned,
       planNow: p.planned,
       required: p.requiredPlan,
@@ -767,6 +767,8 @@ function summaryOf(sc, stageId) {
       { id: 'submittedOf', label: 'Plans submitted', value: c.planStatus.loaded ? `${c.planStatus.onTime + c.planStatus.late} of ${c.planStatus.people}` : '—' },
       { id: 'missing', label: 'Not submitted', value: c.planStatus.missing, type: 'int' },
       { id: 'pending', label: 'Awaiting approval', value: c.planStatus.pending, type: 'int' },
+      // Session 44: only when someone approved their own plan.
+      ...(c.planStatus.selfApproved ? [{ id: 'selfApproved', label: 'Self-approved', value: c.planStatus.selfApproved, type: 'int' }] : []),
       { id: 'submitted', label: 'Submitted', value: c.planned.submitted, type: 'money' },
       { id: 'planNow', label: 'Plan now', value: c.planned.total, type: 'money' },
       { id: 'pctTarget', label: 'Plan now, % of target', value: c.planned.pctOfTarget, type: 'pct' },

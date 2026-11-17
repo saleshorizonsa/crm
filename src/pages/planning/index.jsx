@@ -14,6 +14,7 @@ import { computePlanningPageSummary, fetchProductGroups, fetchSubmissionPlanned,
 import {
   usePlanDivisionColumn, planDivisionsOf, planUnitsFor, fetchDivisionNames, upsertPlanSubmission,
 } from "utils/planDivisions";
+import { isSelfApproved } from "utils/planSelfApproval";
 import { fetchAdditionalDivisions } from "utils/divisionMembership";
 import { fetchMonthlyTargets, targetPerPerson } from "utils/planningCalculations";
 // Percentages that cannot crash a render. planning/index.jsx:1305 took the
@@ -1343,7 +1344,7 @@ const PlanningPage = () => {
             <span className="text-xs text-muted-foreground">Plan for</span>
             {subjectDivs.ids.map((id) => {
               const row = activeUnits.find((u) => u.divisionId === id)?.row;
-              const word = row?.is_locked ? "approved"
+              const word = row?.is_locked ? (isSelfApproved(row) ? "self-approved" : "approved")
                 : row?.is_submitted ? "submitted"
                   : row?.approval_status === "rejected" ? "sent back" : "not submitted";
               const on = id === activeDivisionId;
@@ -1381,8 +1382,8 @@ const PlanningPage = () => {
                 {/* "Contact your manager" is advice for the plan's owner, not for
                     a lead reading it. */}
                 {planSubmission.approved_at
-                  ? `Approved ${new Date(planSubmission.approved_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}.${isViewingOther ? "" : " Contact your manager if changes are needed."}`
-                  : `Approved.${isViewingOther ? "" : " Contact your manager if changes are needed."}`}
+                  ? `${isSelfApproved(planSubmission) ? "Self-approved" : "Approved"} ${new Date(planSubmission.approved_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}.${isViewingOther || isSelfApproved(planSubmission) ? "" : " Contact your manager if changes are needed."}`
+                  : `${isSelfApproved(planSubmission) ? "Self-approved" : "Approved"}.${isViewingOther || isSelfApproved(planSubmission) ? "" : " Contact your manager if changes are needed."}`}
               </p>
             </div>
           </div>

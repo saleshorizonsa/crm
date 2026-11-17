@@ -1,6 +1,7 @@
 import { supabase } from 'lib/supabase';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 import { probePlanDivisionColumn, planRowFor, fetchDivisionNames } from 'utils/planDivisions';
+import { probeSelfApproval, selfApprovesPlans } from 'utils/planSelfApproval';
 
 // Manager approval workflow for monthly sales plans.
 //
@@ -80,9 +81,12 @@ async function companyFallbackApprover(companyId) {
 export async function resolveApproverMap(companyId, ownerIds) {
   const map = {};
   if (!companyId || !ownerIds?.length) return map;
+  // Session 44: once the database lets a selling manager approve his own
+  // plans, he is his own approver here too. Before that, today's read.
+  const selfOn = await probeSelfApproval();
   const { data: users } = await supabase
     .from('users')
-    .select('id, role, supervisor_id')
+    .select(selfOn ? 'id, role, supervisor_id, is_contributor' : 'id, role, supervisor_id')
     .eq('company_id', companyId)
     .eq('is_active', true);
   const fallback = pickFallback(users);
@@ -98,7 +102,8 @@ export async function resolveApproverMap(companyId, ownerIds) {
   const isUsableApprover = (id) => !!id && (activeIds.has(id) || elsewhere.has(id));
   for (const id of ownerIds) {
     const u = (users || []).find((x) => x.id === id);
-    map[id] = isUsableApprover(u?.supervisor_id) ? u.supervisor_id : fallback;
+    map[id] = selfOn && selfApprovesPlans(u) ? id
+      : isUsableApprover(u?.supervisor_id) ? u.supervisor_id : fallback;
   }
   return map;
 }
@@ -124,11 +129,15 @@ async function assertIsApprover({ submissionId, companyId, actorId }) {
 // Who reviews this salesman's plan: their manager, else the company fallback.
 export async function resolveApprover(companyId, ownerId) {
   if (!companyId || !ownerId) return null;
+  // Session 44: a manager who sells approves his own plans — once the
+  // database agrees (probeSelfApproval). Before that, today's read.
+  const selfOn = await probeSelfApproval();
   const { data: me } = await supabase
     .from('users')
-    .select('supervisor_id')
+    .select(selfOn ? 'supervisor_id, role, is_contributor' : 'supervisor_id')
     .eq('id', ownerId)
     .maybeSingle();
+  if (selfOn && selfApprovesPlans(me)) return ownerId;
   // The owner's own status is irrelevant — a deactivated person's already-filed
   // plan still needs a reviewer. What matters is that the REVIEWER is active:
   // returning a deactivated manager would leave the plan permanently stuck,
@@ -164,6 +173,12 @@ export async function resolveApproverScope({ companyId, userId, role }) {
 
   const team = await fetchTeamHierarchy({ companyId, userId, role });
   const ids = new Set(team.map((m) => m.id).filter(Boolean));
+
+  // Session 44: a selling manager's own plans are in his own queue.
+  if (role === 'manager' && await probeSelfApproval()) {
+    const { data: me } = await supabase.from('users').select('role, is_contributor').eq('id', userId).maybeSingle();
+    if (selfApprovesPlans(me)) ids.add(userId);
+  }
 
   if ((await companyFallbackApprover(companyId)) === userId) {
     // Everyone resolveApprover() hands to the fallback must appear here, or a

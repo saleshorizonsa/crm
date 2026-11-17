@@ -2,6 +2,7 @@ import { supabase } from 'lib/supabase';
 import {
   probePlanDivisionColumn, fetchPlanDivisions, fetchDivisionNames, planUnitsFor, perDivisionStatusText,
 } from 'utils/planDivisions';
+import { isSelfApproved, SELF_APPROVED } from 'utils/planSelfApproval';
 import { computePlanningPageSummary } from 'utils/planningPageSummary';
 import {
   planItemFlags, isConvertedWithDeal, isConvertedDealMissing,
@@ -68,7 +69,7 @@ export async function buildTeamPlanBoard({
   const hasDivision = await probePlanDivisionColumn();
   const { data: subs } = await supabase
     .from('plan_submissions')
-    .select(hasDivision ? 'owner_id, approval_status, is_submitted, plan_month, division_id' : 'owner_id, approval_status, is_submitted, plan_month')
+    .select(hasDivision ? 'owner_id, approval_status, approved_by, is_submitted, plan_month, division_id' : 'owner_id, approval_status, approved_by, is_submitted, plan_month')
     .eq('company_id', companyId)
     .in('owner_id', ids)
     .eq('plan_month', monthKey);
@@ -81,9 +82,10 @@ export async function buildTeamPlanBoard({
     planDivs = (await fetchPlanDivisions({ companyId, users: divUsers || [] })).byUser;
     divName = await fetchDivisionNames(Object.values(planDivs).flat());
   }
+  // Session 44: approved by its own owner reads "self-approved".
   const statusOfRow = (sub) => (!sub || !sub.is_submitted
     ? PLAN_STATUS.none
-    : PLAN_STATUS[sub.approval_status] || PLAN_STATUS.pending);
+    : isSelfApproved(sub) ? SELF_APPROVED : PLAN_STATUS[sub.approval_status] || PLAN_STATUS.pending);
   const planStatusOf = (id) => {
     const units = planUnitsFor(planDivs[id] || null, subsOf.get(id));
     if (units.length === 1) return statusOfRow(units[0].row);

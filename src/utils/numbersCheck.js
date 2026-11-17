@@ -66,6 +66,8 @@ import { computeSalesMonitor, OUTCOME_ORDER, DEPARTED_ID, NO_TARGET_ID } from 'u
 import {
   fetchPlanDivisions, fetchDivisionNames, planUnitsFor, planTitle, probePlanDivisionColumn, perDivisionStatusText,
 } from 'utils/planDivisions';
+// Session 44: approved by its own owner reads "self-approved".
+import { isSelfApproved, SELF_APPROVED } from 'utils/planSelfApproval';
 import {
   reportService,
   reportWonTotal,
@@ -726,7 +728,7 @@ async function buildPlanAccuracyRows({ companyId, bundle, start, end, reference 
     const boardDiv = await probePlanDivisionColumn();
     const { data: subs, error: subsErr } = await supabase
       .from('plan_submissions')
-      .select(boardDiv ? 'owner_id, is_submitted, approval_status, division_id' : 'owner_id, is_submitted, approval_status')
+      .select(boardDiv ? 'owner_id, is_submitted, approval_status, approved_by, division_id' : 'owner_id, is_submitted, approval_status, approved_by')
       .eq('company_id', companyId)
       .in('owner_id', boardRows.map((r) => r.id))
       .eq('plan_month', boardMonthKey);
@@ -748,6 +750,7 @@ async function buildPlanAccuracyRows({ companyId, bundle, start, end, reference 
       (subs || []).forEach((s) => rowsOf.set(s.owner_id, [...(rowsOf.get(s.owner_id) || []), s]));
       const statusOf = (s) => {
         if (!s || !s.is_submitted) return PLAN_STATUS.none;
+        if (isSelfApproved(s)) return SELF_APPROVED;
         return PLAN_STATUS[s.approval_status] || PLAN_STATUS.pending;
       };
       const wantOf = (id) => {
@@ -1798,8 +1801,8 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
       .eq('company_id', companyId).gte('expected_month', start).lte('expected_month', end),
     supabase.from('plan_submissions')
       .select(model.planDivisionColumn
-        ? 'owner_id, is_submitted, is_late, approval_status, required_plan, division_id'
-        : 'owner_id, is_submitted, is_late, approval_status, required_plan')
+        ? 'owner_id, is_submitted, is_late, approval_status, approved_by, required_plan, division_id'
+        : 'owner_id, is_submitted, is_late, approval_status, approved_by, required_plan')
       .eq('company_id', companyId).eq('plan_month', start),
   ]);
   const monthItems = items || [];
@@ -1921,6 +1924,15 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
       .forEach(([k, label]) => rows.push(row({
         label: `Sales Monitor — 3 Plans ${label} (company)`, value: c.planStatus[k], expected: sc[k], kind: 'count',
       })));
+    // Session 44: only when some plan was approved by its own owner.
+    const selfRows = contributorPlans.filter((u) => isSelfApproved(u.row));
+    if (selfRows.length || c.planStatus.selfApproved) {
+      rows.push(row({
+        label: 'Sales Monitor — 3 Plans self-approved (company): approved_by = owner_id',
+        value: c.planStatus.selfApproved || 0, expected: selfRows.length, kind: 'count',
+        note: selfRows.map((u) => users.find((x) => x.id === u.ownerId)?.full_name || u.ownerId).join(', '),
+      }));
+    }
   }
 
   // ── PLANS PER DIVISION (session 43) ── only when someone files them.
@@ -1934,7 +1946,7 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
     const primaryOf = new Map(users.map((u) => [u.id, u.sales_division_id || null]));
     const word = (s) => (!s || !s.is_submitted
       ? (s?.approval_status === 'rejected' ? 'rejected' : 'not submitted')
-      : s.approval_status === 'approved' ? 'approved' : s.approval_status === 'rejected' ? 'rejected' : 'submitted');
+      : s.approval_status === 'approved' ? (isSelfApproved(s) ? SELF_APPROVED : 'approved') : s.approval_status === 'rejected' ? 'rejected' : 'submitted');
     rows.push(row({
       label: 'Sales Monitor — 2 Plans per division: plans on the Plan submission card (one per person, one per division of a person in several)',
       value: c.planStatus.people, expected: contributorPlans.length, kind: 'count',
@@ -1994,7 +2006,7 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
       // A person with division plans: each division's status, recounted.
       const want = plansOfRef(p.id).filter((u) => u.divisionId).map((u) => `${planDivNames[u.divisionId] || 'division'} ${(!u.row || !u.row.is_submitted)
         ? (u.row?.approval_status === 'rejected' ? 'rejected' : 'not submitted')
-        : u.row.approval_status === 'approved' ? 'approved' : u.row.approval_status === 'rejected' ? 'rejected' : 'submitted'}`).join(' · ');
+        : u.row.approval_status === 'approved' ? (isSelfApproved(u.row) ? SELF_APPROVED : 'approved') : u.row.approval_status === 'rejected' ? 'rejected' : 'submitted'}`).join(' · ');
       rows.push(row({
         label: label('3 Plan status per division matches the submissions'),
         value: p.planStatus.label === want ? 1 : 0, expected: 1, kind: 'count', note: p.planStatus.label,

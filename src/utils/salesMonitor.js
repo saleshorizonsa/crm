@@ -21,6 +21,7 @@ import { rowInDivision, dealInDivision, primaryDivisionByUser } from 'utils/divi
 import { isConvertedWithDeal, isConvertedDealMissing, customerKey } from 'utils/planningDrill';
 import { deadlineFor } from 'utils/planMonths';
 import { planDivisionsOf, planUnitsFor, planTitle, perDivisionStatusText } from 'utils/planDivisions';
+import { isSelfApproved, SELF_APPROVED } from 'utils/planSelfApproval';
 import { riyadhDate, riyadhToday } from 'utils/visits';
 import { parseInvoiceNumbers } from 'utils/invoiceNumber';
 import {
@@ -187,6 +188,9 @@ export function classifyPlanStatus(sub) {
   const approval = sub.approval_status === 'approved'
     ? PLAN_STATUS.approved
     : sub.approval_status === 'rejected' ? PLAN_STATUS.rejected : PLAN_STATUS.pending;
+  // Session 44: approved by its own owner (approved_by = owner_id) reads
+  // "self-approved"; it is still an approved plan in every count.
+  if (isSelfApproved(sub)) return { submitted: true, timing, approval, selfApproved: true, label: `${timing} · ${SELF_APPROVED}` };
   return { submitted: true, timing, approval, label: `${timing} · ${approval}` };
 }
 
@@ -579,7 +583,7 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
   };
   // One word per plan, for "PVC Compound submitted · Export not submitted".
   const planWord = (st) => (st.submitted
-    ? (st.approval === PLAN_STATUS.approved ? 'approved' : st.approval === PLAN_STATUS.rejected ? 'rejected' : 'submitted')
+    ? (st.approval === PLAN_STATUS.approved ? (st.selfApproved ? SELF_APPROVED : 'approved') : st.approval === PLAN_STATUS.rejected ? 'rejected' : 'submitted')
     : st.approval === PLAN_STATUS.rejected ? 'rejected' : 'not submitted');
   const fromPlanDealIds = new Set(inMonthItems.map((o) => o.deal_id).filter(Boolean));
   const splitInvoiced = (rows) => {
@@ -725,7 +729,7 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
       divisionId: divId,
       status: st.label,
       timing: st.timing,
-      approval: st.approval || '—',
+      approval: st.selfApproved ? SELF_APPROVED : st.approval || '—',
       submittedAt: s?.submitted_at || null,
       deadline: s?.deadline_date || deadlineFor(monthStart),
       totalPlanned: s?.is_submitted ? num(s.total_planned) : null,
@@ -810,7 +814,9 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
       onTime: countStatus((r) => r.timing === PLAN_STATUS.onTime),
       late: countStatus((r) => r.timing === PLAN_STATUS.late),
       missing: countStatus((r) => r.timing === PLAN_STATUS.missing),
-      approved: countStatus((r) => r.approval === PLAN_STATUS.approved),
+      approved: countStatus((r) => r.approval === PLAN_STATUS.approved || r.approval === SELF_APPROVED),
+      // Session 44: of which approved by their own owner — only when any are.
+      ...(countStatus((r) => r.approval === SELF_APPROVED) ? { selfApproved: countStatus((r) => r.approval === SELF_APPROVED) } : {}),
       rejected: countStatus((r) => r.approval === PLAN_STATUS.rejected),
       pending: countStatus((r) => r.approval === PLAN_STATUS.pending),
     },

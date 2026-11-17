@@ -363,6 +363,7 @@ export default function SalesMonitor() {
                   <Line label="On time / late" value={`${c.planStatus.onTime} / ${c.planStatus.late}`} />
                   <Line label="Not submitted" value={c.planStatus.missing} cls={c.planStatus.missing ? "text-red-700" : ""} />
                   <Line label="Approved / rejected" value={`${c.planStatus.approved} / ${c.planStatus.rejected}`} />
+                  {c.planStatus.selfApproved > 0 && <Line label="… of which self-approved" value={c.planStatus.selfApproved} />}
                 </>
               ) : <p className="text-amber-700">Plan submissions could not be read.</p>}
             </Card>
@@ -524,7 +525,7 @@ export default function SalesMonitor() {
                             <React.Fragment key={d.divisionId}>
                               {i > 0 && " · "}
                               {d.division}{" "}
-                              <span data-deco="wrap" className={toneChip(planStatusTone(d.status === "submitted" ? "awaiting approval" : d.status))}>{d.status}</span>
+                              <span data-deco="wrap" className={toneChip(planStatusTone(d.status === "submitted" ? "awaiting approval" : d.status === "self-approved" ? "approved" : d.status))}>{d.status}</span>
                             </React.Fragment>
                           ))}
                         </span>
@@ -534,7 +535,7 @@ export default function SalesMonitor() {
                             <>
                               <span data-deco="wrap" className={toneChip(planStatusTone(p.planStatus.timing === "submitted late" ? "late" : "on time"))}>{p.planStatus.timing === "submitted late" ? "late" : "on time"}</span>
                               {" · "}
-                              <span data-deco="wrap" className={toneChip(planStatusTone(p.planStatus.approval))}>{p.planStatus.approval}</span>
+                              <span data-deco="wrap" className={toneChip(planStatusTone(p.planStatus.approval))}>{p.planStatus.selfApproved ? "self-approved" : p.planStatus.approval}</span>
                             </>
                           ) : <span data-deco="wrap" className={toneChip("red")}>{p.planStatus.approval === "rejected" ? "rejected" : "missing"}</span>}
                         </span>
