@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import PurposeField from "./PurposeField";
-import { usePurposeColumns, purposeFields, amountError, DEFAULT_PURPOSE } from "../utils/visitPurpose";
+import { usePurposeColumns, purposeFields, DEFAULT_PURPOSE } from "../utils/visitPurpose";
 import { emitNextStep } from "../utils/nextStepBus";
 import Icon from './AppIcon';
 import { activityService } from '../services/supabaseService';
@@ -26,11 +26,10 @@ export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, con
     nextAction: '', nextActionDate: '', durationMinutes: '',
   });
   const [pickedContactId, setPickedContactId] = useState(null);
-  // Session 40: Purpose (required, Sales to start) and a collection's amount —
-  // shown only once the columns exist; until then the save is today's.
+  // Session 40: Purpose (required, Sales to start) — shown only once the
+  // column exists; until then the save is today's. No amount (session 40a).
   const hasPurpose = usePurposeColumns();
   const [purpose, setPurpose] = useState(DEFAULT_PURPOSE);
-  const [collected, setCollected] = useState('');
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState('');
 
@@ -40,7 +39,6 @@ export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, con
       setError('');
       setPickedContactId(null);
       setPurpose(DEFAULT_PURPOSE);
-      setCollected('');
     }
   }, [isOpen]);
 
@@ -54,8 +52,6 @@ export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, con
     if (!form.description.trim()) { setError('Please add a description'); return; }
     const askPurpose = hasPurpose && NEEDS_CUSTOMER.includes(form.activityType);
     if (askPurpose && !purpose) { setError('Select the purpose'); return; }
-    const amtErr = askPurpose ? amountError(purpose, collected) : null;
-    if (amtErr) { setError(amtErr); return; }
     setSaving(true);
     const { data, error: err } = await activityService.logActivity({
       companyId:       company.id,
@@ -69,14 +65,14 @@ export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, con
       nextActionDate:  form.nextActionDate || null,
       durationMinutes: form.durationMinutes ? parseInt(form.durationMinutes) : null,
       completedAt:     visitDate ? `${visitDate}T12:00:00+03:00` : null,
-      purpose:         purposeFields(askPurpose, purpose, collected),
+      purpose:         purposeFields(askPurpose, purpose),
     });
     setSaving(false);
     if (err) { setError('Failed to save: ' + (err.message || String(err))); return; }
     // Session 40: the next step, after the save.
     if (NEEDS_CUSTOMER.includes(form.activityType)) {
       emitNextStep(askPurpose && purpose === 'collection'
-        ? { kind: 'collectionLogged', amount: collected, followUp: form.nextActionDate || null }
+        ? { kind: 'collectionLogged', followUp: form.nextActionDate || null }
         : {
           kind: 'visitLogged', nextAction: form.nextAction || null, followUp: form.nextActionDate || null,
           response: form.outcome === 'positive' ? 'positive' : form.outcome === 'not_interested' ? 'negative' : null,
@@ -137,9 +133,7 @@ export default function LogActivityModal({ isOpen, onClose, onSaved, dealId, con
             <PurposeField
               idPrefix="log-activity-purpose"
               purpose={purpose}
-              amount={collected}
               onPurpose={(v) => { setPurpose(v); setError(''); }}
-              onAmount={(v) => { setCollected(v); setError(''); }}
             />
           )}
 

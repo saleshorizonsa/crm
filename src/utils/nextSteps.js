@@ -23,7 +23,7 @@ import { riyadhToday } from 'utils/visits';
  *   invoiced           a deal was marked invoiced
  *   movedToFuture      a deal or plan item was moved to a later month
  *   visitLogged        a visit, call or WhatsApp was logged
- *   collectionLogged   a collection contact was logged
+ *   collectionLogged   a collection contact was logged (no amount: 40a)
  */
 
 const MONTH_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -37,7 +37,6 @@ export const dayText = (day) => { if (!day) return null; const [, m, d] = parts(
 /** "December 2026" */
 export const monthText = (day) => { if (!day) return null; const [y, m] = parts(day); return `${MONTH_LONG[m - 1]} ${y}`; };
 const ordinal = (n) => { const s = ['th', 'st', 'nd', 'rd']; const v = n % 100; return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`; };
-const money = (v) => Math.round(Number(v) || 0).toLocaleString('en-US');
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 /** The texts. Each takes what resolveNextStep worked out and returns the line. */
@@ -59,11 +58,7 @@ export const NEXT_STEP_TEXT = {
   movedToFuture: ({ month }) => `It returns to your plan in ${monthText(month) || 'a later month'}`,
   visitLogged: ({ nextAction, followUp }) => `${nextAction || 'Follow up'} by ${dayText(followUp) || 'the follow-up date'}`,
   visitOpenDeal: () => 'Open a deal or add to plan',
-  collectionLogged: ({ amount, followUp }) => {
-    const n = Number(String(amount ?? '').replace(/,/g, ''));
-    const got = String(amount ?? '').trim() !== '' && Number.isFinite(n) ? `Collected ${money(n)} SAR.` : 'Collection logged (no amount recorded).';
-    return `${got} Next collection: ${dayText(followUp) || 'not set'}`;
-  },
+  collectionLogged: ({ followUp }) => `Collection visit logged. Next collection: ${dayText(followUp) || 'not set'}`,
 };
 
 /** Where a button goes: a react-router target. */
@@ -138,7 +133,7 @@ export async function resolveNextStep(e, { now = new Date() } = {}) {
       case 'movedToFuture':
         return { kind: e.kind, text: NEXT_STEP_TEXT.movedToFuture({ month: e.month }) };
       case 'collectionLogged':
-        return { kind: e.kind, text: NEXT_STEP_TEXT.collectionLogged({ amount: e.amount, followUp: e.followUp }) };
+        return { kind: e.kind, text: NEXT_STEP_TEXT.collectionLogged({ followUp: e.followUp }) };
       case 'visitLogged': {
         const out = { kind: e.kind, text: NEXT_STEP_TEXT.visitLogged({ nextAction: e.nextAction, followUp: e.followUp }) };
         if (e.response === 'positive' && e.contactId) {

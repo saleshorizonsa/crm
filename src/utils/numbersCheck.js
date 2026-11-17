@@ -59,7 +59,7 @@ import { loadSalesMonitor } from 'utils/salesMonitorData';
 import { partitionOpenFunnel as partitionOpenFunnelS41 } from 'utils/openFunnel';
 import { THRESHOLDS as MONITOR_THRESHOLDS } from 'utils/salesMonitorThresholds';
 import { riyadhDate as riyadhDateS41 } from 'utils/visits';
-// Session 40: the purpose split and the money collected, recounted.
+// Session 40: the purpose split and the Collection count, recounted.
 import { PURPOSES as PURPOSES_S40 } from 'utils/visitPurpose';
 import { computeSalesMonitor, OUTCOME_ORDER, DEPARTED_ID, NO_TARGET_ID } from 'utils/salesMonitor';
 import {
@@ -1671,8 +1671,8 @@ async function buildInsightsVsPlanningRows({
  */
 /**
  * SALES MONITOR — ④ VISITS BY PURPOSE (session 40). The split adds up to the
- * month's contacts, and the money collected equals a recount from the
- * database's own rows (contact reports by contact_date; activities by
+ * month's contacts, and the Collection count equals a recount from the
+ * database's own rows (no amount since session 40a) (contact reports by contact_date; activities by
  * completed_at, else due_date, else created_at — the Monitor's date rule).
  */
 async function buildVisitPurposeRows({ companyId, model }) {
@@ -1681,9 +1681,9 @@ async function buildVisitPurposeRows({ companyId, model }) {
   const owners = new Set(model.mtdContacts.map((c) => c.ownerId));
   const inWindow = (d) => d && d >= model.monthStart && d <= model.cutoff;
   const [reps, acts] = await Promise.all([
-    supabase.from('contact_reports').select('owner_id, contact_type, contact_date, visit_purpose, collected_amount')
+    supabase.from('contact_reports').select('owner_id, contact_type, contact_date, visit_purpose')
       .eq('company_id', companyId).in('contact_type', kinds).gte('contact_date', model.monthStart).lte('contact_date', model.cutoff),
-    supabase.from('activities').select('owner_id, user_id, type, completed_at, due_date, created_at, visit_purpose, collected_amount')
+    supabase.from('activities').select('owner_id, user_id, type, completed_at, due_date, created_at, visit_purpose')
       .eq('company_id', companyId).in('type', kinds),
   ]);
   const rows = [];
@@ -1691,15 +1691,15 @@ async function buildVisitPurposeRows({ companyId, model }) {
   rows.push(row({ label: 'Sales Monitor — 4 Visits: contacts by purpose add up to the month\'s contacts', value: total, expected: v.count, kind: 'count' }));
   PURPOSES_S40.forEach((p) => rows.push(row({ label: `Sales Monitor — 4 Visits: ${p.label}`, value: v.byPurpose[p.id] || 0, kind: 'count' })));
   if (reps.error || acts.error) {
-    rows.push(row({ label: 'Sales Monitor — 4 Visits: collected (could not recount)', value: v.collected, note: (reps.error || acts.error).message }));
+    rows.push(row({ label: 'Sales Monitor — 4 Visits: collection contacts (could not recount)', value: v.byPurpose.collection || 0, kind: 'count', note: (reps.error || acts.error).message }));
     return rows;
   }
-  const amount = (r) => (r.visit_purpose === 'collection' ? n(r.collected_amount) : 0);
-  const fromReports = (reps.data || []).filter((r) => owners.has(r.owner_id) && inWindow(riyadhDateS41(r.contact_date))).reduce((x, r) => x + amount(r), 0);
-  const fromActs = (acts.data || []).filter((a) => (owners.has(a.owner_id) || owners.has(a.user_id))
-    && inWindow(riyadhDateS41(a.completed_at || a.due_date || a.created_at))).reduce((x, a) => x + amount(a), 0);
+  const isCollection = (r) => r.visit_purpose === 'collection';
+  const fromReports = (reps.data || []).filter((r) => isCollection(r) && owners.has(r.owner_id) && inWindow(riyadhDateS41(r.contact_date))).length;
+  const fromActs = (acts.data || []).filter((a) => isCollection(a) && (owners.has(a.owner_id) || owners.has(a.user_id))
+    && inWindow(riyadhDateS41(a.completed_at || a.due_date || a.created_at))).length;
   rows.push(row({
-    label: 'Sales Monitor — 4 Visits: collected this month = collection contacts\' amounts', value: v.collected, expected: fromReports + fromActs,
+    label: 'Sales Monitor — 4 Visits: Collection tab = collection contacts recounted', value: v.byPurpose.collection || 0, expected: fromReports + fromActs, kind: 'count',
     note: 'contacts of people with a contact in the month',
   }));
   return rows;
