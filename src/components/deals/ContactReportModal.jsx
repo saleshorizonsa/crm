@@ -6,7 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import CustomerPicker from '../CustomerPicker';
 import { isMissingColumn } from '../../utils/missingColumn';
 import PurposeField from '../PurposeField';
-import { usePurposeColumns, purposeFields, amountError, DEFAULT_PURPOSE } from '../../utils/visitPurpose';
+import { usePurposeColumns, purposeFields, DEFAULT_PURPOSE } from '../../utils/visitPurpose';
 import { emitNextStep } from '../../utils/nextStepBus';
 import {
   Phone, MapPin, MessageCircle, Mail, X, CheckCircle,
@@ -57,9 +57,8 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
     next_action: '',
     follow_up_date: '',
     notes: '',
-    // Session 40: what the contact was for (and, for a collection, how much).
+    // Session 40: what the contact was for. No amount (session 40a).
     purpose: DEFAULT_PURPOSE,
-    collected: '',
   });
   // Whether contact_reports has the purpose columns yet
   // (migrations/visit_purpose_collection.sql). Until it does, the field is
@@ -92,8 +91,6 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
     if (!form.follow_up_date) e.follow_up_date = 'Select follow-up date';
     if (hasPurpose && NEEDS_CUSTOMER.includes(form.contact_type)) {
       if (!form.purpose) e.purpose = 'Select the purpose';
-      const amt = amountError(form.purpose, form.collected);
-      if (amt) e.collected = amt;
     }
     return e;
   };
@@ -128,7 +125,7 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
         // Session 40: the purpose columns likewise. Each step back drops only
         // what the database says it does not have, so the report is saved
         // with everything it can hold.
-        const purpose = purposeFields(hasPurpose && NEEDS_CUSTOMER.includes(form.contact_type), form.purpose, form.collected);
+        const purpose = purposeFields(hasPurpose && NEEDS_CUSTOMER.includes(form.contact_type), form.purpose);
         const tries = [
           { ...payload, contact_id: customerId || null, ...purpose },
           { ...payload, contact_id: customerId || null },
@@ -170,7 +167,7 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
       // What the salesman does next (session 40) — after the save, never in its way.
       emitNextStep(
         form.purpose === 'collection' && hasPurpose && NEEDS_CUSTOMER.includes(form.contact_type)
-          ? { kind: 'collectionLogged', amount: form.collected, followUp: form.follow_up_date }
+          ? { kind: 'collectionLogged', followUp: form.follow_up_date }
           : nextStage
             ? { kind: 'stageChanged', stage: nextStage, deal, followUp: form.follow_up_date }
             : {
@@ -248,10 +245,7 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
               <PurposeField
                 idPrefix="contact-report-purpose"
                 purpose={form.purpose}
-                amount={form.collected}
-                onPurpose={(v) => { set('purpose', v); setErrors((er) => ({ ...er, purpose: undefined, collected: undefined })); }}
-                onAmount={(v) => { set('collected', v); setErrors((er) => ({ ...er, collected: undefined })); }}
-                error={errors.collected}
+                onPurpose={(v) => { set('purpose', v); setErrors((er) => ({ ...er, purpose: undefined })); }}
               />
             )}
             {errText('purpose')}

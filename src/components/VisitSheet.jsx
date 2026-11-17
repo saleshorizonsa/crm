@@ -25,8 +25,8 @@ const day = (d) => {
 const OUTCOME_WORDS = { positive: "positive", neutral: "neutral", followup: "needs follow-up", not_interested: "not interested" };
 const titleCase = (s) => String(s || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-// showPurpose (session 40): the purpose and the amount collected, once the
-// columns exist (model.purposeColumns). The audit note shows whenever there is one.
+// showPurpose (session 40): the purpose, once the column exists
+// (model.purposeColumns); no amount (session 40a). The audit note shows whenever there is one.
 export default function VisitSheet({ row, nameOf = () => null, onClose, showPurpose = false }) {
   const navigate = useNavigate();
   const panelRef = useRef(null);
@@ -56,7 +56,6 @@ export default function VisitSheet({ row, nameOf = () => null, onClose, showPurp
     ["Date and time", when || "—"],
     ["Type", row.kindLabel],
     ...(showPurpose ? [["Purpose", PURPOSE_LABEL[row.purpose] || PURPOSE_LABEL.sales]] : []),
-    ...(showPurpose && row.purpose === "collection" ? [["Amount collected", row.collected ? `${money(row.collected)} SAR` : "not recorded"]] : []),
     ...(row.durationMinutes ? [["Duration", `${row.durationMinutes} min`]] : []),
     ["Customer", row.customerKnown ? row.customer : NO_CUSTOMER],
     ["Plan", row.inPlan

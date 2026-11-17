@@ -5,12 +5,15 @@ import { isMissingColumn } from 'utils/missingColumn';
 /**
  * VISIT PURPOSE AND COLLECTION (session 40, CEO 2026-11-16).
  *
- * Every visit, call and WhatsApp says what it was for, and a collection says
- * how much was collected. The columns arrive with
+ * Every visit, call and WhatsApp says what it was for. The column arrives with
  * migrations/visit_purpose_collection.sql; until it is applied:
  *   - the forms hide the field and save exactly as before (usePurposeColumns);
- *   - readers treat every contact as Sales with nothing collected.
+ *   - readers treat every contact as Sales.
  * An old row (NULL) is Sales.
+ *
+ * Session 40a (CEO 2026-11-17): salesmen do not enter an amount on a
+ * collection visit. The migration's collected_amount columns stay in the
+ * database, unused: nothing reads or writes them.
  */
 export const PURPOSES = [
   { id: 'sales', label: 'Sales' },
@@ -26,14 +29,9 @@ export const PURPOSE_SHORT = { sales: 'sales', collection: 'collection', service
 
 /** A row's purpose: its own, else Sales (NULL = a contact from before the field). */
 export const purposeOf = (row) => (PURPOSE_IDS.includes(row?.visit_purpose) ? row.visit_purpose : DEFAULT_PURPOSE);
-/** A row's amount collected, a number ≥ 0 (0 when none). */
-export const collectedOf = (row) => {
-  const n = Number(row?.collected_amount);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-};
 
 /**
- * Whether BOTH tables carry the columns. Asked once per page load: a select
+ * Whether BOTH tables carry visit_purpose. Asked once per page load: a select
  * naming a missing column is refused by PostgREST with 42703 / PGRST204.
  * Any other failure (network) is treated as "not known yet" → hidden, so a
  * form never sends a column that may not exist.
@@ -42,8 +40,8 @@ let probe = null;
 export function probePurposeColumns() {
   if (!probe) {
     probe = Promise.all([
-      supabase.from('contact_reports').select('id, visit_purpose, collected_amount').limit(1),
-      supabase.from('activities').select('id, visit_purpose, collected_amount').limit(1),
+      supabase.from('contact_reports').select('id, visit_purpose').limit(1),
+      supabase.from('activities').select('id, visit_purpose').limit(1),
     ]).then(([a, b]) => !a.error && !b.error)
       .catch(() => false)
       .then((ok) => {
@@ -69,26 +67,12 @@ export function usePurposeColumns() {
 }
 
 /**
- * The two fields for an insert, or nothing when the columns are not there.
- * amount: the typed text; blank → NULL; only kept for a collection.
+ * The field for an insert, or nothing when the column is not there. Only
+ * visit_purpose: collected_amount is never written (session 40a).
  */
-export function purposeFields(hasColumns, purpose, amount) {
+export function purposeFields(hasColumns, purpose) {
   if (!hasColumns) return {};
-  const p = PURPOSE_IDS.includes(purpose) ? purpose : DEFAULT_PURPOSE;
-  const n = Number(String(amount ?? '').replace(/,/g, ''));
-  return {
-    visit_purpose: p,
-    collected_amount: p === 'collection' && String(amount ?? '').trim() !== '' && Number.isFinite(n) && n >= 0 ? n : null,
-  };
-}
-
-/** A typed amount is acceptable: blank, or a number ≥ 0. */
-export function amountError(purpose, amount) {
-  if (purpose !== 'collection') return null;
-  const t = String(amount ?? '').trim();
-  if (!t) return null;
-  const n = Number(t.replace(/,/g, ''));
-  return Number.isFinite(n) && n >= 0 ? null : 'Enter the amount in SAR (a number, 0 or more)';
+  return { visit_purpose: PURPOSE_IDS.includes(purpose) ? purpose : DEFAULT_PURPOSE };
 }
 
 export { isMissingColumn };

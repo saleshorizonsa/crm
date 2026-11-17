@@ -213,7 +213,7 @@ function valueLabelOf(viewId, sel) {
   if (viewId === 'target') return 'Target';
   if (viewId === 'planStatus') return 'People';
   if (viewId === 'planned') return ({ submitted: 'Submitted plan', now: 'Plan now', below: 'Missing', none: 'People' })[sel[0]] || 'Plan now';
-  if (viewId === 'visits') return sel[0] === 'notVisited' ? 'Customers' : sel[0] === 'collection' ? 'Collected' : 'Contacts';
+  if (viewId === 'visits') return sel[0] === 'notVisited' ? 'Customers' : 'Contacts';
   if (viewId === 'achieved') return sel[0] === 'invoices' ? 'Net' : 'Amount';
   if (viewId === 'fromPlan') return 'Amount';
   if (viewId === 'outcomes') return 'Planned';
@@ -793,10 +793,9 @@ function summaryOf(sc, stageId) {
       { id: 'inPlan', label: 'To planned customers', value: c.visits.mtd.inPlanPct, type: 'pct' },
       { id: 'plannedVisited', label: 'Planned customers visited', value: `${c.visits.plannedVisited} of ${c.visits.plannedCustomers}` },
       { id: 'responses', label: '+ / = / −', value: `${c.visits.mtd.responses.positive} / ${c.visits.mtd.responses.neutral} / ${c.visits.mtd.responses.negative}` },
-      // Session 40: by purpose and collected, once the columns exist.
+      // Session 40: by purpose, once the column exists (no amount: 40a).
       ...(M.purposeColumns ? [
         { id: 'purposes', label: 'By purpose', value: purposeSplitText(c.visits.mtd.byPurpose, c.visits.mtd.count) },
-        { id: 'collected', label: 'Collected this month', value: c.visits.mtd.collected, type: 'money' },
       ] : []),
     ];
   }

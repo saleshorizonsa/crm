@@ -61,11 +61,10 @@ export default function DailyVisitsList({ model, onOpenPerson = null, noContactT
                     >
                       <td className="py-1.5 pr-2 font-mono text-gray-500 w-12">{r.time || "—"}</td>
                       <td className="py-1.5 pr-2 w-20">{r.kindLabel}</td>
-                      {/* Session 40: the purpose (and a collection's amount), once the columns exist. */}
+                      {/* Session 40: the purpose, once the column exists (no amount: 40a). */}
                       {model.purposeColumns && (
                         <td className="py-1.5 pr-2 whitespace-nowrap" data-testid="day-row-purpose">
                           <span className={purposeChip(r.purpose)}>{PURPOSE_LABEL[r.purpose]}</span>
-                          {r.purpose === "collection" && r.collected > 0 && <>{" "}<span className="font-mono tabular-nums text-gray-700">{money(r.collected)}</span></>}
                         </td>
                       )}
                       <td className={`py-1.5 pr-2 ${r.customerKnown ? "text-gray-900" : "italic text-gray-500"}`}>{r.customerKnown ? r.customer : NO_CUSTOMER}</td>

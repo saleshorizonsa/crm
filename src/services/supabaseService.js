@@ -3036,8 +3036,8 @@ export const activityService = {
   // completedAt is optional: a visit logged for a past day carries that day, so
   // utils/visits.js (completed_at, else due_date, else created_at) dates it
   // right. Omitted, the row is exactly what it always was.
-  // purpose (session 40): { visit_purpose, collected_amount } from
-  // utils/visitPurpose.purposeFields — empty until the columns exist. If the
+  // purpose (session 40): { visit_purpose } from
+  // utils/visitPurpose.purposeFields (no amount since 40a) — empty until the columns exist. If the
   // database still refuses them, the activity is saved without them.
   async logActivity({ companyId, userId, contactId, dealId, activityType, description, outcome, nextAction, nextActionDate, durationMinutes, completedAt, purpose = {} }) {
     const insertWith = (extra) => supabase

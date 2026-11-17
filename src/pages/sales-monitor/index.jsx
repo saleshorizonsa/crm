@@ -431,7 +431,6 @@ export default function SalesMonitor() {
               {model.purposeColumns && (
                 <>
                   <p data-testid="visits-purpose-split" className="text-gray-700 pt-1">{purposeSplitText(c.visits.mtd.byPurpose, c.visits.mtd.count)}</p>
-                  {c.visits.mtd.byPurpose.collection > 0 && <Line label="Collected (MTD)" value={money(c.visits.mtd.collected)} />}
                 </>
               )}
             </Card>

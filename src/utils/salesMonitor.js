@@ -29,7 +29,7 @@ import {
 import { computeFunnel } from 'utils/salesMonitorFunnel';
 // Session 40: what a contact was for, and what a collection brought in.
 import {
-  purposeOf, collectedOf, PURPOSES, PURPOSE_LABEL,
+  purposeOf, PURPOSES, PURPOSE_LABEL,
 } from 'utils/visitPurpose';
 
 /**
@@ -438,7 +438,6 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
         auditedAt: r.audited_at || null,
         auditNotes: r.audit_notes || null,
         purpose: purposeOf(r),
-        collected: collectedOf(r),
         deal,
       };
     }),
@@ -465,7 +464,6 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
         auditedAt: null,
         auditNotes: null,
         purpose: purposeOf(a),
-        collected: collectedOf(a),
         deal,
       };
     }),
@@ -509,10 +507,9 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     inPlanPct: pct(rows.filter((c) => c.inPlan).length, rows.length),
     responses: responses(rows),
     noCustomer: rows.filter((c) => !c.customerKnown).length,
-    // Session 40: by purpose (an old contact, with none, is Sales) and the
-    // money collected. Read only when the columns exist (purposeColumns).
+    // Session 40: by purpose (an old contact, with none, is Sales). Read only
+    // when the column exists (purposeColumns). No amount (session 40a).
     byPurpose: Object.fromEntries(PURPOSES.map((p) => [p.id, rows.filter((c) => c.purpose === p.id).length])),
-    collected: sumBy(rows, (c) => c.collected),
   });
 
   // Planned customers contacted (MTD) vs not.
@@ -819,8 +816,8 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     departedIds: departedAchievers,
     noTargetIds: noTargetSellers,
     contactIdColumn: raw.contactIdColumn !== false,
-    // Session 40: whether visit_purpose / collected_amount exist yet. Until
-    // they do, no page shows a purpose at all.
+    // Session 40: whether visit_purpose exists yet. Until it does, no page
+    // shows a purpose at all.
     purposeColumns: raw.purposeColumns === true,
     notes: raw.notes || [],
     drills: buildDrills(ctx),
@@ -1211,7 +1208,7 @@ function buildDrills(ctx) {
     planTag: c.inPlan ? `In plan · ${Math.round(c.planValue).toLocaleString('en-US')} · ${c.planOutcome}` : '—',
     nextAction: c.nextAction || '—', one: 1,
     // Session 40.
-    purposeId: c.purpose, purpose: PURPOSE_LABEL[c.purpose], collected: c.collected,
+    purposeId: c.purpose, purpose: PURPOSE_LABEL[c.purpose],
   }));
 
   const tabs = buildTabs(ctx, {
@@ -1527,14 +1524,12 @@ function buildTabs(ctx, r) {
           explain: 'Planned customers of this month with no visit, call or WhatsApp from their salesman yet.' },
         { id: 'positive', label: 'Positive', filter: (x) => x.responseRaw === 'positive', hint: 'Part of Visited.' },
         { id: 'negative', label: 'Negative', filter: (x) => x.responseRaw === 'negative', hint: 'Part of Visited.' },
-        // Session 40: collection visits and what they collected (only once
-        // the purpose columns exist).
+        // Session 40: collection visits (only once the purpose column exists).
+        // Counted like Visited, with no amount (session 40a).
         ...(raw.purposeColumns ? [{
-          id: 'collection', label: 'Collection', filter: (x) => x.purposeId === 'collection', unit: 'SAR',
-          build: tree((x) => x.collected, (x) => x.customer), total: sum((x) => x.collected),
-          columns: [...DRILL_COLUMNS.visits, { key: 'collected', label: 'Collected', type: 'money' }],
-          hint: 'Part of Visited: contacts made to collect payment. The total is the amount collected this month.',
-          explain: 'Collection visits, calls and WhatsApps this month to date, with the amount collected on each.',
+          id: 'collection', label: 'Collection', filter: (x) => x.purposeId === 'collection',
+          hint: 'Part of Visited: contacts made to collect payment.',
+          explain: 'Collection visits, calls and WhatsApps this month to date.',
         }] : []),
       ] }],
     },
