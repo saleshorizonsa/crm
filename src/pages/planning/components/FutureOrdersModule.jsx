@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { emitNextStep } from "utils/nextStepBus";
 import { supabase } from 'lib/supabase';
 import { useAuth } from 'contexts/AuthContext';
 import { useCurrency } from 'contexts/CurrencyContext';
@@ -201,6 +202,7 @@ export default function FutureOrdersModule({
       const opp = await createOppFromOrder(order);
       if (!opp) { fetchOrders(); return; }
       setMovedNotice({ customer: order.customer_name, month: monthNameOf(opp.expected_month || currentMonthStart()) });
+      emitNextStep({ kind: 'planItemAdded', month: opp.expected_month || currentMonthStart() });
       // Refreshes the page's plan figures and list, so the item is there the
       // moment the plan tab is opened.
       fetchOrders();

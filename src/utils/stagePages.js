@@ -4,6 +4,7 @@ import { riyadhDate } from 'utils/visits';
 import { THRESHOLDS } from 'utils/salesMonitorThresholds';
 import { daysBetween } from 'utils/salesMonitor';
 import { exceptionAction } from 'utils/exceptionActions';
+import { purposeSplitText } from 'utils/visitPurpose';
 
 /**
  * SALES MONITOR STAGE PAGES (session 39, CEO 2026-11-16).
@@ -212,7 +213,7 @@ function valueLabelOf(viewId, sel) {
   if (viewId === 'target') return 'Target';
   if (viewId === 'planStatus') return 'People';
   if (viewId === 'planned') return ({ submitted: 'Submitted plan', now: 'Plan now', below: 'Missing', none: 'People' })[sel[0]] || 'Plan now';
-  if (viewId === 'visits') return sel[0] === 'notVisited' ? 'Customers' : 'Contacts';
+  if (viewId === 'visits') return sel[0] === 'notVisited' ? 'Customers' : sel[0] === 'collection' ? 'Collected' : 'Contacts';
   if (viewId === 'achieved') return sel[0] === 'invoices' ? 'Net' : 'Amount';
   if (viewId === 'fromPlan') return 'Amount';
   if (viewId === 'outcomes') return 'Planned';
@@ -397,8 +398,10 @@ function viewShape(sc, stageId, viewId, sel) {
       customerKey: (r) => sc.contactOf.get(r)?.customerKey || `name:${r.customer}`,
       leaf: {
         kind: 'record', name: (r) => `${r.kindLabel}`,
-        columns: [{ key: 'date', label: 'Date', type: 'date' }, { key: 'response', label: 'Response' }, { key: 'nextAction', label: 'Next action' }, { key: 'planTag', label: 'Plan' }],
-        cells: (r) => ({ date: r.date, response: r.response, nextAction: r.nextAction, planTag: r.planTag }),
+        // Session 40: the purpose on every visit row, once the columns exist.
+        columns: [{ key: 'date', label: 'Date', type: 'date' }, ...(M.purposeColumns ? [{ key: 'purpose', label: 'Purpose' }] : []),
+          { key: 'response', label: 'Response' }, { key: 'nextAction', label: 'Next action' }, { key: 'planTag', label: 'Plan' }],
+        cells: (r) => ({ date: r.date, ...(M.purposeColumns ? { purpose: r.purpose } : {}), response: r.response, nextAction: r.nextAction, planTag: r.planTag }),
         open: (r) => openOf(r, sc.contactOf.get(r)),
       },
     };
@@ -790,6 +793,11 @@ function summaryOf(sc, stageId) {
       { id: 'inPlan', label: 'To planned customers', value: c.visits.mtd.inPlanPct, type: 'pct' },
       { id: 'plannedVisited', label: 'Planned customers visited', value: `${c.visits.plannedVisited} of ${c.visits.plannedCustomers}` },
       { id: 'responses', label: '+ / = / −', value: `${c.visits.mtd.responses.positive} / ${c.visits.mtd.responses.neutral} / ${c.visits.mtd.responses.negative}` },
+      // Session 40: by purpose and collected, once the columns exist.
+      ...(M.purposeColumns ? [
+        { id: 'purposes', label: 'By purpose', value: purposeSplitText(c.visits.mtd.byPurpose, c.visits.mtd.count) },
+        { id: 'collected', label: 'Collected this month', value: c.visits.mtd.collected, type: 'money' },
+      ] : []),
     ];
   }
   if (stageId === 'achieved') {

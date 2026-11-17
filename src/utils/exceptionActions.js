@@ -10,6 +10,7 @@
  *       'planning'   Planning (/planning)
  *       'approvals'  Planning → Plans Awaiting Approval (/planning#approvals)
  *       'reassign'   Reassign records (/reassign-records)
+ *       'audit'      Insights → Contact Reports — Audit (/insights#contact-audit)
  *       'person'     the salesman's own sheet on the Sales Monitor
  *
  * Nothing here decides whether an exception exists; the rules and their
@@ -38,6 +39,8 @@ export const EXCEPTION_ACTIONS = {
   deal_no_division: { text: () => 'Set the deal\'s division', to: 'deal', button: 'Open the deal' },
   departed_open_work: { text: () => 'Reassign the open work', to: 'reassign', button: 'Reassign records' },
   report_no_customer: { text: () => 'Link the report to a customer', to: 'person', button: 'Open the salesman' },
+  // Session 40.
+  reports_not_audited: { text: () => 'Audit them in Insights → Contact Reports — Audit', to: 'audit', button: 'Contact Reports — Audit' },
 };
 
 /**
@@ -58,5 +61,7 @@ export function actionTarget(to, e) {
   if (to === 'planning') return { path: '/planning' };
   if (to === 'approvals') return { path: '/planning', hash: '#approvals' };
   if (to === 'reassign') return { path: '/reassign-records' };
+  // Insights opens the "Contact Reports — Audit" panel on #contact-audit (session 40).
+  if (to === 'audit') return { path: '/insights', hash: '#contact-audit' };
   return null;
 }

@@ -4,6 +4,7 @@ import { useAuth } from "contexts/AuthContext";
 import Header from "components/ui/Header";
 import DrillSheet, { money, cellText } from "components/DrillSheet";
 import VisitSheet from "components/VisitSheet";
+import Figure from "components/Figure";
 import { exportToExcel } from "utils/exportUtils";
 import { fmtPct } from "utils/formatPct";
 import { loadSalesMonitor } from "utils/salesMonitorData";
@@ -15,8 +16,9 @@ import {
 import { actionTarget } from "utils/exceptionActions";
 import {
   stageColour, SEVERITY_CHIP, OUTCOME_TONE, RESPONSE_TONE, TONE_TEXT, NEXT_STEPS_BOX,
-  toneChip, planStatusTone, paceTone, pipelineStageDot, stageKeyOfLabel,
+  toneChip, planStatusTone, paceTone, pipelineStageDot, stageKeyOfLabel, purposeChip,
 } from "utils/monitorColours";
+import { PURPOSES } from "utils/visitPurpose";
 
 // SALES MONITOR — ONE PAGE PER STAGE (session 39, CEO 2026-11-16).
 //
@@ -65,6 +67,11 @@ function statusCell(key, text, { elapsedPct }) {
     return k ? <><span data-deco="1" aria-hidden="true" className={`inline-block w-2 h-2 rounded-full mr-1 align-middle ${pipelineStageDot(k)}`} />{text}</> : text;
   }
   if (key === "outcome") return chips(text, " / ", (w) => OUTCOME_TONE[w]);
+  // Session 40: the visit's purpose, in its own colour.
+  if (key === "purpose") {
+    const p = PURPOSES.find((x) => x.label === text);
+    return p ? <span data-deco="wrap" className={purposeChip(p.id)}>{text}</span> : text;
+  }
   if (key === "planStatus") return chips(text, " · ", (w) => planStatusTone(w));
   if (key === "response") return chips(text, " / ", (w) => RESPONSE_TONE[w]);
   if (key === "pace") return chips(text, " / ", (w) => ({ "on pace": "green", behind: "red" })[w]);
@@ -285,7 +292,7 @@ export default function StagePage() {
           {page.summary.map((s) => (
             <div key={s.id} data-testid={`sum-${s.id}`} className="min-w-0">
               <div className="text-[11px] uppercase tracking-wide text-gray-500">{s.label}</div>
-              <div className={`font-mono text-base font-semibold ${SC.text}`}>{fig(s.value, s.type)}</div>
+              <div className={`font-mono text-base font-semibold tabular-nums ${SC.text}`}><Figure>{fig(s.value, s.type)}</Figure></div>
               {(() => {
                 // A bar for a share ("4 of 8"), in the stage's colour — decoration only.
                 const m = /^(\d+) of (\d+)$/.exec(String(s.value));
@@ -316,7 +323,7 @@ export default function StagePage() {
             )}
             <div className="flex items-baseline gap-2 flex-wrap">
               <h2 className="text-base font-semibold text-gray-900">{activeView.label}</h2>
-              <span className={`font-mono text-lg font-semibold ${SC.text}`} data-testid="stage-total">{valueText(page.total, page.unit)}</span>
+              <span className={`font-mono text-lg font-semibold tabular-nums whitespace-nowrap ${SC.text}`} data-testid="stage-total">{valueText(page.total, page.unit)}</span>
               <span className="text-xs text-gray-500">{page.unit}</span>
             </div>
             {page.explain && <p className="text-xs text-gray-600" data-testid="stage-explain">{page.explain}</p>}
@@ -407,13 +414,13 @@ export default function StagePage() {
                     {showValue && (
                       <span data-cell="value">
                         <span className="text-gray-500">{node.valueLabel || page.valueLabel}</span>{" "}
-                        <span className="font-mono font-semibold text-gray-900">{valueText(node.value, valueUnit)}</span>
+                        <span className="font-mono font-semibold tabular-nums whitespace-nowrap text-gray-900">{valueText(node.value, valueUnit)}</span>
                       </span>
                     )}
                     {cols.filter((c) => !(node.kind === "exception" && c.key === "severity")).map((c) => (
                       <span key={c.key} data-cell={c.key}>
                         <span className="text-gray-500">{c.label}</span>{" "}
-                        <span className="font-mono text-gray-800">{node.cells?.[c.key] === null || node.cells?.[c.key] === undefined || node.cells?.[c.key] === "" ? "—" : statusCell(c.key, c.type ? cellText(node.cells, c) : String(node.cells[c.key]), { elapsedPct })}</span>
+                        <span className={`font-mono text-gray-800 ${c.type ? "tabular-nums whitespace-nowrap" : ""}`}>{node.cells?.[c.key] === null || node.cells?.[c.key] === undefined || node.cells?.[c.key] === "" ? "—" : statusCell(c.key, c.type ? cellText(node.cells, c) : String(node.cells[c.key]), { elapsedPct })}</span>
                       </span>
                     ))}
                   </div>
@@ -458,7 +465,7 @@ export default function StagePage() {
         </section>
       </main>
 
-      {visit && <VisitSheet row={visit} nameOf={model.userName || (() => null)} onClose={closeVisit} />}
+      {visit && <VisitSheet row={visit} nameOf={model.userName || (() => null)} onClose={closeVisit} showPurpose={!!model.purposeColumns} />}
       {drill && (
         <DrillSheet
           label={drill.label}

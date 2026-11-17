@@ -2,7 +2,8 @@ import React, { useCallback, useState } from "react";
 import VisitSheet from "components/VisitSheet";
 import { money } from "components/DrillSheet";
 import { NO_CUSTOMER, isDayOff } from "utils/salesMonitor";
-import { RESPONSE_TONE, toneChip } from "utils/monitorColours";
+import { RESPONSE_TONE, toneChip, purposeChip } from "utils/monitorColours";
+import { PURPOSE_LABEL } from "utils/visitPurpose";
 
 /**
  * ONE DAY'S VISITS, CALLS AND WHATSAPPS — the list the Sales Monitor and the
@@ -60,6 +61,13 @@ export default function DailyVisitsList({ model, onOpenPerson = null, noContactT
                     >
                       <td className="py-1.5 pr-2 font-mono text-gray-500 w-12">{r.time || "—"}</td>
                       <td className="py-1.5 pr-2 w-20">{r.kindLabel}</td>
+                      {/* Session 40: the purpose (and a collection's amount), once the columns exist. */}
+                      {model.purposeColumns && (
+                        <td className="py-1.5 pr-2 whitespace-nowrap" data-testid="day-row-purpose">
+                          <span className={purposeChip(r.purpose)}>{PURPOSE_LABEL[r.purpose]}</span>
+                          {r.purpose === "collection" && r.collected > 0 && <>{" "}<span className="font-mono tabular-nums text-gray-700">{money(r.collected)}</span></>}
+                        </td>
+                      )}
                       <td className={`py-1.5 pr-2 ${r.customerKnown ? "text-gray-900" : "italic text-gray-500"}`}>{r.customerKnown ? r.customer : NO_CUSTOMER}</td>
                       <td className="py-1.5 pr-2">
                         {r.inPlan
@@ -82,7 +90,7 @@ export default function DailyVisitsList({ model, onOpenPerson = null, noContactT
         </div>
       ))}
       {!model.dayContacts.length && <p className="text-sm text-gray-500">Nothing logged on {shortDay(model.day)}.</p>}
-      {sheet && <VisitSheet row={sheet} nameOf={model.userName || (() => null)} onClose={closeSheet} />}
+      {sheet && <VisitSheet row={sheet} nameOf={model.userName || (() => null)} onClose={closeSheet} showPurpose={!!model.purposeColumns} />}
       <div data-testid={noContactTestid}>
         <h3 className="text-sm font-semibold text-gray-800">
           No contact that day ({model.noVisitPeople.length}){dayOff ? " — a day off, not flagged" : ""}

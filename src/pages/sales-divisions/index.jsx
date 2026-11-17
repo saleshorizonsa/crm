@@ -1051,11 +1051,12 @@ export default function SalesDivisions() {
             the component takes ownerIds as an effect dependency, and a fresh
             array each render would refetch on every one. */}
         {CONTACT_AUDIT_ROLES.includes(role) && company?.id && (
-          <div data-testid="insights-contact-audit">
+          <div data-testid="insights-contact-audit" id="contact-audit">
             <ContactReportsAudit
               companyId={company.id}
               ownerIds={subordinateIds}
               reviewerId={user?.id}
+              defaultOpen={typeof window !== "undefined" && window.location.hash === "#contact-audit"}
             />
           </div>
         )}

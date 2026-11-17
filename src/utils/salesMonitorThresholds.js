@@ -29,6 +29,11 @@ export const THRESHOLDS = {
   /** A planned customer not contacted by the plan owner in this many days. */
   plannedCustomerSilentDays: 14,
   /**
+   * Session 40: a visit report not audited this many days after its contact
+   * date is listed for its owner's reviewing supervisor or manager.
+   */
+  auditOverdueDays: 7,
+  /**
    * The Saudi working week. "No visit today" does not fire on a day off
    * (getDay(): 5 = Friday, 6 = Saturday).
    */
@@ -83,6 +88,7 @@ export const RULE_SEVERITY = {
   departed_open_work: SEVERITY.medium,
   report_no_customer: SEVERITY.low,
   required_plan_wrong: SEVERITY.medium,
+  reports_not_audited: SEVERITY.low,
 };
 
 /** The group each rule is listed under in the feed. */
@@ -105,4 +111,5 @@ export const RULE_GROUP = {
   departed_open_work: 'Data',
   report_no_customer: 'Data',
   required_plan_wrong: 'Data',
+  reports_not_audited: 'Visits',
 };

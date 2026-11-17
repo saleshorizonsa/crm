@@ -59,6 +59,8 @@ import { loadSalesMonitor } from 'utils/salesMonitorData';
 import { partitionOpenFunnel as partitionOpenFunnelS41 } from 'utils/openFunnel';
 import { THRESHOLDS as MONITOR_THRESHOLDS } from 'utils/salesMonitorThresholds';
 import { riyadhDate as riyadhDateS41 } from 'utils/visits';
+// Session 40: the purpose split and the money collected, recounted.
+import { PURPOSES as PURPOSES_S40 } from 'utils/visitPurpose';
 import { computeSalesMonitor, OUTCOME_ORDER, DEPARTED_ID, NO_TARGET_ID } from 'utils/salesMonitor';
 import {
   reportService,
@@ -1668,6 +1670,42 @@ async function buildInsightsVsPlanningRows({
  * Whole months only: the page is a monthly page.
  */
 /**
+ * SALES MONITOR — ④ VISITS BY PURPOSE (session 40). The split adds up to the
+ * month's contacts, and the money collected equals a recount from the
+ * database's own rows (contact reports by contact_date; activities by
+ * completed_at, else due_date, else created_at — the Monitor's date rule).
+ */
+async function buildVisitPurposeRows({ companyId, model }) {
+  const v = model.cards.visits.mtd;
+  const kinds = ['visit', 'call', 'whatsapp'];
+  const owners = new Set(model.mtdContacts.map((c) => c.ownerId));
+  const inWindow = (d) => d && d >= model.monthStart && d <= model.cutoff;
+  const [reps, acts] = await Promise.all([
+    supabase.from('contact_reports').select('owner_id, contact_type, contact_date, visit_purpose, collected_amount')
+      .eq('company_id', companyId).in('contact_type', kinds).gte('contact_date', model.monthStart).lte('contact_date', model.cutoff),
+    supabase.from('activities').select('owner_id, user_id, type, completed_at, due_date, created_at, visit_purpose, collected_amount')
+      .eq('company_id', companyId).in('type', kinds),
+  ]);
+  const rows = [];
+  const total = PURPOSES_S40.reduce((x, p) => x + (v.byPurpose[p.id] || 0), 0);
+  rows.push(row({ label: 'Sales Monitor — 4 Visits: contacts by purpose add up to the month\'s contacts', value: total, expected: v.count, kind: 'count' }));
+  PURPOSES_S40.forEach((p) => rows.push(row({ label: `Sales Monitor — 4 Visits: ${p.label}`, value: v.byPurpose[p.id] || 0, kind: 'count' })));
+  if (reps.error || acts.error) {
+    rows.push(row({ label: 'Sales Monitor — 4 Visits: collected (could not recount)', value: v.collected, note: (reps.error || acts.error).message }));
+    return rows;
+  }
+  const amount = (r) => (r.visit_purpose === 'collection' ? n(r.collected_amount) : 0);
+  const fromReports = (reps.data || []).filter((r) => owners.has(r.owner_id) && inWindow(riyadhDateS41(r.contact_date))).reduce((x, r) => x + amount(r), 0);
+  const fromActs = (acts.data || []).filter((a) => (owners.has(a.owner_id) || owners.has(a.user_id))
+    && inWindow(riyadhDateS41(a.completed_at || a.due_date || a.created_at))).reduce((x, a) => x + amount(a), 0);
+  rows.push(row({
+    label: 'Sales Monitor — 4 Visits: collected this month = collection contacts\' amounts', value: v.collected, expected: fromReports + fromActs,
+    note: 'contacts of people with a contact in the month',
+  }));
+  return rows;
+}
+
+/**
  * SALES MONITOR — ③ FUNNEL (session 41). The page's Funnel figures against an
  * independent recomputation from the bundle's own deal read: the open funnel
  * through partitionOpenFunnel over active achievers' open deals, the stuck and
@@ -2635,6 +2673,11 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
     // Session 41 — appended after it, so every group above reads as before.
     if (monitorOut.model) {
       groups.push({ screen: 'Sales Monitor — 3 Funnel (session 41)', fn: 'computeSalesMonitor → computeFunnel', rows: buildSalesMonitorFunnelRows({ bundle, model: monitorOut.model, start, end }) });
+      // Session 40 — only once migrations/visit_purpose_collection.sql is
+      // applied; until then nothing here changes.
+      if (monitorOut.model.purposeColumns) {
+        groups.push({ screen: 'Sales Monitor — 4 Visits by purpose (session 40)', fn: 'computeSalesMonitor (visits by purpose)', rows: await buildVisitPurposeRows({ companyId, model: monitorOut.model }) });
+      }
     }
   }
 

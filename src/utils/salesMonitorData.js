@@ -124,7 +124,7 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
       ...base, deals: [], allDeals: [], targets: [], deals3m: [], opps: [], futureOrders: [],
       returns: [], flags: [], escalations: [], additionalByUser: {}, conversionBase: {},
       planItems: [], bounceLogs: [], submissions: [], futurePushes: [], contactReports: [],
-      activities: [], contacts: [], departedOpenPlan: [], contactIdColumn: false,
+      activities: [], contacts: [], departedOpenPlan: [], contactIdColumn: false, purposeColumns: false,
       stageHistory: [], stageHistoryLoaded: false, autoMoved: [], autoMovedLoaded: false, leadConvertedAt: {},
     };
   }
@@ -305,11 +305,51 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
     if (error) { console.warn('Sales Monitor: audit details not read:', error.message); break; }
     (data || []).forEach((r) => auditBy.set(r.id, r));
   }
+  // The audit note (session 40): contact_reports.audit_notes, read apart so
+  // that, if the column is not there, only the note is missing.
+  const auditNote = new Map();
+  for (const part of chunks(audited)) {
+    // eslint-disable-next-line no-await-in-loop
+    const { data, error } = await supabase.from('contact_reports').select('id, audit_notes').in('id', part);
+    if (error) { console.warn('Sales Monitor: audit notes not read:', error.message); break; }
+    (data || []).forEach((r) => { if (r.audit_notes) auditNote.set(r.id, r.audit_notes); });
+  }
+  // VISIT PURPOSE AND COLLECTION (session 40): migrations/visit_purpose_collection.sql.
+  // Read in their own request, like contact_id: while the columns are missing
+  // every contact is Sales with nothing collected, and the pages show no
+  // purpose at all (exactly as before the migration).
+  let purposeColumns = true;
+  const purposeOfRow = { reports: new Map(), activities: new Map() };
+  for (const [table, rows, into] of [['contact_reports', contactReports, purposeOfRow.reports], ['activities', activities, purposeOfRow.activities]]) {
+    for (const part of chunks(rows.map((r) => r.id))) {
+      if (!purposeColumns) break;
+      // eslint-disable-next-line no-await-in-loop
+      const { data, error } = await supabase.from(table).select('id, visit_purpose, collected_amount').in('id', part);
+      if (error) {
+        purposeColumns = false;
+        if (!isMissingColumn(error)) console.warn(`Sales Monitor: ${table} purpose not read:`, error.message);
+        break;
+      }
+      (data || []).forEach((r) => into.set(r.id, r));
+    }
+  }
+  if (!purposeColumns) {
+    purposeOfRow.reports.clear();
+    purposeOfRow.activities.clear();
+  }
   const reports = contactReports.map((r) => ({
     ...r,
     contact_id: reportContact.get(r.id) || null,
     audited_by: auditBy.get(r.id)?.audited_by || null,
     audited_at: auditBy.get(r.id)?.audited_at || null,
+    audit_notes: auditNote.get(r.id) || null,
+    visit_purpose: purposeOfRow.reports.get(r.id)?.visit_purpose ?? null,
+    collected_amount: purposeOfRow.reports.get(r.id)?.collected_amount ?? null,
+  }));
+  const activitiesWithPurpose = activities.map((a) => ({
+    ...a,
+    visit_purpose: purposeOfRow.activities.get(a.id)?.visit_purpose ?? null,
+    collected_amount: purposeOfRow.activities.get(a.id)?.collected_amount ?? null,
   }));
 
   // ── customer names, for every contact any row points at ──
@@ -420,7 +460,8 @@ export async function loadSalesMonitor({ companyId, viewerId, role, monthKey, no
     submissions: submissionsRes.error ? null : submissionsRes.data || [],
     futurePushes,
     contactReports: reports,
-    activities,
+    activities: activitiesWithPurpose,
+    purposeColumns,
     contacts,
     departedOpenPlan,
     contactIdColumn,

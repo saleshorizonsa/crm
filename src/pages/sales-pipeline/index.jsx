@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { emitNextStep } from "utils/nextStepBus";
 import Header from "../../components/ui/Header";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
 import PipelineFilters from "./components/PipelineFilters";
@@ -186,6 +187,8 @@ const SalesPipeline = () => {
       setDeals((prev) => prev.map((d) => (d.id === data.id ? { ...d, ...data } : d)));
 
       if (!correcting) {
+        // Session 40: invoiced → when this customer usually orders again.
+        emitNextStep({ kind: "invoiced", deal: data, invoiceDate: invoiceForm.invoice_date });
         closeInvoiceModal();
         // Invoiced for less than it started at: ask what happens to the rest.
         const balance = balanceOf(data);
@@ -796,6 +799,8 @@ const SalesPipeline = () => {
 
         // Log activity for deal update
         const stageChanged = selectedDeal.stage !== data.stage;
+        // Session 40: a stage moved in the deal form → the next step.
+        if (stageChanged) emitNextStep({ kind: "stageChanged", stage: data.stage, deal: data });
 
         if (actingForOwner) {
           // Best-effort: an audit entry or notification must never fail the save.
@@ -898,6 +903,11 @@ const SalesPipeline = () => {
         }
       } else {
         setDeals([data, ...deals]);
+        // Session 40: a new lead starts the 3-day clock; a deal created at a
+        // later stage gets that stage's step.
+        emitNextStep(data.stage === "lead" || !data.stage
+          ? { kind: "leadCreated", dealId: data.id, createdAt: data.created_at }
+          : { kind: "stageChanged", stage: data.stage, deal: data });
 
         // Log activity for new deal creation
         await activityService.createActivity({
@@ -963,6 +973,7 @@ const SalesPipeline = () => {
       if (error) throw error;
 
       setDeals(deals.map((d) => (d.id === dealId ? data : d)));
+      emitNextStep({ kind: 'stageChanged', stage: newStage, deal: data });
     } catch (error) {
       console.error("Error updating deal stage:", error);
     }
@@ -1225,6 +1236,7 @@ const SalesPipeline = () => {
                 );
                 if (error) throw error;
                 setDeals((prev) => prev.map((d) => (d.id === data.id ? data : d)));
+                emitNextStep({ kind: "stageChanged", stage: "lost", deal: data });
               } catch (err) {
                 console.error("Failed to mark deal lost:", err);
               }

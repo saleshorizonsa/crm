@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { emitNextStep } from "utils/nextStepBus";
 import { useAuth } from "contexts/AuthContext";
 import { supabase } from "lib/supabase";
 import Header from "components/ui/Header";
@@ -357,6 +358,17 @@ const PlanningPage = () => {
     : planningPrevMonth ? prevMonthKey
       : currentMonthKey;
   const planSubmission = submissions[activeMonthKey] || null;
+  // Session 40: opening Planning on your own rejected, not resubmitted plan
+  // says what to do — once per plan and rejection.
+  const rejectedShown = React.useRef(null);
+  React.useEffect(() => {
+    const s = planSubmission;
+    if (!s || isViewingOther || s.approval_status !== "rejected" || s.is_submitted) return;
+    const key = `${s.id}|${s.updated_at || ""}`;
+    if (rejectedShown.current === key) return;
+    rejectedShown.current = key;
+    emitNextStep({ kind: "planRejected", reason: s.rejection_reason || null });
+  }, [planSubmission, isViewingOther]);
 
   // What the five summary tiles read. While the early-plan switch is on next
   // month, the list below showed next month's plans but the tiles still showed
@@ -947,6 +959,7 @@ const PlanningPage = () => {
         submissionId: saved?.id,
       });
       await fetchPlanSubmission();
+      emitNextStep({ kind: 'planSubmitted', month: planMonth });
     } catch (err) {
       // This used to log and stop. The button went back to normal and the user
       // was told nothing, which is indistinguishable from never having clicked —

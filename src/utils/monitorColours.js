@@ -126,3 +126,16 @@ export const TONE_TEXT = { green: 'text-green-700', amber: 'text-amber-700', red
 
 /** The next-steps box: the app's warning panel. */
 export const NEXT_STEPS_BOX = 'bg-amber-50 border border-amber-200 text-amber-700';
+
+/**
+ * Visit purpose (session 40): its own pill colours, distinct from the status
+ * tones above so a purpose never reads as good or bad news. 800 text on a 50
+ * background, ≥ 7:1.
+ */
+export const PURPOSE_CHIP = {
+  sales: 'bg-sky-50 text-sky-800 border-sky-200',
+  collection: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  service: 'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200',
+  delivery: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+};
+export const purposeChip = (id) => `${CHIP} ${PURPOSE_CHIP[id] || PURPOSE_CHIP.sales}`;

@@ -27,6 +27,10 @@ import {
 } from 'utils/salesMonitorThresholds';
 // Session 41: stage ③ Funnel, computed apart (it adds to the model, changes nothing in it).
 import { computeFunnel } from 'utils/salesMonitorFunnel';
+// Session 40: what a contact was for, and what a collection brought in.
+import {
+  purposeOf, collectedOf, PURPOSES, PURPOSE_LABEL,
+} from 'utils/visitPurpose';
 
 /**
  * SALES MONITOR (session 34; CEO / Director Nader, 2026-11-10).
@@ -432,6 +436,9 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
         audited: r.is_audited === true,
         auditedBy: r.audited_by || null,
         auditedAt: r.audited_at || null,
+        auditNotes: r.audit_notes || null,
+        purpose: purposeOf(r),
+        collected: collectedOf(r),
         deal,
       };
     }),
@@ -456,6 +463,9 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
         audited: null,
         auditedBy: null,
         auditedAt: null,
+        auditNotes: null,
+        purpose: purposeOf(a),
+        collected: collectedOf(a),
         deal,
       };
     }),
@@ -499,6 +509,10 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     inPlanPct: pct(rows.filter((c) => c.inPlan).length, rows.length),
     responses: responses(rows),
     noCustomer: rows.filter((c) => !c.customerKnown).length,
+    // Session 40: by purpose (an old contact, with none, is Sales) and the
+    // money collected. Read only when the columns exist (purposeColumns).
+    byPurpose: Object.fromEntries(PURPOSES.map((p) => [p.id, rows.filter((c) => c.purpose === p.id).length])),
+    collected: sumBy(rows, (c) => c.collected),
   });
 
   // Planned customers contacted (MTD) vs not.
@@ -669,7 +683,7 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     raw, now, today, monthStart, monthEnd, closed, isCurrent, cutoff,
     viewSet, isActive, nameOf, contributors: visitPeople, people, itemRows, planCustomerRows,
     contactRows, mtdContacts, subByOwner, subsLoaded: !!subs, planHolders, dealInView,
-    divName, knownDivision, primaryByUser,
+    divName, knownDivision, primaryByUser, userById,
   });
   const excByOwner = new Map();
   exceptions.forEach((e) => { if (e.ownerId) excByOwner.set(e.ownerId, (excByOwner.get(e.ownerId) || 0) + 1); });
@@ -805,6 +819,9 @@ export function computeSalesMonitor(raw, { divisionId = null, visitDay = null } 
     departedIds: departedAchievers,
     noTargetIds: noTargetSellers,
     contactIdColumn: raw.contactIdColumn !== false,
+    // Session 40: whether visit_purpose / collected_amount exist yet. Until
+    // they do, no page shows a purpose at all.
+    purposeColumns: raw.purposeColumns === true,
     notes: raw.notes || [],
     drills: buildDrills(ctx),
   };
@@ -905,6 +922,38 @@ export function buildExceptions(c) {
           });
         }
       });
+  }
+  // VISIT REPORTS NOT AUDITED (session 40): contact reports of the month,
+  // dated more than THRESHOLDS.auditOverdueDays days ago and still not
+  // audited — one line per reviewing supervisor or manager (the owner's
+  // supervisor_id), so each reviewer sees his own backlog.
+  {
+    const due = addDays(c.today, -T.auditOverdueDays);
+    const byReviewer = new Map();
+    (c.raw.contactReports || [])
+      .filter((r) => c.viewSet.has(r.owner_id) && !r.is_audited)
+      .filter((r) => {
+        const d = riyadhDate(r.contact_date);
+        return d && d >= c.monthStart && d <= c.monthEnd && d < due;
+      })
+      .forEach((r) => {
+        const reviewer = c.userById?.get(r.owner_id)?.supervisor_id || null;
+        const k = reviewer || '__none__';
+        if (!byReviewer.has(k)) byReviewer.set(k, []);
+        byReviewer.get(k).push(r);
+      });
+    byReviewer.forEach((list, k) => {
+      const reviewer = k === '__none__' ? null : k;
+      const oldest = list.map((r) => riyadhDate(r.contact_date)).sort()[0];
+      const name = reviewer ? (c.raw.approverNames?.[reviewer] || c.nameOf(reviewer)) : 'no reviewer set';
+      add('reports_not_audited', k, {
+        title: `${list.length} visit report${list.length === 1 ? '' : 's'} not audited`,
+        detail: `for ${name} · oldest ${dayLabel(oldest)} · over ${T.auditOverdueDays} days`,
+        ownerId: reviewer, owner: name, date: oldest,
+        record: reviewer ? { kind: 'person', personId: reviewer } : { kind: 'person', personId: list[0].owner_id },
+        reportIds: list.map((r) => r.id),
+      });
+    });
   }
   c.mtdContacts
     .filter((r) => r.response === 'negative' && !String(r.nextAction || '').trim())
@@ -1161,6 +1210,8 @@ function buildDrills(ctx) {
     customer: c.customer, date: c.date, kindLabel: c.kindLabel, response: c.response || '—',
     planTag: c.inPlan ? `In plan · ${Math.round(c.planValue).toLocaleString('en-US')} · ${c.planOutcome}` : '—',
     nextAction: c.nextAction || '—', one: 1,
+    // Session 40.
+    purposeId: c.purpose, purpose: PURPOSE_LABEL[c.purpose], collected: c.collected,
   }));
 
   const tabs = buildTabs(ctx, {
@@ -1476,6 +1527,15 @@ function buildTabs(ctx, r) {
           explain: 'Planned customers of this month with no visit, call or WhatsApp from their salesman yet.' },
         { id: 'positive', label: 'Positive', filter: (x) => x.responseRaw === 'positive', hint: 'Part of Visited.' },
         { id: 'negative', label: 'Negative', filter: (x) => x.responseRaw === 'negative', hint: 'Part of Visited.' },
+        // Session 40: collection visits and what they collected (only once
+        // the purpose columns exist).
+        ...(raw.purposeColumns ? [{
+          id: 'collection', label: 'Collection', filter: (x) => x.purposeId === 'collection', unit: 'SAR',
+          build: tree((x) => x.collected, (x) => x.customer), total: sum((x) => x.collected),
+          columns: [...DRILL_COLUMNS.visits, { key: 'collected', label: 'Collected', type: 'money' }],
+          hint: 'Part of Visited: contacts made to collect payment. The total is the amount collected this month.',
+          explain: 'Collection visits, calls and WhatsApps this month to date, with the amount collected on each.',
+        }] : []),
       ] }],
     },
     exceptions: {

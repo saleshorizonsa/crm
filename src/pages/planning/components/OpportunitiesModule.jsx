@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { emitNextStep } from "utils/nextStepBus";
 import { supabase } from 'lib/supabase';
 import { useAuth } from 'contexts/AuthContext';
 import { useCurrency } from 'contexts/CurrencyContext';
@@ -664,6 +665,8 @@ export default function OpportunitiesModule({
       // who the row was just filed under.
       await resyncSubmittedTotal(editingOpp?.owner_id || user?.id);
 
+      // Session 40: a new plan item → what to do next (an edit says nothing).
+      if (!editingOpp) emitNextStep({ kind: 'planItemAdded', month: payload.expected_month });
       closeModal();
       fetchOpportunities();
       onOpportunityChange?.();
@@ -776,6 +779,8 @@ export default function OpportunitiesModule({
       // is still pending.
       await resyncSubmittedTotal(opp.owner_id || user?.id);
 
+      // Session 40: the lead's clock starts now — the 3-day rule.
+      emitNextStep({ kind: 'leadCreated', dealId: deal.id, createdAt: now });
       fetchOpportunities();
       onOpportunityChange?.();
     } catch (err) {
