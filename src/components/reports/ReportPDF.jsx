@@ -1,4 +1,5 @@
 import React from "react";
+import { stageLabel } from "utils/stageLabels";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -70,7 +71,7 @@ const COLUMNS = {
   pipeline: [
     { label: "Deal",       get: (r) => r.title || "—" },
     { label: "Contact",    get: (r) => r.contact ? `${r.contact.first_name || ""} ${r.contact.last_name || ""}`.trim() : "—" },
-    { label: "Stage",      get: (r) => r.stage || "—" },
+    { label: "Stage",      get: (r) => stageLabel(r.stage) },
     { label: "Amount",     get: (r) => r.amount != null ? Number(r.amount).toLocaleString() : "—" },
     { label: "Owner",      get: (r) => r.owner?.full_name || "—" },
     { label: "Close Date", get: (r) => r.expected_close_date?.slice(0, 10) || "—" },
@@ -102,7 +103,7 @@ const COLUMNS = {
 };
 
 const TYPE_LABELS = {
-  pipeline:    "Pipeline Report",
+  pipeline:    "Funnel Report",
   targets:     "Targets Report",
   leaderboard: "Leaderboard",
   activity:    "Activity Report",

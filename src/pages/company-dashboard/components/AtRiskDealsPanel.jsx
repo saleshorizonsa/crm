@@ -4,6 +4,7 @@ import Icon from "../../../components/AppIcon";
 import { dealService } from "../../../services/supabaseService";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
+import { stageLabel } from "utils/stageLabels";
 
 const LEVEL_CONFIG = {
   critical: {
@@ -35,12 +36,6 @@ const LEVEL_CONFIG = {
   },
 };
 
-const STAGE_LABELS = {
-  lead: "Lead",
-  contact_made: "Qualified",
-  proposal_sent: "Proposal",
-  negotiation: "Negotiation",
-};
 
 const FLAG_CONFIG = {
   overdue: { icon: "CalendarX", color: "text-red-600 bg-red-50", labelKey: "atRisk.flagOverdue" },
@@ -212,7 +207,7 @@ const AtRiskDealsPanel = ({ companyId }) => {
                       </span>
                       {/* Stage */}
                       <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                        {STAGE_LABELS[deal.stage] || deal.stage}
+                        {stageLabel(deal.stage, t)}
                       </span>
                       {/* Contact company */}
                       {deal.contact?.company_name && (

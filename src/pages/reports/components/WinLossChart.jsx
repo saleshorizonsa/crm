@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { STAGE_LABELS } from "utils/stageLabels";
 
 const STAGE_COLORS = {
   lead:          "#64748b",
@@ -9,10 +10,6 @@ const STAGE_COLORS = {
   negotiation:   "#f97316",
   won:           "#10b981",
   lost:          "#ef4444",
-};
-const STAGE_LABELS = {
-  lead: "Lead", contact_made: "Qualified", proposal_sent: "Proposal",
-  negotiation: "Negotiation", won: "Won", lost: "Lost",
 };
 
 const WinLossChart = ({ deals = [] }) => {

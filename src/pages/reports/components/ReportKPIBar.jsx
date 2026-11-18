@@ -57,9 +57,9 @@ const ReportKPIBar = ({ deals = [], prevDeals = [], role }) => {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
       <Card label="Revenue" value={formatCurrency(revenue)} subtitle="Won deals" icon="DollarSign" iconBg="bg-emerald-100" iconColor="text-emerald-600" valColor="text-emerald-700" prevValue={pRevenue} />
-      <Card label="Won Deals" value={won.length} subtitle="Closed won" icon="CheckCircle" iconBg="bg-blue-100" iconColor="text-blue-600" valColor="text-blue-700" prevValue={pWon.length} />
+      <Card label="Won deals" value={won.length} subtitle="Closed won" icon="CheckCircle" iconBg="bg-blue-100" iconColor="text-blue-600" valColor="text-blue-700" prevValue={pWon.length} />
       <Card label="Win Rate" value={`${winRate}%`} subtitle="Won / Closed" icon="Target" iconBg="bg-violet-100" iconColor="text-violet-600" valColor="text-violet-700" prevValue={pWinRate} />
-      <Card label="Pipeline" value={formatCurrency(pipeline)} subtitle="Open deals" icon="TrendingUp" iconBg="bg-amber-100" iconColor="text-amber-600" valColor="text-amber-700" />
+      <Card label="Funnel" value={formatCurrency(pipeline)} subtitle="Open deals" icon="TrendingUp" iconBg="bg-amber-100" iconColor="text-amber-600" valColor="text-amber-700" />
       <Card label="Total Deals" value={deals.length} subtitle="All stages" icon="BarChart2" iconBg="bg-slate-100" iconColor="text-slate-600" valColor="text-slate-700" prevValue={prevDeals.length} />
       <Card label="Avg Deal" value={formatCurrency(avgDeal)} subtitle="Per won deal" icon="Award" iconBg="bg-rose-100" iconColor="text-rose-600" valColor="text-rose-700" />
     </div>

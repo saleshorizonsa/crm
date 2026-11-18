@@ -194,7 +194,7 @@ const UserManagement = () => {
                       {user.role === "viewer" ? (
                         <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium">
                           <Icon name="Lock" size={12} />
-                          Pipeline Viewer
+                          Funnel Viewer
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium capitalize">

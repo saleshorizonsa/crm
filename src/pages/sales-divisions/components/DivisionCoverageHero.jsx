@@ -225,12 +225,12 @@ export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
     ],
     ...(metrics.isAllTime
       ? []
-      : [["Required pipeline", SAR(metrics.requiredRaw) + " SAR", "gap to target ÷ win rate"]]),
-    ["Planned pipeline", SAR(metrics.planned) + " SAR", "open plan · selected period"],
+      : [["Required funnel", SAR(metrics.requiredRaw) + " SAR", "gap to target ÷ win rate"]]),
+    ["Planned funnel", SAR(metrics.planned) + " SAR", "open plan · selected period"],
     ["Open funnel", SAR(metrics.monthFunnel) + " SAR", "open deals closing in the period"],
     ...(metrics.isAllTime
       ? []
-      : [["New pipeline needed", SAR(metrics.plannedGap) + " SAR", "required − plan − funnel", "neg"]]),
+      : [["New funnel needed", SAR(metrics.plannedGap) + " SAR", "required − plan − funnel", "neg"]]),
     // Not netted off the requirement, and only meaningful while the current
     // month is selected: it is a live forward-looking figure, not a property of
     // a past quarter.

@@ -5,6 +5,7 @@ import {
   PolarAngleAxis, PolarRadiusAxis,
 } from "recharts";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { STAGE_LABELS as ALL_STAGE_LABELS } from "utils/stageLabels";
 
 const STAGE_COLORS = {
   lead:          "#64748b",
@@ -13,10 +14,10 @@ const STAGE_COLORS = {
   negotiation:   "#f97316",
   won:           "#10b981",
 };
-const STAGE_LABELS = {
-  lead: "Lead", contact_made: "Qualified", proposal_sent: "Proposal",
-  negotiation: "Negotiation", won: "Won",
-};
+// The velocity chart covers the stages up to Won (no Lost); names from the shared source.
+const STAGE_LABELS = Object.fromEntries(
+  ["lead", "contact_made", "proposal_sent", "negotiation", "won"].map((s) => [s, ALL_STAGE_LABELS[s]])
+);
 
 const DealVelocityChart = ({ deals = [] }) => {
   const { formatCurrency } = useCurrency();
@@ -117,7 +118,7 @@ const DealVelocityChart = ({ deals = [] }) => {
 
         {/* Health radar */}
         <div>
-          <p className="text-xs font-medium text-muted-foreground mb-2">Pipeline Health Score</p>
+          <p className="text-xs font-medium text-muted-foreground mb-2">Funnel Health Score</p>
           <div className="h-40">
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart data={radarData}>

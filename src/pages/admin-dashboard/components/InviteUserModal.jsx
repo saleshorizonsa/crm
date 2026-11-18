@@ -8,7 +8,7 @@ const ROLES = [
   { value: 'supervisor', label: 'Supervisor'      },
   { value: 'manager',    label: 'Manager'         },
   { value: 'director',   label: 'Director'        },
-  { value: 'viewer',     label: 'Pipeline Viewer' },
+  { value: 'viewer',     label: 'Funnel Viewer' },
   { value: 'marketing',  label: 'Marketing'       },
 ];
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { stageLabel } from 'utils/stageLabels';
 import { useNavigate } from 'react-router-dom';
 import Icon from 'components/AppIcon';
 import { supabase } from 'lib/supabase';
@@ -31,7 +32,7 @@ const CONVERSION_TOOLTIP =
 const PIPELINE_CONVERSION_TOOLTIP =
   'Information only — nothing is calculated from it. The same window and people as '
   + 'Conversion (3m), also excluding orders created and won within a day (logged after '
-  + 'the fact), so it describes deals that actually passed through the pipeline.';
+  + 'the fact), so it describes deals that actually passed through the funnel.';
 
 // The five KPI cards. `accent` drives the coloured top strip + value colour.
 // For the director a `period` ({ label, isAnnual }) relabels Target/Achieved/
@@ -67,12 +68,12 @@ function cardDefs(totals, opts = {}) {
     // INFORMATION ONLY (CEO decision D2, 2026-10-05): shown in grey beneath
     // the rate, and used in no calculation anywhere.
     info: Number.isFinite(t.pipelineConversion3m) && t.pipelineTotal3m > 0
-      ? `Pipeline conversion: ${t.pipelineConversion3m.toFixed(1)}% (info)`
+      ? `Funnel conversion: ${t.pipelineConversion3m.toFixed(1)}% (info)`
       : null,
     infoTooltip: PIPELINE_CONVERSION_TOOLTIP,
   };
   const plannedGapCard = {
-    key: 'plannedGap', label: 'New pipeline needed', strip: onTrack ? 'bg-green-500' : 'bg-red-500',
+    key: 'plannedGap', label: 'New funnel needed', strip: onTrack ? 'bg-green-500' : 'bg-red-500',
     value: onTrack ? 'On Track ✓' : `${fmtSAR(t.plannedGap)} SAR`,
     valueClass: onTrack ? 'text-green-600' : 'text-red-600',
     sub: onTrack
@@ -173,7 +174,7 @@ function buildInvoiceGroups(items, mode, nameOf) {
 
 const POPUP_TITLES = {
   target: 'Target', achieved: 'Achieved', deficit: 'Gap to target',
-  winRate: 'Win Rate', plannedGap: 'New pipeline needed',
+  winRate: 'Win Rate', plannedGap: 'New funnel needed',
 };
 
 // Per-salesman breakdown table shown inside every popup. The active metric column
@@ -203,7 +204,7 @@ function SalesmanTable({ rows, active, canDrill, onRowClick }) {
             <th className="px-3 py-2 text-right font-medium">Achieved</th>
             <th className="px-3 py-2 text-right font-medium">Gap to target</th>
             <th className="px-3 py-2 text-right font-medium">Win%</th>
-            <th className="px-3 py-2 text-right font-medium">New pipeline needed</th>
+            <th className="px-3 py-2 text-right font-medium">New funnel needed</th>
             {canDrill && <th className="px-3 py-2" />}
           </tr>
         </thead>
@@ -261,7 +262,7 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
       items = wonThisMonth.map((d) => ({ id: 'd' + d.id, name: d.title, amount: +(d.final_amount ?? d.amount) || 0, badge: 'Won', tone: 'green' }));
       listLabel = 'Won deals this month'; break;
     case 'deficit':
-      items = openDeals.map((d) => ({ id: 'd' + d.id, name: d.title, amount: +d.amount || 0, badge: d.stage?.replace('_', ' '), tone: 'blue' }));
+      items = openDeals.map((d) => ({ id: 'd' + d.id, name: d.title, amount: +d.amount || 0, badge: stageLabel(d.stage, undefined, undefined), tone: 'blue' }));
       listLabel = 'Open Funnel deals'; break;
     case 'winRate':
       items = history.map((d) => ({ id: 'd' + d.id, name: d.title, amount: +(d.final_amount ?? d.amount) || 0, badge: d.stage === 'won' ? 'Won' : 'Lost', tone: d.stage === 'won' ? 'green' : 'red' }));
@@ -273,7 +274,7 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
     default:
       items = [
         ...opps.map((o) => ({ id: 'o' + o.id, name: o.customer_name, amount: +o.planned_amount || 0, badge: 'Plan', tone: 'purple' })),
-        ...openDeals.map((d) => ({ id: 'd' + d.id, name: d.title, amount: +d.amount || 0, badge: d.stage?.replace('_', ' '), tone: 'blue' })),
+        ...openDeals.map((d) => ({ id: 'd' + d.id, name: d.title, amount: +d.amount || 0, badge: stageLabel(d.stage, undefined, undefined), tone: 'blue' })),
       ];
       listLabel = 'Funnel + Current Sales Plan'; break;
   }
@@ -317,7 +318,7 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
             {stat('Achieved', fmtSAR(salesman.achieved), 'text-green-600')}
             {stat('Gap to target', salesman.deficit <= 0 ? '✓' : fmtSAR(salesman.deficit), salesman.deficit <= 0 ? 'text-green-600' : 'text-red-600')}
             {stat('Win%', NA, 'text-muted-foreground')}
-            {stat('New pipeline', NA, 'text-muted-foreground')}
+            {stat('New funnel', NA, 'text-muted-foreground')}
           </>
         ) : (
           <>
@@ -328,7 +329,7 @@ function DrillView({ salesman, popup, deals, opps, loading, onBack, showBack = t
                 (no quota, so no rate is measured) and this drill-down, unlike the
                 table cell above, had no achievedOnly branch to protect it. */}
             {stat('Win%', fmtPct(salesman.winRate3m, 0), 'text-purple-600')}
-            {stat('New pipeline', salesman.plannedGap <= 0 ? '✓' : fmtSAR(salesman.plannedGap), salesman.plannedGap <= 0 ? 'text-green-600' : 'text-red-600')}
+            {stat('New funnel', salesman.plannedGap <= 0 ? '✓' : fmtSAR(salesman.plannedGap), salesman.plannedGap <= 0 ? 'text-green-600' : 'text-red-600')}
           </>
         )}
       </div>
@@ -583,14 +584,14 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                   shown (totals.pacingApplies, utils/kpiStripData.js). */}
               {!totals.pacingApplies
                 ? (totals.coverageHealthy
-                    ? 'Pipeline coverage on track for the current month'
-                    : 'Pipeline coverage insufficient to hit target')
+                    ? 'Funnel coverage on track for the current month'
+                    : 'Funnel coverage insufficient to hit target')
                 : totals.isHealthy
                   ? 'Coverage and pacing on track'
                   : totals.coverageHealthy
                     ? 'Achievement is behind schedule'
                     : totals.pacingHealthy
-                      ? 'Pipeline coverage insufficient to hit target'
+                      ? 'Funnel coverage insufficient to hit target'
                       : 'Coverage and pacing both at risk'}
             </span>
           </div>
@@ -624,7 +625,7 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
               {/* Header */}
               <div className="px-6 py-4 border-b border-border flex items-center justify-between flex-shrink-0">
                 <h2 className="text-base font-semibold text-foreground">
-                  {totals.isHealthy ? '✅' : '⚠️'} Pipeline Health Check
+                  {totals.isHealthy ? '✅' : '⚠️'} Funnel Health Check
                 </h2>
                 <button
                   onClick={() => setShowHealthPopup(false)}

@@ -95,7 +95,7 @@ const PyramidFunnel = ({ data, formatCurrency, onStageClick }) => {
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <svg viewBox={`0 0 ${W} ${totalH + 8}`} className="w-full max-w-xl" aria-label="Pipeline Pyramid">
+      <svg viewBox={`0 0 ${W} ${totalH + 8}`} className="w-full max-w-xl" aria-label="Funnel Pyramid">
         {data.map((stage, i) => {
           const topW   = i === 0 ? getW(0) : getW(i - 1);
           const botW   = getW(i);
@@ -142,7 +142,7 @@ const WaveFunnel = ({ data, formatCurrency, onStageClick }) => {
 
   return (
     <div className="flex flex-col items-center">
-      <svg viewBox={`0 0 ${W} ${totalH}`} className="w-full max-w-xl" aria-label="Pipeline Wave">
+      <svg viewBox={`0 0 ${W} ${totalH}`} className="w-full max-w-xl" aria-label="Funnel Wave">
         {data.map((stage, i) => {
           const prevW = i === 0 ? getW(0) : getW(i - 1);
           const currW = getW(i);

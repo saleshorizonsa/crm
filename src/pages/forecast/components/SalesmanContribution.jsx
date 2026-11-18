@@ -38,7 +38,7 @@ const SalesmanContribution = ({ contribution = [] }) => {
             Salesman Forecast Contribution
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Weighted pipeline value per salesman · {contribution.length}{" "}
+            Weighted funnel value per salesman · {contribution.length}{" "}
             salesm{contribution.length === 1 ? "an" : "en"} active
           </p>
         </div>
@@ -117,7 +117,7 @@ const SalesmanContribution = ({ contribution = [] }) => {
             className={`text-xs font-medium ${concentrated ? "text-amber-600" : "text-green-600"}`}
           >
             {concentrated
-              ? "Forecast risk — concentrated pipeline"
+              ? "Forecast risk — concentrated funnel"
               : "Healthy distribution — no single salesman above 50%"}
           </span>
         </div>

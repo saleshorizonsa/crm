@@ -49,18 +49,18 @@ export function generateInsights(forecast, deals = [], targetAmount = 0, closedL
 
   const coverageInsight = {
     id:    "pipeline-coverage",
-    title: "Pipeline Coverage",
+    title: "Funnel Coverage",
     icon:  "BarChart2",
     value: coverage !== null ? `${coverage}%` : "—",
     ...(coverage === null
       ? { status: "neutral", color: "blue",   description: "No active target set for this period." }
       : coverage >= 300
-        ? { status: "excellent", color: "emerald", description: `${coverage}% coverage — pipeline is well above target.` }
+        ? { status: "excellent", color: "emerald", description: `${coverage}% coverage — funnel is well above target.` }
         : coverage >= 150
-          ? { status: "good",    color: "blue",   description: `${coverage}% pipeline coverage vs target.` }
+          ? { status: "good",    color: "blue",   description: `${coverage}% funnel coverage vs target.` }
           : coverage >= 100
             ? { status: "warning", color: "amber", description: `${coverage}% coverage — barely over target, limited buffer.` }
-            : { status: "danger",  color: "red",   description: `${coverage}% coverage — pipeline below target. At risk of missing quota.` }),
+            : { status: "danger",  color: "red",   description: `${coverage}% coverage — funnel below target. At risk of missing quota.` }),
   };
 
   // ── Win rate ─────────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ export function generateInsights(forecast, deals = [], targetAmount = 0, closedL
     ...(lateStageDeals.length === 0
       ? { status: "neutral",   color: "blue",   description: "No deals in proposal or negotiation stage." }
       : lateConcentration >= 60
-        ? { status: "excellent", color: "emerald", description: `${lateConcentration}% of pipeline in late stages — strong closing signal.` }
+        ? { status: "excellent", color: "emerald", description: `${lateConcentration}% of funnel in late stages — strong closing signal.` }
         : lateConcentration >= 35
           ? { status: "good",    color: "blue",   description: `${lateStageDeals.length} deals in late stages worth ${formatK(lateStageValue)}.` }
           : { status: "warning", color: "amber", description: `Only ${lateConcentration}% in late stages — deals need to advance for quota confidence.` }),
@@ -219,7 +219,7 @@ export function generatePrediction(forecast, deals = [], targetAmount = 0, winRa
   if (winRateBasis === "none") {
     narrative += ` There is ${winRatePhrase}, so expected revenue cannot be projected from a close rate — the weighted forecast of ${formatK(forecast.weighted)} rests on stage probabilities alone.`;
   } else {
-    narrative += ` At ${winRatePhrase}, expected revenue from that pipeline is ${formatK(expectedFromPipeline)}`;
+    narrative += ` At ${winRatePhrase}, expected revenue from that funnel is ${formatK(expectedFromPipeline)}`;
     narrative += forecast.committed > 0
       ? `, on top of ${formatK(forecast.committed)} already won.`
       : `.`;

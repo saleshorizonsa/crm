@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { classifyDealsByOrigin } from '../../utils/dealGroupUtils';
+import { stageLabel } from 'utils/stageLabels';
 
 const fmt = n => new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(n || 0);
 
@@ -103,7 +104,7 @@ const OriginReport = ({ deals, formatCurrency, dateFrom }) => {
                 <tr key={d.id} className="hover:bg-gray-50">
                   <td className="px-4 py-2 font-medium text-gray-800 max-w-[180px] truncate">{d.title || '—'}</td>
                   <td className="px-4 py-2 text-gray-600">{d.owner?.full_name || '—'}</td>
-                  <td className="px-4 py-2 capitalize">{d.stage}</td>
+                  <td className="px-4 py-2 capitalize">{stageLabel(d.stage)}</td>
                   <td className="px-4 py-2">
                     <span className={`px-2 py-0.5 rounded-full font-medium ${d._origin === 'new' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
                       {d._origin === 'new' ? '✦ New' : '↻ Carry'}

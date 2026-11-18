@@ -1,13 +1,14 @@
 import React from "react";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { STAGE_LABELS } from "utils/stageLabels";
 
 const STAGE_STYLE = {
-  lead:          { label: "Lead",          dot: "bg-slate-400",   bar: "bg-slate-400"   },
-  contact_made:  { label: "Contact Made",  dot: "bg-sky-400",     bar: "bg-sky-400"     },
-  proposal_sent: { label: "Proposal Sent", dot: "bg-violet-400",  bar: "bg-violet-400"  },
-  negotiation:   { label: "Negotiation",   dot: "bg-amber-400",   bar: "bg-amber-400"   },
-  won:           { label: "Won",           dot: "bg-emerald-500", bar: "bg-emerald-500" },
-  lost:          { label: "Lost",          dot: "bg-red-400",     bar: "bg-red-400"     },
+  lead:          { label: STAGE_LABELS.lead,          dot: "bg-slate-400",   bar: "bg-slate-400"   },
+  contact_made:  { label: STAGE_LABELS.contact_made,  dot: "bg-sky-400",     bar: "bg-sky-400"     },
+  proposal_sent: { label: STAGE_LABELS.proposal_sent, dot: "bg-violet-400",  bar: "bg-violet-400"  },
+  negotiation:   { label: STAGE_LABELS.negotiation,   dot: "bg-amber-400",   bar: "bg-amber-400"   },
+  won:           { label: STAGE_LABELS.won,           dot: "bg-emerald-500", bar: "bg-emerald-500" },
+  lost:          { label: STAGE_LABELS.lost,          dot: "bg-red-400",     bar: "bg-red-400"     },
 };
 
 const StageBreakdown = ({ byStage = [] }) => {
@@ -26,7 +27,7 @@ const StageBreakdown = ({ byStage = [] }) => {
 
       {active.length === 0 ? (
         <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-          No deals in pipeline
+          No deals in funnel
         </div>
       ) : (
         <div className="space-y-3.5">
@@ -64,7 +65,7 @@ const StageBreakdown = ({ byStage = [] }) => {
       {active.length > 0 && (
         <div className="mt-5 pt-4 border-t border-border">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">Weighted pipeline</span>
+            <span className="text-muted-foreground">Weighted funnel</span>
             <span className="font-semibold text-card-foreground tabular-nums">
               {formatCurrency(byStage.reduce((s, b) => s + b.weighted, 0))}
             </span>

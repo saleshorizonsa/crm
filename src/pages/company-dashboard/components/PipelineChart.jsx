@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
+import { stageLabel } from "utils/stageLabels";
 
 const PipelineChart = ({ pipelineData = [], selectedCompany }) => {
   const { formatCurrency, preferredCurrency } = useCurrency();
@@ -14,32 +15,32 @@ const PipelineChart = ({ pipelineData = [], selectedCompany }) => {
 
   const stageConfig = {
     lead: {
-      label: t("deals.stages.lead"),
+      label: stageLabel("lead", t),
       color: "bg-blue-500",
       textColor: "text-blue-600",
     },
     contact_made: {
-      label: t("dashboard.contactMade"),
+      label: stageLabel("contact_made", t),
       color: "bg-yellow-500",
       textColor: "text-yellow-600",
     },
     proposal_sent: {
-      label: t("dashboard.proposalSent"),
+      label: stageLabel("proposal_sent", t),
       color: "bg-orange-500",
       textColor: "text-orange-600",
     },
     negotiation: {
-      label: t("deals.stages.negotiation"),
+      label: stageLabel("negotiation", t),
       color: "bg-purple-500",
       textColor: "text-purple-600",
     },
     won: {
-      label: t("deals.stages.won"),
+      label: stageLabel("won", t),
       color: "bg-green-500",
       textColor: "text-green-600",
     },
     lost: {
-      label: t("deals.stages.lost"),
+      label: stageLabel("lost", t),
       color: "bg-red-500",
       textColor: "text-red-600",
     },
@@ -83,7 +84,7 @@ const PipelineChart = ({ pipelineData = [], selectedCompany }) => {
               key={stage.stage}
               className="relative cursor-pointer rounded-lg hover:bg-muted/40 transition-colors -mx-2 px-2 py-1 group"
               onClick={() => navigate(`/sales-pipeline?stage=${stage.stage}`, { state: { activeStage: stage.stage } })}
-              title={`View ${config.label} deals in pipeline`}
+              title={`View ${config.label} deals in funnel`}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-2">
@@ -132,7 +133,7 @@ const PipelineChart = ({ pipelineData = [], selectedCompany }) => {
       )}
 
       <p className="mt-3 text-xs text-muted-foreground text-center opacity-60">
-        Click any stage to open the pipeline filtered to that stage
+        Click any stage to open the funnel filtered to that stage
       </p>
 
       {/* Pipeline velocity indicators */}

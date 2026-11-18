@@ -31,7 +31,7 @@ const CONVERSION_TOOLTIP =
 const PIPELINE_CONVERSION_TOOLTIP =
   "Information only — nothing is calculated from it. The same window and people as "
   + "Conversion (3m), also excluding orders created and won within a day (logged after "
-  + "the fact), so it describes deals that actually passed through the pipeline.";
+  + "the fact), so it describes deals that actually passed through the funnel.";
 import { fetchTeamHierarchy } from "utils/teamHierarchy";
 import { useDateRange } from "contexts/DateRangeContext";
 import { periodLabelFromRange, isAnnualRange } from "utils/dashboardDateUtils";
@@ -1701,7 +1701,7 @@ const PlanningPage = () => {
                 className="text-xs text-muted-foreground mt-1.5 pt-1.5 border-t border-border"
                 title={PIPELINE_CONVERSION_TOOLTIP}
               >
-                Pipeline conversion:{" "}
+                Funnel conversion:{" "}
                 <span className="tabular-nums">{fmtPct(summaryData.pipelineConversion3m)}</span>
                 <span className="ml-1">(info)</span>
               </p>

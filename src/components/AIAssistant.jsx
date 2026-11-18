@@ -12,7 +12,7 @@ const PUBLIC_ROUTES = [
 const SESSION_LIMIT = 30;
 
 const SUGGESTED_PROMPTS = [
-  "Summarise my pipeline this month",
+  "Summarise my funnel this month",
   "Draft a follow-up for a stalled deal",
   "What should I focus on today?",
   "Why is my win rate changing?",
@@ -205,7 +205,7 @@ Keep responses concise and actionable. Maximum 3-4 sentences unless drafting a m
                   <div className="text-3xl mb-2 text-purple-400">✦</div>
                   <p className="text-sm font-medium text-gray-700">How can I help you?</p>
                   <p className="text-xs text-gray-400 mt-1">
-                    Ask me anything about your pipeline or deals
+                    Ask me anything about your funnel or deals
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-2 w-full">

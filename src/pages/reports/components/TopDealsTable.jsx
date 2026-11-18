@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { STAGE_LABELS } from "utils/stageLabels";
 
 const STAGE_BADGE = {
   lead:          "bg-slate-100 text-slate-700",
@@ -9,10 +10,6 @@ const STAGE_BADGE = {
   negotiation:   "bg-amber-100 text-amber-700",
   won:           "bg-emerald-100 text-emerald-700",
   lost:          "bg-red-100 text-red-600",
-};
-const STAGE_LABELS = {
-  lead: "Lead", contact_made: "Qualified", proposal_sent: "Proposal",
-  negotiation: "Negotiation", won: "Won", lost: "Lost",
 };
 const PRIORITY_BADGE = {
   high:   "bg-red-100 text-red-700",

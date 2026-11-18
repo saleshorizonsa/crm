@@ -26,15 +26,15 @@ const NavigationBreadcrumbs = ({ items = [], className = '' }) => {
       ],
       '/sales-pipeline': [
         { label: 'Dashboard', path: '/company-dashboard', icon: 'Home' },
-        { label: 'Sales Pipeline', path: '/sales-pipeline', icon: 'TrendingUp' }
+        { label: 'Funnel', path: '/sales-pipeline', icon: 'TrendingUp' }
       ],
       '/contact-management': [
         { label: 'Dashboard', path: '/company-dashboard', icon: 'Home' },
-        { label: 'Contact Management', path: '/contact-management', icon: 'Users' }
+        { label: 'Customers', path: '/contact-management', icon: 'Users' }
       ],
       '/task-management': [
         { label: 'Dashboard', path: '/company-dashboard', icon: 'Home' },
-        { label: 'Task Management', path: '/task-management', icon: 'CheckSquare' }
+        { label: 'Tasks', path: '/task-management', icon: 'CheckSquare' }
       ],
       '/settings': [
         { label: 'Dashboard', path: '/company-dashboard', icon: 'Home' },
@@ -46,7 +46,7 @@ const NavigationBreadcrumbs = ({ items = [], className = '' }) => {
       ],
       '/help': [
         { label: 'Dashboard', path: '/company-dashboard', icon: 'Home' },
-        { label: 'Help Center', path: '/help', icon: 'HelpCircle' }
+        { label: 'Help', path: '/help', icon: 'HelpCircle' }
       ]
     };
 

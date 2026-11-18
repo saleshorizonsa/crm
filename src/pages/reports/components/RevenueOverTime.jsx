@@ -62,7 +62,7 @@ const RevenueOverTime = ({ deals = [] }) => {
     <div className="bg-card border border-border rounded-lg p-6 enterprise-shadow">
       <div className="mb-5">
         <h3 className="text-sm font-semibold text-card-foreground">Revenue Over Time</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">6-month revenue vs pipeline</p>
+        <p className="text-xs text-muted-foreground mt-0.5">6-month revenue vs funnel</p>
       </div>
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
@@ -77,7 +77,7 @@ const RevenueOverTime = ({ deals = [] }) => {
             <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
             <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} tickFormatter={(v) => fmt(v)} width={48} />
             <Tooltip content={<CustomTooltip formatCurrency={formatCurrency} />} />
-            <Area type="monotone" dataKey="pipeline" name="Pipeline" fill="url(#revGrad)" stroke="#3b82f6" strokeWidth={1.5} fillOpacity={0.4} />
+            <Area type="monotone" dataKey="pipeline" name="Funnel" fill="url(#revGrad)" stroke="#3b82f6" strokeWidth={1.5} fillOpacity={0.4} />
             <Area type="monotone" dataKey="revenue"  name="Revenue"  fill="url(#revGrad)" stroke="#10b981" strokeWidth={2.5} fillOpacity={0.6} />
             <Line type="monotone" dataKey="deals"    name="Deals"    stroke="#f59e0b"     strokeWidth={2} dot={false} yAxisId={0} />
           </ComposedChart>

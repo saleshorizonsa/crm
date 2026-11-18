@@ -13,7 +13,7 @@ const TYPE_BADGE = {
 };
 
 const TYPE_LABEL = {
-  by_clients: "By Clients",
+  by_clients: "By Customers",
   by_products: "By Product",
   total_value: "Total Value",
   by_value: "By Value",

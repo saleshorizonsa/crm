@@ -1,4 +1,5 @@
 import React from "react";
+import { stageLabel } from "utils/stageLabels";
 import { useNavigate } from "react-router-dom";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
@@ -49,7 +50,7 @@ const ManagerPipelineChart = ({
       const stageDeals = deals?.filter((deal) => deal.stage === stage) || [];
       return {
         stageKey: stage,
-        stage: stage.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()),
+        stage: stageLabel(stage, t),
         count: stageDeals.length,
         value: stageDeals.reduce(
           (sum, deal) => sum + parseFloat(deal.amount || 0),
@@ -124,7 +125,7 @@ const ManagerPipelineChart = ({
         </div>
         <div className="text-center">
           <p className="text-2xl font-bold text-green-600">
-            {pipelineData.find((stage) => stage.stage === "Won")?.count || 0}
+            {pipelineData.find((stage) => stage.stageKey === "won")?.count || 0}
           </p>
           <p className="text-sm text-gray-600">{t("dashboard.wonDeals")}</p>
         </div>
@@ -132,7 +133,7 @@ const ManagerPipelineChart = ({
           <p className="text-2xl font-bold text-blue-600">
             {formatCurrency(
               pipelineData
-                .filter((stage) => !["Won", "Lost"].includes(stage.stage))
+                .filter((stage) => !["won", "lost"].includes(stage.stageKey))
                 .reduce((sum, stage) => sum + stage.value, 0),
               preferredCurrency
             )}

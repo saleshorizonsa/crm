@@ -2032,7 +2032,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange, targetsOnly 
           <div
             className="bg-white rounded-xl border border-border-tertiary p-5 group cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 relative"
             onClick={() => navigate('/sales-pipeline', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, origin: 'new' } })}
-            title="View new pipeline deals"
+            title="View new funnel deals"
           >
             <ArrowUpRight size={14} className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500" />
             <div className="flex items-center justify-between mb-3">
@@ -2044,13 +2044,13 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange, targetsOnly 
             <div className="text-xl font-bold tabular-nums truncate text-text-primary">
               {formatCurrency(originMetrics.newValue || 0)}
             </div>
-            <div className="text-xs text-text-tertiary mt-1">New Pipeline This Period</div>
+            <div className="text-xs text-text-tertiary mt-1">New Funnel This Period</div>
             <div className="text-xs text-green-600 mt-1">{originMetrics.newCount || 0} new deals</div>
           </div>
           <div
             className="bg-white rounded-xl border border-border-tertiary p-5 group cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 relative"
             onClick={() => navigate('/sales-pipeline', { state: { company: selectedCompany?.id, dateFrom: activeDateRange.from, dateTo: activeDateRange.to, origin: 'carry' } })}
-            title="View carried forward pipeline deals"
+            title="View carried forward funnel deals"
           >
             <ArrowUpRight size={14} className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500" />
             <div className="flex items-center justify-between mb-3">
@@ -2062,7 +2062,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange, targetsOnly 
             <div className="text-xl font-bold tabular-nums truncate text-text-primary">
               {formatCurrency(originMetrics.carryValue || 0)}
             </div>
-            <div className="text-xs text-text-tertiary mt-1">Carried Forward Pipeline</div>
+            <div className="text-xs text-text-tertiary mt-1">Carried Forward Funnel</div>
             <div className="text-xs text-amber-600 mt-1">{originMetrics.carryCount || 0} carry deals</div>
           </div>
         </div>

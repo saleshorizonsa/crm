@@ -17,6 +17,7 @@
 // its breakdown is per-person target, achieved, coverage and gap — which is
 // the only shape that answers "where is it short".
 
+import { stageLabel } from 'utils/stageLabels';
 import {
   computeCoverage,
   computeRequiredRaw,
@@ -148,7 +149,7 @@ function rowsFor(segment, ownerId, drill, ctx) {
           dealId: d.id,
           divisionId: rowDivision(d),
           customer: dealCustomer(d),
-          stage: String(d.stage || '').replace(/_/g, ' '),
+          stage: stageLabel(d.stage, undefined, ''),
           amount: num(d.amount),
           probability: d.forecast_probability != null ? num(d.forecast_probability) : null,
           // EXACTLY computeCoverage's expression, so the rows add to the bar.
@@ -429,7 +430,7 @@ export const DRILL_COLUMNS = {
     { key: 'achieved', label: 'Achieved', type: 'money' },
     { key: 'coverage', label: 'Coverage', type: 'money' },
     { key: 'value', label: 'Gap', type: 'money' },
-    { key: 'newPipelineNeeded', label: 'New pipeline needed', type: 'money' },
+    { key: 'newPipelineNeeded', label: 'New funnel needed', type: 'money' },
   ],
   wonNotInvoiced: [
     { key: 'customer', label: 'Customer' },

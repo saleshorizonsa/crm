@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { stageLabel } from 'utils/stageLabels';
 import { format } from 'date-fns';
 import { supabase } from '../../lib/supabase';
 import { dealService } from '../../services/supabaseService';
@@ -40,7 +41,6 @@ const today = () => format(new Date(), 'yyyy-MM-dd');
 // The contacts that must name their customer (session 34). Email is left as
 // it was.
 const NEEDS_CUSTOMER = ['visit', 'call', 'whatsapp'];
-const titleCase = (s) => (s || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 // Mandatory contact report. When `nextStage` is set the deal is advanced to that
 // stage after the report saves (report-gated stage change); otherwise it's a
@@ -199,7 +199,7 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
               <p className="text-xs text-blue-600 mt-0.5 truncate max-w-72">
                 {deal.title || deal.contact_name || deal.contact?.company_name || 'Deal'}
                 {nextStage && (
-                  <span className="ml-2 font-medium">→ Moving to <span className="capitalize">{titleCase(nextStage)}</span></span>
+                  <span className="ml-2 font-medium">→ Moving to <span className="capitalize">{stageLabel(nextStage)}</span></span>
                 )}
               </p>
             </div>
@@ -389,7 +389,7 @@ export default function ContactReportModal({ deal, onClose, onSaved, nextStage =
             >
               {saving && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
               <CheckCircle size={14} />
-              {nextStage ? `Save & Move to ${titleCase(nextStage)}` : 'Save Report'}
+              {nextStage ? `Save & Move to ${stageLabel(nextStage)}` : 'Save Report'}
             </button>
           </div>
         </div>

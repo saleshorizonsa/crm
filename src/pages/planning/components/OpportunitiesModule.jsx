@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { stageLabel } from 'utils/stageLabels';
 import { emitNextStep } from "utils/nextStepBus";
 import { supabase } from 'lib/supabase';
 import { useAuth } from 'contexts/AuthContext';
@@ -1327,7 +1328,7 @@ export default function OpportunitiesModule({
                         className="text-xs font-medium px-2 py-0.5 rounded-full capitalize flex-shrink-0"
                         style={{ background: `${stageColor}20`, color: stageColor }}
                       >
-                        {opp.deal.stage?.replace('_', ' ')}
+                        {stageLabel(opp.deal.stage, undefined, undefined)}
                       </span>
                     </div>
                   )}

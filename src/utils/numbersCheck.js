@@ -1431,7 +1431,7 @@ function buildForwardScopeRows({ bundle, planning, reference }) {
       value: strayFunnel.length,
       expected: 0,
       note: 'a count of open deals in the reference funnel whose owner is not'
-        + ' an active user. Non-zero means a departed owner\'s pipeline is'
+        + ' an active user. Non-zero means a departed owner\'s funnel is'
         + ' still being counted toward coverage.',
     }),
   ];
@@ -1879,7 +1879,7 @@ async function buildSalesMonitorRows({ companyId, bundle, start, end, reference,
             : x.requiredSource === 'estimated' ? [x.requiredPlan] : [])).reduce((t, v) => t + n(v), 0),
         }),
         row({
-          label: 'Sales Monitor — Insights company required pipeline (context only, not on the card)',
+          label: 'Sales Monitor — Insights company required funnel (context only, not on the card)',
           value: c.planned.companyRequired.value,
           note: `= (target ${Math.round(c.planned.companyRequired.target).toLocaleString('en-US')} − achieved ${Math.round(c.planned.companyRequired.achieved).toLocaleString('en-US')}) ÷ ${n(c.planned.companyRequired.winRatePct).toFixed(1)}% conversion (${c.planned.companyRequired.winRateSource})`,
         }),
@@ -2134,7 +2134,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       row({ label: 'Conversion (3m)', value: strip.winRate3m, expected: reference.conversion3m, kind: 'pct',
         note: 'measured over the ACHIEVERS since 2026-10-05 — the same people as'
           + ' Achieved and Target (decision D4)' }),
-      row({ label: 'Pipeline conversion (info only)', value: strip.pipelineConversion3m, expected: reference.pipelineConversion3m, kind: 'pct' }),
+      row({ label: 'Funnel conversion (info only)', value: strip.pipelineConversion3m, expected: reference.pipelineConversion3m, kind: 'pct' }),
       row({
         label: 'Funnel card',
         value: strip.funnelValue,
@@ -2462,7 +2462,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
           + ' weight funnelSplit.rows.',
       }),
       row({
-        label: 'Whole open pipeline, any date (info only)',
+        label: 'Whole open funnel, any date (info only)',
         value: ins.pipeline,
         note: 'every open deal regardless of date. This feeds the coverage RAIL,'
           + ' which is about the whole book; it is deliberately NOT what the'
@@ -2721,7 +2721,7 @@ export async function runNumbersCheck({ companyId, start, end, scope, viewer = n
       note: 'every won deal at `amount`, dated by CLOSED_AT, invoiced or not —'
         + ' what the stage and velocity tables describe, and what the By Value'
         + ' tile deliberately is NOT. A deal closed in September and invoiced in'
-        + ' October is September pipeline and October revenue, and both'
+        + ' October is September funnel and October revenue, and both'
         + ' statements are true. No screen shows this total on its own.',
     }));
   } else {
@@ -2826,7 +2826,7 @@ export function formatCheckAsText(result) {
     `  Conversion (3m)      ${pct(reference.conversion3m)}`
     + `   (${reference.conversionWon3m}/${reference.conversionTotal3m} created,`
     + ` ${reference.importedExcluded} imported excluded)`,
-    `  Pipeline conv. (3m)  ${pct(reference.pipelineConversion3m)}   information only`,
+    `  Funnel conv. (3m)    ${pct(reference.pipelineConversion3m)}   information only`,
     `  Won, not invoiced    ${money(reference.wniTotal)}   (${reference.wniCount} deals)`,
   ];
   if (reference.annualTarget !== null && reference.annualTarget !== undefined) {

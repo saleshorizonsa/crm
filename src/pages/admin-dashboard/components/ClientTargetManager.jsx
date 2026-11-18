@@ -190,7 +190,7 @@ export default function ClientTargetManager({ companyId }) {
   async function handleSave() {
     setError('');
     if (!ownerId) { setError('Select a salesman.'); return; }
-    if (!form.contact_id) { setError('Choose a client.'); return; }
+    if (!form.contact_id) { setError('Choose a customer.'); return; }
     if (!form.target_amount || parseFloat(form.target_amount) <= 0) { setError('Enter a target amount.'); return; }
     const clash = rows.find((r) => r.contact_id === form.contact_id && r.id !== editing?.id);
     if (clash) {
@@ -251,7 +251,7 @@ export default function ClientTargetManager({ companyId }) {
         <div>
           <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
             <Icon name="Users" size={15} className="text-emerald-600" />
-            Client Targets
+            Customer Targets
           </h3>
           <p className="text-xs text-gray-500 mt-0.5">
             {monthLabel} · adds to the salesman&apos;s total target
@@ -271,7 +271,7 @@ export default function ClientTargetManager({ companyId }) {
 
       {!ownerId ? (
         <p className="text-sm text-gray-400 py-6 text-center">
-          Select a salesman to view or set their client targets.
+          Select a salesman to view or set their customer targets.
         </p>
       ) : (
         <>
@@ -281,14 +281,14 @@ export default function ClientTargetManager({ companyId }) {
             </div>
           ) : rows.length === 0 ? (
             <p className="text-sm text-gray-400 py-4 text-center">
-              No client targets set for {monthLabel}.
+              No customer targets set for {monthLabel}.
             </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[520px]">
                 <thead>
                   <tr className="text-xs text-gray-500 border-b border-gray-100">
-                    <th className="text-left font-medium py-2">Client</th>
+                    <th className="text-left font-medium py-2">Customer</th>
                     <th className="text-right font-medium py-2">Target</th>
                     <th className="text-right font-medium py-2">Achieved</th>
                     <th className="text-right font-medium py-2">Attainment</th>
@@ -366,8 +366,8 @@ export default function ClientTargetManager({ companyId }) {
                 contacts={contacts}
                 value={form.contact_id}
                 onChange={(c) => setForm((f) => ({ ...f, contact_id: c?.id || '', contact: c }))}
-                label="Client"
-                placeholder={contacts.length ? 'Search this salesman’s clients…' : 'No clients owned by this salesman'}
+                label="Customer"
+                placeholder={contacts.length ? 'Search this salesman’s customers…' : 'No customers owned by this salesman'}
               />
               <div className="flex flex-wrap gap-3">
                 <label className="flex-1 min-w-[140px]">
@@ -416,7 +416,7 @@ export default function ClientTargetManager({ companyId }) {
               className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-800"
             >
               <Icon name="Plus" size={15} />
-              Add Client Target
+              Add Customer Target
             </button>
           )}
         </>

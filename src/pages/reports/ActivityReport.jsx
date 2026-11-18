@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { stageLabel } from 'utils/stageLabels';
 
 const ActivityReport = ({ deals, formatCurrency }) => {
   const today = new Date();
@@ -132,7 +133,7 @@ const ActivityReport = ({ deals, formatCurrency }) => {
                     <tr key={d.id} className="hover:bg-red-50">
                       <td className="px-4 py-2 font-medium text-gray-800 max-w-[180px] truncate">{d.title || '—'}</td>
                       <td className="px-4 py-2 text-gray-600">{d.owner?.full_name || '—'}</td>
-                      <td className="px-4 py-2 capitalize">{d.stage}</td>
+                      <td className="px-4 py-2 capitalize">{stageLabel(d.stage)}</td>
                       <td className="px-4 py-2 text-right">{formatCurrency(d.amount || 0)}</td>
                       <td className="px-4 py-2 text-red-600">{d.expected_close_date}</td>
                       <td className="px-4 py-2 text-red-600 font-semibold">{daysOver}d</td>
@@ -170,7 +171,7 @@ const ActivityReport = ({ deals, formatCurrency }) => {
                     <tr key={d.id} className="hover:bg-amber-50">
                       <td className="px-4 py-2 font-medium text-gray-800 max-w-[180px] truncate">{d.title || '—'}</td>
                       <td className="px-4 py-2 text-gray-600">{d.owner?.full_name || '—'}</td>
-                      <td className="px-4 py-2 capitalize">{d.stage}</td>
+                      <td className="px-4 py-2 capitalize">{stageLabel(d.stage)}</td>
                       <td className="px-4 py-2 text-right">{formatCurrency(d.amount || 0)}</td>
                       <td className="px-4 py-2 text-gray-500">{d.created_at?.split('T')[0]}</td>
                       <td className="px-4 py-2 text-amber-700 font-semibold">{age}d</td>

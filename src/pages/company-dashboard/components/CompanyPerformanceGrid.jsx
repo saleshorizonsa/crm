@@ -164,7 +164,7 @@ const CompanyPerformanceGrid = ({
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-xs text-gray-500">
-                      {isDirector ? "Active Pipeline Value" : "Remaining Revenue"}
+                      {isDirector ? "Active Funnel Value" : "Remaining Revenue"}
                     </span>
                     <span className="text-sm font-semibold text-gray-900">
                       {formatCurrency(company.metrics?.remainingRevenue || 0)}

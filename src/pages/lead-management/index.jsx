@@ -414,6 +414,18 @@ const LeadManagement = () => {
     <div className="min-h-screen bg-gray-50">
       <Header />
 
+      {/* Page title = the menu label ("Leads"); the tabs below are its sections. */}
+      <div className="bg-white px-6 pt-5 pb-2">
+        <NavigationBreadcrumbs
+          items={[
+            { label: t("nav.dashboard"), href: "/company-dashboard" },
+            { label: t("nav.leads"), href: "/lead-management" },
+          ]}
+        />
+        <h1 className="text-2xl font-semibold text-gray-900 mt-1">{t("nav.leads")}</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">{t("leadsPage.pageSubtitle")}</p>
+      </div>
+
       {/* Top-level Planning tabs */}
       <div className="bg-white border-b border-gray-200 px-6">
         <div className="flex gap-1 overflow-x-auto">
@@ -443,7 +455,7 @@ const LeadManagement = () => {
       {mainTab === 'accounts' && (
         <main className="p-6">
           <div className="mb-4">
-            <h1 className="text-xl font-semibold text-gray-900">Customer Accounts</h1>
+            <h2 className="text-xl font-semibold text-gray-900">Customer Accounts</h2>
             <p className="text-sm text-gray-500 mt-0.5">Historical customer data with ABC classification and dormancy tracking</p>
           </div>
           <CustomerAccountsTab
@@ -459,7 +471,7 @@ const LeadManagement = () => {
       {mainTab === 'analytics' && (
         <main className="p-6">
           <div className="mb-4">
-            <h1 className="text-xl font-semibold text-gray-900">Analytics & Top 10</h1>
+            <h2 className="text-xl font-semibold text-gray-900">Analytics & Top 10</h2>
             <p className="text-sm text-gray-500 mt-0.5">Revenue analytics, top customers, and dormant account alerts</p>
           </div>
           <AnalyticsTab
@@ -474,7 +486,7 @@ const LeadManagement = () => {
       {mainTab === 'import' && (
         <main className="p-6">
           <div className="mb-4">
-            <h1 className="text-xl font-semibold text-gray-900">Import Customer History</h1>
+            <h2 className="text-xl font-semibold text-gray-900">Import Customer History</h2>
             <p className="text-sm text-gray-500 mt-0.5">Upload Excel or CSV files with historical sales invoice data</p>
           </div>
           <ImportTab
@@ -492,13 +504,7 @@ const LeadManagement = () => {
         {/* Page header */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <NavigationBreadcrumbs
-              items={[
-                { label: t("nav.dashboard"), href: "/company-dashboard" },
-                { label: t("leadsPage.title"), href: "/lead-management" },
-              ]}
-            />
-            <h1 className="text-2xl font-semibold text-gray-900 mt-1">{t("leadsPage.title")}</h1>
+            <h2 className="text-2xl font-semibold text-gray-900 mt-1">{t("leadsPage.title")}</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
               {t("leadsPage.subtitle")}
             </p>

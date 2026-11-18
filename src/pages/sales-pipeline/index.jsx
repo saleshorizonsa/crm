@@ -15,6 +15,7 @@ import Icon from "../../components/AppIcon";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { useLanguage } from "../../i18n";
+import { stageLabel } from "utils/stageLabels";
 import { useLocation, Navigate } from "react-router-dom";
 import {
   dealService,
@@ -322,8 +323,8 @@ const SalesPipeline = () => {
   useEffect(() => {
     const state = location.state;
     const stageLabels = {
-      lead: t("deals.lead"), contact_made: t("deals.qualified"), proposal_sent: t("deals.proposal"),
-      negotiation: t("deals.negotiation"), won: t("deals.won"), lost: t("deals.lost"),
+      lead: stageLabel("lead", t), contact_made: stageLabel("contact_made", t), proposal_sent: stageLabel("proposal_sent", t),
+      negotiation: stageLabel("negotiation", t), won: stageLabel("won", t), lost: stageLabel("lost", t),
     };
     if (state?.source === "performance-card" && state?.activeStage) {
       setDrillDownContext({
@@ -634,7 +635,7 @@ const SalesPipeline = () => {
           : "",
         deal.amount || 0,
         deal.currency || "SAR",
-        deal.stage || "",
+        stageLabel(deal.stage, undefined, ""),
         deal.owner ? deal.owner.full_name || deal.owner.email : "",
         deal.expected_close_date || "",
         // Why a won deal is in the period: won in it, invoiced in it, or both.
@@ -689,7 +690,7 @@ const SalesPipeline = () => {
       Deal:             d.title || "",
       Contact:          d.contact ? `${d.contact.first_name || ""} ${d.contact.last_name || ""}`.trim() : "",
       Company:          d.contact?.company_name || "",
-      Stage:            d.stage || "",
+      Stage:            stageLabel(d.stage, undefined, ""),
       Amount:           d.amount || 0,
       Currency:         d.currency || "SAR",
       Owner:            d.owner?.full_name || d.owner?.email || "",
@@ -698,7 +699,7 @@ const SalesPipeline = () => {
       "Invoice Date":   d.stage === "won" ? invoiceDayOf(d) || "" : "",
       "Created At":     d.created_at ? new Date(d.created_at).toLocaleDateString() : "",
     }));
-    exportToExcel([{ name: "Pipeline", data: rows }], `pipeline-deals-${formatLocalDateYMD(new Date())}`);
+    exportToExcel([{ name: "Funnel", data: rows }], `pipeline-deals-${formatLocalDateYMD(new Date())}`);
   };
 
   const handleExportToPdf = async () => {
@@ -810,10 +811,10 @@ const SalesPipeline = () => {
             const { error: auditErr } = await activityService.createActivity({
               type: "note",
               title: stageChanged
-                ? `Stage changed to ${data.stage} by ${actorName} (${actorRole})`
+                ? `Stage changed to ${stageLabel(data.stage)} by ${actorName} (${actorRole})`
                 : `Deal updated by ${actorName} (${actorRole})`,
               description: stageChanged
-                ? `${actorName} (${actorRole}) moved "${dealLabel}" from ${selectedDeal.stage} to ${data.stage} on behalf of the deal owner.`
+                ? `${actorName} (${actorRole}) moved "${dealLabel}" from ${stageLabel(selectedDeal.stage)} to ${stageLabel(data.stage)} on behalf of the deal owner.`
                 : `${actorName} (${actorRole}) edited "${dealLabel}" on behalf of the deal owner.`,
               company_id: company.id,
               deal_id: data.id,
@@ -842,7 +843,7 @@ const SalesPipeline = () => {
               type: "deal_changed",
               title: "📋 Your Deal Was Updated by Your Manager",
               message: stageChanged
-                ? `${actorName} moved "${dealLabel}" to ${data.stage} on your behalf.`
+                ? `${actorName} moved "${dealLabel}" to ${stageLabel(data.stage)} on your behalf.`
                 : `${actorName} updated "${dealLabel}" on your behalf.`,
               is_read: false,
               metadata: {
@@ -879,11 +880,11 @@ const SalesPipeline = () => {
                 ? `Deal won: ${data.title}`
                 : data.stage === "lost"
                   ? `Deal lost: ${data.title}`
-                  : `Deal moved to ${data.stage}: ${data.title}`,
+                  : `Deal moved to ${stageLabel(data.stage)}: ${data.title}`,
             description:
               data.stage === "won" || data.stage === "lost"
                 ? `${data.amount} ${data.currency}${data.lost_reason ? ` - Reason: ${data.lost_reason}` : ""}`
-                : `Stage changed from ${selectedDeal.stage} to ${data.stage}`,
+                : `Stage changed from ${stageLabel(selectedDeal.stage)} to ${stageLabel(data.stage)}`,
             company_id: company.id,
             deal_id: data.id,
             contact_id: data.contact_id,
@@ -913,7 +914,7 @@ const SalesPipeline = () => {
         await activityService.createActivity({
           type: "note",
           title: `New deal created: ${data.title}`,
-          description: `${data.amount} ${data.currency} - Stage: ${data.stage}`,
+          description: `${data.amount} ${data.currency} - Stage: ${stageLabel(data.stage)}`,
           company_id: company.id,
           deal_id: data.id,
           contact_id: data.contact_id,
@@ -980,12 +981,12 @@ const SalesPipeline = () => {
   };
 
   const stages = [
-    { id: "lead", name: t("deals.lead") },
-    { id: "contact_made", name: t("deals.qualified") },
-    { id: "proposal_sent", name: t("deals.proposal") },
-    { id: "negotiation", name: t("deals.negotiation") },
-    { id: "won", name: t("deals.won") },
-    { id: "lost", name: t("deals.lost") },
+    { id: "lead", name: stageLabel("lead", t) },
+    { id: "contact_made", name: stageLabel("contact_made", t) },
+    { id: "proposal_sent", name: stageLabel("proposal_sent", t) },
+    { id: "negotiation", name: stageLabel("negotiation", t) },
+    { id: "won", name: stageLabel("won", t) },
+    { id: "lost", name: stageLabel("lost", t) },
   ];
 
   // Defence-in-depth: viewer must not reach the full pipeline page

@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { STAGE_LABELS } from "./stageLabels";
 
 export const DEFAULT_STAGE_WEIGHTS = {
   lead:          0.10,
@@ -14,14 +15,8 @@ export const STAGE_WEIGHTS = DEFAULT_STAGE_WEIGHTS;
 
 export const STAGE_ORDER = ["lead", "contact_made", "proposal_sent", "negotiation", "won", "lost"];
 
-export const STAGE_LABELS = {
-  lead:          "Lead",
-  contact_made:  "Contact Made",
-  proposal_sent: "Proposal Sent",
-  negotiation:   "Negotiation",
-  won:           "Won",
-  lost:          "Lost",
-};
+// Stage names come from the one shared source (utils/stageLabels.js).
+export { STAGE_LABELS };
 
 const OPEN_STAGES = new Set(["lead", "contact_made", "proposal_sent", "negotiation"]);
 const MIN_SAMPLES = 5; // minimum closed deals per stage to use historical rate

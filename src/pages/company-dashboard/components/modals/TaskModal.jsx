@@ -132,7 +132,7 @@ const TaskModal = ({ isOpen, onClose, onSubmit }) => {
                 name="title"
                 value={formData.title}
                 onChange={handleChange}
-                placeholder="e.g. Follow up with client"
+                placeholder="e.g. Follow up with customer"
                 required
                 className="mt-1"
               />

@@ -8,6 +8,7 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { userService } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
+import { stageLabel } from "utils/stageLabels";
 
 const PipelineFilters = ({
   onFiltersChange,
@@ -87,12 +88,12 @@ const PipelineFilters = ({
 
   const stages = [
     { value: "", label: t("pipeline.allStages") },
-    { value: "lead", label: t("deals.lead") },
-    { value: "contact_made", label: t("deals.qualified") },
-    { value: "proposal_sent", label: t("deals.proposal") },
-    { value: "negotiation", label: t("deals.negotiation") },
-    { value: "won", label: t("deals.won") },
-    { value: "lost", label: t("deals.lost") },
+    { value: "lead", label: stageLabel("lead", t) },
+    { value: "contact_made", label: stageLabel("contact_made", t) },
+    { value: "proposal_sent", label: stageLabel("proposal_sent", t) },
+    { value: "negotiation", label: stageLabel("negotiation", t) },
+    { value: "won", label: stageLabel("won", t) },
+    { value: "lost", label: stageLabel("lost", t) },
   ];
 
   const handleFilterChange = (key, value) => {

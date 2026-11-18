@@ -4,6 +4,7 @@ import Button from "../../../components/ui/Button";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { Edit2Icon } from "lucide-react";
 import { useLanguage } from "../../../i18n";
+import { stageLabel } from "utils/stageLabels";
 import { wonInvoicedLabel } from "../../../utils/funnelWonPeriod";
 
 const STAGE_WEIGHTS = {
@@ -42,7 +43,7 @@ function SelectionSummaryBar({ totals, onClear, formatCurrency, t }) {
 
       <div className="flex flex-col items-center justify-center px-5 py-3 flex-1 min-w-[110px]">
         <span className="text-sm font-semibold text-green-600">{formatCurrency(totals.wonValue)}</span>
-        <span className="text-xs text-gray-500 mt-0.5">{t("deals.won")}</span>
+        <span className="text-xs text-gray-500 mt-0.5">{stageLabel("won", t)}</span>
       </div>
 
       <div className="w-px h-12 bg-blue-100 flex-shrink-0" />
@@ -62,7 +63,7 @@ function SelectionSummaryBar({ totals, onClear, formatCurrency, t }) {
               key={stage}
               className="text-xs px-1.5 py-0.5 bg-white border border-blue-100 rounded-md text-gray-600 whitespace-nowrap"
             >
-              {stage.replace(/_/g, " ")} {count}
+              {stageLabel(stage, t)} {count}
             </span>
           ))}
         </div>
@@ -99,14 +100,14 @@ const DealsList = ({ deals, onStageChange, onEditDeal }) => {
 
   const getStageLabel = (stage) => {
     const stageMap = {
-      lead: t("deals.lead"),
-      contact_made: t("deals.qualified"),
-      proposal_sent: t("deals.proposal"),
-      negotiation: t("deals.negotiation"),
-      won: t("deals.won"),
-      lost: t("deals.lost"),
-      "closed-won": t("deals.won"),
-      "closed-lost": t("deals.lost"),
+      lead: stageLabel("lead", t),
+      contact_made: stageLabel("contact_made", t),
+      proposal_sent: stageLabel("proposal_sent", t),
+      negotiation: stageLabel("negotiation", t),
+      won: stageLabel("won", t),
+      lost: stageLabel("lost", t),
+      "closed-won": stageLabel("won", t),
+      "closed-lost": stageLabel("lost", t),
     };
     return stageMap[stage] || stage;
   };

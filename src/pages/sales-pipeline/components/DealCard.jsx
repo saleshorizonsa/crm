@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { stageLabel } from "utils/stageLabels";
 import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import { useCurrency } from "../../../contexts/CurrencyContext";
@@ -280,7 +281,7 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onCorrectIn
       <div className="flex items-center justify-between text-xs text-gray-600 mb-2">
         <div className="flex items-center space-x-1">
           <Icon name="Tag" size={12} className="text-gray-400" />
-          <span className="capitalize">{deal?.stage || "unknown"}</span>
+          <span className="capitalize">{stageLabel(deal?.stage, t, "unknown")}</span>
         </div>
         <div className="flex items-center space-x-1">
           <Icon name="Calendar" size={12} className="text-gray-400" />

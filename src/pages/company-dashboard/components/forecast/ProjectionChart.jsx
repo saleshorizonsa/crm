@@ -151,7 +151,7 @@ const ProjectionChart = ({ projection = [], target = 0 }) => {
       {/* Chart or empty state */}
       {!hasData ? (
         <div className="flex items-center justify-center h-52 text-sm text-muted-foreground">
-          No pipeline data for this period
+          No funnel data for this period
         </div>
       ) : (
         <div className="h-52">

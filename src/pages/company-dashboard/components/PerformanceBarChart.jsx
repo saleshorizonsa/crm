@@ -303,7 +303,7 @@ const PerformanceBarChart = ({
           </div>
         </div>
         <div className="bg-indigo-500 rounded-lg p-3 text-center">
-          <div className="text-xs text-white mb-1">Active Pipeline Value</div>
+          <div className="text-xs text-white mb-1">Active Funnel Value</div>
           <div className="text-lg font-bold text-white">
             {formatCurrency(summaryStats.remainingRevenue)}
           </div>

@@ -384,7 +384,7 @@ export default function NumbersCheck() {
                   sub={`undated ${fmtMoney(ref.funnelWindowUndated)}`}
                 />
                 <RefLine
-                  label="Pipeline conversion (3m)"
+                  label="Funnel conversion (3m)"
                   value={fmtPct(ref.pipelineConversion3m)}
                   sub="information only — nothing calculates with it"
                 />

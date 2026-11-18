@@ -349,7 +349,7 @@ const ForecastAISummary = ({
           {/* Empty state */}
           {!summary && !loading && !error && (
             <p className="text-xs text-muted-foreground text-center py-2">
-              Add deals to the pipeline to generate a forecast summary.
+              Add deals to the funnel to generate a forecast summary.
             </p>
           )}
         </div>

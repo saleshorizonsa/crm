@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { STAGE_LABELS } from "utils/stageLabels";
 
 const COLORS = ["#2563EB","#16A34A","#D97706","#7C3AED","#0891B2","#DB2777","#EA580C","#65A30D"];
 
@@ -9,10 +10,6 @@ const pct = (a, b) => (b === 0 ? "—" : `${Math.round((a / b) * 100)}%`);
 const STAGE_COLORS = {
   lead: "#93C5FD", contact_made: "#6EE7B7", proposal_sent: "#FCD34D",
   negotiation: "#FDBA74", won: "#16A34A", lost: "#DC2626",
-};
-const STAGE_LABELS = {
-  lead: "Lead", contact_made: "Qualified", proposal_sent: "Proposal",
-  negotiation: "Negotiation", won: "Won", lost: "Lost",
 };
 
 // INVOICED / RETURNS / NET. The page hands down the shared Achieved split
@@ -105,7 +102,7 @@ const BySalesman = ({ deals, achieved = null, formatCurrency }) => {
             <YAxis tickFormatter={fmt} tick={{ fontSize: 11 }} width={48} />
             <Tooltip formatter={(v) => formatCurrency(v)} />
             <Bar dataKey="Won"      stackId="a" fill="#16A34A" name="Won" />
-            <Bar dataKey="Pipeline" stackId="a" fill="#2563EB" name="Pipeline" />
+            <Bar dataKey="Pipeline" stackId="a" fill="#2563EB" name="Funnel" />
             <Bar dataKey="Lost"     stackId="a" fill="#DC2626" name="Lost" radius={[3,3,0,0]} />
           </BarChart>
         </ResponsiveContainer>
@@ -140,7 +137,7 @@ const BySalesman = ({ deals, achieved = null, formatCurrency }) => {
 
               <div className="grid grid-cols-3 gap-2 mb-4">
                 <div className="text-center">
-                  <p className="text-xs text-gray-400 mb-0.5">Pipeline</p>
+                  <p className="text-xs text-gray-400 mb-0.5">Funnel</p>
                   <p className="text-sm font-semibold text-blue-600">{fmt(s.pipeline)}</p>
                 </div>
                 <div className="text-center">
@@ -189,7 +186,7 @@ const BySalesman = ({ deals, achieved = null, formatCurrency }) => {
                 <th className="px-5 py-2.5 text-left">#</th>
                 <th className="px-5 py-2.5 text-left">Salesman</th>
                 <th className="px-5 py-2.5 text-right">Deals</th>
-                <th className="px-5 py-2.5 text-right">Pipeline</th>
+                <th className="px-5 py-2.5 text-right">Funnel</th>
                 {/* Revenue, not "Won": invoiced in this period net of returns,
                   which is the Achieved on every dashboard. */}
               <th className="px-5 py-2.5 text-right" title="Invoiced in this period, net of credit notes — the same Achieved the dashboards show">Revenue</th>

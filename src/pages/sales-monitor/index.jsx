@@ -386,7 +386,7 @@ export default function SalesMonitor() {
                 </>
               ) : <Line label="Required" value={NO_FIGURE} />}
               <p className="text-[11px] text-gray-500 pt-1" data-testid="planned-explain">Submitted = the total on each plan when it was filed. Plan now = the month's plan items today that are still open or became a live deal. Required from submitted plans = each plan's own required plan, as filed. Estimated = for each person with no submitted plan, today's gap to target ÷ their conversion rate.</p>
-              <p className="text-[11px] text-gray-500" data-testid="company-required">Insights' company required pipeline, for comparison only: {money(c.planned.companyRequired.value)} = (target {money(c.planned.companyRequired.target)} − achieved {money(c.planned.companyRequired.achieved)}) ÷ {fmtPct(c.planned.companyRequired.winRatePct, 1)} conversion.</p>
+              <p className="text-[11px] text-gray-500" data-testid="company-required">Insights' company required funnel, for comparison only: {money(c.planned.companyRequired.value)} = (target {money(c.planned.companyRequired.target)} − achieved {money(c.planned.companyRequired.achieved)}) ÷ {fmtPct(c.planned.companyRequired.winRatePct, 1)} conversion.</p>
             </Card>
           </Stage>
           <Stage n={3} name="Funnel" testid="stage-funnel" arrow colour="funnel" next="visits">

@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { stageLabel } from "utils/stageLabels";
 import { useNavigate } from "react-router-dom";
 import { useCurrency } from "../../../contexts/CurrencyContext";
 import { useLanguage } from "../../../i18n";
@@ -23,12 +24,12 @@ const SupervisorPipelineChart = ({ deals, teamData, isLoading }) => {
     if (!deals || !Array.isArray(deals)) return [];
 
     const stages = [
-      { key: "lead", name: t("pipeline.stages.lead"), color: "bg-gray-400" },
-      { key: "qualified", name: t("pipeline.stages.qualified"), color: "bg-blue-400" },
-      { key: "proposal", name: t("pipeline.stages.proposals"), color: "bg-yellow-400" },
-      { key: "negotiation", name: t("pipeline.stages.negotiation"), color: "bg-orange-400" },
-      { key: "won", name: t("pipeline.stages.won"), color: "bg-green-400" },
-      { key: "lost", name: t("pipeline.stages.lost"), color: "bg-red-400" },
+      { key: "lead", name: stageLabel("lead", t), color: "bg-gray-400" },
+      { key: "qualified", name: stageLabel("contact_made", t), color: "bg-blue-400" },
+      { key: "proposal", name: stageLabel("proposal_sent", t), color: "bg-yellow-400" },
+      { key: "negotiation", name: stageLabel("negotiation", t), color: "bg-orange-400" },
+      { key: "won", name: stageLabel("won", t), color: "bg-green-400" },
+      { key: "lost", name: stageLabel("lost", t), color: "bg-red-400" },
     ];
 
     return stages.map((stage) => {
