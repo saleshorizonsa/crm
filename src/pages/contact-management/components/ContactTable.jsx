@@ -4,6 +4,7 @@ import Button from "../../../components/ui/Button";
 import LeadScoreBadge from "../../../components/ui/LeadScoreBadge";
 import { Edit2Icon } from "lucide-react";
 import { useLanguage } from "../../../i18n";
+import { StrategyControl } from "../../../components/strategy/StrategyBadge";
 
 const NUMERIC_KEYS = new Set(["lead_score"]);
 
@@ -14,6 +15,7 @@ const ContactTable = ({
   onEdit,
   isLoading,
   sort, // "hottest" | "coldest" | "" — set from ContactFilters
+  strategyOn = false, // customer strategy column (session 48)
 }) => {
   const [hoveredRow, setHoveredRow] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
@@ -198,6 +200,11 @@ const ContactTable = ({
                   {getSortIcon("lead_score")}
                 </div>
               </th>
+              {strategyOn && (
+                <th className="text-left px-4 py-3">
+                  <span className="text-sm font-medium text-muted-foreground">{t("strategy.label")}</span>
+                </th>
+              )}
               <th className="text-right px-4 py-3">
                 <span className="text-sm font-medium text-muted-foreground">
                   {t("common.actions")}
@@ -280,6 +287,11 @@ const ContactTable = ({
                     grade={contact.lead_grade}
                   />
                 </td>
+                {strategyOn && (
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <StrategyControl contactId={contact.id} compact />
+                  </td>
+                )}
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   <div
                     className={`flex items-center justify-end space-x-1 transition-enterprise ${

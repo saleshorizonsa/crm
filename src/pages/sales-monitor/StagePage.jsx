@@ -11,6 +11,7 @@ import { loadSalesMonitor } from "utils/salesMonitorData";
 import { computeSalesMonitor, personDrill, MONITOR_PICKER_ROLES, DEPARTED_ID } from "utils/salesMonitor";
 import {
   STAGES, stageById, stageContext, buildStagePage, expandableIds, visibleRows, exportStageRows,
+  strategyContactResolver, withStrategy,
   stageHref, monitorHref, levelName, NO_TARGET,
 } from "utils/stagePages";
 import { actionTarget } from "utils/exceptionActions";
@@ -19,6 +20,8 @@ import {
   toneChip, planStatusTone, paceTone, pipelineStageDot, stageKeyOfLabel, purposeChip,
 } from "utils/monitorColours";
 import { PURPOSES } from "utils/visitPurpose";
+import { useCustomerStrategies } from "utils/customerStrategy";
+import StrategyStrip from "components/strategy/StrategyStrip";
 
 // SALES MONITOR — ONE PAGE PER STAGE (session 39, CEO 2026-11-16).
 //
@@ -100,6 +103,7 @@ export default function StagePage() {
   const tabParam = params.get("tab") || "";
   const tab = useMemo(() => (tabParam ? tabParam.split(",") : null), [tabParam]);
   const only = params.get("only") || null;
+  const strategyParam = params.get("strategy") || "";
 
   const [raw, setRaw] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -141,16 +145,25 @@ export default function StagePage() {
       return cache.get(d);
     };
   }, [raw, visitDay]);
-  const sc = useMemo(() => (model ? stageContext(model, { divisionModel }) : null), [model, divisionModel]);
+  const baseSc = useMemo(() => (model ? stageContext(model, { divisionModel }) : null), [model, divisionModel]);
+  // Customer strategy (session 48): the rows' customers and their strategies;
+  // without the feature the context is exactly today's.
+  const contactOf = useMemo(() => (model && raw ? strategyContactResolver(model, raw) : null), [model, raw]);
+  const { enabled: strategyOn, map: strategyMap, version: strategyVersion } = useCustomerStrategies(contactOf ? contactOf.ids() : []);
+  const sc = useMemo(
+    () => (baseSc && strategyOn && contactOf ? withStrategy(baseSc, contactOf, strategyMap) : baseSc),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [baseSc, strategyOn, contactOf, strategyVersion],
+  );
   const stage = stageById(stageParam);
   const page = useMemo(
-    () => (sc && stage ? buildStagePage(model, { stage: stage.id, view, tab, only, query, division: rowDivision }, sc) : null),
-    [sc, model, stage, view, tab, only, query, rowDivision],
+    () => (sc && stage ? buildStagePage(model, { stage: stage.id, view, tab, only, query, division: rowDivision, strategy: strategyParam }, sc) : null),
+    [sc, model, stage, view, tab, only, query, rowDivision, strategyParam],
   );
 
   // A new list starts collapsed — except with a division filter set, when the
   // division row is opened (session 45).
-  const listKey = page ? `${stage.id}|${page.view}|${page.selection.join(",")}|${only || ""}|${divisionId}|${rowDivision}` : "";
+  const listKey = page ? `${stage.id}|${page.view}|${page.selection.join(",")}|${only || ""}|${divisionId}|${rowDivision}|${strategyParam}` : "";
   useEffect(() => {
     const filtered = !!(divisionId || rowDivision) && page?.grouped;
     setExpanded(new Set(filtered ? page.nodes.filter((n) => n.kind === "division" && n.children?.length).map((n) => n.id) : []));
@@ -160,7 +173,7 @@ export default function StagePage() {
   const keep = { month: monthKey, division: divisionId, day: visitDay };
   const setList = (next) => {
     const p = new URLSearchParams(params);
-    ["view", "tab", "only"].forEach((k) => {
+    ["view", "tab", "only", "strategy"].forEach((k) => {
       if (!(k in next)) return;
       const v = next[k];
       if (v === null || v === undefined || (Array.isArray(v) && !v.length) || v === "") p.delete(k);
@@ -229,10 +242,10 @@ export default function StagePage() {
   };
 
   const doExport = () => exportToExcel(
-    [{ name: page.views.find((v) => v.active).label, data: exportStageRows(page, openSet) }],
+    [{ name: page.views.find((v) => v.active).label, data: exportStageRows(page, openSet, { strategyOf: sc.strategyOf || null }) }],
     ["Sales Monitor", stage.name, page.views.length > 1 ? page.views.find((v) => v.active).label : null,
       ...page.sets.map((s) => s.options.find((o) => o.id === page.selection[page.sets.indexOf(s)])).filter((o) => o && !o.isAll).map((o) => o.label),
-      page.only ? page.only.label : null, period].filter(Boolean).join(" - ").replace(/[\\/:*?"<>|]+/g, "-"),
+      page.only ? page.only.label : null, page.strategy ? (page.byStrategy || []).find((p) => p.key === page.strategy)?.label : null, period].filter(Boolean).join(" - ").replace(/[\\/:*?"<>|]+/g, "-"),
   );
 
   const activeView = page.views.find((v) => v.active);
@@ -361,6 +374,15 @@ export default function StagePage() {
               </div>
             ))}
             {page.hints.length > 0 && <p className="text-[11px] text-gray-600">{page.hints.join(" ")}</p>}
+            {page.byStrategy && (
+              <StrategyStrip
+                parts={page.byStrategy}
+                total={page.byStrategyTotal}
+                selected={page.strategy}
+                onPick={(k) => setList({ strategy: k })}
+                format={(v) => valueText(v, page.unit)}
+              />
+            )}
             {page.only && (
               <p className="text-xs" data-testid="stage-only">
                 <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">Only: {page.only.label}</span>{" "}

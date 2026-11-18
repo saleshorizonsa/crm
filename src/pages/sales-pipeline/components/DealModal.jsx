@@ -18,6 +18,8 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { fetchAdditionalDivisions } from "utils/divisionMembership";
 import { useExportCustomer, EXPORT_LABEL } from "utils/exportCustomers";
+import { useCustomerStrategy } from "utils/customerStrategy";
+import { StrategyBadge } from "components/strategy/StrategyBadge";
 // Deleting a deal must put its plan item back, and the dialog must say so.
 import { planItemWarning, RELEASE_STATUS } from "utils/planItemRelease";
 import {
@@ -538,6 +540,13 @@ const DealModal = ({
   const [editReasonError, setEditReasonError] = useState('');
   const [changeHistory, setChangeHistory] = useState([]);
   const pendingSaveRef = useRef(null);
+  // Customer strategy (session 48): the chosen customer's badge, and a warning
+  // before saving a NEW deal for a Collect and Close customer (Continue saves
+  // normally; Cancel saves nothing). Existing deals are never asked.
+  const { strategy: customerStrategy } = useCustomerStrategy(formData?.contact_id || null);
+  const [showCollectWarn, setShowCollectWarn] = useState(false);
+  const pendingCollectRef = useRef(null);
+  const collectAckRef = useRef(false);
 
   // Move-to-Future-Orders flow: schedule this deal as a future order and remove
   // it from the Funnel. The salesman always picks the target month.
@@ -1322,6 +1331,11 @@ const DealModal = ({
   };
 
   const executeSave = async (dealData, reasonText = null) => {
+    if (!deal?.id && customerStrategy === "collect_close" && !collectAckRef.current) {
+      pendingCollectRef.current = { dealData, reasonText };
+      setShowCollectWarn(true);
+      return;
+    }
     // Amount-change gate: an existing deal whose amount differs from what's stored
     // needs a free-text reason before saving (covers direct amount edits and any
     // product/quantity change that alters the deal total, since amount is
@@ -1942,6 +1956,7 @@ const DealModal = ({
                 }}
                 placeholder={t("deals.selectClient")}
               />
+              {customerStrategy && <div className="mt-1"><StrategyBadge strategy={customerStrategy} /></div>}
               {errors.contact_id && (
                 <p className="mt-1 text-xs text-destructive flex items-center gap-1">
                   <Icon name="AlertCircle" size={12} />
@@ -3162,6 +3177,38 @@ const DealModal = ({
       )}
 
       {/* Amount-change reason modal — appears over the deal editor */}
+      {showCollectWarn && (
+        <>
+          <div className="fixed inset-0 z-[700] bg-black/50 backdrop-blur-sm" onClick={() => { setShowCollectWarn(false); pendingCollectRef.current = null; }} />
+          <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 pointer-events-none" data-testid="collect-close-warning">
+            <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md overflow-hidden pointer-events-auto border border-border">
+              <div className="px-6 py-4 border-b border-border bg-red-50">
+                <h2 className="text-base font-semibold text-red-800 flex items-center gap-2">
+                  <Icon name="AlertTriangle" size={16} />
+                  {t("strategy.collectCloseWarning")}
+                </h2>
+              </div>
+              <div className="px-6 py-4 flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => { setShowCollectWarn(false); pendingCollectRef.current = null; }} data-testid="collect-close-cancel">{t("strategy.cancel")}</Button>
+                <Button
+                  variant="default"
+                  data-testid="collect-close-continue"
+                  onClick={async () => {
+                    const pending = pendingCollectRef.current;
+                    pendingCollectRef.current = null;
+                    setShowCollectWarn(false);
+                    collectAckRef.current = true;
+                    try { if (pending) await executeSave(pending.dealData, pending.reasonText); } finally { collectAckRef.current = false; }
+                  }}
+                >
+                  {t("strategy.continue")}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {showEditReason && (
         <>
           <div

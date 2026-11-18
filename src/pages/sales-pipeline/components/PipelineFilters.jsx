@@ -9,6 +9,8 @@ import { useCurrency } from "../../../contexts/CurrencyContext";
 import { userService } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
 import { stageLabel } from "utils/stageLabels";
+import { useStrategyEnabled } from "utils/customerStrategy";
+import { StrategyFilterChips } from "../../../components/strategy/StrategyBadge";
 
 const PipelineFilters = ({
   onFiltersChange,
@@ -20,6 +22,7 @@ const PipelineFilters = ({
   const { company, userProfile } = useAuth();
   const { getCurrencySymbol } = useCurrency();
   const { t } = useLanguage();
+  const strategyOn = useStrategyEnabled();
   const [members, setMembers] = useState([]);
   const [localFilters, setLocalFilters] = useState(
     initialFilters || {
@@ -122,6 +125,7 @@ const PipelineFilters = ({
       dateRange: "",
       customDateRange: { from: "", to: "" },
       showOverdue: false,
+      strategy: [],
     };
     setLocalFilters(clearedFilters);
     onFiltersChange(clearedFilters);
@@ -134,7 +138,8 @@ const PipelineFilters = ({
     !!localFilters.minValue ||
     !!localFilters.maxValue ||
     !!localFilters.dateRange ||
-    !!localFilters.showOverdue;
+    !!localFilters.showOverdue ||
+    !!localFilters.strategy?.length;
 
   return (
     <div className="bg-card border border-border rounded-lg p-4 mb-6">
@@ -223,6 +228,14 @@ const PipelineFilters = ({
           </label>
         </div>
       </div>
+      {/* Customer strategy (session 48) — only once the feature is on. */}
+      {strategyOn && (
+        <StrategyFilterChips
+          className="mt-4"
+          value={localFilters?.strategy || []}
+          onChange={(v) => handleFilterChange("strategy", v)}
+        />
+      )}
       {/* Value Range */}
       <div className="flex items-center space-x-4 mt-4">
         <div className="flex items-center space-x-2">

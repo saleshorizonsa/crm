@@ -6,6 +6,7 @@ import { daysBetween, DEPARTED_ID, NO_TARGET_ID } from 'utils/salesMonitor';
 import { exceptionAction } from 'utils/exceptionActions';
 import { purposeSplitText } from 'utils/visitPurpose';
 import { PACING_TOLERANCE } from 'utils/salesDivisionMetrics';
+import { STRATEGY_KEYS, strategyKey, STRATEGY_LABELS } from 'utils/customerStrategy';
 
 /**
  * SALES MONITOR STAGE PAGES (session 39, CEO 2026-11-16).
@@ -96,7 +97,7 @@ const onlyFilter = (only) => {
 };
 
 /** The address of a stage page (or the monitor) with month, division, day and the list. */
-export function stageQuery({ month, division, day, view, tab, only } = {}) {
+export function stageQuery({ month, division, day, view, tab, only, strategy } = {}) {
   const p = new URLSearchParams();
   if (month) p.set('month', month);
   if (division) p.set('division', division);
@@ -104,11 +105,37 @@ export function stageQuery({ month, division, day, view, tab, only } = {}) {
   if (view) p.set('view', view);
   if (tab && tab.length) p.set('tab', tab.join(','));
   if (only) p.set('only', only);
+  if (strategy) p.set('strategy', strategy);
   const q = p.toString();
   return q ? `?${q}` : '';
 }
 export const stageHref = (stage, o = {}) => `/sales-monitor/${stage}${stageQuery(o)}`;
 export const monitorHref = (o = {}) => `/sales-monitor${stageQuery({ month: o.month, division: o.division, day: o.day })}`;
+
+// ── Customer strategy (session 48) ─────────────────────────────────────────
+// The Planned, Funnel and Achieved pages split their figure by the CUSTOMER's
+// strategy — a grouping of the same rows with the same total function, so the
+// parts add up to the header. Target rows are per salesman (a target has no
+// customer), so Target has no split. Pages whose current tab lists people, not
+// customer records, have none either.
+export const STRATEGY_STAGES = new Set(['planned', 'funnel', 'achieved']);
+/** row -> its customer's contact id, through the plan item, the deal, or the auto-moved future order. */
+export function strategyContactResolver(model, raw) {
+  const opp = new Map((model?.itemRows || []).map((r) => [r.oppId, r.item?.contact_id || null]));
+  const deal = new Map([...(raw?.allDeals || raw?.deals || []), ...(raw?.lookupDeals || [])].map((d) => [d.id, d.contact_id || null]));
+  const fo = new Map((raw?.autoMoved || []).map((f) => [`fo:${f.id}`, f.contact_id || null]));
+  const contactOf = (r) => r.contactId || (r.dealId && deal.get(r.dealId)) || (r.oppId && opp.get(r.oppId)) || (r.id && fo.get(r.id)) || null;
+  contactOf.ids = () => [...new Set([...opp.values(), ...deal.values(), ...fo.values()].filter(Boolean))];
+  return contactOf;
+}
+/** The stage context with strategyOf(row) -> strategy key (NOT_SET when none). */
+export const withStrategy = (sc, contactOf, map) => ({
+  ...sc,
+  strategyOf: (r) => strategyKey(map?.get(contactOf(r))?.strategy),
+  // NOT `contactOf`: the stage context already has a contactOf (visit row -> contact row).
+  strategyContactOf: contactOf,
+});
+const customerLevel = (rows) => rows.length > 0 && rows.every((r) => 'dealId' in r || 'oppId' in r);
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
 
@@ -591,11 +618,11 @@ function viewShape(sc, stageId, viewId, sel) {
  * @param {string} [o.division] a row-level division filter (rows' divisionId)
  */
 export function buildStagePage(model, {
-  stage, view = null, tab = null, only = null, query = '', division = '',
+  stage, view = null, tab = null, only = null, query = '', division = '', strategy = '',
 } = {}, sc = stageContext(model)) {
   const st = stageById(stage) || STAGES[0];
   const viewId = st.views.includes(view) ? view : st.views[0];
-  const list = resolveList(sc, st.id, viewId, tab, { only, query, division });
+  const list = resolveList(sc, st.id, viewId, tab, { only, query, division, strategy });
   return {
     stage: st,
     views: st.views.map((v) => ({ id: v, label: VIEW_LABEL[v], active: v === viewId })),
@@ -630,7 +657,7 @@ function listRows(sc, viewId, selection, { only = null, division = '' } = {}) {
   return rows;
 }
 
-function resolveList(sc, stageId, viewId, selection, { only, query, division }) {
+function resolveList(sc, stageId, viewId, selection, { only, query, division, strategy = '' }) {
   const tabs = sc.tabs[viewId];
   if (!tabs) {
     return {
@@ -657,8 +684,21 @@ function resolveList(sc, stageId, viewId, selection, { only, query, division }) 
   };
   const searched = (rows) => rows.filter(passes);
 
-  const rows = searched(listRows(sc, viewId, sel, { only, division }));
-  const total = cfg.total ? cfg.total(rows) : rows.length;
+  const allRows = searched(listRows(sc, viewId, sel, { only, division }));
+  // Customer strategy (session 48): split the same rows by strategy; a picked
+  // strategy narrows them. Off when the context has no strategies (feature off).
+  const valueOf = (rs) => (cfg.total ? cfg.total(rs) : rs.length);
+  const splitOn = !!sc.strategyOf && STRATEGY_STAGES.has(stageId) && customerLevel(allRows);
+  const strat = splitOn && STRATEGY_KEYS.includes(strategy) ? strategy : '';
+  const byStrat = (rs) => (strat ? rs.filter((r) => sc.strategyOf(r) === strat) : rs);
+  const rows = byStrat(allRows);
+  const total = valueOf(rows);
+  const allTotal = splitOn ? valueOf(allRows) : null;
+  const byStrategy = splitOn ? STRATEGY_KEYS.map((key) => {
+    const rs = allRows.filter((r) => sc.strategyOf(r) === key);
+    const value = valueOf(rs);
+    return { key, label: STRATEGY_LABELS[key], value, count: rs.length, pct: allTotal ? (value / allTotal) * 100 : null };
+  }) : null;
   const unit = cfg.unit || 'SAR';
 
   // The tab buttons, each counting its rows (with the search and division,
@@ -669,7 +709,7 @@ function resolveList(sc, stageId, viewId, selection, { only, query, division }) 
     options: set.options.map((o) => {
       const trial = [...sel];
       trial[i] = o.id;
-      const trialRows = searched(listRows(sc, viewId, trial, { division }));
+      const trialRows = byStrat(searched(listRows(sc, viewId, trial, { division })));
       // Session 45: the chips count DIVISION rows.
       if (grouped) {
         const empty = viewId === 'target' && (o.isAll || o.id === 'all') ? emptyDivisions(sc, trialRows, { q, division }).length : 0;
@@ -680,7 +720,6 @@ function resolveList(sc, stageId, viewId, selection, { only, query, division }) 
   }));
 
   const valueLabel = valueLabelOf(viewId, sel);
-  const valueOf = (rs) => (cfg.total ? cfg.total(rs) : rs.length);
   const withEmpty = grouped && viewId === 'target' && sel[0] === 'all' && !of;
   const nodes = buildNodes(sc, stageId, shape, rows, valueOf, q, matches, {
     grouped, empty: withEmpty ? emptyDivisions(sc, rows, { q, division }) : [],
@@ -707,6 +746,9 @@ function resolveList(sc, stageId, viewId, selection, { only, query, division }) 
     explain: cfg.explain || null,
     hints: resolveTabs(tabs, sel, '').hints,
     only: of ? { id: only, label: of.label } : null,
+    byStrategy,
+    byStrategyTotal: allTotal,
+    strategy: strat || null,
     rowCount: rows.length,
     grouped,
     divisionCount: grouped ? nodes.filter((n) => n.kind === 'division').length : 0,
@@ -876,8 +918,17 @@ export const levelName = (kind) => LEVEL_NAME[kind] || kind;
  * row, its level, its parents, its value and its own columns, each column
  * headed once. Money is headed "(SAR)", as every other export.
  */
-export function exportStageRows(page, expanded) {
+export function exportStageRows(page, expanded, { strategyOf = null } = {}) {
   const vis = visibleRows(page.nodes, expanded);
+  // Customer strategy (session 48): a Strategy column on pages that split by it —
+  // a record's own customer, a customer row's customer; blank on division and salesman rows.
+  const withStrategy = !!strategyOf && !!page.byStrategy;
+  const firstRow = (n) => n?.row || (n?.children || []).map(firstRow).find(Boolean) || null;
+  const strategyCell = (node) => {
+    if (!['record', 'customer'].includes(node.kind)) return '';
+    const r = firstRow(node);
+    return r ? STRATEGY_LABELS[strategyOf(r)] : '';
+  };
   const colOf = (kind) => page.columns[kind] || [];
   const allCols = [];
   const seen = new Set();
@@ -911,6 +962,7 @@ export function exportStageRows(page, expanded) {
       Level: page.grouped && node.kind === 'division' ? 'Division total' : levelName(node.kind),
       Under: path.slice(0, depth).join(' › '),
       Name: node.name ?? '',
+      ...(withStrategy ? { Strategy: strategyCell(node) } : {}),
     };
     valueHeads.forEach((h) => { row[h] = null; });
     if (node.value !== null && node.value !== undefined) row[headOf(node)] = Number(node.value);
@@ -930,7 +982,7 @@ export function exportStageRows(page, expanded) {
   });
   if (page.grouped) {
     // The grand total, which equals the page header.
-    const total = { Division: '', Salesman: '', Level: 'Grand total', Under: '', Name: '' };
+    const total = { Division: '', Salesman: '', Level: 'Grand total', Under: '', Name: '', ...(withStrategy ? { Strategy: page.strategy ? STRATEGY_LABELS[page.strategy] : '' } : {}) };
     valueHeads.forEach((h) => { total[h] = null; });
     total[valueHeads[0] || (page.unit === 'SAR' ? `${page.valueLabel} (SAR)` : `${page.valueLabel} (${page.unit})`)] = Number(page.total);
     allCols.forEach((c) => { if (!(c.head in total)) total[c.head] = c.type === 'money' || c.type === 'pct' || c.type === 'int' ? null : ''; });

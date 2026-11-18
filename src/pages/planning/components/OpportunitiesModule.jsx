@@ -9,6 +9,8 @@ import SalesmanSelector from 'components/ui/SalesmanSelector';
 import DivisionPicker from 'components/DivisionPicker';
 import { useExportCustomer, useExportIds, EXPORT_LABEL } from 'utils/exportCustomers';
 import ExportTag from 'components/ExportTag';
+import { useCustomerStrategies, strategySuffix } from 'utils/customerStrategy';
+import { ContactStrategyDot } from 'components/strategy/StrategyBadge';
 import { fetchTeamHierarchy } from 'utils/teamHierarchy';
 import { addRecordOwners, withRecordOwners } from 'utils/recordOwners';
 import { blockIfPlanLocked, blockIfPlanNotApproved, planMonthForDate } from 'utils/planApproval';
@@ -207,6 +209,8 @@ export default function OpportunitiesModule({
   // migration is not applied.
   const formExport = useExportCustomer({ contactId: form.contact_id || null, companyId: company?.id });
   const exportIds = useExportIds(opportunities.map((o) => o.contact_id));
+  // Customer strategy (session 48): dot + label on plan items and the picker; nothing until it is on.
+  const { map: strategyMap } = useCustomerStrategies(contacts.map((c) => c.id));
 
   // ── Manager edit during review ────────────────────────────────────────────
   // The owners (other than the viewer) whose plan for the month on screen is
@@ -1210,6 +1214,7 @@ export default function OpportunitiesModule({
                           {opp.customer_name}
                         </h3>
                         {opp.contact_id && exportIds.has(opp.contact_id) && <ExportTag />}
+                        {opp.contact_id && <ContactStrategyDot contactId={opp.contact_id} />}
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           isNew ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
                         }`}>
@@ -1464,9 +1469,10 @@ export default function OpportunitiesModule({
                     >
                       <option value="">Select a contact…</option>
                       {contacts.map((c) => (
-                        <option key={c.id} value={c.id}>{contactLabel(c)}</option>
+                        <option key={c.id} value={c.id}>{contactLabel(c)}{strategySuffix(strategyMap, c.id)}</option>
                       ))}
                     </select>
+                    {form.contact_id && <div className="mt-1"><ContactStrategyDot contactId={form.contact_id} /></div>}
                   </div>
                 ) : (
                   <div>

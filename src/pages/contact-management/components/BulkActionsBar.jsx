@@ -3,7 +3,7 @@ import Icon from "../../../components/AppIcon";
 import Button from "../../../components/ui/Button";
 import { useLanguage } from "../../../i18n";
 
-const BulkActionsBar = ({ selectedCount, onDelete }) => {
+const BulkActionsBar = ({ selectedCount, onDelete, onSetStrategy }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { t } = useLanguage();
 
@@ -39,6 +39,13 @@ const BulkActionsBar = ({ selectedCount, onDelete }) => {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {/* Customer strategy (session 48): managers and above, once the feature is on. */}
+            {onSetStrategy && (
+              <Button variant="outline" size="sm" onClick={onSetStrategy} className="transition-enterprise" data-testid="bulk-set-strategy">
+                <Icon name="Flag" size={14} className="mr-2" />
+                {t("strategy.set")}
+              </Button>
+            )}
             <Button
               variant="destructive"
               size="sm"

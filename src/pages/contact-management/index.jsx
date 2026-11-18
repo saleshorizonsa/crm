@@ -14,6 +14,15 @@ import ContactMobileView from "./components/ContactMobileView";
 import { useAuth } from "../../contexts/AuthContext";
 import { contactService, activityService } from "../../services/supabaseService";
 import { useLanguage } from "../../i18n";
+import { fetchAllRows } from "../../utils/fetchAllRows";
+import {
+  useStrategyEnabled, useCustomerStrategies, strategyOfId, canSetStrategy, customerCompanyId,
+} from "utils/customerStrategy";
+import { StrategyFilterChips, SetStrategyDialog } from "../../components/strategy/StrategyBadge";
+import { StrategyChangesTab } from "../../components/strategy/StrategyPanels";
+
+// Customer strategy (session 48): who sees the "Strategy changes" tab.
+const STRATEGY_CHANGES_ROLES = ["manager", "director", "head", "admin"];
 
 const DEFAULT_FILTERS = { search: "", status: "", tags: [], owner: "", sort: "" };
 
@@ -31,6 +40,15 @@ const ContactManagement = () => {
   // in-flight response from a company the user has switched away from is
   // ignored instead of overwriting the current company's contacts.
   const activeCompanyRef = React.useRef(null);
+  // Customer strategy (session 48). Nothing below shows until the feature is on.
+  const strategyOn = useStrategyEnabled();
+  const mayManage = strategyOn && canSetStrategy(userProfile?.role);
+  const mayReviewChanges = strategyOn && STRATEGY_CHANGES_ROLES.includes(userProfile?.role);
+  const [scope, setScope] = useState("mine");   // "mine" = today's list; "team" = every customer the user can see in this company
+  const [tab, setTab] = useState("customers");
+  const [strategyFilter, setStrategyFilter] = useState([]);
+  const [bulkStrategy, setBulkStrategy] = useState(false);
+  const { map: strategyMap, version: strategyVersion } = useCustomerStrategies(contacts.map((c) => c.id));
 
   // Reload whenever the authenticated user OR the active company changes.
   // The CompanySwitcher changes company?.id, so it MUST be in the deps —
@@ -53,8 +71,31 @@ const ContactManagement = () => {
 
     loadContacts(company.id, DEFAULT_FILTERS);
     loadStats(company.id);
+    setScope("mine");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, company?.id]);
+
+  // Team customers (managers and above, strategy on): every customer the
+  // contacts policies let this user read whose company — its own, else its
+  // owner's — is the active company. "Mine" reloads today's list.
+  const firstScope = React.useRef(true);
+  useEffect(() => {
+    if (firstScope.current) { firstScope.current = false; return; }
+    if (!company?.id) return;
+    if (scope === "mine") { loadContacts(company.id); return; }
+    const companyId = company.id;
+    setIsLoading(true);
+    fetchAllRows(() => supabase.from("contacts")
+      .select("*, owner:users!owner_id(id, full_name, email, avatar_url, company_id)", { count: "exact" })
+      .order("created_at", { ascending: false }))
+      .then(({ data, error }) => {
+        if (companyId !== activeCompanyRef.current) return;
+        if (error) { console.error("Error loading team customers:", error); return; }
+        setContacts((data || []).filter((c) => customerCompanyId(c) === companyId));
+      })
+      .finally(() => { if (companyId === activeCompanyRef.current) setIsLoading(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope]);
 
   const loadContacts = async (companyId = company?.id, activeFilters = filters) => {
     if (!companyId) return;
@@ -225,8 +266,14 @@ const ContactManagement = () => {
       );
     }
 
+    if (strategyOn && strategyFilter.length) {
+      const wanted = new Set(strategyFilter);
+      filtered = filtered.filter((contact) => wanted.has(strategyOfId(strategyMap, contact.id)));
+    }
+
     return filtered;
-  }, [contacts, filters]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contacts, filters, strategyOn, strategyFilter, strategyVersion]);
 
   // Defence-in-depth: viewer must not reach contact management
   if (userProfile?.role === "viewer") {
@@ -265,6 +312,32 @@ const ContactManagement = () => {
           </Button>
         </div>
 
+        {(mayManage || mayReviewChanges) && (
+          <div className="mb-4 flex flex-wrap items-center gap-3" data-testid="customers-strategy-bar">
+            {mayReviewChanges && (
+              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5" role="tablist">
+                {[["customers", t("strategy.customers")], ["changes", t("strategy.changes")]].map(([id, label]) => (
+                  <button key={id} type="button" role="tab" aria-selected={tab === id} data-testid={`customers-tab-${id}`}
+                    onClick={() => setTab(id)}
+                    className={`px-3 py-1.5 text-sm rounded-md ${tab === id ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-50"}`}>{label}</button>
+                ))}
+              </div>
+            )}
+            {mayManage && tab === "customers" && (
+              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
+                {[["mine", t("strategy.mine")], ["team", t("strategy.team")]].map(([id, label]) => (
+                  <button key={id} type="button" aria-pressed={scope === id} data-testid={`customers-scope-${id}`}
+                    onClick={() => setScope(id)}
+                    className={`px-3 py-1.5 text-sm rounded-md ${scope === id ? "bg-gray-800 text-white" : "text-gray-600 hover:bg-gray-50"}`}>{label}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "changes" && mayReviewChanges ? (
+          <StrategyChangesTab />
+        ) : (
         <div className="space-y-6">
           {/* Contact Stats */}
           <ContactStats stats={stats} />
@@ -278,9 +351,14 @@ const ContactManagement = () => {
               <BulkActionsBar
                 selectedCount={selectedRows.length}
                 onDelete={() => handleDeleteContacts(selectedRows)}
+                onSetStrategy={mayManage ? () => setBulkStrategy(true) : undefined}
               />
             )}
           </div>
+
+          {strategyOn && (
+            <StrategyFilterChips value={strategyFilter} onChange={setStrategyFilter} />
+          )}
 
           {/* Contact List */}
           <div className="hidden lg:block">
@@ -291,6 +369,7 @@ const ContactManagement = () => {
               onEdit={handleEditContact}
               isLoading={isLoading}
               sort={filters.sort}
+              strategyOn={strategyOn}
             />
           </div>
           <div className="lg:hidden">
@@ -301,7 +380,16 @@ const ContactManagement = () => {
             />
           </div>
         </div>
+        )}
       </main>
+
+      {bulkStrategy && (
+        <SetStrategyDialog
+          contactIds={selectedRows}
+          onClose={() => setBulkStrategy(false)}
+          onSaved={() => {}}
+        />
+      )}
 
       {/* Contact Modal */}
       <ContactDetailModal
