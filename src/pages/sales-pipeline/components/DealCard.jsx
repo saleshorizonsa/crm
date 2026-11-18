@@ -15,6 +15,9 @@ import { wonInvoicedLabel } from "../../../utils/funnelWonPeriod";
 import { fmtPct, hasFigure } from "utils/formatPct";
 import { useIsExportContact } from "utils/exportCustomers";
 import ExportTag from "components/ExportTag";
+import { useCustomerStrategy } from "utils/customerStrategy";
+import { strategyColour } from "utils/strategyColours";
+import { StrategyBadge } from "components/strategy/StrategyBadge";
 
 // Fallback label map — kept in sync with the default seed list
 const LOST_CODE_LABELS = {
@@ -63,6 +66,8 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onCorrectIn
   const isLeadStage = deal?.stage === 'lead';
   // Export customer (session 22): tagged, batched with every other card.
   const isExportCustomer = useIsExportContact(deal?.contact_id || null);
+  // Customer strategy (session 48): a coloured left edge + badge; nothing when not set or off.
+  const { strategy: customerStrategy } = useCustomerStrategy(deal?.contact_id || null);
   const daysUntilExpiry = isLeadStage ? leadDaysLeft(deal) : null;
   const [productCount, setProductCount] = useState(0);
   const [contactCount, setContactCount] = useState(0);
@@ -153,6 +158,8 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onCorrectIn
   return (
     <div
       className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+      style={customerStrategy ? { borderLeft: `5px solid ${strategyColour(customerStrategy).colour}` } : undefined}
+      data-strategy={customerStrategy || undefined}
       onClick={() => onDealClick(deal)}
     >
       {/* --- Header --- */}
@@ -167,6 +174,7 @@ const DealCard = ({ deal, onDealUpdate, onDealClick, onMarkInvoiced, onCorrectIn
               : t("deals.selectContact")}
             {isExportCustomer && <ExportTag className="ml-1.5" />}
           </p>
+          {customerStrategy && <div className="mt-0.5"><StrategyBadge strategy={customerStrategy} /></div>}
           {showProductSummary && (() => {
             const summary = getDealProductSummary(deal);
             return summary ? (

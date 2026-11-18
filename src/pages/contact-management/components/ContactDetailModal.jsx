@@ -7,6 +7,7 @@ import { useLanguage } from "../../../i18n";
 import LogActivityModal from "../../../components/LogActivityModal";
 import ActivityTimeline from "../../../components/ActivityTimeline";
 import ExportCustomerToggle from "../../../components/ExportCustomerToggle";
+import { StrategyDetailSection } from "../../../components/strategy/StrategyPanels";
 
 const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
   const { t } = useLanguage();
@@ -261,6 +262,9 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
                 <ExportCustomerToggle contactId={contact?.id} />
               </div>
             </div>
+
+            {/* Customer strategy (session 48) — nothing until the feature is on. */}
+            {contact?.id && <StrategyDetailSection contactId={contact.id} />}
 
             {/* Activity History — only shown when editing an existing contact */}
             {contact?.id && (

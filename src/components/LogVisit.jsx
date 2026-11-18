@@ -4,6 +4,8 @@ import { supabase } from "lib/supabase";
 import ContactReportModal from "components/deals/ContactReportModal";
 import LogActivityModal from "components/LogActivityModal";
 import { riyadhToday } from "utils/visits";
+import { useCustomerStrategies, strategySuffix } from "utils/customerStrategy";
+import { ContactStrategyDot } from "components/strategy/StrategyBadge";
 
 /**
  * LOG VISIT — pick the customer and the day, then the existing form saves it.
@@ -87,6 +89,8 @@ export default function LogVisit({
     return q ? list.filter((c) => contactName(c).toLowerCase().includes(q)) : list;
   }, [list, query]);
   const chosen = list.find((c) => c.id === contactId) || null;
+  // Customer strategy (session 48): label in the option, dot beside the select.
+  const { map: strategyMap } = useCustomerStrategies(list.map((c) => c.id));
 
   const reset = () => { setOpen(false); setForm(null); setContactId(""); setQuery(""); setDate(riyadhToday()); setContacts(null); };
 
@@ -132,8 +136,9 @@ export default function LogVisit({
                     {contacts === null ? "Loading your customers…"
                       : list.length ? "Select a customer…" : "You have no customers yet"}
                   </option>
-                  {shown.map((c) => <option key={c.id} value={c.id}>{contactName(c)}</option>)}
+                  {shown.map((c) => <option key={c.id} value={c.id}>{contactName(c)}{strategySuffix(strategyMap, c.id)}</option>)}
                 </select>
+                {contactId && <div className="mt-1"><ContactStrategyDot contactId={contactId} /></div>}
               </div>
               <div>
                 <label htmlFor="log-visit-date" className="text-xs font-medium text-gray-600 block mb-1">Date of the visit</label>

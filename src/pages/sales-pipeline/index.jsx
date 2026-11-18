@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useCustomerStrategies, strategyOfId } from "utils/customerStrategy";
 import { emitNextStep } from "utils/nextStepBus";
 import Header from "../../components/ui/Header";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
@@ -54,6 +55,7 @@ const SalesPipeline = () => {
     dateRange: "",
     customDateRange: { from: "", to: "" },
     showOverdue: false,
+    strategy: [],
   });
 
   // Read active stage + active filter from navigation state (dashboard click) OR ?stage= URL param.
@@ -308,6 +310,8 @@ const SalesPipeline = () => {
   const [viewMode, setViewMode] = useState("pipeline");
   const [trackedKey, setTrackedKey] = useState(location.key);
   const [filters, setFilters] = useState(() => filtersFromLocation(location));
+  // Customer strategy (session 48): nothing until customer_strategy_enabled() exists.
+  const { enabled: strategyOn, map: strategyMap, version: strategyVersion } = useCustomerStrategies(deals.map((d) => d.contact_id));
   const [drillDownContext, setDrillDownContext] = useState(null);
   const [originFilter, setOriginFilter] = useState('all'); // 'all' | 'new' | 'carry_forward'
 
@@ -379,7 +383,7 @@ const SalesPipeline = () => {
 
   useEffect(() => {
     applyFilters();
-  }, [deals, filters, originFilter]); // Apply filters whenever deals or filters change
+  }, [deals, filters, originFilter, strategyOn, strategyVersion]); // Apply filters whenever deals or filters change
 
   const loadDeals = async (force = false) => {
     try {
@@ -476,6 +480,7 @@ const SalesPipeline = () => {
     || filters.minValue
     || filters.maxValue
     || filters.showOverdue
+    || (strategyOn && filters.strategy?.length > 0)
     || originFilter !== 'all'
   );
 
@@ -513,6 +518,12 @@ const SalesPipeline = () => {
           deal.contact?.last_name?.toLowerCase().includes(searchLower) ||
           deal.contact?.company_name?.toLowerCase().includes(searchLower),
       );
+    }
+
+    // Customer strategy (session 48): only once the feature is on.
+    if (strategyOn && filters.strategy?.length) {
+      const wanted = new Set(filters.strategy);
+      filtered = filtered.filter((deal) => wanted.has(strategyOfId(strategyMap, deal.contact_id)));
     }
 
     // Owner filter

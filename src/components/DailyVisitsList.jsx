@@ -4,6 +4,7 @@ import { money } from "components/DrillSheet";
 import { NO_CUSTOMER, isDayOff } from "utils/salesMonitor";
 import { RESPONSE_TONE, toneChip, purposeChip } from "utils/monitorColours";
 import { PURPOSE_LABEL } from "utils/visitPurpose";
+import { ContactStrategyDot } from "components/strategy/StrategyBadge";
 
 /**
  * ONE DAY'S VISITS, CALLS AND WHATSAPPS — the list the Sales Monitor and the
@@ -67,7 +68,7 @@ export default function DailyVisitsList({ model, onOpenPerson = null, noContactT
                           <span className={purposeChip(r.purpose)}>{PURPOSE_LABEL[r.purpose]}</span>
                         </td>
                       )}
-                      <td className={`py-1.5 pr-2 ${r.customerKnown ? "text-gray-900" : "italic text-gray-500"}`}>{r.customerKnown ? r.customer : NO_CUSTOMER}</td>
+                      <td className={`py-1.5 pr-2 ${r.customerKnown ? "text-gray-900" : "italic text-gray-500"}`}>{r.customerKnown ? r.customer : NO_CUSTOMER}{r.customerId && <> <ContactStrategyDot contactId={r.customerId} withLabel={false} /></>}</td>
                       <td className="py-1.5 pr-2">
                         {r.inPlan
                           ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200">In plan · {money(r.planValue)}</span>

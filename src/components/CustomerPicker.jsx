@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "lib/supabase";
+import { useCustomerStrategies, strategySuffix } from "utils/customerStrategy";
+import { ContactStrategyDot } from "components/strategy/StrategyBadge";
 
 /**
  * PICK THE CUSTOMER — for a visit, call or WhatsApp that would otherwise be
@@ -29,6 +31,8 @@ export default function CustomerPicker({ ownerId, value, onChange, error = null,
   }, [ownerId]);
 
   const list = contacts || [];
+  // Customer strategy (session 48): label in the option, dot beside the select.
+  const { map: strategyMap } = useCustomerStrategies(list.map((c) => c.id));
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? list.filter((c) => nameOf(c).toLowerCase().includes(q)) : list;
@@ -55,8 +59,9 @@ export default function CustomerPicker({ ownerId, value, onChange, error = null,
         <option value="">
           {contacts === null ? "Loading your customers…" : list.length ? "Select the customer…" : "You have no customers yet"}
         </option>
-        {shown.map((c) => <option key={c.id} value={c.id}>{nameOf(c)}</option>)}
+        {shown.map((c) => <option key={c.id} value={c.id}>{nameOf(c)}{strategySuffix(strategyMap, c.id)}</option>)}
       </select>
+      {value && <div className="mt-1"><ContactStrategyDot contactId={value} /></div>}
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </div>
   );
