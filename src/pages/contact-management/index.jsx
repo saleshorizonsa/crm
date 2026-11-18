@@ -137,7 +137,7 @@ const ContactManagement = () => {
         // Log activity for contact update
         await activityService.createActivity({
           type: 'email',
-          title: `Contact updated: ${data.first_name} ${data.last_name}`,
+          title: `Customer updated: ${data.first_name} ${data.last_name}`,
           description: `${data.company_name || 'No company'} - ${data.email || 'No email'}`,
           company_id: company?.id,
           contact_id: data.id,
@@ -150,7 +150,7 @@ const ContactManagement = () => {
         // Log activity for new contact
         await activityService.createActivity({
           type: 'email',
-          title: `New contact created: ${data.first_name} ${data.last_name}`,
+          title: `New customer created: ${data.first_name} ${data.last_name}`,
           description: `${data.company_name || 'No company'} - ${data.email || 'No email'}`,
           company_id: company?.id,
           contact_id: data.id,
@@ -163,7 +163,7 @@ const ContactManagement = () => {
       loadStats();
     } catch (error) {
       console.error("Error saving contact:", error);
-      alert(`Failed to save contact: ${error.message}`);
+      alert(`Failed to save customer: ${error.message}`);
     }
   };
 
@@ -193,7 +193,7 @@ const ContactManagement = () => {
       loadStats();
     } catch (error) {
       console.error("Error deleting contacts:", error);
-      alert(`Failed to delete contacts: ${error.message}`);
+      alert(`Failed to delete customers: ${error.message}`);
     }
   };
 

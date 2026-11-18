@@ -1978,7 +1978,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange, targetsOnly 
               icon="🤝"
             />
             <MetricsCard
-              title="Contacts"
+              title="Customers"
               value={metrics?.totalContacts || 0}
               change={null}
               trend={undefined}
@@ -2016,7 +2016,7 @@ const DirectorDashboard = ({ company: propCompany, onCompanyChange, targetsOnly 
               icon="🤝"
             />
             <MetricsCard
-              title="All Contacts"
+              title="All Customers"
               value={crossCompanyMetrics?.totalContacts || 0}
               change="+7.8%"
               trend="up"
