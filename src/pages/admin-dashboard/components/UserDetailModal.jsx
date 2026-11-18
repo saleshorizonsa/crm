@@ -121,7 +121,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onRefresh }) => {
     viewer: {
       color: "#6b7280",
       icon: "Lock",
-      label: "Pipeline Viewer",
+      label: "Funnel Viewer",
     },
   };
 
@@ -300,7 +300,7 @@ const UserDetailModal = ({ user, onClose, onUpdate, onRefresh }) => {
               <div className="flex items-start gap-2 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-600">
                 <Icon name="Lock" size={14} className="mt-0.5 flex-shrink-0 text-gray-400" />
                 <p>
-                  This user has read-only access to the pipeline from Qualified stage onwards.
+                  This user has read-only access to the funnel from Qualified stage onwards.
                   They cannot see deal values or targets.
                 </p>
               </div>

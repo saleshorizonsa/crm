@@ -91,7 +91,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
       setShowDeleteConfirm(true);
     } catch (error) {
       console.error("Error checking contact references:", error);
-      alert("Failed to check client references: " + error.message);
+      alert("Failed to check customer references: " + error.message);
     }
   };
 
@@ -102,7 +102,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
     // Prevent deletion if there are references
     if (deleteReferences?.totalReferences > 0) {
       alert(
-        "Cannot delete client with existing references. Please remove all related deals, tasks, and activities first."
+        "Cannot delete customer with existing references. Please remove all related deals, tasks, and activities first."
       );
       return;
     }
@@ -122,7 +122,7 @@ const ContactDetailModal = ({ contact, onSave, onClose, onDelete, isOpen }) => {
       onClose();
     } catch (error) {
       console.error("Error deleting contact:", error);
-      alert("Failed to delete client: " + error.message);
+      alert("Failed to delete customer: " + error.message);
     } finally {
       setIsDeleting(false);
     }

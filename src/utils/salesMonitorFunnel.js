@@ -1,6 +1,7 @@
 import { isConvertedWithDeal } from 'utils/planningDrill';
 import { riyadhDate } from 'utils/visits';
-import { STAGE_ORDER, STAGE_LABELS } from 'utils/forecastEngine';
+import { STAGE_ORDER } from 'utils/forecastEngine';
+import { stageLabel as sharedStageLabel } from 'utils/stageLabels';
 import { SLA_DAYS, referenceTime } from 'utils/leadExpiryCheck';
 import { THRESHOLDS } from 'utils/salesMonitorThresholds';
 
@@ -51,7 +52,7 @@ const daysBetween = (a, b) => {
   const [y2, m2, d2] = parts(b);
   return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / DAY_MS);
 };
-export const stageLabel = (s) => STAGE_LABELS[s] || (s ? String(s).replace(/_/g, ' ') : '—');
+export const stageLabel = (s) => sharedStageLabel(s);
 
 export const PLAN_PART = {
   open: 'converted · deal open',

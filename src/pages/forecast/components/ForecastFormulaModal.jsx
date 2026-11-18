@@ -1,15 +1,13 @@
 import React, { useEffect, useMemo } from "react";
 import Icon from "../../../components/AppIcon";
 import { useCurrency } from "../../../contexts/CurrencyContext";
+import { STAGE_LABELS } from "utils/stageLabels";
 
 // Stage probability weights — must match forecastEngine DEFAULT_STAGE_WEIGHTS,
 // so the figures shown here reconcile with the KPI card values.
 const WEIGHTS = { lead: 0.1, contact_made: 0.25, proposal_sent: 0.5, negotiation: 0.75, won: 1.0 };
 const OPEN_STAGES = ["lead", "contact_made", "proposal_sent", "negotiation"];
-const STAGE_LABEL = {
-  lead: "Lead", contact_made: "Contact Made", proposal_sent: "Proposal Sent",
-  negotiation: "Negotiation", won: "Won", lost: "Lost",
-};
+const STAGE_LABEL = STAGE_LABELS;
 
 // Per-type presentation. Highlighted totals are pulled from `forecast.*` so they
 // always equal the card, even if the engine's weighting changes.
@@ -67,11 +65,11 @@ const ForecastFormulaModal = ({
         return {
           formula: "Committed + Σ(open amount × stage probability)",
           steps: [
-            { label: "Committed (Won × 100%)", value: formatCurrency(wSum("won")) },
-            { label: "Negotiation × 75%", value: formatCurrency(wSum("negotiation")) },
-            { label: "Proposal Sent × 50%", value: formatCurrency(wSum("proposal_sent")) },
-            { label: "Contact Made × 25%", value: formatCurrency(wSum("contact_made")) },
-            { label: "Lead × 10%", value: formatCurrency(wSum("lead")) },
+            { label: `Committed (${STAGE_LABELS.won} × 100%)`, value: formatCurrency(wSum("won")) },
+            { label: `${STAGE_LABELS.negotiation} × 75%`, value: formatCurrency(wSum("negotiation")) },
+            { label: `${STAGE_LABELS.proposal_sent} × 50%`, value: formatCurrency(wSum("proposal_sent")) },
+            { label: `${STAGE_LABELS.contact_made} × 25%`, value: formatCurrency(wSum("contact_made")) },
+            { label: `${STAGE_LABELS.lead} × 10%`, value: formatCurrency(wSum("lead")) },
             { label: "Weighted total", value: formatCurrency(forecast.weighted || 0), highlight: true },
           ],
           dealList: byAmt(nonLost),
@@ -111,7 +109,7 @@ const ForecastFormulaModal = ({
             { label: "Target", value: formatCurrency(targetAmount) },
             { label: "Weighted forecast", value: formatCurrency(forecast.weighted || 0) },
             { label: "Gap remaining", value: gapPositive ? formatCurrency(forecast.gap) : "Target exceeded ✓", highlight: true },
-            { label: "Open pipeline available", value: formatCurrency(openSum), unit: "could close the gap" },
+            { label: "Open funnel available", value: formatCurrency(openSum), unit: "could close the gap" },
           ],
           dealList: byAmt(open),
           dealLabel: "Open deals that could close the gap",
@@ -180,7 +178,7 @@ const ForecastFormulaModal = ({
               <div className="mb-5 p-3 bg-muted/40 rounded-xl">
                 <p className="text-xs font-medium text-muted-foreground mb-2">Stage probability weights</p>
                 <div className="grid grid-cols-2 gap-1">
-                  {[["Lead", "10%"], ["Contact Made", "25%"], ["Proposal Sent", "50%"], ["Negotiation", "75%"]].map(([s, w]) => (
+                  {[[STAGE_LABELS.lead, "10%"], [STAGE_LABELS.contact_made, "25%"], [STAGE_LABELS.proposal_sent, "50%"], [STAGE_LABELS.negotiation, "75%"]].map(([s, w]) => (
                     <div key={s} className="flex justify-between text-xs px-2 py-1 bg-card rounded-lg">
                       <span className="text-muted-foreground">{s}</span>
                       <span className="font-medium text-blue-600">{w}</span>

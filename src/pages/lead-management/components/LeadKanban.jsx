@@ -5,7 +5,7 @@ const ACTIVE_STAGES = [
   { key: "new",       label: "New",           dot: "bg-gray-400",   header: "bg-gray-50 border-gray-200"   },
   { key: "contacted", label: "Contacted",      dot: "bg-blue-400",   header: "bg-blue-50 border-blue-200"   },
   { key: "qualified", label: "Qualified",      dot: "bg-purple-400", header: "bg-purple-50 border-purple-200"},
-  { key: "proposal",  label: "Proposal Sent",  dot: "bg-orange-400", header: "bg-orange-50 border-orange-200"},
+  { key: "proposal",  label: "Proposal",  dot: "bg-orange-400", header: "bg-orange-50 border-orange-200"},
 ];
 
 const CLOSED_STAGES = [

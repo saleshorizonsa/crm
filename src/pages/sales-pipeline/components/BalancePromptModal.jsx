@@ -11,7 +11,7 @@ const SAR = (n) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).
 
 const CHOICES = [
   { key: BALANCE_CHOICE.plan, label: "New plan item", hint: "Current Sales Plan, open, in the month below" },
-  { key: BALANCE_CHOICE.lead, label: "New lead deal in the pipeline", hint: "Stage Lead, closing in the month below" },
+  { key: BALANCE_CHOICE.lead, label: "New lead deal in the funnel", hint: "Stage Lead, closing in the month below" },
   { key: BALANCE_CHOICE.drop, label: "Drop it — the customer reduced the order", hint: "Nothing is created" },
 ];
 

@@ -349,7 +349,7 @@ export default function FutureOrdersModule({
           <Icon name="AlertTriangle" size={16} className="text-red-500 flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-red-800">
-              {parkedCount} Parked Client{parkedCount > 1 ? 's' : ''}
+              {parkedCount} Parked Customer{parkedCount > 1 ? 's' : ''}
             </p>
             <p className="text-xs text-red-600 mt-0.5">
               {parkedCount === 1 ? 'This customer has' : 'These customers have'} been in Future

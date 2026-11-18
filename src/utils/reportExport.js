@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { STAGE_LABELS, stageLabel } from "./stageLabels";
 
 /**
  * Simplified Excel export for the Reports page drill-down view.
@@ -12,7 +13,7 @@ export function exportReportToExcel({ deals, activeTab, period, filters = {} }) 
     'Deal Title':       d.title || '',
     'Company':          d.contact?.company_name || '',
     'Salesman':         d.owner?.full_name || '',
-    'Stage':            d.stage || '',
+    'Stage':            stageLabel(d.stage, undefined, ''),
     'Amount (SAR)':     parseFloat(d.amount || 0),
     'Created Date':     d.creation_date || d.created_at?.split('T')[0] || '',
     'Expected Close':   d.expected_close_date || '',
@@ -38,8 +39,8 @@ export function exportReportToExcel({ deals, activeTab, period, filters = {} }) 
   });
   const repData = Object.entries(byRep)
     .map(([name, s]) => ({
-      'Salesman': name, 'Total Deals': s.count, 'Won Deals': s.won,
-      'Revenue (SAR)': s.wonValue, 'Pipeline (SAR)': s.total - s.wonValue,
+      'Salesman': name, 'Total Deals': s.count, 'Won deals': s.won,
+      'Revenue (SAR)': s.wonValue, 'Funnel (SAR)': s.total - s.wonValue,
       'Win Rate %': s.count > 0 ? Math.round(s.won / s.count * 100) : 0,
     }))
     .sort((a, b) => b['Revenue (SAR)'] - a['Revenue (SAR)']);
@@ -55,7 +56,7 @@ export function exportReportToExcel({ deals, activeTab, period, filters = {} }) 
     byStage[stage].count++; byStage[stage].value += parseFloat(d.amount || 0);
   });
   const ws3 = XLSX.utils.json_to_sheet(
-    Object.entries(byStage).map(([stage, s]) => ({ 'Stage': stage, 'Deal Count': s.count, 'Total Value (SAR)': s.value }))
+    Object.entries(byStage).map(([stage, s]) => ({ 'Stage': stageLabel(stage), 'Deal Count': s.count, 'Total Value (SAR)': s.value }))
   );
   ws3['!cols'] = [{ wch: 15 }, { wch: 12 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(wb, ws3, 'By Stage');
@@ -199,10 +200,10 @@ export function exportToXLSX({ deals, contacts, teamMembers, period, company }) 
     ["Company", company?.name || "All"],
     [""],
     ["Revenue (Won)", revenue],
-    ["Won Deals", won.length],
-    ["Lost Deals", lost.length],
+    ["Won deals", won.length],
+    ["Lost deals", lost.length],
     ["Win Rate %", winRate],
-    ["Pipeline Value (Open)", pipeline],
+    ["Funnel Value (Open)", pipeline],
     ["Open Deals", open.length],
     ["Total Deals", deals.length],
     ["Avg Deal Size (Won)", avgDeal],
@@ -228,7 +229,7 @@ export function exportToXLSX({ deals, contacts, teamMembers, period, company }) 
       !["won", "lost"].includes(d.stage);
     return [
       d.title || `Deal #${d.id?.slice(0, 8)}`,
-      d.stage,
+      stageLabel(d.stage, undefined, ""),
       d.amount || 0,
       d.priority || "",
       d.owner?.full_name || "",
@@ -250,10 +251,7 @@ export function exportToXLSX({ deals, contacts, teamMembers, period, company }) 
 
   // ── Sheet 3: Pipeline by Stage ────────────────────────────────────────────
   const stageOrder  = ["lead", "contact_made", "proposal_sent", "negotiation", "won", "lost"];
-  const stageLabels = {
-    lead: "Lead", contact_made: "Qualified", proposal_sent: "Proposal",
-    negotiation: "Negotiation", won: "Won", lost: "Lost",
-  };
+  const stageLabels = STAGE_LABELS;
   const stageHeaders = ["Stage", "Count", "Total Value", "Avg Value", "% of Total Deals"];
   const stageRows = stageOrder.map((stage) => {
     const sd = deals.filter((d) => d.stage === stage);
@@ -268,7 +266,7 @@ export function exportToXLSX({ deals, contacts, teamMembers, period, company }) 
   });
   const wsStage = XLSX.utils.aoa_to_sheet([stageHeaders, ...stageRows]);
   wsStage["!cols"] = [{ wch: 18 }, { wch: 10 }, { wch: 18 }, { wch: 16 }, { wch: 18 }];
-  XLSX.utils.book_append_sheet(wb, wsStage, "Pipeline by Stage");
+  XLSX.utils.book_append_sheet(wb, wsStage, "Funnel by Stage");
 
   // ── Sheet 4: Lead Sources ─────────────────────────────────────────────────
   const sourceCounts  = {};
@@ -287,7 +285,7 @@ export function exportToXLSX({ deals, contacts, teamMembers, period, company }) 
     sourcePipeline[src] = (sourcePipeline[src] || 0) + (d.amount || 0);
   });
   const allSources = [...new Set([...Object.keys(sourceCounts), ...Object.keys(sourceRevenue)])];
-  const srcHeaders = ["Lead Source", "Contacts", "Revenue (Won)", "Pipeline (Open)"];
+  const srcHeaders = ["Lead Source", "Contacts", "Revenue (Won)", "Funnel (Open)"];
   const srcRows = allSources.map((src) => [
     src,
     sourceCounts[src] || 0,
@@ -303,7 +301,7 @@ export function exportToXLSX({ deals, contacts, teamMembers, period, company }) 
   if (teamMembers && teamMembers.length > 0) {
     const tmHeaders = [
       "Rep Name", "Email", "Total Deals", "Won", "Lost",
-      "Win Rate %", "Revenue (Won)", "Pipeline (Open)", "Avg Deal Size",
+      "Win Rate %", "Revenue (Won)", "Funnel (Open)", "Avg Deal Size",
     ];
     const tmRows = teamMembers.map((m) => {
       const myDeals   = deals.filter((d) => d.owner_id === m.id);
@@ -338,7 +336,7 @@ export function exportToXLSX({ deals, contacts, teamMembers, period, company }) 
       const isOverdue = d.expected_close_date && new Date(d.expected_close_date) < today;
       return [
         d.title || `Deal #${d.id?.slice(0, 8)}`,
-        d.stage,
+        stageLabel(d.stage, undefined, ""),
         d.amount || 0,
         d.owner?.full_name || "",
         d.created_at ? new Date(d.created_at).toLocaleDateString() : "",

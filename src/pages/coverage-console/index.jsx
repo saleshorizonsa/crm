@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { stageLabel } from "utils/stageLabels";
 import { supabase } from "lib/supabase";
 import { useAuth } from "contexts/AuthContext";
 import Header from "components/ui/Header";
@@ -673,10 +674,7 @@ export default function CoverageConsole() {
                 contact?.last_name || ""
               }`.trim() ||
               d.title,
-            sub: `${String(d.stage).replace(
-              /_/g,
-              " "
-            )} · ${daysSince}d · ${SAR(d.amount)} SAR`,
+            sub: `${stageLabel(d.stage)} · ${daysSince}d · ${SAR(d.amount)} SAR`,
             target: d.amount || 0,
             invoiced: d.forecast_amount || 0,
             coverage: d.forecast_amount || 0,
@@ -739,7 +737,7 @@ export default function CoverageConsole() {
         date: deal.stage_changed_at,
         type: "stage",
         icon: "➡️",
-        title: `Stage: ${String(deal.stage).replace(/_/g, " ")}`,
+        title: `Stage: ${stageLabel(deal.stage)}`,
         detail: `Amount: ${SAR(deal.amount)} SAR · Forecast: ${SAR(
           deal.forecast_amount
         )} SAR (${deal.forecast_probability || 0}%)`,
@@ -1074,11 +1072,11 @@ export default function CoverageConsole() {
                   ...(isAllTime
                     ? []
                     : [[
-                      "Required pipeline",
+                      "Required funnel",
                       SAR(metrics.requiredPlan) + " SAR",
                       "gap to target ÷ win rate",
                     ]]),
-                  ["Planned pipeline", SAR(metrics.planning) + " SAR", `open plan · ${periodLabel}`],
+                  ["Planned funnel", SAR(metrics.planning) + " SAR", `open plan · ${periodLabel}`],
                   [
                     "Open funnel",
                     SAR(metrics.monthFunnel) + " SAR",
@@ -1087,7 +1085,7 @@ export default function CoverageConsole() {
                   ...(isAllTime
                     ? []
                     : [[
-                      "New pipeline needed",
+                      "New funnel needed",
                       SAR(metrics.plannedGap) + " SAR",
                       "required − plan − funnel",
                       "neg",
@@ -1139,7 +1137,7 @@ export default function CoverageConsole() {
             {nav.level === "opportunity" && currentDeal && (
               <div className="divide-y divide-gray-50">
                 {[
-                  ["Stage", String(currentDeal.stage).replace(/_/g, " ")],
+                  ["Stage", stageLabel(currentDeal.stage)],
                   ["Amount", SAR(currentDeal.amount) + " SAR"],
                   [
                     "Forecast",

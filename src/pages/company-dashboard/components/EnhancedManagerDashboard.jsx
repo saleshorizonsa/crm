@@ -2057,7 +2057,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false, targets
                               clientTarget.contact?.last_name || "";
                             const clientName =
                               `${firstName} ${lastName}`.trim() ||
-                              "Unknown Client";
+                              "Unknown Customer";
                             const companyName =
                               clientTarget.contact?.company_name || "";
                             const achieved = clientTarget.achieved || 0;
@@ -2145,7 +2145,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false, targets
                     <div className="text-xl font-bold tabular-nums truncate text-text-primary">
                       {formatCurrency(originMetrics.newValue || 0)}
                     </div>
-                    <div className="text-xs text-text-tertiary mt-1">New Pipeline This Period</div>
+                    <div className="text-xs text-text-tertiary mt-1">New Funnel This Period</div>
                     <div className="text-xs text-green-600 mt-1">{originMetrics.newCount || 0} new deals</div>
                   </div>
                   <div className="bg-white rounded-xl border border-border-tertiary p-5">
@@ -2158,7 +2158,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false, targets
                     <div className="text-xl font-bold tabular-nums truncate text-text-primary">
                       {formatCurrency(originMetrics.carryValue || 0)}
                     </div>
-                    <div className="text-xs text-text-tertiary mt-1">Carried Forward Pipeline</div>
+                    <div className="text-xs text-text-tertiary mt-1">Carried Forward Funnel</div>
                     <div className="text-xs text-amber-600 mt-1">{originMetrics.carryCount || 0} carry deals</div>
                   </div>
                 </div>
@@ -2821,7 +2821,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false, targets
                               clientTarget.contact?.last_name || "";
                             const clientName =
                               `${firstName} ${lastName}`.trim() ||
-                              "Unknown Client";
+                              "Unknown Customer";
                             const companyName =
                               clientTarget.contact?.company_name || "";
                             const achieved = clientTarget.achieved || 0;
@@ -3026,7 +3026,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false, targets
                             />
                             {t("dashboard.targetsByClients")}
                             <span className="text-sm font-normal text-gray-500">
-                              ({clientTargetsData.length} clients)
+                              ({clientTargetsData.length} customers)
                             </span>
                           </h4>
                           <button
@@ -3058,7 +3058,7 @@ const EnhancedManagerDashboard = ({ viewAsUser = null, readOnly = false, targets
                                 clientTarget.contact?.last_name || "";
                               const clientName =
                                 `${firstName} ${lastName}`.trim() ||
-                                "Unknown Client";
+                                "Unknown Customer";
                               const companyName =
                                 clientTarget.contact?.company_name || "";
                               const achieved = clientTarget.achieved || 0;

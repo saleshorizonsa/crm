@@ -48,7 +48,7 @@ const ForecastGroupBreakdown = ({ groups = [] }) => {
                 style={{ backgroundColor: entry.color }}
               />
               <span className="text-muted-foreground">
-                {entry.dataKey === "weightedValue" ? "Weighted" : "Total Pipeline"}
+                {entry.dataKey === "weightedValue" ? "Weighted" : "Total Funnel"}
               </span>
             </span>
             <span className="font-semibold tabular-nums text-card-foreground">
@@ -66,7 +66,7 @@ const ForecastGroupBreakdown = ({ groups = [] }) => {
         Forecast by Product Group
       </h3>
       <p className="text-xs text-muted-foreground mb-4">
-        Weighted open-pipeline value per material group
+        Weighted open-funnel value per material group
       </p>
 
       {/* Bar chart */}
@@ -94,7 +94,7 @@ const ForecastGroupBreakdown = ({ groups = [] }) => {
             <Tooltip content={<CustomTooltip />} cursor={{ fill: "var(--color-muted)", opacity: 0.4 }} />
             <Legend
               formatter={(value) =>
-                value === "weightedValue" ? "Weighted" : "Total Pipeline"
+                value === "weightedValue" ? "Weighted" : "Total Funnel"
               }
               wrapperStyle={{ fontSize: 12 }}
             />
@@ -112,7 +112,7 @@ const ForecastGroupBreakdown = ({ groups = [] }) => {
               <tr className="bg-muted/40 text-xs text-muted-foreground font-medium border-b border-border">
                 <th className="text-left   px-4 py-3">Product Group</th>
                 <th className="text-center px-4 py-3">Deals</th>
-                <th className="text-right  px-4 py-3">Total Pipeline</th>
+                <th className="text-right  px-4 py-3">Total Funnel</th>
                 <th className="text-right  px-4 py-3">Weighted Value</th>
                 <th className="text-right  px-4 py-3">% of Total</th>
               </tr>

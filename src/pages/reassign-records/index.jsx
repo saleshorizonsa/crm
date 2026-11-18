@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { stageLabel } from "utils/stageLabels";
 import Header from "../../components/ui/Header";
 import NavigationBreadcrumbs from "../../components/ui/NavigationBreadcrumbs";
 import Button from "../../components/ui/Button";
@@ -371,7 +372,7 @@ const ReassignRecords = () => {
               columns={[
                 { key: "title", label: "Deal", render: (r) => r.title || "—" },
                 { key: "customer", label: "Customer", render: (r) => r.contact?.company_name || "—" },
-                { key: "stage", label: "Stage", render: (r) => String(r.stage || "").replace(/_/g, " ") },
+                { key: "stage", label: "Stage", render: (r) => stageLabel(r.stage, undefined, "") },
                 { key: "close", label: "Expected close", render: (r) => dateLabel(r.expected_close_date) },
                 { key: "amount", label: "Amount", align: "right", render: (r) => formatCurrency(r.amount, r.currency) },
               ]}

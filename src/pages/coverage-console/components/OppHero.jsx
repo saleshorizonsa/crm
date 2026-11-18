@@ -1,4 +1,5 @@
 import React from "react";
+import { stageLabel } from "utils/stageLabels";
 
 // Deal-level hero. Replaces the coverage rail at the opportunity level, where
 // a single deal has no coverage equation of its own — what matters instead is
@@ -58,7 +59,7 @@ const OppHero = ({ deal, compact, SAR, pctFmt }) => {
         <span className="text-gray-500">
           Stage{" "}
           <span className="text-gray-900 font-semibold capitalize">
-            {String(deal.stage || "").replace(/_/g, " ")}
+            {stageLabel(deal.stage, undefined, "")}
           </span>
         </span>
         {slaBreach && (

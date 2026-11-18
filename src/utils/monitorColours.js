@@ -1,5 +1,6 @@
 import { PACING_TOLERANCE } from 'utils/salesDivisionMetrics';
 import { PIPELINE_STAGE_COLOR } from 'utils/pipelineStageColors';
+import { stageKeyOfLabel as sharedStageKeyOfLabel } from 'utils/stageLabels';
 
 /**
  * SALES MONITOR COLOURS (session 42, CEO 2026-11-16) — the app's own colour
@@ -76,10 +77,8 @@ export const toneChip = (tone) => `${CHIP} ${TONE[tone] || TONE.slate}`;
 
 /** Pipeline stages: exactly the Pipeline's column colours (a dot), the label kept. */
 export const pipelineStageDot = (stageKey) => PIPELINE_STAGE_COLOR[stageKey] || 'bg-gray-400';
-const STAGE_KEY_BY_LABEL = {
-  Lead: 'lead', 'Contact Made': 'contact_made', 'Proposal Sent': 'proposal_sent', Negotiation: 'negotiation', Won: 'won', Lost: 'lost',
-};
-export const stageKeyOfLabel = (label) => STAGE_KEY_BY_LABEL[label] || null;
+// The label → stage lookup reads the one shared stage-name source.
+export const stageKeyOfLabel = (label) => sharedStageKeyOfLabel(label);
 
 /** Plan outcomes. */
 export const OUTCOME_TONE = { Achieved: 'green', Bounced: 'amber', Failed: 'red', Pending: 'slate' };

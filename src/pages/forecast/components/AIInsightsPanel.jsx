@@ -51,7 +51,7 @@ const AIInsightsPanel = ({ insights = [] }) => {
           <Icon name="Lightbulb" size={16} className="text-violet-600" />
         </div>
         <div>
-          <h3 className="text-sm font-semibold text-card-foreground">Pipeline Insights</h3>
+          <h3 className="text-sm font-semibold text-card-foreground">Funnel Insights</h3>
           <p className="text-xs text-muted-foreground">Automated health analysis</p>
         </div>
       </div>

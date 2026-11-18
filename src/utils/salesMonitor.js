@@ -18,6 +18,7 @@ import {
   achieverIdsFrom,
 } from 'utils/achieverScope';
 import { rowInDivision, dealInDivision, primaryDivisionByUser } from 'utils/divisionMembership';
+import { stageLabel } from 'utils/stageLabels';
 import { isConvertedWithDeal, isConvertedDealMissing, customerKey } from 'utils/planningDrill';
 import { deadlineFor } from 'utils/planMonths';
 import { planDivisionsOf, planUnitsFor, planTitle, perDivisionStatusText } from 'utils/planDivisions';
@@ -243,7 +244,7 @@ export function planOutcome(o, {
     }
     return closed
       ? { label: OUTCOME.bounced, detail: `deal still open${deal.expected_close_date ? `, due ${dayLabel(deal.expected_close_date)}` : ''}` }
-      : { label: OUTCOME.pending, detail: `deal open (${deal.stage})` };
+      : { label: OUTCOME.pending, detail: `deal open (${stageLabel(deal.stage)})` };
   }
   if (o.movedOutOfMonth || o.status === 'moved_to_future') {
     const to = destination || (o.movedOutOfMonth ? o.expected_month : null);

@@ -251,7 +251,7 @@ const ContactManagement = () => {
               ]}
             />
             <h1 className="text-2xl font-semibold text-gray-900 mt-2">
-              {t("contacts.clientManagement")}
+              {t("nav.clients")}
             </h1>
           </div>
 

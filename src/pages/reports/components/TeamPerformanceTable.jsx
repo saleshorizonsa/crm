@@ -72,7 +72,7 @@ const TeamPerformanceTable = ({ deals = [], teamMembers = [] }) => {
                 { key: "won",      label: "Won"   },
                 { key: "winRate",  label: "Win %" },
                 { key: "revenue",  label: "Revenue" },
-                { key: "pipeline", label: "Pipeline" },
+                { key: "pipeline", label: "Funnel" },
               ].map(({ key, label }) => (
                 <th key={key} className="px-4 py-3 text-right">
                   <button

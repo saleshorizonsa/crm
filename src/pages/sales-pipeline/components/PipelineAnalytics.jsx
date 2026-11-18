@@ -23,6 +23,7 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import FunnelChart from "./FunnelChart";
 import { useLanguage } from "../../../i18n";
+import { stageLabel } from "utils/stageLabels";
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { groupDealsByMaterialGroup, classifyDealsByOrigin } from "../../../utils/dealGroupUtils";
 import { achievedAmount } from "../../../utils/planningCalculations";
@@ -226,7 +227,7 @@ const PipelineAnalytics = ({
   // Chart data
   const stageData = [
     {
-      name: t("deals.lead"),
+      name: stageLabel("lead", t),
       deals: deals?.filter((d) => d?.stage === "lead")?.length || 0,
       value:
         deals
@@ -234,7 +235,7 @@ const PipelineAnalytics = ({
           ?.reduce((sum, d) => sum + (d?.amount || 0), 0) || 0,
     },
     {
-      name: t("deals.qualified"),
+      name: stageLabel("contact_made", t),
       deals: deals?.filter((d) => d?.stage === "contact_made")?.length || 0,
       value:
         deals
@@ -242,7 +243,7 @@ const PipelineAnalytics = ({
           ?.reduce((sum, d) => sum + (d?.amount || 0), 0) || 0,
     },
     {
-      name: t("deals.proposal"),
+      name: stageLabel("proposal_sent", t),
       deals: deals?.filter((d) => d?.stage === "proposal_sent")?.length || 0,
       value:
         deals
@@ -250,7 +251,7 @@ const PipelineAnalytics = ({
           ?.reduce((sum, d) => sum + (d?.amount || 0), 0) || 0,
     },
     {
-      name: t("deals.negotiation"),
+      name: stageLabel("negotiation", t),
       deals: deals?.filter((d) => d?.stage === "negotiation")?.length || 0,
       value:
         deals
@@ -258,7 +259,7 @@ const PipelineAnalytics = ({
           ?.reduce((sum, d) => sum + (d?.amount || 0), 0) || 0,
     },
     {
-      name: t("deals.won"),
+      name: stageLabel("won", t),
       deals: wonList.length,
       value: wonListValue,
     },
@@ -267,7 +268,7 @@ const PipelineAnalytics = ({
   // Funnel data - only active stages (excluding lost)
   const funnelData = [
     {
-      stage: t("deals.lead"),
+      stage: stageLabel("lead", t),
       stageKey: "lead",
       count: deals?.filter((d) => d?.stage === "lead")?.length || 0,
       value:
@@ -277,7 +278,7 @@ const PipelineAnalytics = ({
       fill: "#64748b",
     },
     {
-      stage: t("deals.qualified"),
+      stage: stageLabel("contact_made", t),
       stageKey: "contact_made",
       count: deals?.filter((d) => d?.stage === "contact_made")?.length || 0,
       value:
@@ -287,7 +288,7 @@ const PipelineAnalytics = ({
       fill: "#3b82f6",
     },
     {
-      stage: t("deals.proposal"),
+      stage: stageLabel("proposal_sent", t),
       stageKey: "proposal_sent",
       count: deals?.filter((d) => d?.stage === "proposal_sent")?.length || 0,
       value:
@@ -297,7 +298,7 @@ const PipelineAnalytics = ({
       fill: "#f59e0b",
     },
     {
-      stage: t("deals.negotiation"),
+      stage: stageLabel("negotiation", t),
       stageKey: "negotiation",
       count: deals?.filter((d) => d?.stage === "negotiation")?.length || 0,
       value:
@@ -307,7 +308,7 @@ const PipelineAnalytics = ({
       fill: "#f97316",
     },
     {
-      stage: t("deals.won"),
+      stage: stageLabel("won", t),
       stageKey: "won",
       count: deals?.filter((d) => d?.stage === "won")?.length || 0,
       value:
@@ -563,7 +564,7 @@ const PipelineAnalytics = ({
                 : classified;
               return (
                 <div className="mt-5 pt-5 border-t border-border-tertiary">
-                  <h4 className="text-sm font-semibold text-card-foreground mb-4">Pipeline Origin Breakdown</h4>
+                  <h4 className="text-sm font-semibold text-card-foreground mb-4">Funnel Origin Breakdown</h4>
                   <div className="grid grid-cols-2 gap-3 mb-4">
                     <div className="bg-green-50 rounded-xl p-3 border border-green-100">
                       <div className="flex items-center gap-2 mb-2">
@@ -662,7 +663,7 @@ const PipelineAnalytics = ({
                     </div>
                     {origin.transferredToFutureCount > 0 && (
                       <div className="flex items-baseline justify-between gap-2 mt-2 pt-2 border-t border-slate-200 text-[11px]">
-                        <span className="text-slate-600">Open pipeline after transfers out</span>
+                        <span className="text-slate-600">Open funnel after transfers out</span>
                         <span className="font-semibold text-slate-800 tabular-nums">
                           {formatCurrency(origin.remainingOpenValue, preferredCurrency)}
                           <span className="font-normal text-slate-500"> · {origin.remainingOpenCount}</span>
@@ -673,7 +674,7 @@ const PipelineAnalytics = ({
                   {origin.totalOpenCount > 0 && (
                     <div className="bg-muted/30 rounded-lg p-3">
                       <div className="flex items-center justify-between text-xs mb-2">
-                        <span className="text-muted-foreground font-medium">Pipeline Health</span>
+                        <span className="text-muted-foreground font-medium">Funnel Health</span>
                         <span className="text-muted-foreground">New vs Carry-Forward ratio</span>
                       </div>
                       <div className="h-2 rounded-full overflow-hidden bg-amber-100">
@@ -688,7 +689,7 @@ const PipelineAnalytics = ({
                       </div>
                       {origin.carryCount / origin.totalOpenCount > 0.7 && (
                         <p className="text-xs text-amber-600 mt-2">
-                          ⚠️ More than 70% of pipeline is carried forward. Focus on generating new deals this month.
+                          ⚠️ More than 70% of funnel is carried forward. Focus on generating new deals this month.
                         </p>
                       )}
                     </div>
@@ -717,7 +718,7 @@ const PipelineAnalytics = ({
                 <div>
                   <h4 className="text-sm font-semibold text-card-foreground mb-3 flex items-center gap-2">
                     <Icon name="Layers" size={14} className="text-muted-foreground" />
-                    Pipeline by Material Group
+                    Funnel by Material Group
                   </h4>
                   <div className="space-y-2">
                     {stats.map(({ group, count, totalValue }) => {

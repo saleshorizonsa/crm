@@ -7,7 +7,7 @@ const LEAD_STAGES = [
   { value: "new",       label: "New"           },
   { value: "contacted", label: "Contacted"      },
   { value: "qualified", label: "Qualified"      },
-  { value: "proposal",  label: "Proposal Sent"  },
+  { value: "proposal",  label: "Proposal"  },
 ];
 
 const LEAD_SOURCES = [

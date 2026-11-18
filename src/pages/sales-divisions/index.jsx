@@ -42,6 +42,7 @@ import ContactReportsAudit from "components/dashboard/ContactReportsAudit";
 // The Sales Monitor's daily visits, for the roles that manage salesmen (session 34).
 import InsightsVisitsPanel from "./components/InsightsVisitsPanel";
 import { SALES_MONITOR_ROLES } from "utils/salesMonitor";
+import { stageLabel as sharedStageLabel } from "utils/stageLabels";
 
 // Insights (route /insights; folder and component keep the sales-divisions name)
 // — Company → Division → Team → Member → Deal.
@@ -72,7 +73,8 @@ const compact = (n) => {
 
 const pct = (n, d = 1) => (Number(n) || 0).toFixed(d) + "%";
 
-const stageLabel = (s) => String(s || "").replace(/_/g, " ");
+// Stage names from the one shared source ("contact_made" → "Qualified").
+const stageLabel = (s) => sharedStageLabel(s, undefined, "");
 
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -100,7 +102,7 @@ const HEALTH = {
 //
 // Planning's "Planning Coverage" keeps its own name: it is the RAW plan plus
 // funnel, unweighted — a different measure that was also called Coverage.
-const COLUMNS = ["Name", "Target", "Achieved", "Gap to target", "Conversion (3m)", "New pipeline needed", EXPECTED_PCT_LABEL, "Status"];
+const COLUMNS = ["Name", "Target", "Achieved", "Gap to target", "Conversion (3m)", "New funnel needed", EXPECTED_PCT_LABEL, "Status"];
 
 // ── FROZEN FIRST COLUMN ────────────────────────────────────────────────────
 //
@@ -253,7 +255,7 @@ function Figures({ m, small = false }) {
     // division's own is how somebody ends up planning against a conversion
     // nobody in that division achieved.
     [conversionLabel(m), pct(m.winRatePct), "text-gray-900"],
-    ["New pipeline needed", `${compact(m.plannedGap)} SAR`, "text-blue-700"],
+    ["New funnel needed", `${compact(m.plannedGap)} SAR`, "text-blue-700"],
   ];
   return (
     <div className={`grid grid-cols-2 sm:grid-cols-5 ${small ? "gap-2" : "gap-3"}`}>

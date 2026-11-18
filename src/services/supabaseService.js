@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { stageLabel } from "utils/stageLabels";
 import { calculateLeadScore } from "../utils/leadScoring";
 import { handleTargetChange } from "../utils/targetChangeHandler";
 import { forecastFieldsFor } from "../utils/forecastCalc";
@@ -926,7 +927,7 @@ export const dealService = {
         if (updates.stage && updates.stage !== oldDeal.stage) {
           let eventType = "pipeline_update";
           let title = "Deal Stage Updated";
-          let message = `${ownerName} moved "${dealTitle}" to ${updates.stage.replace("_", " ")} stage.`;
+          let message = `${ownerName} moved "${dealTitle}" to ${stageLabel(updates.stage)} stage.`;
 
           if (updates.stage === "won") {
             eventType = "deal_won";
@@ -1909,10 +1910,10 @@ export const contactService = {
           {
             userId: ownerId,
             companyId,
-            title: contactData.id ? "Client Updated" : "New Client Added",
+            title: contactData.id ? "Customer Updated" : "New Customer Added",
             message: contactData.id
-              ? `${ownerName} updated client "${contactName}".`
-              : `${ownerName} added a new client "${contactName}".`,
+              ? `${ownerName} updated customer "${contactName}".`
+              : `${ownerName} added a new customer "${contactName}".`,
             metadata: {
               contact_id: contact.id,
               contact_name: contactName,
@@ -3008,7 +3009,7 @@ export const activityService = {
   // ── Visit-Log / Activity-Tracking helpers ──────────────────────────────────
 
   TYPES: [
-    { value: 'visit',    label: 'Client Visit',       icon: 'MapPin'        },
+    { value: 'visit',    label: 'Customer Visit',       icon: 'MapPin'        },
     { value: 'call',     label: 'Phone Call',          icon: 'Phone'         },
     { value: 'whatsapp', label: 'WhatsApp',            icon: 'MessageCircle' },
     { value: 'email',    label: 'Email',               icon: 'Mail'          },
@@ -3783,7 +3784,7 @@ export const salesTargetService = {
       if (existingTarget) {
         const typeLabel =
           resolvedTargetType === "total_value" ? "By Value"
-          : resolvedTargetType === "by_clients" ? "By Clients"
+          : resolvedTargetType === "by_clients" ? "By Customers"
           : resolvedTargetType === "by_products" ? "By Product"
           : resolvedTargetType;
         return {

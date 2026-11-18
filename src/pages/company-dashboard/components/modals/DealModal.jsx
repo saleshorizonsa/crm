@@ -10,6 +10,7 @@ import Button from "../../../../components/ui/Button";
 import Input from "../../../../components/ui/Input";
 import Select from "../../../../components/ui/Select";
 import Icon from "../../../../components/AppIcon";
+import { STAGE_ORDER, STAGE_LABELS } from "utils/stageLabels";
 
 const DealModal = ({ isOpen, onClose, onSubmit }) => {
   const { company, user } = useAuth();
@@ -85,14 +86,7 @@ const DealModal = ({ isOpen, onClose, onSubmit }) => {
     }
   }, [searchTerm, allProducts]);
 
-  const stages = [
-    { value: "lead", label: "Lead" },
-    { value: "contact_made", label: "Contact Made" },
-    { value: "proposal_sent", label: "Proposal Sent" },
-    { value: "negotiation", label: "Negotiation" },
-    { value: "won", label: "Won" },
-    { value: "lost", label: "Lost" },
-  ];
+  const stages = STAGE_ORDER.map((value) => ({ value, label: STAGE_LABELS[value] }));
 
   const handleChange = (eOrValue, maybeName) => {
     if (eOrValue?.target) {

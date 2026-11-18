@@ -143,7 +143,7 @@ export default function TargetBreakdownCard({ companyId, period }) {
           <div className="h-8 w-32 bg-gray-100 rounded animate-pulse" />
         ) : !hasAny ? (
           <div>
-            <p className="text-sm text-gray-500">No product group or client targets set</p>
+            <p className="text-sm text-gray-500">No product group or customer targets set</p>
             <p className="text-xs text-gray-400 mt-1">Set targets in Admin Dashboard → Sales Managers Target</p>
           </div>
         ) : (
@@ -156,7 +156,7 @@ export default function TargetBreakdownCard({ companyId, period }) {
               {fmtSAR(totalTarget + clientTotalTarget)}<span className="text-sm font-normal text-gray-400 ml-1">SAR</span>
             </p>
             <p className="text-xs text-gray-400 mb-3">
-              {targets.length} group{targets.length === 1 ? '' : 's'} · {clients.length} client{clients.length === 1 ? '' : 's'}
+              {targets.length} group{targets.length === 1 ? '' : 's'} · {clients.length} customer{clients.length === 1 ? '' : 's'}
               <span className="block text-[10px] text-gray-300 mt-0.5">Groups may overlap</span>
             </p>
             <div className="space-y-1.5">
@@ -303,18 +303,18 @@ export default function TargetBreakdownCard({ companyId, period }) {
                     contact, so unlike the groups above these never overlap.
                     Kept in its own section for exactly that reason. */}
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-6 mb-2 flex items-center gap-1.5">
-                  <span>👤</span> Clients
+                  <span>👤</span> Customers
                 </h3>
                 {clients.length === 0 ? (
                   <div className="text-center py-6">
-                    <p className="text-sm text-gray-500">No client targets have been set yet.</p>
-                    <p className="text-xs text-gray-400 mt-1">Go to Admin Dashboard → Sales Managers Target to set client targets.</p>
+                    <p className="text-sm text-gray-500">No customer targets have been set yet.</p>
+                    <p className="text-xs text-gray-400 mt-1">Go to Admin Dashboard → Sales Managers Target to set customer targets.</p>
                   </div>
                 ) : (
                   <table className="w-full min-w-[520px] border-collapse text-sm">
                     <thead>
                       <tr className="bg-gray-50">
-                        {['Client', 'Target', 'Achieved', 'Deficit', 'Attainment'].map((h) => (
+                        {['Customer', 'Target', 'Achieved', 'Deficit', 'Attainment'].map((h) => (
                           <th key={h} className="px-3 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wide text-left border-b border-gray-200">{h}</th>
                         ))}
                       </tr>

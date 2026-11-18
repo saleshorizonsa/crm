@@ -144,7 +144,7 @@ const AIPredictionCard = ({ prediction }) => {
           <p className="text-lg font-bold text-card-foreground tabular-nums">
             {formatCurrency(expectedFromPipeline)}
           </p>
-          <p className="text-xs text-muted-foreground mt-0.5">Expected from Pipeline</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Expected from Funnel</p>
         </div>
         <div className="bg-muted/40 rounded-lg p-3 text-center">
           <p className="text-lg font-bold text-card-foreground tabular-nums">

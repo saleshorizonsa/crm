@@ -2,6 +2,7 @@ import { supabase } from 'lib/supabase';
 import { SLA_DAYS } from 'utils/leadExpiryCheck';
 import { deadlineFor } from 'utils/planMonths';
 import { riyadhToday } from 'utils/visits';
+import { STAGE_LABELS } from 'utils/stageLabels';
 
 /**
  * NEXT STEPS FOR SALESMEN — every text in ONE place (session 40, CEO
@@ -46,9 +47,9 @@ export const NEXT_STEP_TEXT = {
     : `Add your other customers, then Submit Plan — the deadline (the ${ordinal(parts(deadline)[2])}) has passed`),
   planSubmitted: () => 'Convert plan items to leads as customers engage',
   planRejected: ({ reason }) => `Revise and resubmit: ${reason || 'no reason was given'}`,
-  leadCreated: ({ moveDate }) => `Contact the customer within ${SLA_DAYS} days and move to Contact Made, or it moves to Future Orders on ${dayText(moveDate)}`,
-  contact_made: () => 'Send the proposal, then move to Proposal Sent',
-  proposal_sent: ({ followUp }) => `Follow up by ${dayText(followUp)}; then Negotiation`,
+  leadCreated: ({ moveDate }) => `Contact the customer within ${SLA_DAYS} days and move to ${STAGE_LABELS.contact_made}, or it moves to Future Orders on ${dayText(moveDate)}`,
+  contact_made: () => `Send the proposal, then move to ${STAGE_LABELS.proposal_sent}`,
+  proposal_sent: ({ followUp }) => `Follow up by ${dayText(followUp)}; then ${STAGE_LABELS.negotiation}`,
   negotiation: () => 'Close it: Won or Lost',
   won: () => 'Mark as Invoiced when the ERP invoice is raised',
   invoiced: ({ nextOrder }) => (nextOrder
@@ -95,7 +96,7 @@ export async function resolveNextStep(e, { now = new Date() } = {}) {
         return { kind: e.kind, text: NEXT_STEP_TEXT.planItemAdded({ deadline, daysLeft: daysFromTo(today, deadline) }) };
       }
       case 'planSubmitted':
-        return { kind: e.kind, text: NEXT_STEP_TEXT.planSubmitted(), button: { label: 'Open the pipeline', to: TO.pipeline() } };
+        return { kind: e.kind, text: NEXT_STEP_TEXT.planSubmitted(), button: { label: 'Open the funnel', to: TO.pipeline() } };
       case 'planRejected':
         return { kind: e.kind, text: NEXT_STEP_TEXT.planRejected({ reason: e.reason }) };
       case 'leadCreated': {
@@ -143,7 +144,7 @@ export async function resolveNextStep(e, { now = new Date() } = {}) {
             supabase.from('opportunities').select('id').eq('contact_id', e.contactId).eq('status', 'open').gte('expected_month', monthStart).limit(1),
           ]);
           if (!deals.error && !items.error && !(deals.data || []).length && !(items.data || []).length) {
-            out.extra = { text: NEXT_STEP_TEXT.visitOpenDeal(), buttons: [{ label: 'Open the pipeline', to: TO.pipeline() }, { label: 'Open Planning', to: TO.planning() }] };
+            out.extra = { text: NEXT_STEP_TEXT.visitOpenDeal(), buttons: [{ label: 'Open the funnel', to: TO.pipeline() }, { label: 'Open Planning', to: TO.planning() }] };
           }
         }
         return out;

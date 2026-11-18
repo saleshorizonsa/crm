@@ -40,7 +40,7 @@ const UserAccountMenu = ({ className = "" }) => {
       section: "Support",
       items: [
         {
-          label: "Help Center",
+          label: "Help",
           icon: "HelpCircle",
           action: "help",
           path: "/help",

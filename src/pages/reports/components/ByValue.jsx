@@ -6,11 +6,8 @@ import {
 // The Conversion (3m) label lives with the rule, so this page cannot drift into
 // calling the same figure something else.
 import { conversionLabel } from "utils/salesDivisionMetrics";
+import { STAGE_LABELS } from "utils/stageLabels";
 
-const STAGE_LABELS = {
-  lead: "Lead", contact_made: "Qualified", proposal_sent: "Proposal",
-  negotiation: "Negotiation", won: "Won", lost: "Lost",
-};
 const STAGE_COLORS = {
   lead: "#93C5FD", contact_made: "#6EE7B7", proposal_sent: "#FCD34D",
   negotiation: "#FDBA74", won: "#16A34A", lost: "#DC2626",
@@ -148,7 +145,7 @@ const ByValue = ({ deals, achieved = null, formatCurrency, winRate3m = null, ope
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Active Pipeline", value: formatCurrency(displayPipeline), color: "text-blue-600",  bg: "bg-blue-50"  },
+          { label: "Active Funnel", value: formatCurrency(displayPipeline), color: "text-blue-600",  bg: "bg-blue-50"  },
           // "Revenue (net)", not "Won": it is money invoiced in this period less the
     // credit notes raised in it — the same Achieved every dashboard shows — and
     // NOT the value of the deals won in this period, which is what a reader
@@ -191,7 +188,7 @@ const ByValue = ({ deals, achieved = null, formatCurrency, winRate3m = null, ope
             <Tooltip content={<CurrTip formatCurrency={formatCurrency} />} />
             <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="Won"      fill="#16A34A" radius={[3,3,0,0]} />
-            <Bar dataKey="Pipeline" fill="#2563EB" radius={[3,3,0,0]} />
+            <Bar dataKey="Pipeline" name="Funnel" fill="#2563EB" radius={[3,3,0,0]} />
             <Bar dataKey="Lost"     fill="#DC2626" radius={[3,3,0,0]} />
           </BarChart>
         </ResponsiveContainer>

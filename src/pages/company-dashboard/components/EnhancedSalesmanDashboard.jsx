@@ -37,6 +37,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useDateRange } from "../../../contexts/DateRangeContext";
 import { useLanguage } from "../../../i18n";
+import { stageLabel } from "utils/stageLabels";
 import { format, startOfMonth } from 'date-fns';
 import QuickDateSelector from '../../../components/QuickDateSelector';
 import {
@@ -278,9 +279,9 @@ const EnhancedSalesmanDashboard = ({
     const all = filteredDeals || [];
     switch (modalType) {
       case "pipeline":
-        return { title: `Active Pipeline — ${first}`, deals: all.filter((d) => !["won", "lost"].includes(d.stage)) };
+        return { title: `Active Funnel — ${first}`, deals: all.filter((d) => !["won", "lost"].includes(d.stage)) };
       case "won":
-        return { title: `Won Deals — ${first}`, deals: all.filter((d) => d.stage === "won") };
+        return { title: `Won deals — ${first}`, deals: all.filter((d) => d.stage === "won") };
       case "total":
         return { title: `All Deals — ${first}`, deals: all };
       case "winRate":
@@ -1390,7 +1391,7 @@ const EnhancedSalesmanDashboard = ({
                   <div className="text-xl font-bold tabular-nums truncate text-text-primary">
                     {formatCurrency(originMetrics.newValue || 0)}
                   </div>
-                  <div className="text-xs text-text-tertiary mt-1">New Pipeline This Period</div>
+                  <div className="text-xs text-text-tertiary mt-1">New Funnel This Period</div>
                   <div className="text-xs text-green-600 mt-1">{originMetrics.newCount || 0} new deals</div>
                 </div>
                 <div className="bg-white rounded-xl border border-border-tertiary p-5">
@@ -1403,7 +1404,7 @@ const EnhancedSalesmanDashboard = ({
                   <div className="text-xl font-bold tabular-nums truncate text-text-primary">
                     {formatCurrency(originMetrics.carryValue || 0)}
                   </div>
-                  <div className="text-xs text-text-tertiary mt-1">Carried Forward Pipeline</div>
+                  <div className="text-xs text-text-tertiary mt-1">Carried Forward Funnel</div>
                   <div className="text-xs text-amber-600 mt-1">{originMetrics.carryCount || 0} carry deals</div>
                 </div>
               </div>
@@ -1455,7 +1456,7 @@ const EnhancedSalesmanDashboard = ({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div
                 onClick={isViewingEmployee ? () => openCardModal("pipeline") : undefined}
-                title={isViewingEmployee ? "Click to view pipeline deals" : undefined}
+                title={isViewingEmployee ? "Click to view funnel deals" : undefined}
                 className={`bg-white rounded-lg shadow p-4 flex items-center gap-3 transition-all duration-150 ${
                   isViewingEmployee ? "cursor-pointer group relative hover:shadow-md hover:-translate-y-0.5" : ""
                 }`}
@@ -1807,7 +1808,7 @@ const EnhancedSalesmanDashboard = ({
                 {t("dashboard.topClientsRevenue")}
               </h3>
               <div className="text-sm text-gray-500">
-                {clientInsights.length} clients
+                {clientInsights.length} customers
               </div>
             </div>
 
@@ -1946,62 +1947,62 @@ const EnhancedSalesmanDashboard = ({
               <div
                 className="text-center p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
                 onClick={() => navigate("/sales-pipeline", { state: { activeStage: "lead" } })}
-                title="View Lead deals in pipeline"
+                title="View Lead deals in funnel"
               >
                 <div className="text-lg font-bold tabular-nums text-gray-600">
                   {pipelineSummary.lead || 0}
                 </div>
-                <div className="text-sm text-gray-500">{t("deals.lead")}</div>
+                <div className="text-sm text-gray-500">{stageLabel("lead", t)}</div>
               </div>
               <div
                 className="text-center p-4 bg-blue-50 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors"
                 onClick={() => navigate("/sales-pipeline", { state: { activeStage: "contact_made" } })}
-                title="View Contacted deals in pipeline"
+                title="View Qualified deals in funnel"
               >
                 <div className="text-lg font-bold tabular-nums text-blue-600">
                   {pipelineSummary.contact_made || 0}
                 </div>
-                <div className="text-sm text-gray-500">{t("deals.qualified")}</div>
+                <div className="text-sm text-gray-500">{stageLabel("contact_made", t)}</div>
               </div>
               <div
                 className="text-center p-4 bg-yellow-50 rounded-lg cursor-pointer hover:bg-yellow-100 transition-colors"
                 onClick={() => navigate("/sales-pipeline", { state: { activeStage: "proposal_sent" } })}
-                title="View Proposal deals in pipeline"
+                title="View Proposal deals in funnel"
               >
                 <div className="text-lg font-bold tabular-nums text-yellow-600">
                   {pipelineSummary.proposal_sent || 0}
                 </div>
-                <div className="text-sm text-gray-500">{t("deals.proposal")}</div>
+                <div className="text-sm text-gray-500">{stageLabel("proposal_sent", t)}</div>
               </div>
               <div
                 className="text-center p-4 bg-orange-50 rounded-lg cursor-pointer hover:bg-orange-100 transition-colors"
                 onClick={() => navigate("/sales-pipeline", { state: { activeStage: "negotiation" } })}
-                title="View Negotiation deals in pipeline"
+                title="View Negotiation deals in funnel"
               >
                 <div className="text-lg font-bold tabular-nums text-orange-600">
                   {pipelineSummary.negotiation || 0}
                 </div>
-                <div className="text-sm text-gray-500">{t("deals.negotiation")}</div>
+                <div className="text-sm text-gray-500">{stageLabel("negotiation", t)}</div>
               </div>
               <div
                 className="text-center p-4 bg-green-50 rounded-lg cursor-pointer hover:bg-green-100 transition-colors"
                 onClick={() => navigate("/sales-pipeline", { state: { activeStage: "won" } })}
-                title="View Won deals in pipeline"
+                title="View Won deals in funnel"
               >
                 <div className="text-lg font-bold tabular-nums text-green-600">
                   {pipelineSummary.won || 0}
                 </div>
-                <div className="text-sm text-gray-500">{t("deals.won")}</div>
+                <div className="text-sm text-gray-500">{stageLabel("won", t)}</div>
               </div>
               <div
                 className="text-center p-4 bg-red-50 rounded-lg cursor-pointer hover:bg-red-100 transition-colors"
                 onClick={() => navigate("/sales-pipeline", { state: { activeStage: "lost" } })}
-                title="View Lost deals in pipeline"
+                title="View Lost deals in funnel"
               >
                 <div className="text-lg font-bold tabular-nums text-red-600">
                   {pipelineSummary.lost || 0}
                 </div>
-                <div className="text-sm text-gray-500">{t("deals.lost")}</div>
+                <div className="text-sm text-gray-500">{stageLabel("lost", t)}</div>
               </div>
             </div>
           </div>
@@ -2113,7 +2114,7 @@ const EnhancedSalesmanDashboard = ({
                                     : "bg-gray-100 text-gray-700"
                             }`}
                           >
-                            {deal.stage.replace("_", " ")}
+                            {stageLabel(deal.stage, t)}
                           </span>
                         </td>
                         <td className="p-3">
@@ -2324,7 +2325,7 @@ const EnhancedSalesmanDashboard = ({
                               : "bg-gray-100 text-gray-600"
                           }`}
                         >
-                          {deal.stage?.replace("_", " ") || "—"}
+                          {stageLabel(deal.stage, t)}
                         </span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">

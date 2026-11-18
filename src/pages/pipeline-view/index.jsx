@@ -4,15 +4,16 @@ import { format, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuart
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabase";
 import ViewerHeader from "./ViewerHeader";
+import { STAGE_LABELS } from "utils/stageLabels";
 
 const VIEWER_STAGES = ["contact_made", "proposal_sent", "negotiation", "won"];
 const STAGE_ORDER   = Object.fromEntries(VIEWER_STAGES.map((s, i) => [s, i]));
 
 const STAGE_CONFIG = {
-  contact_made:  { label: "Qualified",   bg: "bg-blue-50",   border: "border-blue-200",   text: "text-blue-700",   pill: "bg-blue-100 text-blue-700"   },
-  proposal_sent: { label: "Proposal",    bg: "bg-amber-50",  border: "border-amber-200",  text: "text-amber-700",  pill: "bg-amber-100 text-amber-700"  },
-  negotiation:   { label: "Negotiation", bg: "bg-orange-50", border: "border-orange-200", text: "text-orange-700", pill: "bg-orange-100 text-orange-700" },
-  won:           { label: "Won",         bg: "bg-green-50",  border: "border-green-200",  text: "text-green-700",  pill: "bg-green-100 text-green-700"  },
+  contact_made:  { label: STAGE_LABELS.contact_made,  bg: "bg-blue-50",   border: "border-blue-200",   text: "text-blue-700",   pill: "bg-blue-100 text-blue-700"   },
+  proposal_sent: { label: STAGE_LABELS.proposal_sent, bg: "bg-amber-50",  border: "border-amber-200",  text: "text-amber-700",  pill: "bg-amber-100 text-amber-700"  },
+  negotiation:   { label: STAGE_LABELS.negotiation,   bg: "bg-orange-50", border: "border-orange-200", text: "text-orange-700", pill: "bg-orange-100 text-orange-700" },
+  won:           { label: STAGE_LABELS.won,           bg: "bg-green-50",  border: "border-green-200",  text: "text-green-700",  pill: "bg-green-100 text-green-700"  },
 };
 
 const UOM_LABEL = { qty: "pcs", m: "m", ton: "ton" };
@@ -322,7 +323,7 @@ const PipelineView = () => {
     <>
       {/* ── Print-only header ── */}
       <div className="hidden print:block px-6 py-4 border-b border-gray-300">
-        <h1 className="text-xl font-bold">Pipeline Overview — {company?.name}</h1>
+        <h1 className="text-xl font-bold">Funnel Overview — {company?.name}</h1>
         <p className="text-sm text-gray-500 mt-1">
           {dateFrom} → {dateTo}
           {selectedSalesmanName ? ` · Salesman: ${selectedSalesmanName}` : ""}
@@ -338,7 +339,7 @@ const PipelineView = () => {
         <div className="px-6 py-4 bg-white border-b border-gray-200 print:hidden">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-semibold text-gray-900">Pipeline Overview</h1>
+              <h1 className="text-xl font-semibold text-gray-900">Funnel Overview</h1>
               <p className="text-sm text-gray-500 mt-1">Read-only view · Qualified and above</p>
             </div>
             <div className="flex items-center gap-2">
@@ -643,7 +644,7 @@ const PipelineView = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                               d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                           </svg>
-                          <p className="font-medium text-gray-500">No pipeline deals found</p>
+                          <p className="font-medium text-gray-500">No funnel deals found</p>
                           <p className="text-sm">
                             {hasActiveFilters ? (
                               <>No deals match your filters.{" "}

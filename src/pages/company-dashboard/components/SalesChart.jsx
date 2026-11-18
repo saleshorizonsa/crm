@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { stageLabel } from "utils/stageLabels";
 import { useNavigate } from "react-router-dom";
 import { ResponsiveFunnel } from "@nivo/funnel";
 import { ResponsivePie } from "@nivo/pie";
@@ -114,13 +115,8 @@ const SalesChart = ({
   const stageData = useMemo(() => {
     if (!effectivePipelineData || effectivePipelineData.length === 0) return [];
 
-    const stageLabels = {
-      lead: t("deals.stages.leads"),
-      contact_made: t("deals.stages.qualified") || "Qualified",
-      proposal_sent: t("deals.stages.proposals"),
-      negotiation: t("deals.stages.negotiations"),
-      won: t("deals.stages.wonDeals"),
-    };
+    // Singular stage names from the shared source (was "Leads / Proposals / Negotiations / Won Deals").
+    const stageLabels = Object.fromEntries(STAGE_ORDER.map((s) => [s, stageLabel(s, t)]));
 
     const counts = STAGE_ORDER.map(
       (stage) => effectivePipelineData.find((p) => p.stage === stage)?.count || 0
@@ -285,7 +281,7 @@ const SalesChart = ({
             label={
               t("dashboard.noPipelineData") ||
               t("dashboard.noFunnelData") ||
-              "No pipeline data available"
+              "No funnel data available"
             }
           />
         )}
@@ -338,7 +334,7 @@ const OverviewView = ({ metrics, t, onMetricClick, onStageClick }) => {
           role="button"
           tabIndex={0}
           onKeyDown={(e) => e.key === "Enter" && onMetricClick?.("won")}
-          title="View Won deals in pipeline"
+          title="View Won deals in funnel"
         >
           <div className="flex items-center justify-between">
             <span className="text-sm text-blue-600 font-medium">
@@ -361,7 +357,7 @@ const OverviewView = ({ metrics, t, onMetricClick, onStageClick }) => {
           role="button"
           tabIndex={0}
           onKeyDown={(e) => e.key === "Enter" && onMetricClick?.("lost")}
-          title="View Lost deals in pipeline"
+          title="View Lost deals in funnel"
         >
           <div className="flex items-center justify-between">
             <span className="text-sm text-red-600 font-medium">
@@ -384,7 +380,7 @@ const OverviewView = ({ metrics, t, onMetricClick, onStageClick }) => {
           role="button"
           tabIndex={0}
           onKeyDown={(e) => e.key === "Enter" && onMetricClick?.("lead")}
-          title="View all deals in pipeline"
+          title="View all deals in funnel"
         >
           <div className="flex items-center justify-between">
             <span className="text-sm text-green-600 font-medium">
@@ -414,7 +410,7 @@ const OverviewView = ({ metrics, t, onMetricClick, onStageClick }) => {
               role="button"
               tabIndex={0}
               onKeyDown={(e) => e.key === "Enter" && onStageClick?.(row.fromStage)}
-              title={`View ${row.fromStage} deals in pipeline`}
+              title={`View ${stageLabel(row.fromStage, t)} deals in funnel`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm text-gray-600 flex items-center gap-1">

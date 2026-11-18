@@ -56,7 +56,7 @@ export default function ContactSearchInput({
   contacts = [],
   value = null,
   onChange,
-  label = "Client",
+  label = "Customer",
   placeholder = "Search by name, company or phone…",
   required = false,
   className = "",

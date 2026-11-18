@@ -22,6 +22,7 @@ import SalesReturnsReport from "./components/SalesReturnsReport";
 import { useLanguage } from "../../i18n";
 import { exportReportToExcel } from "../../utils/reportExport";
 import { useMaterialGroups } from "../../hooks/useMaterialGroups";
+import { STAGE_ORDER, STAGE_LABELS } from "utils/stageLabels";
 
 const today = () => new Date().toISOString().split("T")[0];
 const firstOfYear = () => `${new Date().getFullYear()}-01-01`;
@@ -45,14 +46,7 @@ const TAB_ALIASES = {
   activities: "activity",  // Activities card → Deal Activity
 };
 
-const STAGE_OPTIONS = [
-  { value: 'lead',          label: 'Lead'        },
-  { value: 'contact_made',  label: 'Qualified'   },
-  { value: 'proposal_sent', label: 'Proposal'    },
-  { value: 'negotiation',   label: 'Negotiation' },
-  { value: 'won',           label: 'Won'         },
-  { value: 'lost',          label: 'Lost'        },
-];
+const STAGE_OPTIONS = STAGE_ORDER.map((value) => ({ value, label: STAGE_LABELS[value] }));
 
 const ReportsPage = () => {
   const { t } = useLanguage();
@@ -69,7 +63,7 @@ const ReportsPage = () => {
     { id: "client",   label: t("reportsPage.byClient"),   icon: "🤝" },
     { id: "location", label: t("reportsPage.byCompany"),  icon: "🏢" },
     { id: "salesman", label: t("reportsPage.bySalesman"), icon: "👤" },
-    { id: "origin",   label: "Pipeline Origin",           icon: "🔄" },
+    { id: "origin",   label: "Funnel Origin",           icon: "🔄" },
     { id: "margin",   label: "Margin Analysis",           icon: "💹" },
     { id: "activity", label: "Deal Activity",             icon: "📋" },
     // READ-ONLY. Credit notes are imported on Planning → Sales Returns; this

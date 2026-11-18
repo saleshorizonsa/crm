@@ -1,4 +1,5 @@
 import { achievedAmount } from 'utils/planningCalculations';
+import { stageLabel } from 'utils/stageLabels';
 
 /**
  * WHAT IS BEHIND EACH PLANNING CARD, and what is wrong with a plan item.
@@ -268,7 +269,7 @@ export function buildPlanningDrill(summary, {
     dealId: dl.id,
     owner_id: dl.owner_id,
     customer: dealCustomer(dl, contactName),
-    stage: String(dl.stage || '').replace(/_/g, ' '),
+    stage: stageLabel(dl.stage, undefined, ''),
     value: num(dl.amount),
     expectedClose: dl.expected_close_date || null,
     flags: dl.expected_close_date ? [] : ['UNDATED'],

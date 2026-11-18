@@ -186,7 +186,7 @@ export function stageContext(model, { divisionModel = null } = {}) {
         { key: 'value', label: 'Amount', type: 'money' },
       ],
       unit: 'SAR',
-      explain: 'Won deals not yet invoiced — the Won not invoiced figure. Each one is cleared by marking it invoiced in the pipeline.',
+      explain: 'Won deals not yet invoiced — the Won not invoiced figure. Each one is cleared by marking it invoiced in the funnel.',
     },
     sets: [],
   };

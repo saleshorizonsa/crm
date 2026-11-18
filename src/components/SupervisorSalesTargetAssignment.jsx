@@ -204,7 +204,7 @@ const SupervisorSalesTargetAssignment = ({
         setClientTargets(initialClientTargets);
       } catch (error) {
         console.error("Error loading clients:", error);
-        setError("Failed to load clients");
+        setError("Failed to load customers");
       } finally {
         setLoadingClients(false);
       }
@@ -287,11 +287,11 @@ const SupervisorSalesTargetAssignment = ({
         company_name: "",
       });
       setShowCreateClient(false);
-      setSuccess("Client created successfully!");
+      setSuccess("Customer created successfully!");
       setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
       console.error("Error creating client:", error);
-      setError("Failed to create client: " + error.message);
+      setError("Failed to create customer: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -326,7 +326,7 @@ const SupervisorSalesTargetAssignment = ({
         (ct) => ct.enabled && parseFloat(ct.target_amount) > 0
       );
       if (enabledTargets.length === 0) {
-        setError("Please assign a target to at least one client");
+        setError("Please assign a target to at least one customer");
         return false;
       }
       totalTarget = calculateTotalClientTarget();
@@ -685,11 +685,11 @@ const SupervisorSalesTargetAssignment = ({
                         : "text-card-foreground"
                     }`}
                   >
-                    By Clients
+                    By Customers
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Assign targets per client
+                  Assign targets per customer
                 </p>
               </button>
 
@@ -774,7 +774,7 @@ const SupervisorSalesTargetAssignment = ({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-card-foreground">
-                Client Targets
+                Customer Targets
               </label>
               <Button
                 type="button"
@@ -783,7 +783,7 @@ const SupervisorSalesTargetAssignment = ({
                 onClick={() => setShowCreateClient(true)}
               >
                 <Icon name="Plus" size={14} className="mr-1" />
-                Add Client
+                Add Customer
               </Button>
             </div>
 
@@ -799,7 +799,7 @@ const SupervisorSalesTargetAssignment = ({
                   className="mx-auto text-muted-foreground mb-2"
                 />
                 <p className="text-sm text-muted-foreground">
-                  No clients found.
+                  No customers found.
                 </p>
                 <Button
                   type="button"
@@ -809,7 +809,7 @@ const SupervisorSalesTargetAssignment = ({
                   onClick={() => setShowCreateClient(true)}
                 >
                   <Icon name="Plus" size={14} className="mr-1" />
-                  Create First Client
+                  Create First Customer
                 </Button>
               </div>
             ) : (
@@ -900,7 +900,7 @@ const SupervisorSalesTargetAssignment = ({
             <div className="bg-card border border-border rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] flex flex-col">
               <div className="flex items-center justify-between mb-4 flex-shrink-0">
                 <h4 className="text-lg font-semibold text-card-foreground">
-                  Create New Client
+                  Create New Customer
                 </h4>
                 <Button
                   variant="ghost"
@@ -1009,7 +1009,7 @@ const SupervisorSalesTargetAssignment = ({
                     disabled={loading}
                     className="flex-1"
                   >
-                    {loading ? "Creating..." : "Create Client"}
+                    {loading ? "Creating..." : "Create Customer"}
                   </Button>
                 </div>
               </div>

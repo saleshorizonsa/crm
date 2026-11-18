@@ -32,6 +32,7 @@ import {
   taskService,
 } from "../../../services/supabaseService";
 import { useLanguage } from "../../../i18n";
+import { stageLabel } from "utils/stageLabels";
 import { useMaterialGroups } from '../../../hooks/useMaterialGroups';
 
 const CHANGE_REASONS = [
@@ -1080,12 +1081,12 @@ const DealModal = ({
   };
 
   const stages = [
-    { value: "lead", label: t("deals.lead") },
-    { value: "contact_made", label: t("deals.qualified") },
-    { value: "proposal_sent", label: t("deals.proposal") },
-    { value: "negotiation", label: t("deals.negotiation") },
-    { value: "won", label: t("deals.won") },
-    { value: "lost", label: t("deals.lost") },
+    { value: "lead", label: stageLabel("lead", t) },
+    { value: "contact_made", label: stageLabel("contact_made", t) },
+    { value: "proposal_sent", label: stageLabel("proposal_sent", t) },
+    { value: "negotiation", label: stageLabel("negotiation", t) },
+    { value: "won", label: stageLabel("won", t) },
+    { value: "lost", label: stageLabel("lost", t) },
   ];
 
   const priorities = [
@@ -2602,7 +2603,7 @@ const DealModal = ({
                             hour: '2-digit', minute: '2-digit',
                           })}
                           {change.stage_at_change && (
-                            <> · Stage: <span className="capitalize">{change.stage_at_change}</span></>
+                            <> · Stage: <span className="capitalize">{stageLabel(change.stage_at_change)}</span></>
                           )}
                         </div>
                       </div>
@@ -2823,7 +2824,7 @@ const DealModal = ({
                       onClick={() => navigate(`/task-management?dealId=${deal.id}`)}
                       className="w-full text-center text-xs text-muted-foreground hover:text-blue-600 pt-2 mt-1 border-t border-border transition-colors"
                     >
-                      View all tasks for this deal in Task Management →
+                      View all tasks for this deal in Tasks →
                     </button>
                   )}
                 </div>
