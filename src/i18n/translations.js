@@ -2572,7 +2572,7 @@ export const translations = {
 
     // Forecast (granular)
     forecastPage: {
-      title: "Sales Forecast",
+      title: "Forecast",
       subtitle: "Advanced funnel analytics, AI predictions & insights",
       targetActive: "Target active",
       selectPeriod: "Select a period",
