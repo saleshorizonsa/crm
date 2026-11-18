@@ -303,7 +303,7 @@ const ReassignRecords = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reassign Records</h1>
           <p className="text-sm text-gray-600 mt-1">
-            Move open deals, opportunities, future orders and contacts from one person to another — for example before someone is deactivated.
+            Move open deals, opportunities, future orders and customers from one person to another — for example before someone is deactivated.
           </p>
         </div>
 
@@ -411,7 +411,7 @@ const ReassignRecords = () => {
               ]}
             />
             <RecordSection
-              title="Contacts"
+              title="Customers"
               icon="Users"
               rows={records.contacts}
               error={records.errors?.contacts}
