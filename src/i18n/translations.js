@@ -326,7 +326,7 @@ export const translations = {
       achieved: "Achieved",
       remaining: "Remaining",
       onTrack: "On Track",
-      atRisk: "At Risk",
+      atRisk: "At risk",
       behind: "Behind",
       noUpcomingTasks: "No upcoming tasks",
       noRecentActivity: "No recent activity",

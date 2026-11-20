@@ -538,10 +538,11 @@ export default function CoverageConsole() {
     if (nav.level === "company")
       return {
         title: company?.name || "All Teams",
-        sub: `${scopedIds.length} team members · ${pctFmt(
+        // Session 47a: the figure is the 3-month conversion, named as on Insights.
+        sub: `${scopedIds.length} team members · Conversion (3m) ${pctFmt(
           metrics?.winRate || 0,
           0
-        )} win rate`,
+        )}`,
         scope: "Director view",
       };
     if (nav.level === "team")
@@ -781,9 +782,9 @@ export default function CoverageConsole() {
       };
     }
     if (bad) {
-      return { text: `Off Plan${suffix}`, cls: "bg-red-50 text-red-800 border-red-200" };
+      return { text: `Off plan${suffix}`, cls: "bg-red-50 text-red-800 border-red-200" };
     }
-    return { text: "At Risk", cls: "bg-amber-50 text-amber-800 border-amber-200" };
+    return { text: "At risk", cls: "bg-amber-50 text-amber-800 border-amber-200" };
   })();
 
   // ── RENDER ─────────────────────────────────────────────────────────────────

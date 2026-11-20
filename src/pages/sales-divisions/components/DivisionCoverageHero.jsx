@@ -40,13 +40,13 @@ export function statusChipOf(metrics) {
   if (metrics.pacingOk === null) {
     return metrics.coverageOk
       ? { text: "Healthy (coverage only)", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" }
-      : { text: "Off Plan (coverage only)", cls: "bg-red-50 text-red-800 border-red-200" };
+      : { text: "Off plan (coverage only)", cls: "bg-red-50 text-red-800 border-red-200" };
   }
   if (metrics.coverageOk && metrics.pacingOk)
     return { text: "Healthy", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" };
   if (!metrics.coverageOk && !metrics.pacingOk)
-    return { text: "Off Plan", cls: "bg-red-50 text-red-800 border-red-200" };
-  return { text: "At Risk", cls: "bg-amber-50 text-amber-800 border-amber-200" };
+    return { text: "Off plan", cls: "bg-red-50 text-red-800 border-red-200" };
+  return { text: "At risk", cls: "bg-amber-50 text-amber-800 border-amber-200" };
 }
 
 export function DivisionCoverageHero({
@@ -227,7 +227,7 @@ export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
       ? []
       : [["Required funnel", SAR(metrics.requiredRaw) + " SAR", "gap to target ÷ win rate"]]),
     ["Planned funnel", SAR(metrics.planned) + " SAR", "open plan · selected period"],
-    ["Open funnel", SAR(metrics.monthFunnel) + " SAR", "open deals closing in the period"],
+    ["Open funnel", SAR(metrics.monthFunnel) + " SAR", "open deals due in the period, or undated"],
     ...(metrics.isAllTime
       ? []
       : [["New funnel needed", SAR(metrics.plannedGap) + " SAR", "required − plan − funnel", "neg"]]),
