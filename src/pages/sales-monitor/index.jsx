@@ -1,4 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import Term, { AutoTerm } from "components/dictionary/Term";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import DailyVisitsList from "components/DailyVisitsList";
 import { useAuth } from "contexts/AuthContext";
@@ -64,7 +65,7 @@ function Card({ title, value, sub, children, onOpen, testid, wide = false, colou
       className={`relative overflow-hidden text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-400 hover:shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-w-0 ${wide ? "w-full sm:flex sm:items-center sm:gap-8" : ""}`}
     >
       {c && <div data-deco="1" aria-hidden="true" className={`absolute top-0 left-0 right-0 h-1 ${c.strip}`} />}
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{title}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500"><AutoTerm>{title}</AutoTerm></div>
       <div className={`mt-1 text-xl font-semibold font-mono tabular-nums ${c ? c.text : "text-gray-900"}`}><Figure>{value}</Figure></div>
       {sub && <div className="mt-0.5 text-xs text-gray-600">{sub}</div>}
       {children && <div className={wide ? "mt-2 sm:mt-0 text-xs text-gray-700 flex flex-wrap gap-x-6 gap-y-0.5 [&>*]:gap-2" : "mt-2 text-xs text-gray-700 space-y-0.5"}>{children}</div>}
@@ -85,7 +86,7 @@ function Stage({ n, name, testid, arrow = false, colour, next = null, children }
     <div data-testid={testid} className="flex flex-col gap-3 min-w-0">
       <div className="flex items-center gap-2">
         <span className={`w-6 h-6 rounded-full ${c.solid} text-xs font-semibold flex items-center justify-center flex-shrink-0`}>{n}</span>
-        <h2 className={`text-xs font-semibold uppercase tracking-wide ${c.text}`}>{name}</h2>
+        <h2 className={`text-xs font-semibold uppercase tracking-wide ${c.text}`}><AutoTerm id={name === "Funnel" ? "funnel_stage" : null}>{name}</AutoTerm></h2>
         {arrow && (
           <span aria-hidden="true" data-testid={`${testid}-arrow`} className={`ml-auto ${a ? a.arrow : "text-gray-400"} text-lg leading-none`}>
             <span className="hidden lg:inline">→</span>
@@ -100,7 +101,7 @@ function Stage({ n, name, testid, arrow = false, colour, next = null, children }
 
 const Line = ({ label, value, cls = "", dot = null }) => (
   <div className="flex flex-wrap justify-between gap-x-2">
-    <span className="text-gray-500 min-w-0">{dot && <span data-deco="1" aria-hidden="true" className={`inline-block w-2 h-2 rounded-full mr-1 align-middle ${dot}`} />}{label}</span>
+    <span className="text-gray-500 min-w-0">{dot && <span data-deco="1" aria-hidden="true" className={`inline-block w-2 h-2 rounded-full mr-1 align-middle ${dot}`} />}<AutoTerm>{label}</AutoTerm></span>
     <span className={`ml-auto font-mono tabular-nums whitespace-nowrap ${cls}`}>{value}</span>
   </div>
 );
@@ -263,9 +264,9 @@ export default function SalesMonitor() {
     <th scope="col" title={help || undefined} className={`relative px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500 border-b border-gray-200 align-bottom ${left ? "text-left sticky left-0 bg-gray-50 z-10" : "text-right"}`}>
       {k ? (
         <button type="button" onClick={() => toggleSort(k)} title={help || undefined} className="uppercase tracking-wide hover:text-gray-800">
-          {children}{sort.key === k ? (sort.dir === "asc" ? " ↑" : " ↓") : ""}
+          <AutoTerm>{children}</AutoTerm>{sort.key === k ? (sort.dir === "asc" ? " ↑" : " ↓") : ""}
         </button>
-      ) : children}
+      ) : <AutoTerm>{children}</AutoTerm>}
       {help && (
         <>
           {/* Tap target for touch screens, where a hover title never shows. */}
@@ -484,11 +485,11 @@ export default function SalesMonitor() {
               <thead className="bg-gray-50">
                 <tr data-testid="scoreboard-bands">
                   <th scope="colgroup" colSpan={2} data-testid="band-who" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 sticky left-0 bg-gray-50 z-10"></th>
-                  <th scope="colgroup" colSpan={1} data-testid="band-target" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-blue-600 border-t-4 border-t-blue-600 text-center border-b border-gray-200 border-l border-gray-200">Target</th>
-                  <th scope="colgroup" colSpan={4} data-testid="band-planned" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-purple-700 border-t-4 border-t-purple-500 text-center border-b border-gray-200 border-l border-gray-200">Planned</th>
-                  <th scope="colgroup" colSpan={3} data-testid="band-funnel" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-orange-700 border-t-4 border-t-orange-500 text-center border-b border-gray-200 border-l border-gray-200">Funnel</th>
-                  <th scope="colgroup" colSpan={2} data-testid="band-visits" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-teal-700 border-t-4 border-t-teal-500 text-center border-b border-gray-200 border-l border-gray-200">Visits</th>
-                  <th scope="colgroup" colSpan={4 + outcomeLabels.length} data-testid="band-achieved" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-green-700 border-t-4 border-t-green-500 text-center border-b border-gray-200 border-l border-gray-200">Achieved</th>
+                  <th scope="colgroup" colSpan={1} data-testid="band-target" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-blue-600 border-t-4 border-t-blue-600 text-center border-b border-gray-200 border-l border-gray-200"><AutoTerm>Target</AutoTerm></th>
+                  <th scope="colgroup" colSpan={4} data-testid="band-planned" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-purple-700 border-t-4 border-t-purple-500 text-center border-b border-gray-200 border-l border-gray-200"><AutoTerm>Planned</AutoTerm></th>
+                  <th scope="colgroup" colSpan={3} data-testid="band-funnel" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-orange-700 border-t-4 border-t-orange-500 text-center border-b border-gray-200 border-l border-gray-200"><AutoTerm id="funnel_stage">Funnel</AutoTerm></th>
+                  <th scope="colgroup" colSpan={2} data-testid="band-visits" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-teal-700 border-t-4 border-t-teal-500 text-center border-b border-gray-200 border-l border-gray-200"><AutoTerm>Visits</AutoTerm></th>
+                  <th scope="colgroup" colSpan={4 + outcomeLabels.length} data-testid="band-achieved" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-green-700 border-t-4 border-t-green-500 text-center border-b border-gray-200 border-l border-gray-200"><AutoTerm>Achieved</AutoTerm></th>
                   <th scope="colgroup" colSpan={1} data-testid="band-who" className="px-2 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-700 text-center border-b border-gray-200 border-l border-gray-200"></th>
                 </tr>
                 <tr>
@@ -623,7 +624,7 @@ export default function SalesMonitor() {
                   <thead>
                     <tr className="text-[10px] uppercase tracking-wide text-gray-500">
                       <th className="text-left py-1">Customer</th><th className="text-left">Salesman</th><th className="text-right">Planned</th>
-                      <th className="text-right">Contacts MTD</th><th className="text-right">Last contact</th><th className="text-right">Outcome</th>
+                      <th className="text-right"><Term id="contacts_mtd">Contacts MTD</Term></th><th className="text-right">Last contact</th><th className="text-right"><Term id="plan_outcomes">Outcome</Term></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -648,14 +649,14 @@ export default function SalesMonitor() {
         <section id="monitor-feed" className="bg-white border border-gray-200 rounded-xl" aria-label="Exception feed">
           <div className="px-4 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <h2 className="text-base font-semibold text-gray-900">Exceptions</h2>
+              <h2 className="text-base font-semibold text-gray-900"><Term id="exceptions">Exceptions</Term></h2>
               <p className="text-xs text-gray-600">High first, newest first. Click one to open the record; each says what clears it. Won not invoiced counts from {THRESHOLDS.wonNotInvoicedDays} days.</p>
             </div>
             <div className="flex gap-1" role="group" aria-label="Severity">
               {["all", "high", "medium", "low"].map((s) => (
                 <button key={s} type="button" onClick={() => setSevFilter(s)} data-testid={`sev-${s}`}
                   className={`text-xs px-2.5 py-1 rounded border ${sevFilter === s ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 hover:bg-gray-50"}`}>
-                  {s === "all" ? `All ${c.exceptions.total}` : `${s[0].toUpperCase()}${s.slice(1)} ${c.exceptions[s]}`}
+                  {s === "all" ? `All ${c.exceptions.total}` : <><Term id="severity">{`${s[0].toUpperCase()}${s.slice(1)}`}</Term>{` ${c.exceptions[s]}`}</>}
                 </button>
               ))}
             </div>
@@ -667,7 +668,7 @@ export default function SalesMonitor() {
               return (
                 <li key={e.id} className="flex flex-col sm:flex-row sm:items-start hover:bg-gray-50">
                   <button type="button" onClick={() => openRecord(e)} className="flex-1 min-w-0 text-left px-4 py-2.5 flex items-start gap-3">
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border uppercase ${SEV_STYLE[e.severity]}`}>{e.severity}</span>
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border uppercase ${SEV_STYLE[e.severity]}`}><Term id="severity">{e.severity}</Term></span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm text-gray-900">{e.title}</span>
                       <span className="block text-xs text-gray-600 break-words">{e.group} · {e.owner} · {e.detail}</span>

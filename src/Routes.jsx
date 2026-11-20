@@ -48,6 +48,7 @@ import {
 import TargetsPage from "./pages/targets";
 import ReassignRecords from "./pages/reassign-records";
 import NumbersCheck from "./pages/numbers-check";
+import DictionaryPage from "./pages/help";
 import SalesMonitor from "./pages/sales-monitor";
 import SalesMonitorStage from "./pages/sales-monitor/StagePage";
 // Who may open the Sales Monitor: one list, shared with the menu entry.
@@ -287,6 +288,15 @@ const Routes = () => {
                   element={
                     <ProtectedRoute page="reassign-records" allowedRoles={REASSIGN_ROLES}>
                       <ReassignRecords />
+                    </ProtectedRoute>
+                  }
+                />
+                {/* Session 47: the Dictionary (the Help menu item). Every role; can be hidden per user like any page. */}
+                <Route
+                  path="/help"
+                  element={
+                    <ProtectedRoute page="help">
+                      <DictionaryPage />
                     </ProtectedRoute>
                   }
                 />

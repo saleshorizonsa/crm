@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { AutoTerm } from "components/dictionary/Term";
 import Icon from 'components/AppIcon';
 import { supabase } from 'lib/supabase';
 
@@ -88,7 +89,7 @@ export default function ContactReportsAudit({ companyId, ownerIds = null, review
           <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
             <Icon name="FileText" size={16} className="text-blue-600" />
           </div>
-          <span className="text-sm font-semibold text-gray-900">Contact Reports — Audit</span>
+          <span className="text-sm font-semibold text-gray-900"><AutoTerm>Contact Reports — Audit</AutoTerm></span>
         </div>
         <Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={16} className="text-gray-400" />
       </button>

@@ -22,6 +22,7 @@ import {
 import { PURPOSES } from "utils/visitPurpose";
 import { useCustomerStrategies } from "utils/customerStrategy";
 import StrategyStrip from "components/strategy/StrategyStrip";
+import { AutoTerm } from "components/dictionary/Term";
 
 // SALES MONITOR — ONE PAGE PER STAGE (session 39, CEO 2026-11-16).
 //
@@ -263,7 +264,7 @@ export default function StagePage() {
               ← Sales Monitor
             </button>
             <h1 className="text-2xl font-semibold text-gray-900" data-testid="stage-title">
-              {stage.n ? `${stage.n}. ` : ""}{stage.name} — {period}{model.division ? ` · ${model.division.name}` : ""}
+              {stage.n ? `${stage.n}. ` : ""}<AutoTerm id={stage.id === "funnel" ? "funnel_stage" : null}>{stage.name}</AutoTerm> — {period}{model.division ? ` · ${model.division.name}` : ""}
             </h1>
           </div>
           <div className="flex flex-wrap gap-2 items-end">
@@ -303,7 +304,7 @@ export default function StagePage() {
                     className={`flex items-center gap-1.5 whitespace-nowrap text-sm px-3 py-1.5 rounded-full border ${on ? stageColour(s.id).solid : stageColour(s.id).outline}`}
                   >
                     {s.n && <span className={`w-5 h-5 rounded-full text-[11px] font-semibold flex items-center justify-center ${on ? "bg-white text-gray-900" : stageColour(s.id).solid}`}>{s.n}</span>}
-                    {s.name}
+                    <AutoTerm id={s.id === "funnel" ? "funnel_stage" : null}>{s.name}</AutoTerm>
                   </button>
                 </li>
               );
@@ -322,7 +323,7 @@ export default function StagePage() {
           <div data-deco="1" aria-hidden="true" className={`absolute top-0 left-0 right-0 h-1 ${SC.strip}`} />
           {page.summary.map((s) => (
             <div key={s.id} data-testid={`sum-${s.id}`} className="min-w-0">
-              <div className="text-[11px] uppercase tracking-wide text-gray-500">{s.label}</div>
+              <div className="text-[11px] uppercase tracking-wide text-gray-500"><AutoTerm>{s.label}</AutoTerm></div>
               <div className={`font-mono text-base font-semibold tabular-nums ${SC.text}`}><Figure>{fig(s.value, s.type)}</Figure></div>
               {(() => {
                 // A bar for a share ("4 of 8"), in the stage's colour — decoration only.
@@ -347,13 +348,13 @@ export default function StagePage() {
                   <button key={v.id} type="button" role="tab" aria-selected={v.active} data-testid={`stage-view-${v.id}`}
                     onClick={() => setList({ view: v.id, tab: null, only: null })}
                     className={`flex-shrink-0 whitespace-nowrap text-sm px-3 py-1 rounded-lg border ${v.active ? SC.solid : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
-                    {v.label}
+                    <AutoTerm>{v.label}</AutoTerm>
                   </button>
                 ))}
               </div>
             )}
             <div className="flex items-baseline gap-2 flex-wrap">
-              <h2 className="text-base font-semibold text-gray-900">{activeView.label}</h2>
+              <h2 className="text-base font-semibold text-gray-900"><AutoTerm id={activeView.label === "Funnel" ? "funnel_stage" : null}>{activeView.label}</AutoTerm></h2>
               <span className={`font-mono text-lg font-semibold tabular-nums whitespace-nowrap ${SC.text}`} data-testid="stage-total">{valueText(page.total, page.unit)}</span>
               <span className="text-xs text-gray-500">{page.unit}</span>
             </div>
@@ -367,7 +368,7 @@ export default function StagePage() {
                       data-testid={`stage-tab-${set.id}-${o.id}`}
                       onClick={() => { const t = [...page.selection]; t[i] = o.id; setList({ tab: t, only: null }); }}
                       className={`flex-shrink-0 whitespace-nowrap text-xs px-2.5 py-1 rounded-full border ${on ? SC.solid : o.count === 0 ? "border-gray-200 text-gray-400 bg-gray-50" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
-                      {o.label} <span className="font-mono">{o.count}</span>
+                      <AutoTerm>{o.label}</AutoTerm> <span className="font-mono">{o.count}</span>
                     </button>
                   );
                 })}
@@ -454,13 +455,13 @@ export default function StagePage() {
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs flex-1 min-w-0 pl-8 sm:pl-0" data-testid="row-cells">
                     {showValue && (
                       <span data-cell="value">
-                        <span className="text-gray-500">{node.valueLabel || page.valueLabel}</span>{" "}
+                        <span className="text-gray-500"><AutoTerm>{node.valueLabel || page.valueLabel}</AutoTerm></span>{" "}
                         <span className="font-mono font-semibold tabular-nums whitespace-nowrap text-gray-900">{valueText(node.value, valueUnit)}</span>
                       </span>
                     )}
                     {cols.filter((c) => !(node.kind === "exception" && c.key === "severity")).map((c) => (
                       <span key={c.key} data-cell={c.key}>
-                        <span className="text-gray-500">{c.label}</span>{" "}
+                        <span className="text-gray-500"><AutoTerm>{c.label}</AutoTerm></span>{" "}
                         <span className={`font-mono text-gray-800 ${c.type ? "tabular-nums whitespace-nowrap" : ""}`}>{node.cells?.[c.key] === null || node.cells?.[c.key] === undefined || node.cells?.[c.key] === "" ? "—" : statusCell(c.key, c.type && node.cells[c.key] !== NO_TARGET ? cellText(node.cells, c) : String(node.cells[c.key]), { elapsedPct })}</span>
                       </span>
                     ))}

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { AutoTerm } from "components/dictionary/Term";
 import { STALE_INVOICE_DAYS } from "utils/planningCalculations";
 
 // Copied from pages/coverage-console/components/ExceptionFeed.jsx (not
@@ -71,7 +72,7 @@ const DivisionExceptionFeed = ({ exceptions = [], userName, onJump }) => {
                   : "bg-amber-50 text-amber-700 border-amber-200"
               }`}
             >
-              {ex.sev}
+              <AutoTerm id="exception_feed">{ex.sev}</AutoTerm>
             </span>
           </div>
           <div className="text-[10px] text-gray-400 font-mono mt-0.5">
@@ -93,7 +94,7 @@ const DivisionExceptionFeed = ({ exceptions = [], userName, onJump }) => {
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
       <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
-        <h3 className="text-sm font-semibold text-gray-800">Exception feed</h3>
+        <h3 className="text-sm font-semibold text-gray-800"><AutoTerm>Exception feed</AutoTerm></h3>
         <div className="flex items-center gap-2">
           {exceptions.length > 0 && (
             <div className="flex items-center gap-1">

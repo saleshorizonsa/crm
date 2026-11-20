@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import Term from "components/dictionary/Term";
 import Icon from "./AppIcon";
 import { useCurrency } from "../contexts/CurrencyContext";
 
@@ -354,7 +355,7 @@ const SalesTargetTable = ({
                 {isSalesmanView ? "Assigned By" : "Team Member"}
               </th>
               <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide w-[140px]">
-                {view === "quantity" ? "Target Qty" : "Target Amount"}
+                <Term id="target">{view === "quantity" ? "Target Qty" : "Target Amount"}</Term>
               </th>
               <th className="text-center px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide w-[120px]">
                 Type
@@ -363,7 +364,7 @@ const SalesTargetTable = ({
                 Period
               </th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide w-[150px]">
-                Progress
+                <Term id="targets_tab">Progress</Term>
               </th>
               {showAssignedByCol && (
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide w-[130px]">

@@ -24,8 +24,9 @@ import { landingPathForRole } from 'utils/landingPath';
  *      them to the next visible page in menu order.
  *
  * Pages outside this list — Admin Dashboard, Settings, Account settings,
- * Notifications, Help, the viewer's pipeline view — cannot be hidden, so an
- * admin can never hide the Admin Dashboard from himself.
+ * Notifications, the viewer's pipeline view — cannot be hidden, so an
+ * admin can never hide the Admin Dashboard from himself. (Help — the
+ * Dictionary, session 47 — is in the list: it can be hidden.)
  *
  * ONE implementation, used by the menu (desktop and mobile) and by
  * ProtectedRoute, through contexts/PageAccessContext.jsx.
@@ -48,6 +49,8 @@ export const ACCESS_PAGES = [
   { key: 'task-management', path: '/task-management', labelKey: 'nav.tasks', icon: 'ListTodo', roles: null },
   { key: 'numbers-check', path: '/numbers-check', label: 'Numbers check', icon: 'CheckCheck', roles: NUMBERS_CHECK_ROLES },
   { key: 'reassign-records', path: '/reassign-records', label: 'Reassign Records', icon: 'ArrowLeftRight', roles: REASSIGN_ROLES },
+  // Session 47: the Dictionary, behind the Help menu item. Every role.
+  { key: 'help', path: '/help', labelKey: 'dictionary.title', icon: 'Info', roles: null },
 ];
 
 const BY_KEY = new Map(ACCESS_PAGES.map((p) => [p.key, p]));

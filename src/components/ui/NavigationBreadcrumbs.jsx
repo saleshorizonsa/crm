@@ -46,7 +46,7 @@ const NavigationBreadcrumbs = ({ items = [], className = '' }) => {
       ],
       '/help': [
         { label: 'Dashboard', path: '/company-dashboard', icon: 'Home' },
-        { label: 'Help', path: '/help', icon: 'HelpCircle' }
+        { label: 'Dictionary', path: '/help', icon: 'HelpCircle' }
       ]
     };
 

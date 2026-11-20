@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import Term, { AutoTerm } from "components/dictionary/Term";
 import { supabase } from "lib/supabase";
 import { useAuth } from "contexts/AuthContext";
 import Header from "components/ui/Header";
@@ -12,7 +13,6 @@ import {
 } from "utils/dashboardDateUtils";
 import {
   EXPECTED_PCT_LABEL,
-  EXPECTED_PCT_TOOLTIP,
   conversionLabel,
   borrowedNote,
   UNASSIGNED,
@@ -141,7 +141,7 @@ const HEAD_NUM = 'text-right';
 function StatusChip({ m }) {
   const h = HEALTH[healthOf(m)];
   return (
-    <span className={`text-[10px] font-semibold px-2 py-1 rounded-full border whitespace-nowrap ${h.cls}`}>{h.text}</span>
+    <span className={`text-[10px] font-semibold px-2 py-1 rounded-full border whitespace-nowrap ${h.cls}`}><Term id="status">{h.text}</Term></span>
   );
 }
 
@@ -167,7 +167,7 @@ function Panel({ title, hint, children }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden self-start">
       <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
+        <h3 className="text-sm font-semibold text-gray-800"><AutoTerm>{title}</AutoTerm></h3>
         {hint && <span className="text-xs text-gray-400 whitespace-nowrap">{hint}</span>}
       </div>
       {children}
@@ -185,17 +185,15 @@ function FigureTable({ rows, empty }) {
             {COLUMNS.map((h, i) => (
               <th
                 key={h}
-                /* The formula on hover: the column is a ratio of four things
-                   and the name alone cannot say which four. */
-                title={h === EXPECTED_PCT_LABEL ? EXPECTED_PCT_TOOLTIP : undefined}
+                /* The formula is the dictionary entry (session 47): the column is a
+                   ratio of four things and the name alone cannot say which four. */
                 className={[
                   'px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100',
                   // Name column: frozen, left-aligned, never wrapped.
                   i === 0 ? `text-left whitespace-nowrap ${STICKY_HEAD}` : `${HEAD_NUM} ${HEAD_WRAP}`,
-                  h === EXPECTED_PCT_LABEL ? 'cursor-help underline decoration-dotted' : '',
                 ].filter(Boolean).join(' ')}
               >
-                {h}
+                <AutoTerm>{h}</AutoTerm>
               </th>
             ))}
           </tr>
@@ -213,7 +211,7 @@ function FigureTable({ rows, empty }) {
                   {row.name}
                   {row.pinned && (
                     <span className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
-                      Supervisor
+                      <Term id="supervisor">Supervisor</Term>
                     </span>
                   )}
                 </div>
@@ -261,7 +259,7 @@ function Figures({ m, small = false }) {
     <div className={`grid grid-cols-2 sm:grid-cols-5 ${small ? "gap-2" : "gap-3"}`}>
       {items.map(([k, v, cls]) => (
         <div key={k} className={small ? "" : "bg-gray-50 rounded-xl px-3 py-2.5"}>
-          <div className="text-[10px] text-gray-400 uppercase tracking-widest font-mono">{k}</div>
+          <div className="text-[10px] text-gray-400 uppercase tracking-widest font-mono"><AutoTerm>{k}</AutoTerm></div>
           <div className={`font-bold font-mono ${small ? "text-xs mt-0.5" : "text-sm mt-1"} ${cls}`}>{v}</div>
         </div>
       ))}
@@ -839,7 +837,7 @@ export default function SalesDivisions() {
               >
                 <div className="flex items-start justify-between gap-3 mb-4">
                   <div className="min-w-0">
-                    <p className="text-[10px] font-mono text-indigo-600 uppercase tracking-widest mb-1">Supervisor</p>
+                    <p className="text-[10px] font-mono text-indigo-600 uppercase tracking-widest mb-1"><Term id="supervisor">Supervisor</Term></p>
                     <h3 className="text-lg font-bold text-gray-900 truncate">{card.user.full_name}</h3>
                     <p className="text-xs text-gray-500 font-mono">
                       Team of {others + 1} · {others} {others === 1 ? "person" : "people"} under them
@@ -1085,7 +1083,7 @@ export default function SalesDivisions() {
                     : "border-transparent text-gray-500 hover:text-gray-800"
                 }`}
               >
-                {label}
+                <AutoTerm id={key === "targets" ? "targets_tab" : "coverage"}>{label}</AutoTerm>
               </button>
             ))}
           </div>
@@ -1121,7 +1119,7 @@ export default function SalesDivisions() {
                   ["Expected close", fmtDate(currentDeal.expected_close_date)],
                 ].map(([k, v]) => (
                   <div key={k} className="bg-gray-50 rounded-xl px-4 py-3">
-                    <div className="text-[10px] text-gray-400 uppercase tracking-widest font-mono">{k}</div>
+                    <div className="text-[10px] text-gray-400 uppercase tracking-widest font-mono"><AutoTerm>{k}</AutoTerm></div>
                     <div className="text-base font-bold font-mono mt-1 text-gray-900 capitalize">{v}</div>
                   </div>
                 ))}
@@ -1198,16 +1196,18 @@ export default function SalesDivisions() {
                 SECURITY DEFINER function it comes from arrives with
                 migrations/insights_rls.sql, which is not applied yet. */}
             {(role === "supervisor" || role === "salesman") && raw?.companyRate && (
-              <p
-                className="text-xs text-gray-500 px-1 font-mono"
-                title={`The company rate is ${raw.companyRate.won} won of ${raw.companyRate.total} deals created in the 3 completed months, with ${raw.companyRate.importedExcluded} imported rows set aside. It is shown so your own rate has something to be read against; company amounts are not shown.`}
-              >
-                Your conversion{" "}
+              <p className="text-xs text-gray-500 px-1 font-mono">
+                <Term id="conversion_3m">Your conversion</Term>{" "}
                 <span className="font-semibold text-gray-900">{pct(metrics.winRatePct, 0)}</span>
-                {" · company "}
+                {" · "}<Term id="company_rate">company</Term>{" "}
                 <span className="font-semibold text-gray-900">
                   {raw.companyRate.winRatePct.toFixed(1)}%
                 </span>
+              </p>
+            )}
+            {(role === "supervisor" || role === "salesman") && raw?.companyRate && (
+              <p className="text-[11px] text-gray-400 px-1 font-mono -mt-1" data-testid="company-rate-counts">
+                {raw.companyRate.won} won of {raw.companyRate.total} · {raw.companyRate.importedExcluded} imported set aside
               </p>
             )}
 

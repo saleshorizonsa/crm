@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import Term from "components/dictionary/Term";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 import LeadScoreBadge from "../../../components/ui/LeadScoreBadge";
@@ -72,7 +73,7 @@ const HotLeadsWidget = ({ companyId, ownerIds = null }) => {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
           <Icon name="TrendingUp" size={18} className="text-red-500" />
-          {t("dashboard.hotLeads")}
+          <Term id="hot_leads">{t("dashboard.hotLeads")}</Term>
         </h3>
         <button
           onClick={() => navigate("/sales-pipeline?stage=lead", { state: { activeStage: "lead" } })}

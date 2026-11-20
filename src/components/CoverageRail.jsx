@@ -15,6 +15,7 @@
 // segments that open an empty panel.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AutoTerm } from "components/dictionary/Term";
 import { useNavigate } from "react-router-dom";
 import {
   RAIL_SEGMENTS,
@@ -210,7 +211,7 @@ const CoverageRail = ({
     <div>
       <div className="flex items-baseline justify-between mb-2">
         <span className="text-[10px] font-mono text-gray-400 uppercase tracking-widest">
-          Coverage rail
+          <AutoTerm>Coverage rail</AutoTerm>
         </span>
         <span className="text-[11px] font-mono text-gray-500">
           {compact(coverage)} of {compact(target)} SAR
@@ -292,7 +293,7 @@ const CoverageRail = ({
             >
               <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: s.color }} />
               <span className={`text-[10px] font-mono text-gray-500 ${openable(key) ? "underline decoration-dotted" : ""}`}>
-                {s.label} {compact(value)}
+                <AutoTerm>{s.label}</AutoTerm> {compact(value)}
               </span>
             </button>
           );
@@ -310,7 +311,7 @@ const CoverageRail = ({
               style={{ background: "repeating-linear-gradient(45deg, #10b981 0 2px, #a7f3d0 2px 4px)" }}
             />
             <span className={`text-[10px] font-mono text-gray-500 ${openable("wonNotInvoiced") ? "underline decoration-dotted" : ""}`}>
-              Won, not invoiced {compact(wonNotInvoiced)} · not in coverage
+              <AutoTerm id="won_not_invoiced">Won, not invoiced</AutoTerm> {compact(wonNotInvoiced)} · not in coverage
             </span>
           </button>
         )}

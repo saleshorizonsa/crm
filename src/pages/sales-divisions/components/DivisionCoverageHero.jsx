@@ -1,4 +1,5 @@
 import React from "react";
+import Term, { AutoTerm } from "components/dictionary/Term";
 // The shared rail: one implementation for this page and the Coverage Console,
 // which carried a hand-copy of it until 2026-10-07.
 import CoverageRail from "components/CoverageRail";
@@ -12,7 +13,6 @@ import { conversionSourceNote } from "utils/planningCalculations";
 // shared with the panel and the Coverage Console.
 import {
   EXPECTED_PCT_LABEL,
-  EXPECTED_PCT_TOOLTIP,
   conversionLabel,
 } from "utils/salesDivisionMetrics";
 
@@ -71,12 +71,12 @@ export function DivisionCoverageHero({
 
         <div className="text-right flex-shrink-0">
           <span className={`inline-block text-xs font-semibold px-3 py-1.5 rounded-lg border ${chip.cls}`}>
-            {chip.text}
+            <Term id="status">{chip.text}</Term>
           </span>
           <div className="text-[11px] font-mono text-gray-400 mt-2 space-y-1">
             <div>
-              <span className="cursor-help underline decoration-dotted" title={EXPECTED_PCT_TOOLTIP}>
-                {EXPECTED_PCT_LABEL}
+              <span>
+                <Term id="expected_pct">{EXPECTED_PCT_LABEL}</Term>
               </span>{" "}
               <span className={metrics.coverageOk ? "text-emerald-600 font-semibold" : "text-red-600 font-semibold"}>
                 {metrics.coverageOk ? "PASS" : "FAIL"}{" "}
@@ -87,7 +87,7 @@ export function DivisionCoverageHero({
                 whenever the selected period is not the current month. */}
             {metrics.pacingOk !== null && (
               <div>
-                Pacing{" "}
+                <Term id="pacing">Pacing</Term>{" "}
                 <span className={metrics.pacingOk ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
                   {metrics.pacingOk ? "PASS" : "FAIL"} {(metrics.pace * 100).toFixed(1)}% vs{" "}
                   {(metrics.elapsed * 100).toFixed(1)}%
@@ -114,7 +114,7 @@ export function DivisionCoverageHero({
               <span className="text-gray-400 font-bold text-lg">{item[0]}</span>
             ) : (
               <div className="flex flex-col">
-                <span className="text-[9px] text-gray-400 uppercase tracking-widest">{item[0]}</span>
+                <span className="text-[9px] text-gray-400 uppercase tracking-widest"><AutoTerm>{item[0]}</AutoTerm></span>
                 <span className={`font-semibold ${item[2]}`}>{compact(item[1])} SAR</span>
               </div>
             )}
@@ -249,7 +249,7 @@ export function DivisionCycleLedger({ metrics, exceptionCount = null }) {
       <div className="divide-y divide-gray-50">
         {rows.map(([k, v, n, cls]) => (
           <div key={k} className="flex justify-between items-baseline px-5 py-2.5">
-            <span className="text-xs text-gray-500 font-mono">{k}</span>
+            <span className="text-xs text-gray-500 font-mono"><AutoTerm>{k}</AutoTerm></span>
             <div className="text-right">
               <span
                 className={`text-xs font-semibold font-mono ${
