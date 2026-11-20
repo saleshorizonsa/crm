@@ -538,10 +538,11 @@ export default function CoverageConsole() {
     if (nav.level === "company")
       return {
         title: company?.name || "All Teams",
-        sub: `${scopedIds.length} team members · ${pctFmt(
+        // Session 47a: the figure is the 3-month conversion, named as on Insights.
+        sub: `${scopedIds.length} team members · Conversion (3m) ${pctFmt(
           metrics?.winRate || 0,
           0
-        )} win rate`,
+        )}`,
         scope: "Director view",
       };
     if (nav.level === "team")
