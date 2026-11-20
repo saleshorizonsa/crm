@@ -1205,6 +1205,11 @@ export default function SalesDivisions() {
                 </span>
               </p>
             )}
+            {(role === "supervisor" || role === "salesman") && raw?.companyRate && (
+              <p className="text-[11px] text-gray-400 px-1 font-mono -mt-1" data-testid="company-rate-counts">
+                {raw.companyRate.won} won of {raw.companyRate.total} · {raw.companyRate.importedExcluded} imported set aside
+              </p>
+            )}
 
             {nav.level === "member" && currentMember?.role === "manager" && (
               <p className="text-xs text-gray-500 px-1">

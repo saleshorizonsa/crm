@@ -50,7 +50,7 @@ export const ACCESS_PAGES = [
   { key: 'numbers-check', path: '/numbers-check', label: 'Numbers check', icon: 'CheckCheck', roles: NUMBERS_CHECK_ROLES },
   { key: 'reassign-records', path: '/reassign-records', label: 'Reassign Records', icon: 'ArrowLeftRight', roles: REASSIGN_ROLES },
   // Session 47: the Dictionary, behind the Help menu item. Every role.
-  { key: 'help', path: '/help', labelKey: 'dashboard.help', icon: 'Info', roles: null },
+  { key: 'help', path: '/help', labelKey: 'dictionary.title', icon: 'Info', roles: null },
 ];
 
 const BY_KEY = new Map(ACCESS_PAGES.map((p) => [p.key, p]));

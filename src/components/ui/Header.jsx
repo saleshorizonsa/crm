@@ -147,7 +147,8 @@ const Header = ({
       : []),
     { label: t("nav.tasks"), path: "/task-management", icon: "ListTodo" },
     { label: t("nav.settings"), path: "/settings", icon: "Settings" },
-    { label: t("dashboard.help"), path: "/help", icon: "Info" },
+    // Session 47: the menu label equals the page title (the Dictionary); the route stays /help.
+    { label: t("dictionary.title"), path: "/help", icon: "Info" },
     ...(userProfile?.role === "admin"
       ? [
           {
