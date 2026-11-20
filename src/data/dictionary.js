@@ -224,7 +224,7 @@ const ENTRIES = [
   }),
   E({
     id: 'status', pages: ['insights'], codeRef: 'src/utils/salesDivisionMetrics.js:healthOf',
-    aliases: ['Status', 'Healthy', 'At risk', 'At Risk', 'Off plan', 'Off Plan', 'Healthy (coverage only)', 'Off Plan (coverage only)'],
+    aliases: ['Status', 'Healthy', 'At risk', 'Off plan', 'Healthy (coverage only)', 'Off plan (coverage only)'],
     term: T('Status', 'الحالة'),
     short: T('Healthy, At risk or Off plan — from coverage and pacing together.', 'سليم أو في خطر أو خارج الخطة — من التغطية والوتيرة معاً.'),
     meaning: T('A quick verdict on whether the target will be reached.', 'حكم سريع على إمكانية بلوغ الهدف.'),
@@ -239,7 +239,7 @@ const ENTRIES = [
     term: T('Pacing', 'الوتيرة'),
     short: T('Achieved as a share of target, against the share of the month gone, with a 15-point allowance.', 'المحقق كنسبة من الهدف، مقابل نسبة ما مضى من الشهر، مع سماح 15 نقطة.'),
     meaning: T('Whether sales are keeping up with the calendar.', 'هل تواكب المبيعات مرور أيام الشهر.'),
-    calculation: T('Pace = achieved ÷ target. Elapsed = today\'s day ÷ days in the month. Pacing passes when pace ≥ elapsed − 15 points. Rail words: On track when pace ≥ elapsed; Behind pace when below elapsed − 15 points; Within tolerance in between. Measured only for the current month.', 'الوتيرة = المحقق ÷ الهدف. المنقضي = يوم اليوم ÷ أيام الشهر. تنجح الوتيرة إذا كانت ≥ المنقضي − 15 نقطة. كلمات المسار: على المسار إذا كانت ≥ المنقضي؛ متأخر إذا كانت دون المنقضي − 15 نقطة؛ ضمن السماح بينهما. تُقاس للشهر الحالي فقط.'),
+    calculation: T('Pace = achieved ÷ target. Elapsed = today\'s day in Riyadh ÷ days in the month. Pacing passes when pace ≥ elapsed − 15 points. Rail words: On track when pace ≥ elapsed; Behind pace when below elapsed − 15 points; Within tolerance in between. Measured only for the current month.', 'الوتيرة = المحقق ÷ الهدف. المنقضي = يوم اليوم بتوقيت الرياض ÷ أيام الشهر. تنجح الوتيرة إذا كانت ≥ المنقضي − 15 نقطة. كلمات المسار: على المسار إذا كانت ≥ المنقضي؛ متأخر إذا كانت دون المنقضي − 15 نقطة؛ ضمن السماح بينهما. تُقاس للشهر الحالي فقط.'),
     source: T('Target, Achieved and the calendar.', 'الهدف والمحقق والتقويم.'),
     example: T('Day 10 of 30 (33%), achieved 30% of target → within tolerance.', 'اليوم 10 من 30 (33%)، والمحقق 30% من الهدف ← ضمن السماح.'),
     related: ['pace', 'status', 'target', 'achieved'],

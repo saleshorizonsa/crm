@@ -711,7 +711,8 @@ export default function SalesDivisions() {
   }[role] || "Your figures only";
 
   const hero = (() => {
-    const winRate = `${pct(metrics.winRatePct, 0)} win rate`;
+    // Session 47a: the figure is the 3-month conversion — named as such.
+    const winRate = `Conversion (3m) ${pct(metrics.winRatePct, 0)}`;
     if (nav.level === "company") {
       // Counted off the COLLAPSED groups, and the Unassigned group only counts
       // when it has somebody in it — "4 divisions" on a page showing one was

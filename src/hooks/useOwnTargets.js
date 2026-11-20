@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { salesTargetService } from 'services/supabaseService';
+import { salesTargetService, dealService } from 'services/supabaseService';
 import { fetchReturns } from 'utils/planningCalculations';
 import {
   withTargetRowProgress, targetRowsWindow, achievedForRows,
@@ -42,6 +42,7 @@ export function useOwnTargets({
 }) {
   const [rows, setRows] = useState([]);
   const [productRows, setProductRows] = useState([]);
+  const [lineDeals, setLineDeals] = useState([]);
   const [returns, setReturns] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -55,6 +56,7 @@ export function useOwnTargets({
     if (!companyId || !ids.length) {
       setRows([]);
       setProductRows([]);
+      setLineDeals([]);
       return undefined;
     }
     setLoading(true);
@@ -74,20 +76,31 @@ export function useOwnTargets({
           .map((t) => t.id);
 
         let products = [];
+        let withLines = [];
         if (productTargetIds.length) {
           const { data } = await salesTargetService
             .getProductTargetsBySalesTargetIds(productTargetIds);
           products = data || [];
+          // Session 47a: the product table needs the deal LINES, which the
+          // caller's deals do not carry. Read them the way the Targets page
+          // does — dealService.getDeals with viewAll, which embeds
+          // deal_products — so Achieved per product equals that page's.
+          if (products.length) {
+            const { data: d } = await dealService.getDeals(companyId, { viewAll: true }, null);
+            withLines = d || [];
+          }
         }
         if (!alive) return;
         setRows(all);
         setProductRows(products);
+        setLineDeals(withLines);
       } catch (e) {
         if (alive) {
           console.error('useOwnTargets:', e);
           setError(e.message || String(e));
           setRows([]);
           setProductRows([]);
+          setLineDeals([]);
         }
       } finally {
         if (alive) setLoading(false);
@@ -153,12 +166,32 @@ export function useOwnTargets({
     [deals, returns, people, amountOf],
   );
 
-  const productTargets = useMemo(
-    () => salesTargetService.calculateProductTargetProgress(
-      productRows, deals || [], ids.length ? ids : null,
-    ),
-    [productRows, deals, idKey],
-  );
+  // Per product row, whose lines count — the Targets page's rule
+  // (DirectorDashboard's quantity rows): the row's holder, plus his direct
+  // reports when he is a manager, supervisor or head. Counting the whole
+  // viewer scope instead would give one salesman's row his teammates' lines
+  // on a team or company view. Same function, called per row as that page does.
+  const productTargets = useMemo(() => {
+    const byId = new Map((people || []).map((p) => [p.id, p]));
+    const parentById = new Map((rows || []).map((r) => [r.id, r]));
+    return (productRows || []).map((pt) => {
+      const parent = { ...(pt.sales_target || {}), ...(parentById.get(pt.sales_target_id) || {}) };
+      const holder = parent.assigned_to;
+      const role = byId.get(holder)?.role || parent.assignee?.role;
+      const owners = new Set([holder]);
+      if (role === 'manager' || role === 'supervisor' || role === 'head') {
+        (people || []).filter((p) => p.supervisor_id === holder).forEach((p) => owners.add(p.id));
+      }
+      const row = salesTargetService.calculateProductTargetProgress(
+        [{ ...pt, sales_target: parent }],
+        lineDeals,
+        Array.from(owners).filter(Boolean),
+      )[0] || pt;
+      // The holder, for the table's User column — attached as the Targets page
+      // attaches it (it read "Unknown" on a supervisor's view before).
+      return { ...row, assignee: parent.assignee || byId.get(holder) || row.assignee };
+    });
+  }, [productRows, lineDeals, rows, people]);
 
   return { targetRows, totalAchievedFor, productTargets, loading, error };
 }

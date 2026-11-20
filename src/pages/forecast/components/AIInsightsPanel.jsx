@@ -36,7 +36,7 @@ const STATUS_LABELS = {
   excellent: "Excellent",
   good:      "Good",
   warning:   "Warning",
-  danger:    "At Risk",
+  danger:    "At risk",
   neutral:   "Info",
 };
 

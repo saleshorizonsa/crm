@@ -781,9 +781,9 @@ export default function CoverageConsole() {
       };
     }
     if (bad) {
-      return { text: `Off Plan${suffix}`, cls: "bg-red-50 text-red-800 border-red-200" };
+      return { text: `Off plan${suffix}`, cls: "bg-red-50 text-red-800 border-red-200" };
     }
-    return { text: "At Risk", cls: "bg-amber-50 text-amber-800 border-amber-200" };
+    return { text: "At risk", cls: "bg-amber-50 text-amber-800 border-amber-200" };
   })();
 
   // ── RENDER ─────────────────────────────────────────────────────────────────

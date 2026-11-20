@@ -574,7 +574,7 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
           />
           <div className="flex-1 min-w-0">
             <span className={`font-semibold text-sm ${totals.isHealthy ? 'text-green-700' : 'text-amber-700'}`}>
-              {totals.isHealthy ? '✅ Status: Healthy' : '⚠️ Status: At Risk'}
+              {totals.isHealthy ? '✅ Status: Healthy' : '⚠️ Status: At risk'}
             </span>
             <span className="text-xs text-muted-foreground ml-3">
               {/* Pacing divides by TODAY's date, so it says nothing about a
@@ -641,7 +641,7 @@ export default function KPICardsStrip({ salesmanData = [], totals, role, loading
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="font-semibold text-sm text-foreground">A. Coverage Check</h3>
                     <span className={`text-sm font-bold ${totals.coverageHealthy ? 'text-green-600' : 'text-red-600'}`}>
-                      {totals.coverageHealthy ? '✓ Passed' : '✗ At Risk'}
+                      {totals.coverageHealthy ? '✓ Passed' : '✗ At risk'}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground mb-3">

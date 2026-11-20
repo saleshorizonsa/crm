@@ -4,6 +4,9 @@ import {
   primaryDivisionByUser,
 } from 'utils/divisionMembership';
 import { partitionOpenFunnel } from 'utils/openFunnel';
+// Session 47a: pacing's "today" is the Riyadh calendar day, like the rest of
+// the Monitor — not the device clock.
+import { riyadhToday } from 'utils/visits';
 // activeIdsFrom comes from the leaf module directly: planningCalculations
 // re-exports the older achiever-scope names but not this one, and a leaf
 // import cannot create the cycle that re-export list exists to avoid.
@@ -238,7 +241,7 @@ export function borrowedNote(m) {
   if (m?.winRateSource && m.winRateSource !== 'company-division') {
     return `No deals of their own in the 3-month window, so the ${conversionSourceNote(m.winRateSource)} is used.`;
   }
-  return `This division closed ${n} deal${n === 1 ? '' : 's'} in the 3-month `
+  return `This division created ${n} deal${n === 1 ? '' : 's'} in the 3-month `
     + `window — fewer than ${DIVISION_MIN_SAMPLE}, too few to measure a rate `
     + 'from — so the company achiever rate is shown and used instead.';
 }
@@ -694,8 +697,19 @@ export function calcDivisionMetrics(userIds, data) {
 
   // Pacing, exactly as the Coverage Console derives it: achieved share of target
   // against the share of the month elapsed, with a 15-point tolerance.
-  const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const dayOfMonth = now.getDate();
+  // Today is the RIYADH day (session 47a): at 23:30 in New York it is already
+  // tomorrow in Riyadh, and the Monitor counts in Riyadh days. The day is
+  // counted within the PERIOD's month (monthStart): if Riyadh has already
+  // left it, the month is over (day = days in month); if Riyadh has not yet
+  // reached it, none of it has gone (day 0). A caller without monthStart
+  // counts in the Riyadh month.
+  const today = riyadhToday(now);
+  const periodMonth = /^\d{4}-\d{2}/.test(String(monthStart || '')) ? String(monthStart).slice(0, 7) : today.slice(0, 7);
+  const [pYear, pMonth] = periodMonth.split('-').map(Number);
+  const totalDays = new Date(pYear, pMonth, 0).getDate();
+  const todayMonth = today.slice(0, 7);
+  // eslint-disable-next-line no-nested-ternary
+  const dayOfMonth = todayMonth === periodMonth ? Number(today.slice(8, 10)) : (todayMonth > periodMonth ? totalDays : 0);
   const elapsed = dayOfMonth / totalDays;
   const pace = achieved / Math.max(target, 1);
 
