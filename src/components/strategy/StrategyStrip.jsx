@@ -1,4 +1,5 @@
 import React from "react";
+import Term from "components/dictionary/Term";
 import { useLanguage } from "../../i18n";
 import { strategyColour } from "utils/strategyColours";
 import { strategyLabel, NOT_SET } from "utils/customerStrategy";
@@ -14,7 +15,7 @@ export default function StrategyStrip({ parts, total, selected, onPick, format }
   if (!parts) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5" data-testid="strategy-strip" data-total={total}>
-      <span className="text-xs font-medium text-gray-600 mr-1">{t("strategy.byStrategy")}:</span>
+      <span className="text-xs font-medium text-gray-600 mr-1"><Term id="by_strategy">{t("strategy.byStrategy")}</Term>:</span>
       {parts.map((p) => {
         const c = strategyColour(p.key);
         const active = selected === p.key;
@@ -34,7 +35,7 @@ export default function StrategyStrip({ parts, total, selected, onPick, format }
               : { background: "#fff", color: "#334155", borderColor: "#E2E8F0", borderStyle: p.key === NOT_SET ? "dashed" : "solid" }}
           >
             <span aria-hidden="true" className="inline-block w-2 h-2 rounded-full" style={p.key === NOT_SET ? { border: `1px dashed ${c.colour}` } : { background: c.colour }} />
-            <span className="font-medium">{strategyLabel(p.key, t)}</span>
+            <span className="font-medium"><Term id={p.key === NOT_SET ? "strategy_not_set" : `strategy_${p.key}`}>{strategyLabel(p.key, t)}</Term></span>
             <span className="tabular-nums">{format(p.value)}</span>
             <span className="tabular-nums text-gray-500">{p.pct === null ? "—" : `${Math.round(p.pct)}%`}</span>
           </button>

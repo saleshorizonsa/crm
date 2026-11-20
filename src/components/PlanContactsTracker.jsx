@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { AutoTerm } from "components/dictionary/Term";
 import LogVisit from "components/LogVisit";
 import { fetchPlanContacts, summarisePlanContacts } from "utils/planContacts";
 import { riyadhMonthKeyOf, monthBoundsOf } from "utils/planMonths";
@@ -67,7 +68,7 @@ export default function PlanContactsTracker({
   return (
     <section className="border-t border-gray-200" data-testid="plan-contacts">
       <div className="px-4 pt-3 pb-2">
-        <h3 className="text-xs font-semibold text-gray-900">Plan customers — contacted or pending</h3>
+        <h3 className="text-xs font-semibold text-gray-900"><AutoTerm>Plan customers — contacted or pending</AutoTerm></h3>
         <p className="text-xs text-gray-600" data-testid="plan-contacts-header">
           Contacted {summary.total.contacted} of {summary.total.customers} planned customers this month
         </p>
@@ -81,7 +82,7 @@ export default function PlanContactsTracker({
           <thead>
             <tr className="bg-gray-50">
               {["Name", "Plan customers", "Contacted", "Pending", "% contacted"].map((h, i) => (
-                <th key={h} scope="col" className={`${TH} ${i ? "text-right" : "text-left"}`}>{h}</th>
+                <th key={h} scope="col" className={`${TH} ${i ? "text-right" : "text-left"}`}><AutoTerm>{h}</AutoTerm></th>
               ))}
             </tr>
           </thead>
@@ -113,7 +114,7 @@ export default function PlanContactsTracker({
           <thead>
             <tr className="bg-gray-50">
               {["Customer", "Owner", "Planned", "Plan status", "Contact status", ""].map((h, i) => (
-                <th key={h || "action"} scope="col" className={`${TH} ${i === 2 ? "text-right" : "text-left"}`}>{h}</th>
+                <th key={h || "action"} scope="col" className={`${TH} ${i === 2 ? "text-right" : "text-left"}`}><AutoTerm>{h}</AutoTerm></th>
               ))}
             </tr>
           </thead>

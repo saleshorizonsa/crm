@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { AutoTerm } from "components/dictionary/Term";
 import { Link } from "react-router-dom";
 import DailyVisitsList, { shortDay } from "components/DailyVisitsList";
 import { loadSalesMonitor } from "utils/salesMonitorData";
@@ -78,7 +79,7 @@ export default function InsightsVisitsPanel({
     <section className="bg-white rounded-2xl border border-gray-200" aria-label="Visits" data-testid="insights-visits">
       <div className="px-5 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-gray-800">Visits</h3>
+          <h3 className="text-sm font-semibold text-gray-800"><AutoTerm>Visits</AutoTerm></h3>
           <p className="text-xs text-gray-600" data-testid="insights-visits-summary">
             {error ? "Visits could not be loaded." : loading && !model ? "Loading visits…" : summary}
           </p>

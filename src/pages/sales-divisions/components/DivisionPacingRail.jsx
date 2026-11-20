@@ -1,4 +1,5 @@
 import React from "react";
+import { AutoTerm } from "components/dictionary/Term";
 
 // Copied from pages/coverage-console/components/PacingRail.jsx (not imported).
 // Keep the two in step by hand.
@@ -17,7 +18,7 @@ const DivisionPacingRail = ({ pace = 0, elapsed = 0, dayOfMonth, totalDays, pctF
   return (
     <div>
       <div className="flex items-baseline justify-between mb-2">
-        <span className="text-[10px] font-mono text-gray-400 uppercase tracking-widest">Pacing rail</span>
+        <span className="text-[10px] font-mono text-gray-400 uppercase tracking-widest"><AutoTerm>Pacing rail</AutoTerm></span>
         <span className="text-[11px] font-mono text-gray-500">
           Day {dayOfMonth} of {totalDays} &middot; {pctFmt(elapsed)} elapsed
         </span>
